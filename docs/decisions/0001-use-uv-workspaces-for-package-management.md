@@ -1,0 +1,95 @@
+# ADR-0001: Use uv Workspaces for Multi-Package Development
+
+## Status
+
+**Accepted** - 31st August 2025
+
+## Context
+
+KeycardAI is developing a Python SDK that will consist of multiple related packages (starting with keycard-oauth). We need to decide on the optimal development and packaging strategy that balances:
+
+- Development velocity and convenience
+- Dependency management and consistency
+- Package independence and modularity  
+- Future flexibility for repository organization
+
+### Options Considered
+
+1. **Separate repositories per package** - Traditional approach with each package in its own repo
+2. **Monorepo with independent packages** - All packages in one repo but managed separately
+3. **uv Workspaces** - Unified workspace with shared dependency resolution
+
+## Decision
+
+We will use **uv workspaces** for multi-package development in the KeycardAI Python SDK.
+
+### Key Implementation Details
+
+- Workspace root: `keycardai` (namespace package)
+- Individual packages in `packages/` directory
+- Shared `uv.lock` file for consistent dependency resolution
+- Cross-package dependencies managed via `tool.uv.sources` with `workspace = true`
+
+## Consequences
+
+### ✅ Positive Consequences
+
+**Development Velocity**
+- Single repository enables atomic changes across multiple interdependent packages
+- Cross-package refactoring in single PR reduces coordination overhead
+- Shared development tools (linting, testing, formatting) across all packages
+
+**Dependency Management** 
+- Single lockfile ensures all packages use consistent dependency versions
+- Eliminates dependency conflicts between related packages
+- Simplified CI/CD with unified testing and release processes
+
+**Package Independence**
+- Each package maintains its own `pyproject.toml` and can be independently versioned
+- Packages can be published separately to PyPI
+- Developers only install packages they need, avoiding unnecessary dependencies
+- Clean namespace separation under `keycardai.*`
+
+**Future Flexibility**
+- Easy migration path: packages can be extracted to separate repositories later
+- Workspace structure doesn't lock us into monorepo permanently
+- Individual packages already structured as independent units
+
+### ⚠️ Potential Negative Consequences
+
+**Repository Complexity**
+- Single repository may become large as more packages are added
+- Requires understanding of uv workspace concepts for contributors
+
+**Release Coordination**
+- May need tooling for independent package releases
+- Version management across multiple packages requires coordination
+
+**Migration Overhead**
+- Initial setup requires migrating existing packages to workspace structure
+- Team needs to learn uv workspace workflows
+
+### 🔄 Mitigation Strategies
+
+- Document workspace workflows clearly in README
+- Implement tooling for independent package releases
+- Plan migration strategy for potential future repository separation
+- Regular evaluation of workspace benefits vs. complexity as we scale
+
+## Alternative Rejected
+
+**Separate repositories** were rejected because:
+- Higher coordination overhead for cross-package changes
+- Dependency version conflicts difficult to resolve
+- Slower development cycle with multiple PRs needed for related changes
+- More complex CI/CD setup across multiple repos
+
+## Related Documents
+
+- [uv Workspaces Documentation](https://docs.astral.sh/uv/concepts/workspaces/)
+- Project README: Multi-package development workflow
+- Package migration plan (TBD)
+
+---
+
+*This ADR follows the format established by Michael Nygard in ["Documenting Architecture Decisions"](http://thinkrelevance.com/blog/2011/11/15/documenting-architecture-decisions)*
