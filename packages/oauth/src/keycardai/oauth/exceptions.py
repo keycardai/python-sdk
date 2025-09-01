@@ -1,7 +1,7 @@
-"""Common OAuth exceptions for OAuth 2.0 operations.
+"""OAuth 2.0 exception hierarchy with retriable classification.
 
-This module provides standardized exception classes for various OAuth operations
-as defined across multiple OAuth 2.0 RFCs.
+This module provides structured exception classes with deterministic retry guidance
+for OAuth 2.0 operations as defined across multiple RFCs.
 
 References:
 - RFC 6749: The OAuth 2.0 Authorization Framework
@@ -10,97 +10,128 @@ References:
 - RFC 7009: OAuth 2.0 Token Revocation
 """
 
+from dataclasses import dataclass
 
 
 class OAuthError(Exception):
-    """Base class for all STS-related errors.
-
-    Provides a foundation for all Security Token Service exceptions
-    with optional error chaining support.
-    """
+    """Base class for all OAuth 2.0 errors."""
 
     def __init__(self, message: str, cause: Exception | None = None):
         super().__init__(message)
         self.cause = cause
 
 
-class OAuthInvalidTokenError(OAuthError):
-    """Error for invalid or malformed tokens.
+@dataclass
+class OAuthHttpError(OAuthError):
+    """HTTP-level errors with retry guidance.
 
-    Raised when:
-    - Token is empty or not a string
-    - Token format is invalid
-    - Token signature verification fails
-
-    Related RFC: RFC 6749 Section 5.2 (invalid_grant error)
+    Raised for HTTP status codes indicating server or client errors.
+    Includes deterministic retriability classification.
     """
 
-    code = "invalid_token"
-
-
-class OAuthTokenExpiredError(OAuthError):
-    """Error for expired tokens.
-
-    Raised when a token has exceeded its lifetime.
-
-    Related RFC: RFC 6749 Section 5.2, RFC 7662 Section 2.2
-    """
-
-    code = "token_expired"
-
-
-class OAuthTokenInactiveError(OAuthError):
-    """Error for inactive tokens.
-
-    Raised when token introspection indicates the token is not active.
-
-    Related RFC: RFC 7662 Section 2.2 (active: false)
-    """
-
-    code = "token_inactive"
-
-
-class OAuthRequestError(OAuthError):
-    """Error for failed HTTP requests to STS endpoints.
-
-    Covers HTTP-level failures including network issues and server errors.
-    """
-
-    code = "request_failed"
+    status_code: int
+    response_body: str
+    headers: dict[str, str]
+    operation: str
+    retriable: bool
 
     def __init__(
         self,
-        message: str,
-        status_code: int | None = None,
-        response_text: str | None = None
+        status_code: int,
+        response_body: str = "",
+        headers: dict[str, str] | None = None,
+        operation: str = "",
     ):
-        super().__init__(message)
         self.status_code = status_code
-        self.response_text = response_text
+        self.response_body = response_body
+        self.headers = headers or {}
+        self.operation = operation
+
+        # Deterministic retriability classification
+        # 429 (rate limit) and 5xx (server errors) are retriable
+        # 4xx (client errors except 429) are not retriable
+        self.retriable = status_code == 429 or (500 <= status_code < 600)
+
+        message = (
+            f"HTTP {status_code} during {operation}"
+            if operation
+            else f"HTTP {status_code}"
+        )
+        super().__init__(message)
+
+    def __str__(self) -> str:
+        return f"HTTP {self.status_code} during {self.operation} (retriable: {self.retriable})"
 
 
-class OAuthUnsupportedGrantTypeError(OAuthError):
-    """Error for unsupported grant types.
+@dataclass
+class OAuthProtocolError(OAuthError):
+    """RFC 6749 error responses from OAuth servers.
 
-    Related RFC: RFC 6749 Section 5.2 (unsupported_grant_type)
+    Represents structured error responses as defined in OAuth 2.0 specifications.
+    Protocol errors are never retriable as they indicate client-side issues.
     """
 
-    code = "unsupported_grant_type"
+    error: str
+    error_description: str | None = None
+    error_uri: str | None = None
+    operation: str = ""
+    retriable: bool = False  # Protocol errors are never retriable
+
+    def __init__(
+        self,
+        error: str,
+        error_description: str | None = None,
+        error_uri: str | None = None,
+        operation: str = "",
+    ):
+        self.error = error
+        self.error_description = error_description
+        self.error_uri = error_uri
+        self.operation = operation
+        self.retriable = False
+
+        message = f"OAuth error: {error}"
+        if error_description:
+            message += f" - {error_description}"
+
+        super().__init__(message)
 
 
-class OAuthInvalidScopeError(OAuthError):
-    """Error for invalid or unauthorized scopes.
+@dataclass
+class NetworkError(OAuthError):
+    """Transport/network failures with retry guidance.
 
-    Related RFC: RFC 6749 Section 5.2 (invalid_scope)
+    Covers connection failures, timeouts, and other network-level issues.
     """
 
-    code = "invalid_scope"
+    cause: Exception
+    retriable: bool
+    operation: str = ""
+
+    def __init__(
+        self,
+        cause: Exception,
+        operation: str = "",
+        retriable: bool = True,  # Network errors are generally retriable
+    ):
+        self.cause = cause
+        self.operation = operation
+        self.retriable = retriable
+
+        message = (
+            f"Network error during {operation}: {cause}"
+            if operation
+            else f"Network error: {cause}"
+        )
+        super().__init__(message, cause)
 
 
-class OAuthInvalidClientError(OAuthError):
-    """Error for invalid client credentials or authentication.
+class ConfigError(OAuthError):
+    """Client configuration errors.
 
-    Related RFC: RFC 6749 Section 5.2 (invalid_client)
+    Raised when client is misconfigured (missing endpoints, invalid parameters, etc.).
+    These are never retriable as they require code changes.
     """
 
-    code = "invalid_client"
+    def __init__(self, message: str):
+        super().__init__(message)

@@ -14,7 +14,6 @@ from .requests import (
 from .responses import (
     AuthorizationServerMetadata,
     IntrospectionResponse,
-    TokenExchangeResponse,
 )
 
 __all__ = [
@@ -22,15 +21,12 @@ __all__ = [
     "TokenTypes",
     "TokenTypeHints",
     "RevocationTokenTypeHints",
-
     # Request models
     "TokenExchangeRequest",
     "IntrospectionRequest",
     "RevocationRequest",
     "PushedAuthorizationRequest",
-
     # Response models
-    "TokenExchangeResponse",
     "IntrospectionResponse",
     "AuthorizationServerMetadata",
 ]

@@ -38,7 +38,7 @@ class PKCEMethods:
     """
 
     PLAIN = "plain"  # NOT RECOMMENDED - use only if S256 unavailable
-    S256 = "S256"    # RECOMMENDED - SHA256 hash of verifier
+    S256 = "S256"  # RECOMMENDED - SHA256 hash of verifier
 
 
 class PKCEGenerator:
@@ -110,7 +110,9 @@ class PKCEGenerator:
         # Implementation placeholder
         raise NotImplementedError("PKCE code challenge generation not yet implemented")
 
-    def generate_pkce_pair(self, method: str = "S256", verifier_length: int = 128) -> PKCEChallenge:
+    def generate_pkce_pair(
+        self, method: str = "S256", verifier_length: int = 128
+    ) -> PKCEChallenge:
         """Generate a complete PKCE challenge/verifier pair.
 
         Creates both code verifier and challenge using specified method.
@@ -129,7 +131,9 @@ class PKCEGenerator:
         raise NotImplementedError("PKCE pair generation not yet implemented")
 
     @staticmethod
-    def validate_pkce_pair(code_verifier: str, code_challenge: str, method: str = "S256") -> bool:
+    def validate_pkce_pair(
+        code_verifier: str, code_challenge: str, method: str = "S256"
+    ) -> bool:
         """Validate that code verifier matches the code challenge.
 
         Verifies PKCE parameters as defined in RFC 7636 Section 4.6.

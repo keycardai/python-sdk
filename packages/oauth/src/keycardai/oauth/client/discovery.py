@@ -65,7 +65,10 @@ class DiscoveryClient:
         """
         if not metadata.grant_types_supported:
             return False
-        return "urn:ietf:params:oauth:grant-type:token-exchange" in metadata.grant_types_supported
+        return (
+            "urn:ietf:params:oauth:grant-type:token-exchange"
+            in metadata.grant_types_supported
+        )
 
     @staticmethod
     def supports_token_introspection(metadata: AuthorizationServerMetadata) -> bool:

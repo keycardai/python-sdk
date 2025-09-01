@@ -69,7 +69,9 @@ class MutualTLSClientAuth:
         Reference: https://datatracker.ietf.org/doc/html/rfc8705#section-3
         """
         # Implementation placeholder
-        raise NotImplementedError("Certificate thumbprint generation not yet implemented")
+        raise NotImplementedError(
+            "Certificate thumbprint generation not yet implemented"
+        )
 
     @staticmethod
     def extract_certificate_info(certificate_pem: str) -> dict:
@@ -89,7 +91,9 @@ class MutualTLSClientAuth:
         # Implementation placeholder
         raise NotImplementedError("Certificate parsing not yet implemented")
 
-    def validate_cert_bound_token(self, access_token: str, client_certificate: str) -> bool:
+    def validate_cert_bound_token(
+        self, access_token: str, client_certificate: str
+    ) -> bool:
         """Validate certificate-bound access token.
 
         Verifies that the access token is bound to the provided client
@@ -105,9 +109,13 @@ class MutualTLSClientAuth:
         Reference: https://datatracker.ietf.org/doc/html/rfc8705#section-3
         """
         # Implementation placeholder
-        raise NotImplementedError("Certificate-bound token validation not yet implemented")
+        raise NotImplementedError(
+            "Certificate-bound token validation not yet implemented"
+        )
 
-    def create_certificate_bound_token(self, base_token: dict, certificate_pem: str) -> dict:
+    def create_certificate_bound_token(
+        self, base_token: dict, certificate_pem: str
+    ) -> dict:
         """Create certificate-bound access token.
 
         Adds the cnf (confirmation) claim to an access token to bind it
@@ -123,10 +131,14 @@ class MutualTLSClientAuth:
         Reference: https://datatracker.ietf.org/doc/html/rfc8705#section-3.1
         """
         # Implementation placeholder
-        raise NotImplementedError("Certificate-bound token creation not yet implemented")
+        raise NotImplementedError(
+            "Certificate-bound token creation not yet implemented"
+        )
 
     @staticmethod
-    def validate_certificate_chain(certificate_pem: str, ca_bundle: str | None = None) -> bool:
+    def validate_certificate_chain(
+        certificate_pem: str, ca_bundle: str | None = None
+    ) -> bool:
         """Validate X.509 certificate chain.
 
         Validates certificate chain up to trusted root CA and checks

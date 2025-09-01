@@ -1,12 +1,13 @@
 """KeyCard AI OAuth SDK
 
-A Python SDK for OAuth 2.0 functionality implementing
-multiple OAuth 2.0 standards for comprehensive token management.
+A unified, developer-friendly Python SDK for OAuth 2.0 functionality implementing
+multiple OAuth 2.0 standards with enterprise-ready features.
 
 Supported OAuth 2.0 Standards:
 - RFC 8693: OAuth 2.0 Token Exchange
 - RFC 7662: OAuth 2.0 Token Introspection
 - RFC 7009: OAuth 2.0 Token Revocation
+- RFC 7591: OAuth 2.0 Dynamic Client Registration
 - RFC 7523: JWT Profile for OAuth 2.0 Client Authentication
 - RFC 9068: JWT Profile for OAuth 2.0 Access Tokens
 - RFC 6750: OAuth 2.0 Bearer Token Usage
@@ -14,113 +15,107 @@ Supported OAuth 2.0 Standards:
 - RFC 8705: OAuth 2.0 Mutual-TLS Client Authentication
 - RFC 7636: Proof Key for Code Exchange (PKCE)
 - RFC 9126: OAuth 2.0 Pushed Authorization Requests
+
+Example:
+    # Simple usage
+    from keycardai.oauth import AsyncClient, Client
+
+    # Async client (primary implementation)
+    async with AsyncClient("https://api.keycard.ai") as client:
+        response = await client.introspect_token("token_to_validate")
+
+    # Sync client (wrapper)
+    with Client("https://api.keycard.ai") as client:
+        response = client.introspect_token("token_to_validate")
 """
 
-# Main client interface
 from .client import (
+    AsyncClient,
+    AsyncHTTPClient,
     Client,
-    DiscoveryClient,
-    IntrospectionClient,
-    PushedAuthorizationClient,
-    RevocationClient,
-    TokenExchangeClient,
+    ClientCredentialsAuth,
+    ClientSecretBasic,
+    HTTPClient,
+    HTTPClientProtocol,
+    JWTAuth,
+    MTLSAuth,
+    NoneAuth,
 )
-
-# Core exceptions
 from .exceptions import (
+    ConfigError,
+    NetworkError,
     OAuthError,
-    OAuthInvalidClientError,
-    OAuthInvalidScopeError,
-    OAuthInvalidTokenError,
-    OAuthRequestError,
-    OAuthTokenExpiredError,
-    OAuthTokenInactiveError,
-    OAuthUnsupportedGrantTypeError,
+    OAuthHttpError,
+    OAuthProtocolError,
 )
-
-# Types and models
-from .types import (
+from .types.enums import (
+    GrantType,
+    PKCECodeChallengeMethod,
+    ResponseType,
+    TokenEndpointAuthMethod,
+    TokenType,
+    TokenTypeHint,
+)
+from .types.requests import (
+    ClientRegistrationRequest,
+)
+from .types.responses import (
+    PKCE,
     AuthorizationServerMetadata,
-    IntrospectionRequest,
+    ClientConfig,
+    ClientRegistrationResponse,
+    Endpoints,
     IntrospectionResponse,
-    PushedAuthorizationRequest,
-    RevocationRequest,
-    RevocationTokenTypeHints,
-    TokenExchangeRequest,
-    TokenExchangeResponse,
-    TokenTypeHints,
-    TokenTypes,
+    TokenResponse,
 )
-
-# Utilities
 from .utils import (
-    BearerToken,
-    BearerTokenError,
-    BearerTokenErrors,
-    BearerTokenValidator,
-    CertificateBoundToken,
-    JWTAccessToken,
-    JWTAccessTokenHandler,
-    JWTAccessTokenValidator,
-    JWTClientAssertion,
-    MutualTLSClientAuth,
-    PKCEChallenge,
-    PKCEGenerator,
-    PKCEMethods,
+    create_auth_header,
+    create_jwt_assertion,
+    extract_bearer_token,
+    generate_cert_thumbprint,
+    generate_pkce_challenge,
+    validate_bearer_format,
+    verify_pkce_challenge,
 )
 
 __version__ = "0.0.1"
 
 __all__ = [
-    # Version
     "__version__",
-
-    # Main client interface
+    "AsyncClient",
     "Client",
-
-    # Individual client classes
-    "TokenExchangeClient",
-    "IntrospectionClient",
-    "RevocationClient",
-    "PushedAuthorizationClient",
-    "DiscoveryClient",
-
-    # Core Exceptions
     "OAuthError",
-    "OAuthInvalidTokenError",
-    "OAuthTokenExpiredError",
-    "OAuthTokenInactiveError",
-    "OAuthRequestError",
-    "OAuthUnsupportedGrantTypeError",
-    "OAuthInvalidScopeError",
-    "OAuthInvalidClientError",
-
-    # Types and constants
-    "TokenTypes",
-    "TokenTypeHints",
-    "RevocationTokenTypeHints",
-
-    # Request/Response models
-    "TokenExchangeRequest",
-    "TokenExchangeResponse",
-    "IntrospectionRequest",
+    "OAuthHttpError",
+    "OAuthProtocolError",
+    "NetworkError",
+    "ConfigError",
     "IntrospectionResponse",
-    "RevocationRequest",
-    "PushedAuthorizationRequest",
+    "TokenResponse",
+    "ClientRegistrationResponse",
+    "PKCE",
+    "Endpoints",
+    "ClientConfig",
+    "GrantType",
+    "ResponseType",
+    "TokenEndpointAuthMethod",
+    "TokenType",
+    "TokenTypeHint",
+    "PKCECodeChallengeMethod",
+    "ClientRegistrationRequest",
     "AuthorizationServerMetadata",
-
-    # Utility classes
-    "BearerToken",
-    "BearerTokenValidator",
-    "BearerTokenError",
-    "BearerTokenErrors",
-    "JWTClientAssertion",
-    "JWTAccessToken",
-    "JWTAccessTokenHandler",
-    "JWTAccessTokenValidator",
-    "PKCEGenerator",
-    "PKCEChallenge",
-    "PKCEMethods",
-    "MutualTLSClientAuth",
-    "CertificateBoundToken",
+    "ClientCredentialsAuth",
+    "ClientSecretBasic",
+    "JWTAuth",
+    "MTLSAuth",
+    "NoneAuth",
+    "HTTPClientProtocol",
+    "AsyncHTTPClient",
+    "HTTPClient",
+    "extract_bearer_token",
+    "validate_bearer_format",
+    "create_auth_header",
+    "generate_pkce_challenge",
+    "verify_pkce_challenge",
+    "create_jwt_assertion",
+    "generate_cert_thumbprint",
 ]

@@ -77,7 +77,7 @@ class BearerToken:
 
     # Bearer token pattern per RFC 6750 Section 2.1
     # b64token = 1*( ALPHA / DIGIT / "-" / "." / "_" / "~" / "+" / "/" ) *"="
-    TOKEN_PATTERN = re.compile(r'^[A-Za-z0-9\-._~+/]+=*$')
+    TOKEN_PATTERN = re.compile(r"^[A-Za-z0-9\-._~+/]+=*$")
 
     @staticmethod
     def extract_from_header(authorization_header: str) -> str | None:
@@ -171,7 +171,7 @@ class BearerToken:
         scope: str | None = None,
         error: str | None = None,
         error_description: str | None = None,
-        error_uri: str | None = None
+        error_uri: str | None = None,
     ) -> str:
         """Create WWW-Authenticate header for bearer token challenges.
 
@@ -210,7 +210,7 @@ class BearerTokenValidator:
         headers: dict[str, str],
         form_data: dict[str, str] | None = None,
         query_params: dict[str, str] | None = None,
-        allow_query_param: bool = False
+        allow_query_param: bool = False,
     ) -> str | None:
         """Extract bearer token from HTTP request using RFC 6750 methods.
 
@@ -237,7 +237,7 @@ class BearerTokenValidator:
     def validate_token_transmission(
         headers: dict[str, str],
         form_data: dict[str, str] | None = None,
-        query_params: dict[str, str] | None = None
+        query_params: dict[str, str] | None = None,
     ) -> tuple[bool, str | None]:
         """Validate that token is transmitted via exactly one method.
 

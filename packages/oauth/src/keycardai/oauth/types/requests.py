@@ -6,6 +6,8 @@ OAuth 2.0 operations like token exchange, introspection, and revocation.
 
 from pydantic import BaseModel
 
+from .enums import GrantType, ResponseType, TokenEndpointAuthMethod, TokenTypeHint
+
 
 class TokenExchangeRequest(BaseModel):
     """OAuth 2.0 Token Exchange Request as defined in RFC 8693 Section 2.1.
@@ -31,7 +33,7 @@ class IntrospectionRequest(BaseModel):
     """
 
     token: str
-    token_type_hint: str | None = None
+    token_type_hint: TokenTypeHint | None = None
 
 
 class RevocationRequest(BaseModel):
@@ -41,7 +43,7 @@ class RevocationRequest(BaseModel):
     """
 
     token: str
-    token_type_hint: str | None = None
+    token_type_hint: TokenTypeHint | None = None
 
 
 class PushedAuthorizationRequest(BaseModel):
@@ -57,4 +59,27 @@ class PushedAuthorizationRequest(BaseModel):
     state: str | None = None
     code_challenge: str | None = None
     code_challenge_method: str | None = None
-    # Additional parameters can be included as needed
+
+
+class ClientRegistrationRequest(BaseModel):
+    """Dynamic Client Registration Request as defined in RFC 7591 Section 2.
+
+    Reference: https://datatracker.ietf.org/doc/html/rfc7591#section-2
+    """
+
+    client_name: str
+    jwks_uri: str | None = None
+    jwks: dict | None = None
+    token_endpoint_auth_method: TokenEndpointAuthMethod = (
+        TokenEndpointAuthMethod.CLIENT_SECRET_BASIC
+    )
+    redirect_uris: list[str] | None = None
+    grant_types: list[GrantType] | None = None
+    response_types: list[ResponseType] | None = None
+    scope: str | None = None
+    client_uri: str | None = None
+    logo_uri: str | None = None
+    tos_uri: str | None = None
+    policy_uri: str | None = None
+    software_id: str | None = None
+    software_version: str | None = None

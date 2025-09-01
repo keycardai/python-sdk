@@ -56,7 +56,7 @@ class JWTClientAssertion:
         expiration_seconds: int = 300,
         additional_claims: dict[str, Any] | None = None,
         private_key: str | None = None,
-        algorithm: str = "RS256"
+        algorithm: str = "RS256",
     ) -> str:
         """Create a JWT client assertion for authentication.
 
@@ -83,7 +83,7 @@ class JWTClientAssertion:
         assertion: str,
         expected_audience: str,
         public_key: str | None = None,
-        clock_skew_seconds: int = 30
+        clock_skew_seconds: int = 30,
     ) -> dict[str, Any]:
         """Verify a JWT client assertion.
 
@@ -161,10 +161,7 @@ class JWTAccessTokenHandler:
     """
 
     def __init__(
-        self,
-        issuer: str,
-        private_key: str | None = None,
-        algorithm: str = "RS256"
+        self, issuer: str, private_key: str | None = None, algorithm: str = "RS256"
     ):
         """Initialize the JWT access token handler.
 
@@ -183,7 +180,7 @@ class JWTAccessTokenHandler:
         audience: str | list[str],
         scope: str | None = None,
         expires_in: int = 3600,
-        additional_claims: dict[str, Any] | None = None
+        additional_claims: dict[str, Any] | None = None,
     ) -> str:
         """Create a JWT access token.
 
@@ -207,7 +204,7 @@ class JWTAccessTokenHandler:
         self,
         jwt_token: str,
         verify_signature: bool = True,
-        public_key: str | None = None
+        public_key: str | None = None,
     ) -> JWTAccessToken:
         """Parse and validate a JWT access token.
 
@@ -252,7 +249,7 @@ class JWTAccessTokenValidator:
         self,
         jwt_token: str,
         required_scope: str | None = None,
-        clock_skew_seconds: int = 30
+        clock_skew_seconds: int = 30,
     ) -> dict[str, Any]:
         """Validate a JWT access token.
 
