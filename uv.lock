@@ -5,6 +5,7 @@ requires-python = ">=3.10"
 [manifest]
 members = [
     "keycardai",
+    "keycardai-mcp",
     "keycardai-oauth",
 ]
 
@@ -368,9 +369,20 @@ dev = [
 ]
 
 [[package]]
+name = "keycardai-mcp"
+version = "0.0.1"
+source = { editable = "packages/mcp" }
+dependencies = [
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "pydantic", specifier = ">=2.11.7" }]
+
+[[package]]
 name = "keycardai-oauth"
 version = "0.0.1"
-source = { editable = "packages/keycardai-oauth" }
+source = { editable = "packages/oauth" }
 dependencies = [
     { name = "pydantic" },
 ]
