@@ -19,3 +19,4 @@ We follow the standard ADR format:
 | Number | Title | Status |
 |--------|-------|--------|
 | [0001](./0001-use-uv-workspaces-for-package-management.md) | Use uv Workspaces for Multi-Package Development | Accepted |
+| [0002](./0002-modular-package-structure-for-minimal-dependencies.md) | Modular Package Structure for Minimal Dependencies | Accepted |

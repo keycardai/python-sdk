@@ -1,0 +1,190 @@
+# ADR-0002: Modular Package Structure for Minimal Dependencies
+
+## Status
+
+**Accepted** - 4th September 2025
+
+## Context
+
+As the KeycardAI Python SDK grows to support multiple integration patterns and frameworks, we need to ensure that consumers only install the dependencies they actually need. Different users have different requirements:
+
+- **Core OAuth users** only need basic OAuth 2.0 client functionality
+- **FastMCP users** want OAuth integration with FastMCP servers but don't need other MCP implementations
+- **Native MCP users** want core MCP functionality without framework-specific dependencies
+- **Integration builders** need specific framework bindings without pulling in unrelated frameworks
+
+### The Dependency Bloat Problem
+
+A monolithic package approach would force all users to install dependencies for functionality they don't use:
+
+```python
+# ❌ Monolithic approach - forces unnecessary dependencies
+pip install keycardai-sdk  # Installs fastmcp, mcp-core, asyncio, etc. even if you only need OAuth
+```
+
+This creates several problems:
+- **Larger installation footprint** for simple use cases
+- **Version conflicts** when users already have different versions of frameworks
+- **Security surface area** increases with unused dependencies
+- **Slower installation** and larger Docker images
+- **Maintenance burden** for transitive dependency conflicts
+
+### Real-World Example: FastMCP Integration
+
+Consider a user who wants to add KeyCard OAuth to their existing FastMCP server:
+
+```python
+# With modular structure ✅
+pip install keycardai-mcp-fastmcp  # Only installs: keycardai-oauth + fastmcp
+
+# With monolithic structure ❌  
+pip install keycardai-sdk  # Would install: fastmcp + mcp-core + other-framework + ...
+```
+
+The modular approach installs only the essential dependencies, while a monolithic approach would pull in every supported framework.
+
+## Decision
+
+We will structure the KeycardAI Python SDK as **multiple focused packages** rather than a single monolithic package, following the principle of **minimal necessary dependencies**.
+
+### Package Structure
+
+```
+keycardai/
+├── packages/oauth/              # Core OAuth 2.0 functionality
+│   └── pyproject.toml          # Dependencies: pydantic, httpx, cryptography
+├── packages/mcp/               # Core MCP implementation  
+│   └── pyproject.toml          # Dependencies: keycardai-oauth, mcp-core
+└── packages/mcp-fastmcp/       # FastMCP integration
+    └── pyproject.toml          # Dependencies: keycardai-oauth, fastmcp
+```
+
+### Package Design Principles
+
+1. **Single Responsibility**: Each package serves one specific integration or use case
+2. **Minimal Dependencies**: Only include dependencies required for that package's functionality
+3. **Composable**: Packages can be combined as needed without conflicts
+4. **Framework Specific**: Integration packages target specific frameworks/libraries
+
+### Dependency Strategy
+
+| Package | Dependencies | Use Case |
+|---------|-------------|----------|
+| `keycardai-oauth` | Core libs only (pydantic, httpx) | Basic OAuth client |
+| `keycardai-mcp` | `keycardai-oauth` + mcp-core | Native MCP implementation |
+| `keycardai-mcp-fastmcp` | `keycardai-oauth` + fastmcp | FastMCP server integration |
+| `keycardai-mcp-anthropic` | `keycardai-oauth` + anthropic | Anthropic MCP integration |
+
+## Consequences
+
+### ✅ Positive Consequences
+
+**Minimal Installation Footprint**
+- Users install only what they need: OAuth users get ~3 core dependencies vs ~15+ in monolithic approach
+- Docker images are significantly smaller for specific use cases
+- Faster pip install times for targeted functionality
+
+**Framework Independence**
+- FastMCP users don't get MCP-core dependencies they won't use
+- Users can choose their MCP implementation without conflicts
+- Framework version conflicts are isolated to specific integration packages
+
+**Clear Separation of Concerns**
+- OAuth functionality is completely independent of any MCP implementation
+- Each integration package has focused, testable responsibility
+- Easier to maintain and debug specific integration issues
+
+**Scalability**
+- New framework integrations don't impact existing packages
+- Can add support for new frameworks (Django, Flask, etc.) without bloating core packages
+- Individual packages can have independent release cycles
+
+**Real-World Benefits**
+```python
+# User only needs OAuth ✅
+pip install keycardai-oauth        # ~5MB, 3 dependencies
+
+# User needs FastMCP integration ✅  
+pip install keycardai-mcp-fastmcp  # ~15MB, fastmcp + oauth deps
+
+# vs. Monolithic approach ❌
+pip install keycardai-sdk           # ~50MB, all framework deps
+```
+
+### ⚠️ Potential Negative Consequences
+
+**Discovery Complexity**
+- New users must understand which package they need
+- More packages to discover and choose from
+- Documentation must clearly guide package selection
+
+**Version Coordination**
+- Multiple packages need coordinated releases for breaking changes
+- Cross-package compatibility matrix becomes important
+- Integration testing across package combinations
+
+**Development Overhead**
+- More pyproject.toml files to maintain
+- More CI/CD pipeline complexity for multiple packages
+- Need tooling for cross-package dependency updates
+
+### 🔄 Mitigation Strategies
+
+**Clear Documentation**
+- Package selection guide in main README
+- Use case-based installation instructions
+- Integration examples for each package combination
+
+**Automated Tooling**
+- Dependency compatibility checks in CI
+- Automated cross-package testing
+- Release coordination tooling
+
+**Namespace Organization**
+- Clear naming convention: `keycardai-{domain}-{framework}`
+- Logical grouping of integration packages
+- Consistent API patterns across packages
+
+## Examples
+
+### ✅ Good: Framework-Specific Installation
+
+```python
+# FastMCP user
+pip install keycardai-mcp-fastmcp
+from keycardai.mcp.integrations.fastmcp import KeycardAuthProvider
+
+# Native MCP user  
+pip install keycardai-mcp
+from keycardai.mcp import MCPClient
+
+# Pure OAuth user
+pip install keycardai-oauth
+from keycardai.oauth import Client
+```
+
+### ❌ Avoided: Monolithic Installation
+
+```python
+# Would force all users to install everything
+pip install keycardai-sdk  # Includes fastmcp, mcp-core, django, flask, etc.
+```
+
+## Alternative Rejected
+
+**Monolithic Package with Optional Dependencies** was rejected because:
+- Optional dependencies are poorly supported by many tools
+- Users often install "everything" by default, defeating the purpose
+- Dependency resolution becomes complex with many optionals
+- Import errors at runtime when optional dependencies are missing
+
+**Separate Repositories** was rejected because:
+- Cross-package coordination overhead (covered in ADR-0001)
+- Harder to maintain consistency across packages
+- Version compatibility testing becomes much more complex
+
+## Related Documents
+
+- [ADR-0001: Use uv Workspaces for Multi-Package Development](./0001-use-uv-workspaces-for-package-management.md)
+- [Package Installation Guide](../project/README.md)
+---
