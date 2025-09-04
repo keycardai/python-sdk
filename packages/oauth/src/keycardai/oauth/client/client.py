@@ -42,6 +42,7 @@ from ..types.models import (
     TokenResponse,
 )
 from ..types.oauth import OAuth2DefaultEndpoints
+from ..utils import extract_jwt_client_id
 
 
 def resolve_endpoints(
@@ -517,6 +518,48 @@ class AsyncClient:
         )
 
         return await token_exchange_async(request, ctx)
+
+    async def access_token_for_resource(
+        self,
+        resource: str,
+        subject_token: str,
+    ) -> str:
+        """Perform OAuth 2.0 Token Exchange.
+
+        Simple usage (delegation):
+            request = TokenExchangeRequest(
+                subject_token="original_access_token",
+                subject_token_type="urn:ietf:params:oauth:token-type:access_token",
+                audience="target-service.company.com"
+            )
+            response = await client.token_exchange_async(request)
+
+        Advanced usage (impersonation):
+            request = TokenExchangeRequest(
+                subject_token="admin_token",
+                subject_token_type="urn:ietf:params:oauth:token-type:access_token",
+                audience="target-service.company.com",
+                actor_token="service_token",
+                actor_token_type="urn:ietf:params:oauth:token-type:access_token",
+                requested_token_type="urn:ietf:params:oauth:token-type:access_token",
+                scope="read write"
+            )
+            response = await client.token_exchange_async(request)
+
+        Args:
+            request: TokenExchangeRequest with all exchange parameters
+
+        Returns:
+            TokenResponse with the exchanged token and metadata
+        """
+        request = TokenExchangeRequest(
+            subject_token=subject_token,
+            subject_token_type="urn:ietf:params:oauth:token-type:access_token",
+            resource=resource,
+            client_id=extract_jwt_client_id(subject_token),
+        )
+        response = await self.token_exchange(request)
+        return response.access_token
 
     def endpoints_summary(self) -> dict[str, dict[str, str]]:
         """Get diagnostic summary of resolved endpoints.
