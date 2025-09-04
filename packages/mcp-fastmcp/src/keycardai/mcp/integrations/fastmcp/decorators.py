@@ -14,7 +14,7 @@ from fastmcp import Context
 from fastmcp.server.dependencies import get_access_token
 
 
-def request_access_for_resource(resource: str):
+def get_access_token_for_resource(resource: str):
     """Decorator for automatic delegated token exchange.
 
     This decorator automates the OAuth token exchange process for accessing
@@ -31,7 +31,7 @@ def request_access_for_resource(resource: str):
 
     Usage:
         ```python
-        @keycardai.request_access_for_resource("https://www.googleapis.com/calendar/v3")
+        @keycardai.get_access_token_for_resource("https://www.googleapis.com/calendar/v3")
         async def get_calendar_events(ctx: Context, ...) -> dict:
             # ctx.access_token is now available with Google Calendar access
             access_token = ctx.access_token
@@ -72,7 +72,7 @@ def request_access_for_resource(resource: str):
 
                 # Perform token exchange for the specified resource
                 try:
-                    access_token = await client.access_token_for_resource(resource, user_token.token)
+                    access_token = await client.get_access_token_for_resource(resource, user_token.token)
                 except Exception as e:
                     return {
                         "error": f"Token exchange failed: {e}",
@@ -108,14 +108,3 @@ def request_access_for_resource(resource: str):
 
         return wrapper
     return decorator
-
-
-# Make the decorator available at the keycardai module level
-class KeyCardDecorators:
-    """KeyCard decorators namespace."""
-
-    request_access_for_resource = staticmethod(request_access_for_resource)
-
-
-# This allows the usage: @keycardai.request_access_for_resource(resource)
-keycardai = KeyCardDecorators()

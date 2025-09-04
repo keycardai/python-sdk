@@ -10,10 +10,10 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING
 
-from pydantic_settings import BaseSettings
-
 from fastmcp.server.middleware import Middleware, MiddlewareContext
 from fastmcp.utilities.logging import get_logger
+from pydantic_settings import BaseSettings
+
 from keycardai.oauth import AsyncClient, ClientConfig
 
 if TYPE_CHECKING:

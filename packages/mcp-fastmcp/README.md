@@ -12,7 +12,7 @@ pip install keycardai-mcp-fastmcp
 
 ```python
 from fastmcp import FastMCP, Context
-from keycardai.mcp.integrations.fastmcp import KeycardAuthProvider, OAuthClientMiddleware, keycardai
+from keycardai.mcp.integrations.fastmcp import KeycardAuthProvider, OAuthClientMiddleware, get_access_token_for_resource
 
 # Create FastMCP server with KeyCard authentication
 mcp = FastMCP("My Secure Service")
@@ -33,7 +33,7 @@ mcp.add_middleware(oauth_middleware)
 
 # Use decorator for automatic token exchange
 @mcp.tool()
-@keycardai.request_access_for_resource("https://www.googleapis.com/calendar/v3")
+@get_access_token_for_resource("https://www.googleapis.com/calendar/v3")
 async def get_calendar_events(ctx: Context, maxResults: int = 10) -> dict:
     # ctx.access_token is automatically available with Google Calendar access
     access_token = ctx.access_token
@@ -57,7 +57,7 @@ This integration package provides FastMCP-specific components for KeyCard OAuth:
 
 1. **Token Verification**: `KeycardAuthProvider` validates incoming JWT tokens using KeyCard zone JWKS
 2. **Client Management**: `OAuthClientMiddleware` provides OAuth client to tools via FastMCP context
-3. **Token Exchange**: `@keycardai.request_access_for_resource()` decorator automates RFC 8693 token exchange
+3. **Token Exchange**: `@get_access_token_for_resource()` decorator automates RFC 8693 token exchange
 4. **API Access**: Tools receive resource-specific access tokens transparently
 
 ## Development
