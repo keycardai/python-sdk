@@ -135,3 +135,32 @@ class ConfigError(OAuthError):
 
     def __init__(self, message: str):
         super().__init__(message)
+
+
+class AuthenticationError(OAuthError):
+    """Authentication failures with OAuth 2.0 servers.
+
+    Raised when client authentication fails, typically due to invalid
+    credentials or authentication method issues.
+    """
+
+    def __init__(self, message: str):
+        super().__init__(message)
+
+
+class TokenExchangeError(OAuthProtocolError):
+    """OAuth 2.0 Token Exchange specific errors (RFC 8693).
+
+    Raised for token exchange protocol violations and error responses.
+    Inherits from OAuthProtocolError with token exchange semantics.
+    """
+
+    def __init__(
+        self,
+        error: str,
+        error_description: str | None = None,
+        error_uri: str | None = None,
+        operation: str = "",
+    ):
+        super().__init__(error, error_description, error_uri, operation)
+

@@ -8,8 +8,7 @@ license = { text = "MIT" }
 authors = [{ name = "KeyCard AI", email = "support@keycard.ai" }]
 dependencies = [
     "pydantic>=2.11.7",
-    "httpx>=0.27.0",
-    "requests>=2.31.0",
+    "httpx>=0.28.1"
 ]
 
 keywords = ["oauth", "oauth2", "authentication", "tokens", "security"]
@@ -30,8 +29,8 @@ classifiers = [
 
 [project.optional-dependencies]
 test = [
-    "pytest>=6.0",
-    "pytest-asyncio>=0.21.0",
+    "pytest>=8.4.1",
+    "pytest-asyncio>=1.1.0",
 ]
 
 [project.urls]
@@ -94,3 +93,8 @@ exclude_also = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra -q"
+
+[dependency-groups]
+dev = [
+    "pytest-cov>=6.2.1",
+]

@@ -29,44 +29,35 @@ Example:
         response = client.introspect_token("token_to_validate")
 """
 
-from .client import (
-    AsyncClient,
-    AsyncHTTPClient,
-    Client,
-    ClientCredentialsAuth,
-    ClientSecretBasic,
-    HTTPClient,
-    HTTPClientProtocol,
-    JWTAuth,
-    MTLSAuth,
-    NoneAuth,
-)
+from .client import AsyncClient, Client
 from .exceptions import (
+    AuthenticationError,
     ConfigError,
     NetworkError,
     OAuthError,
     OAuthHttpError,
     OAuthProtocolError,
+    TokenExchangeError,
 )
-from .types.enums import (
+from .http import AuthStrategy, BasicAuth, BearerAuth, NoneAuth
+from .types.models import (
+    PKCE,
+    AuthorizationServerMetadata,
+    ClientConfig,
+    ClientRegistrationRequest,
+    ClientRegistrationResponse,
+    Endpoints,
+    TokenExchangeRequest,
+    TokenResponse,
+)
+from .types.oauth import (
     GrantType,
     PKCECodeChallengeMethod,
     ResponseType,
     TokenEndpointAuthMethod,
     TokenType,
     TokenTypeHint,
-)
-from .types.requests import (
-    ClientRegistrationRequest,
-)
-from .types.responses import (
-    PKCE,
-    AuthorizationServerMetadata,
-    ClientConfig,
-    ClientRegistrationResponse,
-    Endpoints,
-    IntrospectionResponse,
-    TokenResponse,
+    WellKnownEndpoint,
 )
 from .utils import (
     create_auth_header,
@@ -89,7 +80,9 @@ __all__ = [
     "OAuthProtocolError",
     "NetworkError",
     "ConfigError",
-    "IntrospectionResponse",
+    "AuthenticationError",
+    "TokenExchangeError",
+
     "TokenResponse",
     "ClientRegistrationResponse",
     "PKCE",
@@ -102,15 +95,13 @@ __all__ = [
     "TokenTypeHint",
     "PKCECodeChallengeMethod",
     "ClientRegistrationRequest",
+    "TokenExchangeRequest",
     "AuthorizationServerMetadata",
-    "ClientCredentialsAuth",
-    "ClientSecretBasic",
-    "JWTAuth",
-    "MTLSAuth",
+    "WellKnownEndpoint",
+    "AuthStrategy",
+    "BasicAuth",
+    "BearerAuth",
     "NoneAuth",
-    "HTTPClientProtocol",
-    "AsyncHTTPClient",
-    "HTTPClient",
     "extract_bearer_token",
     "validate_bearer_format",
     "create_auth_header",

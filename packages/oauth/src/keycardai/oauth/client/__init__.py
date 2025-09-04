@@ -3,25 +3,25 @@
 Simple client structure with clean imports.
 """
 
-from .auth import (
-    ClientCredentialsAuth,
-    ClientSecretBasic,
-    JWTAuth,
-    MTLSAuth,
+from ..http import (
+    AsyncHTTPTransport,
+    AuthStrategy,
+    BasicAuth,
+    BearerAuth,
+    HTTPContext,
+    HTTPTransport,
     NoneAuth,
 )
 from .client import AsyncClient, Client
-from .http import AsyncHTTPClient, HTTPClient, HTTPClientProtocol
 
 __all__ = [
     "AsyncClient",
     "Client",
-    "ClientCredentialsAuth",
-    "ClientSecretBasic",
-    "JWTAuth",
-    "MTLSAuth",
+    "AuthStrategy",
+    "BasicAuth",
+    "BearerAuth",
     "NoneAuth",
-    "AsyncHTTPClient",
-    "HTTPClient",
-    "HTTPClientProtocol",
+    "HTTPTransport",
+    "AsyncHTTPTransport",
+    "HTTPContext",
 ]
