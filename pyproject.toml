@@ -59,6 +59,8 @@ exclude = []
 [tool.uv.sources]
 # Workspace sources will be defined here as packages are added
 keycardai-oauth = { workspace = true }
+keycardai-mcp-fastmcp = { workspace = true }
+keycardai-mcp = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

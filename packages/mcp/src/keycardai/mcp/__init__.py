@@ -10,6 +10,9 @@ Features:
 - Security best practices for AI/LLM integrations
 """
 
+# Extend namespace path to include integrations from other packages
+__path__ = __import__('pkgutil').extend_path(__path__, __name__)
+
 # Core MCP functionality (to be implemented)
 # from .auth import MCPAuthenticator
 # from .client import MCPClient
