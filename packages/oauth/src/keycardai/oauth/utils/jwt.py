@@ -30,9 +30,67 @@ JWT Access Token Benefits:
 - Standardized claim format across services
 """
 
+import base64
+import json
 from typing import Any
 
 from pydantic import BaseModel
+
+
+def extract_jwt_client_id(jwt_token: str) -> str | None:
+    """Extract client_id from a JWT token payload without verification.
+
+    This utility extracts the client_id claim from a JWT token's payload
+    without performing signature verification. Useful for token exchange
+    scenarios where you need the client_id for building requests.
+
+    Args:
+        jwt_token: JWT token string (with or without 'Bearer ' prefix)
+
+    Returns:
+        client_id if found in token payload, None otherwise
+
+    Raises:
+        ValueError: If token is malformed or cannot be decoded
+
+    Note:
+        This function does NOT verify the token signature. It's intended
+        for extracting claims from trusted tokens for operational purposes
+        like token exchange requests.
+
+    Example:
+        >>> token = "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJjbGllbnRfaWQiOiJhYmMxMjMifQ.signature"
+        >>> client_id = extract_jwt_client_id(token)
+        >>> print(client_id)  # "abc123"
+    """
+    try:
+        # JWT tokens have 3 parts separated by dots: header.payload.signature
+        parts = jwt_token.split('.')
+        if len(parts) != 3:
+            raise ValueError("Invalid JWT token format - expected 3 parts separated by dots")
+
+        payload_b64 = parts[1]
+
+        padding = len(payload_b64) % 4
+        if padding:
+            payload_b64 += '=' * (4 - padding)
+
+        try:
+            payload_bytes = base64.urlsafe_b64decode(payload_b64)
+            payload = json.loads(payload_bytes.decode('utf-8'))
+        except (json.JSONDecodeError, UnicodeDecodeError) as e:
+            raise ValueError(f"Failed to decode JWT payload: {e}") from e
+
+        # Extract client_id using OAuth 2.0 standard claim precedence:
+        # 1. 'client_id' - standard OAuth 2.0 claim (RFC 9068)
+        client_id = payload.get('client_id')
+
+        return client_id if isinstance(client_id, str) else None
+
+    except ValueError:
+        raise
+    except Exception as e:
+        raise ValueError(f"Failed to extract client_id from JWT token: {e}") from e
 
 
 class JWTClientAssertion:

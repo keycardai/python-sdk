@@ -60,13 +60,9 @@ from .types.oauth import (
     WellKnownEndpoint,
 )
 from .utils import (
-    create_auth_header,
-    create_jwt_assertion,
     extract_bearer_token,
-    generate_cert_thumbprint,
-    generate_pkce_challenge,
+    extract_jwt_client_id,
     validate_bearer_format,
-    verify_pkce_challenge,
 )
 
 __version__ = "0.0.1"
@@ -103,6 +99,7 @@ __all__ = [
     "BearerAuth",
     "NoneAuth",
     "extract_bearer_token",
+    "extract_jwt_client_id",
     "validate_bearer_format",
     "create_auth_header",
     "generate_pkce_challenge",

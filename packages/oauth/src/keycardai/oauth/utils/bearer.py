@@ -30,6 +30,45 @@ import re
 from pydantic import BaseModel
 
 
+# Standalone utility functions for interface proposal compliance
+def extract_bearer_token(authorization_header: str | None) -> str | None:
+    """Extract bearer token from Authorization header.
+
+    Args:
+        authorization_header: Authorization header value
+
+    Returns:
+        Bearer token or None if not found/invalid
+    """
+    if not authorization_header:
+        return None
+
+    parts = authorization_header.split()
+    if len(parts) == 2 and parts[0].lower() == "bearer":
+        return parts[1]
+    return None
+
+
+def validate_bearer_format(token: str) -> bool:
+    """Validate bearer token format per RFC 6750.
+
+    Args:
+        token: Token to validate
+
+    Returns:
+        True if format is valid
+    """
+    if not token or not isinstance(token, str):
+        return False
+    # Basic format validation - token should not contain whitespace
+    return (
+        " " not in token
+        and "\t" not in token
+        and "\n" not in token
+        and "\r" not in token
+    )
+
+
 class BearerTokenError(BaseModel):
     """Bearer token error response as defined in RFC 6750 Section 3.1.
 
