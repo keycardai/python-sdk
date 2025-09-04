@@ -1,0 +1,179 @@
+---
+id: sync-async-api-design
+title: Python Sync vs Async API Design Standard
+status: approved
+audience: Library & application developers
+category: engineering-standards
+tags: [python, api-design, async, sync, asyncio]
+created: 2024-01-01
+updated: 2024-01-01
+---
+
+# Python Sync vs Async API Design Standard
+
+**Goal:** Provide a clear, consistent approach to offering synchronous and asynchronous APIs in Python.
+
+## 1. Scope & Definitions
+
+**Sync API:** Blocking functions/methods callable from any Python code.
+
+**Async API:** `async def` functions/methods designed to run inside an event loop (asyncio).
+
+**Library:** Reusable package/module consumed by many apps or services.
+
+**Application/CLI:** Top-level program with a single entrypoint (`__main__`, CLI command, etc.).
+
+## 2. Required Implementation Patterns
+
+### Rule 2.1: Expose two explicit surfaces when you need both
+
+- **MUST** use `Client` (sync) and `AsyncClient` (async) as separate entry points
+- **MUST** make each surface responsible for its own I/O and lifecycle management
+
+**Example:**
+```python
+# ✅ Good - Separate classes
+class Client:
+    def send_request(self, data: dict) -> Response:
+        return requests.post(self.url, json=data)
+
+class AsyncClient:
+    async def send_request(self, data: dict) -> Response:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(self.url, json=data) as resp:
+                return await resp.json()
+```
+
+### Rule 2.2: Share a sync-agnostic core
+
+- **MUST** put protocol, validation, serialization, and parsing in private helpers that contain no I/O
+- **MUST** ensure both sync and async surfaces call into this shared core
+
+**Example:**
+```python
+# ✅ Good - Shared core logic
+def _validate_request(data: dict) -> dict:
+    """Validation logic with no I/O"""
+    if not data.get("id"):
+        raise ValueError("ID is required")
+    return data
+
+def _serialize_response(raw_data: dict) -> Response:
+    """Serialization logic with no I/O"""
+    return Response(id=raw_data["id"], status=raw_data["status"])
+```
+
+### Rule 2.3: Keep naming clean
+
+- **MUST** use class names: `Client` and `AsyncClient`
+- **MUST NOT** use method suffixes like `_async`; async-ness should be expressed by the class, not the method name
+
+**Example:**
+```python
+# ✅ Good
+class Client:
+    def get_user(self, user_id: str) -> User: ...
+
+class AsyncClient:
+    async def get_user(self, user_id: str) -> User: ...
+
+# ❌ Bad
+class Client:
+    def get_user(self, user_id: str) -> User: ...
+    async def get_user_async(self, user_id: str) -> User: ...
+```
+
+### Rule 2.4: Document the surfaces clearly
+
+- **MUST** state environment expectations in docstrings
+- **MUST** provide minimal usage examples for each surface
+
+**Example:**
+```python
+class AsyncClient:
+    """Async client for API operations.
+    
+    Must be used inside an event loop (asyncio).
+    
+    Example:
+        async with AsyncClient() as client:
+            user = await client.get_user("123")
+    """
+```
+
+## 3. Prohibited Patterns
+
+### Rule 3.1: Do not implement sync API by internally running async
+
+- **MUST NOT** call `asyncio.run()` or `loop.run_until_complete()` inside library functions
+- **Rationale:** Causes runtime errors in environments with a running loop (Jupyter, GUIs, web servers), hides concurrency & performance behavior
+
+**Example:**
+```python
+# ❌ Bad - Running async code in sync method
+class Client:
+    def get_user(self, user_id: str) -> User:
+        # This will fail in Jupyter notebooks!
+        return asyncio.run(self._async_get_user(user_id))
+    
+    async def _async_get_user(self, user_id: str) -> User:
+        async with aiohttp.ClientSession() as session:
+            ...
+
+# ✅ Good - Separate implementations
+class Client:
+    def get_user(self, user_id: str) -> User:
+        response = requests.get(f"/users/{user_id}")
+        return _parse_user_response(response.json())
+
+class AsyncClient:
+    async def get_user(self, user_id: str) -> User:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"/users/{user_id}") as resp:
+                data = await resp.json()
+                return _parse_user_response(data)
+```
+
+### Rule 3.2: Do not require users to pass event loops into sync APIs
+
+- **MUST NOT** require loop parameters in sync method signatures
+- **Rationale:** Sync APIs should be simple and not require asyncio knowledge
+
+**Example:**
+```python
+# ❌ Bad - Requiring loop in sync API
+class Client:
+    def get_user(self, user_id: str, loop: asyncio.AbstractEventLoop) -> User:
+        ...
+
+# ✅ Good - Clean sync API
+class Client:
+    def get_user(self, user_id: str) -> User:
+        ...
+```
+
+### Rule 3.3: Do not block the event loop
+
+- **MUST NOT** use blocking I/O or CPU-bound operations in async code without proper handling
+- **Rationale:** Blocks the entire event loop, preventing other coroutines from running
+
+**Example:**
+```python
+# ❌ Bad - Blocking the event loop
+class AsyncClient:
+    async def process_data(self, data: str) -> str:
+        # This blocks the event loop!
+        time.sleep(5)  # Synchronous sleep
+        return data.upper()
+
+# ✅ Good - Non-blocking async code
+class AsyncClient:
+    async def process_data(self, data: str) -> str:
+        await asyncio.sleep(5)  # Async sleep
+        return data.upper()
+        
+    async def cpu_intensive_task(self, data: str) -> str:
+        # Run CPU-bound work in thread pool
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self._process_sync, data)
+```

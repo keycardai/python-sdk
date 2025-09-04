@@ -111,6 +111,26 @@
           }
         ],
         "tab": "API Reference"
+      },
+      {
+        "groups": [
+          {
+            "group": "Architecture Decisions",
+            "pages": [
+              "project/decisions/0001-use-uv-workspaces-for-package-management",
+              "project/decisions/0002-modular-package-structure-for-minimal-dependencies"
+            ]
+          },
+          {
+            "group": "Development Standards",
+            "pages": [
+              "standards/keep_it_simple",
+              "standards/sync_async_api_standard",
+              "standards/comments_guide"
+            ]
+          }
+        ],
+        "tab": "Project"
       }
     ]
   },

@@ -1,0 +1,189 @@
+---
+id: keep-it-simple
+title: Keep It Simple
+status: approved
+audience: All developers
+category: engineering-standards
+tags: [design-patterns, simplicity, complexity, architecture]
+created: 2024-01-01
+updated: 2024-01-01
+---
+
+# Keep It Simple - Design Pattern Standard
+
+**Goal:** Maintain code simplicity by limiting design pattern proliferation and ensuring new patterns are introduced only when necessary and approved.
+
+## 1. Scope & Definitions
+
+**Design Pattern:** A reusable solution to a commonly occurring problem in software design (e.g., Factory, Builder, Strategy, Observer).
+
+**Pattern Proliferation:** The accumulation of multiple design patterns within a codebase without clear necessity.
+
+**Existing Patterns:** Design patterns already established and used consistently throughout the codebase.
+
+**Decision Record:** A documented decision explaining why a new pattern is needed, its benefits, and implementation approach.
+
+## 2. Required Implementation Approach
+
+### Rule 2.1: Use existing patterns first
+
+- **MUST** examine existing codebase patterns before implementing new functionality
+- **MUST** follow established patterns for similar functionality
+- **MUST** extend existing patterns rather than creating new ones when possible
+- **RATIONALE:** Consistency reduces cognitive load and maintains predictable code structure
+
+**Example:**
+```python
+# ✅ Good - Following existing constructor pattern
+class AsyncClient:
+    def __init__(self, base_url: str, *, auth_strategy: AuthStrategy):
+        self.base_url = base_url
+        self.auth_strategy = auth_strategy
+
+class SyncClient:  
+    def __init__(self, base_url: str, *, auth_strategy: AuthStrategy):
+        self.base_url = base_url
+        self.auth_strategy = auth_strategy
+
+# ❌ Bad - Introducing builder pattern without justification
+class AsyncClientBuilder:
+    def with_base_url(self, url: str) -> "AsyncClientBuilder": ...
+    def with_auth(self, auth: AuthStrategy) -> "AsyncClientBuilder": ...
+    def build(self) -> AsyncClient: ...
+```
+
+### Rule 2.2: Minimize pattern complexity
+
+- **MUST** choose the simplest pattern that solves the problem
+- **MUST NOT** introduce patterns for theoretical future needs
+- **MUST** prefer composition over complex inheritance hierarchies
+- **RATIONALE:** Simpler code is easier to understand, test, and maintain
+
+**Example:**
+```python
+# ✅ Good - Simple direct construction
+auth = ClientCredentialsAuth("client_id", "client_secret")
+client = AsyncClient("https://api.keycard.ai", auth_strategy=auth)
+
+# ❌ Bad - Unnecessary fluent interface complexity
+client = (AsyncClient.builder()
+    .with_base_url("https://api.keycard.ai")
+    .with_credentials("client_id", "client_secret")
+    .with_timeout(30)
+    .build())
+```
+
+### Rule 2.3: Document pattern decisions
+
+- **MUST** create decision records for new patterns before implementation
+- **MUST** justify why existing patterns are insufficient
+- **MUST** consider maintenance and learning curve implications
+- **RATIONALE:** New patterns affect entire team and future developers
+
+## 3. Prohibited Patterns
+
+### Rule 3.1: Do not introduce convenience patterns without justification
+
+- **MUST NOT** add factory methods, builders, or fluent interfaces without decision record approval
+- **MUST NOT** create multiple ways to achieve the same result without clear use case differentiation
+- **RATIONALE:** Multiple approaches create confusion and maintenance overhead
+
+**Examples of patterns requiring justification:**
+```python
+# ❌ Questionable - Multiple construction methods
+AsyncClient.with_client_credentials(...)
+AsyncClient.with_jwt_auth(...)
+AsyncClient.with_mtls_auth(...)
+AsyncClient.with_no_auth(...)
+
+# vs. ✅ Simple - Single construction method
+AsyncClient("https://api.keycard.ai", auth_strategy=ClientCredentialsAuth(...))
+AsyncClient("https://api.keycard.ai", auth_strategy=JWTAuth(...))
+AsyncClient("https://api.keycard.ai", auth_strategy=MTLSAuth(...))
+AsyncClient("https://api.keycard.ai", auth_strategy=NoneAuth())
+```
+
+### Rule 3.2: Do not abstract for single use cases
+
+- **MUST NOT** create abstractions, interfaces, or patterns for single implementations
+- **MUST NOT** add layers of indirection without multiple concrete use cases
+- **RATIONALE:** Premature abstraction increases complexity without benefit
+
+**Example:**
+```python
+# ❌ Bad - Abstracting single implementation
+class HTTPClientFactory:
+    @staticmethod
+    def create_async_client() -> HTTPClient:
+        return DefaultHTTPClient()
+
+# ✅ Good - Direct instantiation
+http_client = DefaultHTTPClient()
+```
+
+### Rule 3.3: Do not implement enterprise patterns for simple use cases
+
+- **MUST NOT** use heavy enterprise patterns (Dependency Injection, Service Locator, etc.) for straightforward functionality
+- **MUST NOT** add configuration layers for simple parameter passing
+- **RATIONALE:** Enterprise patterns add complexity that may not be justified for library use cases
+
+## 4. Pattern Introduction Process
+
+### When New Patterns Are Justified
+
+New patterns **MAY** be introduced when:
+
+1. **Proven complexity** - Multiple implementations of similar functionality exist
+2. **Clear user need** - Documented feedback requesting specific pattern
+3. **Maintenance benefit** - Pattern significantly reduces code duplication or complexity
+4. **Performance requirement** - Pattern solves identified performance issues
+
+### Decision Record Requirements
+
+Before introducing new patterns, create a decision record including:
+
+1. **Problem statement** - What specific problem does this pattern solve?
+2. **Existing approaches** - Why are current patterns insufficient?
+3. **Pattern choice justification** - Why this specific pattern over alternatives?
+4. **Implementation plan** - How will the pattern be consistently applied?
+5. **Migration strategy** - How will existing code adapt to the new pattern?
+
+### Examples of Acceptable Pattern Introduction
+
+```python
+# ✅ Acceptable - Strategy pattern for authentication (already exists)
+class AuthStrategy(Protocol):
+    def authenticate(self, headers: dict) -> dict: ...
+
+# ✅ Acceptable - Factory pattern if supporting 5+ auth methods
+# (Would require decision record justifying complexity)
+
+# ❌ Not acceptable - Builder pattern for 2-3 parameters
+# (Constructor with keyword arguments is simpler)
+```
+
+## 5. Simplicity Guidelines
+
+### Prefer Standard Python Patterns
+
+- **Data classes** for simple data structures
+- **Regular classes** with `__init__` for objects with behavior
+- **Functions** for stateless operations
+- **Context managers** for resource management
+- **Protocols** for interface definition (when multiple implementations exist)
+
+### Avoid Over-Engineering
+
+- Start with the simplest solution that works
+- Add complexity only when proven necessary
+- Remove patterns that are no longer needed
+- Refactor toward simplicity when possible
+
+### Team Communication
+
+- Discuss pattern choices in code reviews
+- Question new patterns in pull requests
+- Document pattern decisions in decision records
+- Share knowledge about existing patterns
+
+Remember: **Simple code is easier to understand, test, debug, and maintain than clever code.**

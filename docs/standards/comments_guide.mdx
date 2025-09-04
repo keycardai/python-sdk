@@ -1,0 +1,274 @@
+---
+id: code-comments-guide
+title: Code Comments Guide
+status: approved
+audience: All developers
+category: engineering-standards
+tags: [code-quality, comments, documentation, readability]
+created: 2024-01-01
+updated: 2024-01-01
+---
+
+# Code Comments Guide
+
+**Goal:** Maintain clean, self-documenting code by avoiding redundant comments and focusing on meaningful documentation.
+
+## 1. Scope & Definitions
+
+**Redundant Comment:** A comment that restates what the code already clearly expresses.
+
+**Valuable Comment:** A comment that explains why, not what, or provides context that isn't obvious from the code.
+
+**Self-Documenting Code:** Code that is clear and readable through good naming, structure, and design patterns.
+
+## 2. Required Patterns
+
+### Rule 2.1: Avoid stating the obvious
+
+- **MUST NOT** add comments that simply restate what the code does
+- **MUST NOT** use generic phrases like "Use shared core logic" or "Set up X"
+- **RATIONALE:** Clean code should be self-explanatory through good naming and structure
+
+**Example:**
+```python
+# ❌ Bad - Redundant comments
+class Client:
+    def __init__(self, base_url: str):
+        # Validate configuration using shared core logic
+        validate_client_config(base_url)
+        
+        # Set up authentication strategy
+        self.auth_strategy = ClientCredentialsAuth()
+        
+        # Resolve endpoints using shared core logic
+        self._endpoints = resolve_endpoints(base_url)
+
+# ✅ Good - Self-documenting code
+class Client:
+    def __init__(self, base_url: str):
+        validate_client_config(base_url)
+        self.auth_strategy = ClientCredentialsAuth()
+        self._endpoints = resolve_endpoints(base_url)
+```
+
+### Rule 2.2: Comment the why, not the what
+
+- **MUST** focus comments on business logic, edge cases, and non-obvious decisions
+- **MUST** explain complex algorithms or unintuitive workarounds
+- **RATIONALE:** Comments should add value by explaining intent and context
+
+**Example:**
+```python
+# ❌ Bad - Commenting the what
+def calculate_fee(amount: float) -> float:
+    # Multiply amount by 0.03
+    return amount * 0.03
+
+# ✅ Good - Commenting the why
+def calculate_fee(amount: float) -> float:
+    # 3% processing fee required by payment processor contract
+    return amount * 0.03
+
+# ✅ Good - Explaining edge cases
+def retry_request(func, max_attempts: int = 3):
+    for attempt in range(max_attempts):
+        try:
+            return func()
+        except NetworkError:
+            # Last attempt should not delay before re-raising
+            if attempt == max_attempts - 1:
+                raise
+            time.sleep(2 ** attempt)
+```
+
+### Rule 2.3: Use descriptive naming instead of comments
+
+- **MUST** prefer descriptive function and variable names over explanatory comments
+- **MUST** extract complex logic into well-named functions
+- **RATIONALE:** Good names make comments unnecessary and improve code readability
+
+**Example:**
+```python
+# ❌ Bad - Using comments to explain unclear code
+def process_user(user_data):
+    # Check if user is eligible for premium features
+    if user_data['age'] >= 18 and user_data['subscription'] == 'paid':
+        # Enable premium features
+        user_data['premium'] = True
+    
+    # Save to database
+    db.save(user_data)
+
+# ✅ Good - Self-documenting through naming
+def process_user(user_data):
+    if is_eligible_for_premium(user_data):
+        enable_premium_features(user_data)
+    save_user_to_database(user_data)
+
+def is_eligible_for_premium(user_data):
+    return user_data['age'] >= 18 and user_data['subscription'] == 'paid'
+```
+
+### Rule 2.4: Keep docstrings, remove inline noise
+
+- **MUST** maintain comprehensive docstrings for public APIs
+- **MUST NOT** add redundant inline comments within well-structured functions
+- **RATIONALE:** Docstrings provide API documentation; inline comments should only explain non-obvious logic
+
+### Rule 2.5: Use consistent domain in examples
+
+- **MUST** use `https://api.keycard.ai` in all docstring and comment examples
+- **MUST NOT** use generic domains like `example.com` or `api.example.com`
+- **RATIONALE:** Consistent branding and realistic examples that developers can relate to
+
+**Example:**
+```python
+# ❌ Bad - Generic domains
+class AsyncClient:
+    """Async OAuth 2.0 client.
+    
+    Example:
+        async with AsyncClient("https://auth.example.com") as client:
+            response = await client.introspect_token("token")
+    """
+
+# ✅ Good - Keycard.ai domain
+class AsyncClient:
+    """Async OAuth 2.0 client.
+    
+    Example:
+        async with AsyncClient("https://api.keycard.ai") as client:
+            response = await client.introspect_token("token")
+    """
+```
+
+**Example:**
+```python
+# ❌ Bad - Noisy inline comments
+def introspect_token(self, token: str) -> IntrospectionResponse:
+    """Introspect an OAuth 2.0 token."""
+    # Call the introspection operation
+    return introspect_token(
+        token=token,
+        # Pass the introspection endpoint
+        introspection_endpoint=self._endpoints.introspect,
+        # Use the auth strategy
+        auth_strategy=self.auth_strategy,
+        # Use the HTTP client
+        http_client=self.http_client,
+    )
+
+# ✅ Good - Clean implementation with comprehensive docstring
+def introspect_token(self, token: str) -> IntrospectionResponse:
+    """Introspect an OAuth 2.0 token.
+    
+    Example:
+        client = Client("https://api.keycard.ai")
+        response = client.introspect_token("access_token_here")
+    
+    Args:
+        token: The token to introspect
+        
+    Returns:
+        IntrospectionResponse with token metadata and active status
+    """
+    return introspect_token(
+        token=token,
+        introspection_endpoint=self._endpoints.introspect,
+        auth_strategy=self.auth_strategy,
+        http_client=self.http_client,
+    )
+```
+
+## 3. Prohibited Patterns
+
+### Rule 3.1: Do not add process comments
+
+- **MUST NOT** use comments like "Set up X", "Initialize Y", "Use Z logic"
+- **RATIONALE:** These comments add no value and create maintenance overhead
+
+**Examples of prohibited comments:**
+```python
+# ❌ Bad - Process comments that add no value
+# Set up HTTP client
+# Initialize authentication
+# Validate input parameters
+# Call the API
+# Parse the response
+# Return the result
+# Use shared core logic
+# Resolve endpoints using shared core logic
+```
+
+### Rule 3.2: Do not comment every assignment
+
+- **MUST NOT** add comments for simple variable assignments or method calls
+- **RATIONALE:** Well-named variables and methods are self-explanatory
+
+**Example:**
+```python
+# ❌ Bad - Over-commenting assignments
+def __init__(self, base_url: str):
+    # Store the base URL
+    self.base_url = base_url.rstrip('/')
+    
+    # Create default config
+    self.config = ClientConfig()
+    
+    # Set up authentication
+    self.auth = ClientCredentialsAuth()
+
+# ✅ Good - Clean, uncommented assignments
+def __init__(self, base_url: str):
+    self.base_url = base_url.rstrip('/')
+    self.config = ClientConfig()
+    self.auth = ClientCredentialsAuth()
+```
+
+### Rule 3.3: Do not use comments as section headers
+
+- **MUST NOT** use comments to create artificial sections in functions
+- **MUST** extract complex functions into smaller, focused functions instead
+- **RATIONALE:** Functions should be small enough not to need internal sectioning
+
+**Example:**
+```python
+# ❌ Bad - Using comments as section headers
+def setup_client(config):
+    # === Validation Section ===
+    if not config.url:
+        raise ValueError("URL required")
+    
+    # === Setup Section ===
+    client = HTTPClient()
+    client.configure(config)
+    
+    # === Return Section ===
+    return client
+
+# ✅ Good - Small, focused functions
+def setup_client(config):
+    validate_config(config)
+    return create_configured_client(config)
+
+def validate_config(config):
+    if not config.url:
+        raise ValueError("URL required")
+
+def create_configured_client(config):
+    client = HTTPClient()
+    client.configure(config)
+    return client
+```
+
+## 4. When Comments Are Valuable
+
+Comments **SHOULD** be used for:
+
+- **Business rules:** `# 3% fee mandated by payment processor contract`
+- **Edge cases:** `# Handle timezone edge case for DST transitions`
+- **Performance notes:** `# Cache result for 5min to avoid API rate limits`
+- **Security considerations:** `# Constant-time comparison to prevent timing attacks`
+- **External dependencies:** `# Workaround for bug in library v2.1.3`
+- **Algorithm explanations:** Complex mathematical or algorithmic logic
+- **Temporary notes:** `# TODO: Remove after migration to v2 API`

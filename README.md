@@ -51,7 +51,6 @@ This project uses uv workspaces to manage multiple related packages. Each packag
 
 The workspace includes several development tools:
 
-- **Code formatting**: `uv run black .` and `uv run isort .`
 - **Linting**: `uv run ruff check .`
 - **Type checking**: `uv run mypy .`
 - **Testing**: `uv run pytest`
@@ -59,7 +58,6 @@ The workspace includes several development tools:
 Or install development dependencies and run directly:
 ```bash
 uv sync --extra dev
-uv run black .
 uv run pytest
 ```
 
