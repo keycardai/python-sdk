@@ -12,6 +12,38 @@ def _validate_registration(req: ClientRegistrationRequest) -> None:
         raise ValueError("client_name required")
     # more validation…
 
+def _build_client_registration_request_from_kwargs(**kwargs) -> ClientRegistrationRequest:
+    """Build a ClientRegistrationRequest from keyword arguments.
+
+    Precedence: kwargs > client.config defaults > model defaults
+
+    Args:
+        **kwargs: Keyword arguments matching ClientRegistrationRequest fields
+
+    Returns:
+        ClientRegistrationRequest built from the provided kwargs
+    """
+    # Extract known parameters from kwargs
+    client_name = kwargs.get("client_name")
+    if client_name is None:
+        raise TypeError("client_name is required when not using a request object")
+
+    # Build the request with provided values, falling back to defaults
+    # Only pass kwargs that are not None to let the model use its defaults
+    request_kwargs = {"client_name": client_name}
+
+    for field_name in [
+        "redirect_uris", "jwks_uri", "jwks", "scope", "grant_types",
+        "response_types", "token_endpoint_auth_method", "additional_metadata",
+        "client_uri", "logo_uri", "tos_uri", "policy_uri",
+        "software_id", "software_version", "timeout"
+    ]:
+        value = kwargs.get(field_name)
+        if value is not None:
+            request_kwargs[field_name] = value
+
+    return ClientRegistrationRequest(**request_kwargs)
+
 def build_client_registration_http_request(
     req: ClientRegistrationRequest, endpoint: str, auth_headers: dict[str, str]
 ) -> HttpRequest:

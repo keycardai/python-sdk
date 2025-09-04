@@ -6,6 +6,7 @@ sharing a sync-agnostic core as defined in the sync/async API design standard.
 
 import asyncio
 import threading
+from typing import Any, overload
 
 from .exceptions import (
     AuthenticationError,
@@ -25,7 +26,11 @@ from .operations._discovery import (
     discover_server_metadata,
     discover_server_metadata_async,
 )
-from .operations._registration import register_client, register_client_async
+from .operations._registration import (
+    _build_client_registration_request_from_kwargs,
+    register_client,
+    register_client_async,
+)
 from .operations._token_exchange import token_exchange, token_exchange_async
 from .types.models import (
     AuthorizationServerMetadata,
@@ -37,7 +42,12 @@ from .types.models import (
     TokenExchangeRequest,
     TokenResponse,
 )
-from .types.oauth import OAuth2DefaultEndpoints
+from .types.oauth import (
+    GrantType,
+    OAuth2DefaultEndpoints,
+    ResponseType,
+    TokenEndpointAuthMethod,
+)
 from .utils.jwt import extract_jwt_client_id
 
 
@@ -390,43 +400,87 @@ class AsyncClient:
         await self._ensure_initialized()
         return self._discovered_endpoints or self._endpoints
 
+    @overload
     async def register_client(
         self,
         request: ClientRegistrationRequest,
-    ) -> ClientRegistrationResponse:
+    ) -> ClientRegistrationResponse: ...
+
+    @overload
+    async def register_client(
+        self,
+        /,
+        *,
+        client_name: str,
+        redirect_uris: list[str] | None = None,
+        jwks_uri: str | None = None,
+        jwks: dict | None = None,
+        scope: str | None = None,
+        grant_types: list[GrantType] | None = None,
+        response_types: list[ResponseType] | None = None,
+        token_endpoint_auth_method: TokenEndpointAuthMethod | None = None,
+        additional_metadata: dict[str, Any] | None = None,
+        client_uri: str | None = None,
+        logo_uri: str | None = None,
+        tos_uri: str | None = None,
+        policy_uri: str | None = None,
+        software_id: str | None = None,
+        software_version: str | None = None,
+        timeout: float | None = None,
+    ) -> ClientRegistrationResponse: ...
+
+    async def register_client(self, request: ClientRegistrationRequest | None = None, /, **client_registration_args) -> ClientRegistrationResponse:
         """Register a new OAuth 2.0 client with the authorization server.
 
-        Simple usage (S2S):
+        Either pass a fully-formed ClientRegistrationRequest *or* call with keyword
+        args for common cases.
+
+        Simple usage:
             request = ClientRegistrationRequest(
+                client_name="MyService",
+            )
+            response = await client.register_client(request)
+
+        Or with keyword arguments:
+            response = await client.register_client(
                 client_name="MyService",
                 jwks_uri="https://zone1234.keycard.cloud/.well-known/jwks.json"
             )
-            response = await client.register_client_async(request)
 
         Full control:
             request = ClientRegistrationRequest(
                 client_name="WebApp",
                 redirect_uris=["https://app.com/callback"],
                 grant_types=["authorization_code", "refresh_token"],
-                scope=["openid", "profile", "email"],
+                scope="openid profile email",
                 token_endpoint_auth_method="private_key_jwt",
                 additional_metadata={"policy_uri": "https://app.com/privacy"}
             )
-            response = await client.register_client_async(request)
+            response = await client.register_client(request)
 
         Args:
             request: ClientRegistrationRequest with all registration parameters
+            **client_registration_args: Alternative to request - provide individual parameters
 
         Returns:
             ClientRegistrationResponse with client credentials and metadata
+
+        Raises:
+            TypeError: If both request and client_registration_args are provided
         """
+        if request is not None and client_registration_args:
+            raise TypeError("Pass either `request` or keyword arguments, not both.")
+
+        if request is None:
+            request = _build_client_registration_request_from_kwargs(**client_registration_args)
+
         endpoints = await self._get_current_endpoints()
 
         ctx = HTTPContext(
             endpoint=endpoints.register,
             transport=self.transport,
             auth=self.auth_strategy,
-            timeout=self.config.timeout,
+            timeout=client_registration_args.get("timeout", self.config.timeout),
         )
 
         return await register_client_async(request, ctx)
@@ -745,11 +799,40 @@ class Client:
         return self._client_secret
 
 
+    @overload
     def register_client(
         self,
         request: ClientRegistrationRequest,
-    ) -> ClientRegistrationResponse:
+    ) -> ClientRegistrationResponse: ...
+
+    @overload
+    def register_client(
+        self,
+        /,
+        *,
+        client_name: str,
+        redirect_uris: list[str] | None = None,
+        jwks_uri: str | None = None,
+        jwks: dict | None = None,
+        scope: str | None = None,
+        grant_types: list[GrantType] | None = None,
+        response_types: list[ResponseType] | None = None,
+        token_endpoint_auth_method: TokenEndpointAuthMethod | None = None,
+        additional_metadata: dict[str, Any] | None = None,
+        client_uri: str | None = None,
+        logo_uri: str | None = None,
+        tos_uri: str | None = None,
+        policy_uri: str | None = None,
+        software_id: str | None = None,
+        software_version: str | None = None,
+        timeout: float | None = None,
+    ) -> ClientRegistrationResponse: ...
+
+    def register_client(self, request: ClientRegistrationRequest | None = None, /, **client_registration_args) -> ClientRegistrationResponse:
         """Register a new OAuth 2.0 client with the authorization server.
+
+        Either pass a fully-formed ClientRegistrationRequest *or* call with keyword
+        args for common cases.
 
         Simple usage (S2S):
             request = ClientRegistrationRequest(
@@ -758,12 +841,18 @@ class Client:
             )
             response = client.register_client(request)
 
+        Or with keyword arguments:
+            response = client.register_client(
+                client_name="MyService",
+                jwks_uri="https://zone1234.keycard.cloud/.well-known/jwks.json"
+            )
+
         Full control:
             request = ClientRegistrationRequest(
                 client_name="WebApp",
                 redirect_uris=["https://app.com/callback"],
                 grant_types=["authorization_code", "refresh_token"],
-                scope=["openid", "profile", "email"],
+                scope="openid profile email",
                 token_endpoint_auth_method="private_key_jwt",
                 additional_metadata={"policy_uri": "https://app.com/privacy"}
             )
@@ -771,22 +860,30 @@ class Client:
 
         Args:
             request: ClientRegistrationRequest with all registration parameters
-            timeout: Optional timeout override (overrides request.timeout if provided)
+            **client_registration_args: Alternative to request - provide individual parameters
 
         Returns:
             ClientRegistrationResponse with client credentials and metadata
+
+        Raises:
+            TypeError: If both request and client_registration_args are provided
         """
+        if request is not None and client_registration_args:
+            raise TypeError("Pass either `request` or keyword arguments, not both.")
+
+        if request is None:
+            request = _build_client_registration_request_from_kwargs(**client_registration_args)
+
         endpoints = self._get_current_endpoints()
 
         ctx = HTTPContext(
             endpoint=endpoints.register,
             transport=self.transport,
             auth=self.auth_strategy,
-            timeout=self.config.timeout,
+            timeout=client_registration_args.get("timeout", self.config.timeout),
         )
 
         return register_client(request, ctx)
-
 
     def discover_server_metadata(
         self,
