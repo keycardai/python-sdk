@@ -350,11 +350,7 @@ class AsyncClient:
             exc_value: Exception value (if any)
             traceback: Exception traceback (if any)
         """
-        if self._owns_transport and hasattr(self.transport, 'aclose'):
-            try:
-                await self.transport.aclose()
-            except AttributeError:
-                pass
+        pass
 
     async def get_client_id(self) -> str | None:
         """Get the client ID obtained from registration.
@@ -863,8 +859,8 @@ class Client:
         )
 
     def __enter__(self):
+        self._ensure_initialized()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if self._owns_transport:
-            self.transport.close()
+        pass
