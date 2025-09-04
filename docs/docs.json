@@ -1,35 +1,24 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "appearance": {
-    "default": "system",
-    "strict": false
-  },
-  "interaction": {
-    "drilldown": false
-  },
-  "background": {
-    "color": {
-      "dark": "#1a1a1a",
-      "light": "#f8f9fa"
-    },
-    "decoration": "grid"
-  },
-  "colors": {
-    "dark": "#3b82f6",
-    "light": "#1d4ed8",
-    "primary": "#2563eb"
-  },
+  "name": "KeyCard Python SDK",
   "description": "Python SDK for KeyCard OAuth 2.0 and Model Context Protocol (MCP) integration.",
-  "footer": {
-    "socials": {
-      "github": "https://github.com/keycardai/python-sdk"
-    }
+  "theme": "linden",
+  "colors": {
+    "primary": "#5B5BD6",
+    "light": "#5B5BD6",
+    "dark": "#5B5BD6"
   },
-  "name": "KeyCard AI Python SDK",
   "navbar": {
+    "links": [
+      {
+        "label": "Console",
+        "href": "https://console.keycard.ai"
+      }
+    ],
     "primary": {
-      "href": "https://github.com/keycardai/python-sdk",
-      "type": "github"
+      "type": "button",
+      "label": "Get Started",
+      "href": "https://console.keycard.ai/signup"
     }
   },
   "navigation": {
@@ -134,8 +123,13 @@
       }
     ]
   },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/keycardai/python-sdk",
+      "x": "https://twitter.com/keycardlabs"
+    }
+  },
   "search": {
     "prompt": "Search the docs..."
-  },
-  "theme": "mint"
+  }
 }
