@@ -1,0 +1,79 @@
+---
+title: "Welcome to KeyCard AI Python SDK"
+description: "Python SDK for KeyCard OAuth 2.0 and Model Context Protocol (MCP) integration"
+---
+
+# KeyCard AI Python SDK
+
+The Python SDK for KeyCard OAuth 2.0 and Model Context Protocol (MCP) integration.
+
+## Packages
+
+This SDK is organized into separate packages:
+
+- **keycardai-oauth**: Core OAuth 2.0 client functionality
+- **keycardai-mcp**: Model Context Protocol base functionality  
+- **keycardai-mcp-fastmcp**: FastMCP-specific integration with automated token exchange
+
+## Getting Started
+
+Choose the package that best fits your needs:
+
+- For OAuth 2.0 operations: `keycardai-oauth`
+- For MCP server functionality: `keycardai-mcp`
+- For FastMCP integration: `keycardai-mcp-fastmcp`
+
+## Installation
+
+Install the packages you need using `pip` or `uv`:
+
+### Using pip
+
+```bash
+# OAuth package only
+pip install keycardai-oauth
+
+# MCP package only  
+pip install keycardai-mcp
+
+# FastMCP integration
+pip install keycardai-mcp-fastmcp
+```
+
+### Using uv
+
+```bash
+# OAuth package only
+uv add keycardai-oauth
+
+# MCP package only  
+uv add keycardai-mcp
+
+# FastMCP integration
+uv add keycardai-mcp-fastmcp
+```
+
+## Quick Example
+
+```python
+from keycardai.oauth import AsyncClient
+
+async def main():
+    client = AsyncClient(
+        base_url="https://your-keycard-zone.com",
+        client_id="your-client-id"
+    )
+    
+    # Your OAuth operations here
+    pass
+```
+
+## Development
+
+This project uses:
+- `uv` for dependency management
+- `just` for task running
+- `pytest` for testing
+- `ruff` for linting
+
+See the [justfile](https://github.com/keycardai/python-sdk/blob/main/justfile) for available commands.

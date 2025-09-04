@@ -1,0 +1,154 @@
+---
+title: oauth
+sidebarTitle: oauth
+---
+
+# `keycardai.oauth.types.oauth`
+
+
+OAuth 2.0 Constants, Enums, and Well-Known Endpoints.
+
+This module consolidates all OAuth 2.0 related constants, enumerations, and
+well-known endpoints into a single location for easier imports and better organization.
+
+References:
+- RFC 6749: The OAuth 2.0 Authorization Framework
+- RFC 7009: OAuth 2.0 Token Revocation
+- RFC 7033: WebFinger
+- RFC 7517: JSON Web Key (JWK) Set
+- RFC 7522: SAML 2.0 Profile for OAuth 2.0 Client Authentication
+- RFC 7523: JWT Profile for OAuth 2.0 Client Authentication
+- RFC 7591: OAuth 2.0 Dynamic Client Registration Protocol
+- RFC 7636: Proof Key for Code Exchange by OAuth Public Clients
+- RFC 7662: OAuth 2.0 Token Introspection
+- RFC 8414: OAuth 2.0 Authorization Server Metadata
+- RFC 8628: OAuth 2.0 Device Authorization Grant
+- RFC 8693: OAuth 2.0 Token Exchange
+- RFC 8705: OAuth 2.0 Mutual-TLS Client Authentication
+- RFC 9068: JWT Profile for OAuth 2.0 Access Tokens
+- OpenID Connect Discovery 1.0
+
+
+## Classes
+
+### `TokenEndpointAuthMethod`
+
+
+Token endpoint authentication methods as defined in multiple RFCs.
+
+References:
+- RFC 6749 Section 2.3: Client Authentication
+- RFC 7591 Section 2: Client Registration Parameters
+- RFC 7523: JWT Profile for OAuth 2.0 Client Authentication
+- RFC 8705: OAuth 2.0 Mutual-TLS Client Authentication
+
+
+### `GrantType`
+
+
+OAuth 2.0 grant types as defined in multiple RFCs.
+
+References:
+- RFC 6749: The OAuth 2.0 Authorization Framework
+- RFC 8693: OAuth 2.0 Token Exchange
+- RFC 7523: JWT Profile for OAuth 2.0 Client Authentication
+- RFC 7522: SAML 2.0 Profile for OAuth 2.0 Client Authentication
+- RFC 8628: OAuth 2.0 Device Authorization Grant
+
+
+### `ResponseType`
+
+
+OAuth 2.0 response types as defined in RFC 6749.
+
+References:
+- RFC 6749 Section 3.1.1: Response Type
+- RFC 6749 Section 4.1: Authorization Code Grant
+- RFC 6749 Section 4.2: Implicit Grant
+
+
+### `TokenType`
+
+
+OAuth 2.0 token types as defined in multiple RFCs.
+
+References:
+- RFC 6749 Section 7.1: Access Token Types
+- RFC 6750: Bearer Token Usage
+- RFC 8693 Section 3: Token Exchange Response
+- RFC 9068: JWT Profile for OAuth 2.0 Access Tokens
+
+
+### `TokenTypeHint`
+
+
+Token type hints for introspection and revocation as defined in RFCs.
+
+References:
+- RFC 7662 Section 2.1: Introspection Request
+- RFC 7009 Section 2.1: Revocation Request
+
+
+### `PKCECodeChallengeMethod`
+
+
+PKCE code challenge methods as defined in RFC 7636.
+
+References:
+- RFC 7636 Section 4.2: Client Creates the Code Challenge
+
+
+### `WellKnownEndpoint`
+
+
+Well-known OAuth 2.0 and OpenID Connect discovery endpoints.
+
+These endpoints are standardized across the OAuth 2.0 ecosystem for
+automatic discovery of server capabilities and configuration.
+
+
+**Methods:**
+
+#### `construct_url`
+
+```python
+construct_url(cls, base_url: str, endpoint: 'WellKnownEndpoint') -> str
+```
+
+Construct a complete discovery URL from base URL and well-known endpoint.
+
+**Args:**
+- `base_url`: Base URL of the authorization server (e.g., "https\://auth.example.com")
+- `endpoint`: Well-known endpoint to append
+
+**Returns:**
+- Complete discovery URL
+
+
+### `OAuth2DefaultEndpoints`
+
+
+Standard OAuth 2.0 endpoint paths as defined in various RFCs.
+
+These are the conventional default paths used by many OAuth 2.0 implementations.
+Actual endpoint URLs should be discovered through RFC 8414 authorization server
+metadata discovery when possible.
+
+
+**Methods:**
+
+#### `construct_url`
+
+```python
+construct_url(cls, base_url: str, endpoint: 'OAuth2DefaultEndpoints') -> str
+```
+
+Construct a complete OAuth 2.0 endpoint URL from base URL and endpoint path.
+
+**Args:**
+- `base_url`: Base URL of the authorization server (e.g., "https\://auth.example.com")
+- `endpoint`: OAuth 2.0 endpoint path to append
+
+**Returns:**
+- Complete endpoint URL
+

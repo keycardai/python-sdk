@@ -1,0 +1,63 @@
+---
+title: middleware
+sidebarTitle: middleware
+---
+
+# `keycardai.mcp.integrations.fastmcp.middleware`
+
+
+OAuth client middleware for FastMCP.
+
+This module provides OAuthClientMiddleware, which manages the lifecycle of
+KeyCard's OAuth client and makes it available to MCP tools through the
+FastMCP context system.
+
+
+## Classes
+
+### `OAuthClientMiddlewareSettings`
+
+
+Settings for OAuth client middleware.
+
+
+### `OAuthClientMiddleware`
+
+
+Middleware that manages OAuth client lifecycle and provides it to tools.
+
+This middleware initializes and manages a KeyCard OAuth client that can be used
+by MCP tools for token exchange operations. It follows the FastMCP middleware
+protocol and integrates with the context system to make the client available
+to tools.
+
+Features:
+- Lazy initialization of OAuth client on first tool call
+- Automatic client registration and metadata discovery
+- Proper async context management and cleanup
+- Thread-safe initialization with async locking
+- Integration with FastMCP context state system
+
+
+**Methods:**
+
+#### `on_call_tool`
+
+```python
+on_call_tool(self, context: MiddlewareContext, call_next: CallNext) -> any
+```
+
+Ensure OAuth client is available for tools that need it.
+
+This method is called before every tool execution and ensures that:
+1. OAuth client is properly initialized
+2. Client is available in the FastMCP context state
+3. Tools can access it via ctx.get_state("oauth_client")
+
+**Args:**
+- `context`: Middleware context containing the tool call
+- `call_next`: Next middleware or tool handler in the chain
+
+**Returns:**
+- Result from the next handler in the chain
+

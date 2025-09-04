@@ -1,0 +1,145 @@
+---
+title: pkce
+sidebarTitle: pkce
+---
+
+# `keycardai.oauth.utils.pkce`
+
+
+PKCE (Proof Key for Code Exchange) utilities for OAuth 2.0 (RFC 7636).
+
+This module implements PKCE utilities for OAuth 2.0 public clients
+as defined in RFC 7636.
+
+RFC 7636: Proof Key for Code Exchange by OAuth Public Clients
+https://datatracker.ietf.org/doc/html/rfc7636
+
+Key Features:
+- PKCE challenge/verifier generation and validation
+- Support for both S256 and plain methods (S256 recommended)
+- Cryptographically secure parameter generation
+
+Security Benefits:
+- Prevents authorization code interception attacks
+- Eliminates client secret management for public clients
+- Enables secure OAuth flows for mobile and SPA applications
+
+
+## Classes
+
+### `PKCEChallenge`
+
+
+PKCE Challenge and Verifier pair for RFC 7636.
+
+Reference: https://datatracker.ietf.org/doc/html/rfc7636#section-4.1
+
+
+### `PKCEMethods`
+
+
+PKCE code challenge methods defined in RFC 7636 Section 4.2.
+
+Reference: https://datatracker.ietf.org/doc/html/rfc7636#section-4.2
+
+
+### `PKCEGenerator`
+
+
+PKCE challenge and verifier generator for RFC 7636.
+
+Generates cryptographically secure PKCE parameters for OAuth 2.0
+authorization code flows with public clients.
+
+Reference: https://datatracker.ietf.org/doc/html/rfc7636
+
+
+**Methods:**
+
+#### `generate_code_verifier`
+
+```python
+generate_code_verifier(length: int = 128) -> str
+```
+
+Generate a cryptographically random code verifier.
+
+Creates a code verifier as defined in RFC 7636 Section 4.1 using
+unreserved characters [A-Z] [a-z] [0-9] "-" "." "_" "~".
+
+**Args:**
+- `length`: Length of verifier (43-128 characters, default 128)
+
+**Returns:**
+- Base64url-encoded random string suitable as code verifier
+
+**Raises:**
+- `ValueError`: If length is not between 43-128 characters
+
+Reference: https://datatracker.ietf.org/doc/html/rfc7636#section-4.1
+
+
+#### `generate_code_challenge`
+
+```python
+generate_code_challenge(verifier: str, method: str = 'S256') -> str
+```
+
+Generate code challenge from verifier using specified method.
+
+Creates a code challenge as defined in RFC 7636 Section 4.2.
+
+**Args:**
+- `verifier`: Code verifier string
+- `method`: Challenge method ("S256" or "plain")
+
+**Returns:**
+- Code challenge string
+
+**Raises:**
+- `ValueError`: If method is not supported
+
+Reference: https://datatracker.ietf.org/doc/html/rfc7636#section-4.2
+
+
+#### `generate_pkce_pair`
+
+```python
+generate_pkce_pair(self, method: str = 'S256', verifier_length: int = 128) -> PKCEChallenge
+```
+
+Generate a complete PKCE challenge/verifier pair.
+
+Creates both code verifier and challenge using specified method.
+S256 method is recommended for security.
+
+**Args:**
+- `method`: Challenge method ("S256" recommended, "plain" for legacy)
+- `verifier_length`: Length of code verifier (43-128 characters)
+
+**Returns:**
+- PKCEChallenge containing verifier, challenge, and method
+
+Reference: https://datatracker.ietf.org/doc/html/rfc7636#section-4
+
+
+#### `validate_pkce_pair`
+
+```python
+validate_pkce_pair(code_verifier: str, code_challenge: str, method: str = 'S256') -> bool
+```
+
+Validate that code verifier matches the code challenge.
+
+Verifies PKCE parameters as defined in RFC 7636 Section 4.6.
+
+**Args:**
+- `code_verifier`: Original code verifier
+- `code_challenge`: Code challenge to validate against
+- `method`: Challenge method used ("S256" or "plain")
+
+**Returns:**
+- True if verifier matches challenge, False otherwise
+
+Reference: https://datatracker.ietf.org/doc/html/rfc7636#section-4.6
+

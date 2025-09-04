@@ -1,0 +1,121 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "appearance": {
+    "default": "system",
+    "strict": false
+  },
+  "interaction": {
+    "drilldown": false
+  },
+  "background": {
+    "color": {
+      "dark": "#1a1a1a",
+      "light": "#f8f9fa"
+    },
+    "decoration": "grid"
+  },
+  "colors": {
+    "dark": "#3b82f6",
+    "light": "#1d4ed8",
+    "primary": "#2563eb"
+  },
+  "description": "Python SDK for KeyCard OAuth 2.0 and Model Context Protocol (MCP) integration.",
+  "footer": {
+    "socials": {
+      "github": "https://github.com/keycardai/python-sdk"
+    }
+  },
+  "name": "KeyCard AI Python SDK",
+  "navbar": {
+    "primary": {
+      "href": "https://github.com/keycardai/python-sdk",
+      "type": "github"
+    }
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "welcome"
+            ]
+          },
+          {
+            "group": "Examples",
+            "pages": [
+              "examples/dynamic-client-registration",
+              "examples/token-exchange",
+              "examples/fastmcp-integration"
+            ]
+          }
+        ],
+        "tab": "Documentation"
+      },
+      {
+        "groups": [
+          {
+            "group": "OAuth Package",
+            "pages": [
+              "sdk/keycardai-oauth-__init__",
+              {
+                "group": "Client",
+                "pages": [
+                  "sdk/keycardai-oauth-client"
+                ]
+              },
+              {
+                "group": "HTTP Transport",
+                "pages": [
+                  "sdk/keycardai-oauth-http-__init__",
+                  "sdk/keycardai-oauth-http-auth",
+                  "sdk/keycardai-oauth-http-transport"
+                ]
+              },
+              {
+                "group": "Types & Models",
+                "pages": [
+                  "sdk/keycardai-oauth-types-__init__",
+                  "sdk/keycardai-oauth-types-models",
+                  "sdk/keycardai-oauth-types-oauth"
+                ]
+              },
+              {
+                "group": "Utilities",
+                "pages": [
+                  "sdk/keycardai-oauth-utils-__init__",
+                  "sdk/keycardai-oauth-utils-bearer",
+                  "sdk/keycardai-oauth-utils-crypto",
+                  "sdk/keycardai-oauth-utils-jwt",
+                  "sdk/keycardai-oauth-utils-pkce"
+                ]
+              },
+              "sdk/keycardai-oauth-exceptions"
+            ]
+          },
+          {
+            "group": "MCP Package",
+            "pages": [
+              "sdk/keycardai-mcp"
+            ]
+          },
+          {
+            "group": "FastMCP Integration",
+            "pages": [
+              "sdk/keycardai-mcp-integrations-fastmcp-__init__",
+              "sdk/keycardai-mcp-integrations-fastmcp-decorators",
+              "sdk/keycardai-mcp-integrations-fastmcp-middleware",
+              "sdk/keycardai-mcp-integrations-fastmcp-provider"
+            ]
+          }
+        ],
+        "tab": "API Reference"
+      }
+    ]
+  },
+  "search": {
+    "prompt": "Search the docs..."
+  },
+  "theme": "mint"
+}

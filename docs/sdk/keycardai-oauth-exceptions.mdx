@@ -1,0 +1,80 @@
+---
+title: exceptions
+sidebarTitle: exceptions
+---
+
+# `keycardai.oauth.exceptions`
+
+
+OAuth 2.0 exception hierarchy with retriable classification.
+
+This module provides structured exception classes with deterministic retry guidance
+for OAuth 2.0 operations as defined across multiple RFCs.
+
+References:
+- RFC 6749: The OAuth 2.0 Authorization Framework
+- RFC 8693: OAuth 2.0 Token Exchange
+- RFC 7662: OAuth 2.0 Token Introspection
+- RFC 7009: OAuth 2.0 Token Revocation
+
+
+## Classes
+
+### `OAuthError`
+
+
+Base class for all OAuth 2.0 errors.
+
+
+### `OAuthHttpError`
+
+
+HTTP-level errors with retry guidance.
+
+Raised for HTTP status codes indicating server or client errors.
+Includes deterministic retriability classification.
+
+
+### `OAuthProtocolError`
+
+
+RFC 6749 error responses from OAuth servers.
+
+Represents structured error responses as defined in OAuth 2.0 specifications.
+Protocol errors are never retriable as they indicate client-side issues.
+
+
+### `NetworkError`
+
+
+Transport/network failures with retry guidance.
+
+Covers connection failures, timeouts, and other network-level issues.
+
+
+### `ConfigError`
+
+
+Client configuration errors.
+
+Raised when client is misconfigured (missing endpoints, invalid parameters, etc.).
+These are never retriable as they require code changes.
+
+
+### `AuthenticationError`
+
+
+Authentication failures with OAuth 2.0 servers.
+
+Raised when client authentication fails, typically due to invalid
+credentials or authentication method issues.
+
+
+### `TokenExchangeError`
+
+
+OAuth 2.0 Token Exchange specific errors (RFC 8693).
+
+Raised for token exchange protocol violations and error responses.
+Inherits from OAuthProtocolError with token exchange semantics.
+

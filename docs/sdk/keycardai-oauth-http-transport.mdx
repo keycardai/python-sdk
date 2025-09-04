@@ -1,0 +1,69 @@
+---
+title: transport
+sidebarTitle: transport
+---
+
+# `keycardai.oauth.http.transport`
+
+
+Transport protocol interfaces for HTTP operations.
+
+This module defines the protocol interfaces that all transport implementations
+must follow. Operations call these methods exclusively.
+
+
+## Classes
+
+### `HTTPTransport`
+
+
+Protocol for synchronous HTTP transport implementations.
+
+
+**Methods:**
+
+#### `request_raw`
+
+```python
+request_raw(self, req: HttpRequest) -> HttpResponse
+```
+
+Execute a raw HTTP request synchronously.
+
+**Args:**
+- `req`: The HTTP request to execute
+- `timeout`: Optional timeout in seconds
+
+**Returns:**
+- The HTTP response
+
+**Raises:**
+- `NetworkError`: For network-level failures
+
+
+### `AsyncHTTPTransport`
+
+
+Protocol for asynchronous HTTP transport implementations.
+
+
+**Methods:**
+
+#### `request_raw`
+
+```python
+request_raw(self, req: HttpRequest) -> HttpResponse
+```
+
+Execute a raw HTTP request asynchronously.
+
+**Args:**
+- `req`: The HTTP request to execute
+- `timeout`: Optional timeout in seconds
+
+**Returns:**
+- The HTTP response
+
+**Raises:**
+- `NetworkError`: For network-level failures
+
