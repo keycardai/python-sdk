@@ -7,7 +7,7 @@ using the new HTTP transport layer with byte-level operations.
 import json
 
 from ..exceptions import ConfigError, OAuthHttpError, OAuthProtocolError
-from ..http import HTTPContext
+from ..http._context import HTTPContext
 from ..http._wire import HttpRequest, HttpResponse
 from ..types.models import AuthorizationServerMetadata, ServerMetadataRequest
 from ..types.oauth import WellKnownEndpoint

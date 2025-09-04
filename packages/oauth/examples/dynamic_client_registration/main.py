@@ -7,11 +7,10 @@ using real server metadata and endpoint configuration.
 Registers a client for authorization code flow with refresh token support.
 """
 
-import secrets
 import os
+import secrets
 
 from keycardai.oauth import Client
-from keycardai.oauth.types import ClientRegistrationRequest
 
 
 def generate_client_name() -> str:
@@ -21,17 +20,12 @@ def generate_client_name() -> str:
 
 
 def main():
-    client = Client(
-        base_url=os.getenv("ZONE_URL"),
-    )
-
-    response = client.register_client(
-        request=ClientRegistrationRequest(
+    with Client(os.getenv("ZONE_URL")) as client:
+        response = client.register_client(
             client_name=f"MyService-{generate_client_name()}",
         )
-    )
 
-    print(response)
+        print(response)
 
 
 

@@ -39,7 +39,7 @@ from .exceptions import (
     OAuthProtocolError,
     TokenExchangeError,
 )
-from .http import AuthStrategy, BasicAuth, BearerAuth, NoneAuth
+from .http.auth import AuthStrategy, BasicAuth, BearerAuth, NoneAuth
 from .types.models import (
     PKCE,
     AuthorizationServerMetadata,
@@ -59,18 +59,17 @@ from .types.oauth import (
     TokenTypeHint,
     WellKnownEndpoint,
 )
-from .utils import (
-    extract_bearer_token,
-    extract_jwt_client_id,
-    validate_bearer_format,
-)
+from .utils.bearer import extract_bearer_token, validate_bearer_format
+from .utils.jwt import extract_jwt_client_id
 
 __version__ = "0.0.1"
 
 __all__ = [
     "__version__",
+    # Core clients
     "AsyncClient",
     "Client",
+    # Exceptions
     "OAuthError",
     "OAuthHttpError",
     "OAuthProtocolError",
@@ -78,32 +77,30 @@ __all__ = [
     "ConfigError",
     "AuthenticationError",
     "TokenExchangeError",
-
+    # Models and types
     "TokenResponse",
     "ClientRegistrationResponse",
     "PKCE",
     "Endpoints",
     "ClientConfig",
+    "ClientRegistrationRequest",
+    "TokenExchangeRequest",
+    "AuthorizationServerMetadata",
+    # Enums
     "GrantType",
     "ResponseType",
     "TokenEndpointAuthMethod",
     "TokenType",
     "TokenTypeHint",
     "PKCECodeChallengeMethod",
-    "ClientRegistrationRequest",
-    "TokenExchangeRequest",
-    "AuthorizationServerMetadata",
     "WellKnownEndpoint",
+    # Auth strategies
     "AuthStrategy",
     "BasicAuth",
     "BearerAuth",
     "NoneAuth",
+    # Utility functions
     "extract_bearer_token",
     "extract_jwt_client_id",
     "validate_bearer_format",
-    "create_auth_header",
-    "generate_pkce_challenge",
-    "verify_pkce_challenge",
-    "create_jwt_assertion",
-    "generate_cert_thumbprint",
 ]

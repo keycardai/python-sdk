@@ -8,7 +8,7 @@ import json
 from urllib.parse import urlencode
 
 from ..exceptions import OAuthHttpError, OAuthProtocolError
-from ..http import HTTPContext
+from ..http._context import HTTPContext
 from ..http._wire import HttpRequest, HttpResponse
 from ..types.models import TokenExchangeRequest, TokenResponse
 from ._exec import execute_async, execute_sync

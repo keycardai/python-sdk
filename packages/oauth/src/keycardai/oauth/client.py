@@ -7,31 +7,27 @@ sharing a sync-agnostic core as defined in the sync/async API design standard.
 import asyncio
 import threading
 
-from ..exceptions import (
+from .exceptions import (
     AuthenticationError,
     ConfigError,
     NetworkError,
     OAuthHttpError,
     OAuthProtocolError,
 )
-from ..http import (
-    AsyncHTTPTransport,
-    HTTPContext,
-    HTTPTransport,
-    HttpxAsyncTransport,
-    HttpxTransport,
-)
-from ..http.auth import (
+from .http._context import HTTPContext
+from .http._transports import HttpxAsyncTransport, HttpxTransport
+from .http.auth import (
     AuthStrategy,
     NoneAuth,
 )
-from ..operations._discovery import (
+from .http.transport import AsyncHTTPTransport, HTTPTransport
+from .operations._discovery import (
     discover_server_metadata,
     discover_server_metadata_async,
 )
-from ..operations._registration import register_client, register_client_async
-from ..operations._token_exchange import token_exchange, token_exchange_async
-from ..types.models import (
+from .operations._registration import register_client, register_client_async
+from .operations._token_exchange import token_exchange, token_exchange_async
+from .types.models import (
     AuthorizationServerMetadata,
     ClientConfig,
     ClientRegistrationRequest,
@@ -41,8 +37,8 @@ from ..types.models import (
     TokenExchangeRequest,
     TokenResponse,
 )
-from ..types.oauth import OAuth2DefaultEndpoints
-from ..utils import extract_jwt_client_id
+from .types.oauth import OAuth2DefaultEndpoints
+from .utils.jwt import extract_jwt_client_id
 
 
 def resolve_endpoints(
@@ -519,38 +515,26 @@ class AsyncClient:
 
         return await token_exchange_async(request, ctx)
 
-    async def access_token_for_resource(
+    async def get_access_token_for_resource(
         self,
         resource: str,
         subject_token: str,
     ) -> str:
-        """Perform OAuth 2.0 Token Exchange.
+        """Get an access token for a specific resource using OAuth 2.0 Token Exchange.
 
-        Simple usage (delegation):
-            request = TokenExchangeRequest(
-                subject_token="original_access_token",
-                subject_token_type="urn:ietf:params:oauth:token-type:access_token",
-                audience="target-service.company.com"
-            )
-            response = await client.token_exchange_async(request)
-
-        Advanced usage (impersonation):
-            request = TokenExchangeRequest(
-                subject_token="admin_token",
-                subject_token_type="urn:ietf:params:oauth:token-type:access_token",
-                audience="target-service.company.com",
-                actor_token="service_token",
-                actor_token_type="urn:ietf:params:oauth:token-type:access_token",
-                requested_token_type="urn:ietf:params:oauth:token-type:access_token",
-                scope="read write"
-            )
-            response = await client.token_exchange_async(request)
+        Usage:
+            async with AsyncClient("https://zoneid.keycard.cloud") as client:
+                access_token = await client.get_access_token_for_resource(
+                    "https://api.example.com",
+                    "user_access_token"
+                )
 
         Args:
-            request: TokenExchangeRequest with all exchange parameters
+            resource: The target resource URL to request access for
+            subject_token: The current access token to exchange
 
         Returns:
-            TokenResponse with the exchanged token and metadata
+            str: The exchanged access token for the specified resource
         """
         request = TokenExchangeRequest(
             subject_token=subject_token,
@@ -759,6 +743,7 @@ class Client:
         """
         self._ensure_initialized()
         return self._client_secret
+
 
     def register_client(
         self,

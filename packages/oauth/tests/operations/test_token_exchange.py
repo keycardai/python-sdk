@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from keycardai.oauth.exceptions import OAuthHttpError, OAuthProtocolError
-from keycardai.oauth.http import HTTPContext
+from keycardai.oauth.http._context import HTTPContext
 from keycardai.oauth.http._wire import HttpResponse
 from keycardai.oauth.operations._token_exchange import (
     build_token_exchange_http_request,

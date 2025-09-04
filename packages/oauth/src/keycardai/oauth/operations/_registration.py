@@ -1,7 +1,7 @@
 import json
 
 from ..exceptions import OAuthHttpError, OAuthProtocolError
-from ..http import HTTPContext
+from ..http._context import HTTPContext
 from ..http._wire import HttpRequest, HttpResponse
 from ..types.models import ClientRegistrationRequest, ClientRegistrationResponse
 from ._exec import execute_async, execute_sync
