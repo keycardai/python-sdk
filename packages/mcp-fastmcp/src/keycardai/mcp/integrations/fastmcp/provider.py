@@ -125,7 +125,7 @@ class KeycardAuthProvider(RemoteAuthProvider):
         zone_url: str,
         mcp_server_name: str | None = None,
         required_scopes: list[str] | None = None,
-        mcp_server_url: AnyHttpUrl | str | None = None,
+        mcp_server_url: AnyHttpUrl | str | None = "http://localhost:8000/",
     ):
         """Initialize KeyCard authentication provider.
 
