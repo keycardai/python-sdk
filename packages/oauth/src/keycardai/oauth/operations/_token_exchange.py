@@ -28,6 +28,44 @@ def _validate_token_exchange_params(request: TokenExchangeRequest) -> None:
     if not request.subject_token_type:
         raise ValueError("subject_token_type is required")
 
+def _build_token_exchange_request_from_kwargs(**kwargs) -> TokenExchangeRequest:
+    """Build a TokenExchangeRequest from keyword arguments.
+
+    Args:
+        **kwargs: Keyword arguments matching TokenExchangeRequest fields
+
+    Returns:
+        TokenExchangeRequest built from the provided kwargs
+
+    Raises:
+        TypeError: If required parameters are missing
+    """
+    # Extract required parameters
+    subject_token = kwargs.get("subject_token")
+    if subject_token is None:
+        raise TypeError("subject_token is required when not using a request object")
+
+    subject_token_type = kwargs.get("subject_token_type")
+    if subject_token_type is None:
+        raise TypeError("subject_token_type is required when not using a request object")
+
+    # Build the request with provided values, falling back to defaults
+    # Only pass kwargs that are not None to let the model use its defaults
+    request_kwargs = {
+        "subject_token": subject_token,
+        "subject_token_type": subject_token_type
+    }
+
+    for field_name in [
+        "grant_type", "resource", "audience", "scope", "requested_token_type",
+        "actor_token", "actor_token_type", "timeout", "client_id"
+    ]:
+        value = kwargs.get(field_name)
+        if value is not None:
+            request_kwargs[field_name] = value
+
+    return TokenExchangeRequest(**request_kwargs)
+
 
 def build_token_exchange_http_request(
     request: TokenExchangeRequest, endpoint: str, auth_headers: dict[str, str]

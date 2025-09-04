@@ -26,6 +26,21 @@ def _validate_discovery_params(base_url: str) -> None:
     if not base_url or not base_url.strip():
         raise ConfigError("base_url cannot be empty")
 
+def _build_server_metadata_request_from_kwargs(client_base_url: str, **kwargs) -> ServerMetadataRequest:
+    """Build a ServerMetadataRequest from keyword arguments.
+
+    Args:
+        client_base_url: Default base URL from the client
+        **kwargs: Keyword arguments matching ServerMetadataRequest fields
+
+    Returns:
+        ServerMetadataRequest built from the provided kwargs
+    """
+    # Use provided base_url or fall back to client's base_url
+    base_url = kwargs.get("base_url", client_base_url)
+    
+    return ServerMetadataRequest(base_url=base_url)
+
 
 def build_discovery_http_request(
     request: ServerMetadataRequest, auth_headers: dict[str, str] | None = None

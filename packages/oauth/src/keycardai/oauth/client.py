@@ -23,6 +23,7 @@ from .http.auth import (
 )
 from .http.transport import AsyncHTTPTransport, HTTPTransport
 from .operations._discovery import (
+    _build_server_metadata_request_from_kwargs,
     discover_server_metadata,
     discover_server_metadata_async,
 )
@@ -31,7 +32,11 @@ from .operations._registration import (
     register_client,
     register_client_async,
 )
-from .operations._token_exchange import token_exchange, token_exchange_async
+from .operations._token_exchange import (
+    _build_token_exchange_request_from_kwargs,
+    token_exchange,
+    token_exchange_async,
+)
 from .types.models import (
     AuthorizationServerMetadata,
     ClientConfig,
@@ -485,34 +490,60 @@ class AsyncClient:
 
         return await register_client_async(request, ctx)
 
+    @overload
     async def discover_server_metadata(
         self,
-        request: ServerMetadataRequest | None = None,
-    ) -> AuthorizationServerMetadata:
+        request: ServerMetadataRequest,
+    ) -> AuthorizationServerMetadata: ...
+
+    @overload
+    async def discover_server_metadata(
+        self,
+        /,
+        *,
+        base_url: str | None = None,
+    ) -> AuthorizationServerMetadata: ...
+
+    async def discover_server_metadata(self, request: ServerMetadataRequest | None = None, /, **metadata_discovery_args) -> AuthorizationServerMetadata:
         """Discover OAuth 2.0 authorization server metadata.
 
+        Either pass a fully-formed ServerMetadataRequest *or* call with keyword
+        args for simple cases.
+
         Simple usage:
-            metadata = await client.discover_server_metadata_async()
+            metadata = await client.discover_server_metadata()
             print(f"Token endpoint: {metadata.token_endpoint}")
+
+        With keyword arguments:
+            metadata = await client.discover_server_metadata(
+                base_url="https://custom.auth.example.com"
+            )
 
         Explicit request:
             request = ServerMetadataRequest(base_url="https://auth.example.com")
-            metadata = await client.discover_server_metadata_async(request)
+            metadata = await client.discover_server_metadata(request)
 
         Args:
             request: Optional ServerMetadataRequest (defaults to client's base_url if not provided)
+            **metadata_discovery_args: Alternative to request - provide individual parameters
 
         Returns:
             AuthorizationServerMetadata with discovered server capabilities
 
         Raises:
+            TypeError: If both request and metadata_discovery_args are provided
             ConfigError: If base_url is empty
             OAuthHttpError: If discovery endpoint is unreachable
             OAuthProtocolError: If metadata format is invalid
             NetworkError: If network request fails
         """
+        if request is not None and metadata_discovery_args:
+            raise TypeError("Pass either `request` or keyword arguments, not both.")
+
         if request is None:
-            request = ServerMetadataRequest(base_url=self.base_url)
+            request = _build_server_metadata_request_from_kwargs(
+                self.base_url, **metadata_discovery_args
+            )
 
         context = HTTPContext(
             endpoint=self.base_url,
@@ -526,11 +557,35 @@ class AsyncClient:
             context=context,
         )
 
+    @overload
     async def token_exchange(
         self,
         request: TokenExchangeRequest,
-    ) -> TokenResponse:
+    ) -> TokenResponse: ...
+
+    @overload
+    async def token_exchange(
+        self,
+        /,
+        *,
+        subject_token: str,
+        subject_token_type: str,
+        grant_type: str | None = None,
+        resource: str | None = None,
+        audience: str | None = None,
+        scope: str | None = None,
+        requested_token_type: str | None = None,
+        actor_token: str | None = None,
+        actor_token_type: str | None = None,
+        timeout: float | None = None,
+        client_id: str | None = None,
+    ) -> TokenResponse: ...
+
+    async def token_exchange(self, request: TokenExchangeRequest | None = None, /, **token_exchange_args) -> TokenResponse:
         """Perform OAuth 2.0 Token Exchange.
+
+        Either pass a fully-formed TokenExchangeRequest *or* call with keyword
+        args for common cases.
 
         Simple usage (delegation):
             request = TokenExchangeRequest(
@@ -538,7 +593,14 @@ class AsyncClient:
                 subject_token_type="urn:ietf:params:oauth:token-type:access_token",
                 audience="target-service.company.com"
             )
-            response = await client.token_exchange_async(request)
+            response = await client.token_exchange(request)
+
+        Or with keyword arguments:
+            response = await client.token_exchange(
+                subject_token="original_access_token",
+                subject_token_type="urn:ietf:params:oauth:token-type:access_token",
+                audience="target-service.company.com"
+            )
 
         Advanced usage (impersonation):
             request = TokenExchangeRequest(
@@ -550,21 +612,31 @@ class AsyncClient:
                 requested_token_type="urn:ietf:params:oauth:token-type:access_token",
                 scope="read write"
             )
-            response = await client.token_exchange_async(request)
+            response = await client.token_exchange(request)
 
         Args:
             request: TokenExchangeRequest with all exchange parameters
+            **token_exchange_args: Alternative to request - provide individual parameters
 
         Returns:
             TokenResponse with the exchanged token and metadata
+
+        Raises:
+            TypeError: If both request and token_exchange_args are provided
         """
+        if request is not None and token_exchange_args:
+            raise TypeError("Pass either `request` or keyword arguments, not both.")
+
+        if request is None:
+            request = _build_token_exchange_request_from_kwargs(**token_exchange_args)
+
         endpoints = await self._get_current_endpoints()
 
         ctx = HTTPContext(
             endpoint=endpoints.token,
             transport=self.transport,
             auth=self.auth_strategy,
-            timeout=self.config.timeout,
+            timeout=token_exchange_args.get("timeout", self.config.timeout),
         )
 
         return await token_exchange_async(request, ctx)
@@ -885,15 +957,34 @@ class Client:
 
         return register_client(request, ctx)
 
+    @overload
     def discover_server_metadata(
         self,
-        request: ServerMetadataRequest | None = None,
-    ) -> AuthorizationServerMetadata:
+        request: ServerMetadataRequest,
+    ) -> AuthorizationServerMetadata: ...
+
+    @overload
+    def discover_server_metadata(
+        self,
+        /,
+        *,
+        base_url: str | None = None,
+    ) -> AuthorizationServerMetadata: ...
+
+    def discover_server_metadata(self, request: ServerMetadataRequest | None = None, /, **metadata_discovery_args) -> AuthorizationServerMetadata:
         """Discover OAuth 2.0 authorization server metadata.
+
+        Either pass a fully-formed ServerMetadataRequest *or* call with keyword
+        args for simple cases.
 
         Simple usage:
             metadata = client.discover_server_metadata()
             print(f"Token endpoint: {metadata.token_endpoint}")
+
+        With keyword arguments:
+            metadata = client.discover_server_metadata(
+                base_url="https://custom.auth.example.com"
+            )
 
         Explicit request:
             request = ServerMetadataRequest(base_url="https://auth.example.com")
@@ -901,19 +992,25 @@ class Client:
 
         Args:
             request: Optional ServerMetadataRequest (defaults to client's base_url if not provided)
-            timeout: Optional timeout override (overrides request.timeout if provided)
+            **metadata_discovery_args: Alternative to request - provide individual parameters
 
         Returns:
             AuthorizationServerMetadata with discovered server capabilities
 
         Raises:
+            TypeError: If both request and metadata_discovery_args are provided
             ConfigError: If base_url is empty
             OAuthHttpError: If discovery endpoint is unreachable
             OAuthProtocolError: If metadata format is invalid
             NetworkError: If network request fails
         """
+        if request is not None and metadata_discovery_args:
+            raise TypeError("Pass either `request` or keyword arguments, not both.")
+
         if request is None:
-            request = ServerMetadataRequest(base_url=self.base_url)
+            request = _build_server_metadata_request_from_kwargs(
+                self.base_url, **metadata_discovery_args
+            )
 
         context = HTTPContext(
             endpoint=self.base_url,
@@ -927,11 +1024,35 @@ class Client:
             context=context,
         )
 
+    @overload
     def token_exchange(
         self,
         request: TokenExchangeRequest,
-    ) -> TokenResponse:
+    ) -> TokenResponse: ...
+
+    @overload
+    def token_exchange(
+        self,
+        /,
+        *,
+        subject_token: str,
+        subject_token_type: str,
+        grant_type: str | None = None,
+        resource: str | None = None,
+        audience: str | None = None,
+        scope: str | None = None,
+        requested_token_type: str | None = None,
+        actor_token: str | None = None,
+        actor_token_type: str | None = None,
+        timeout: float | None = None,
+        client_id: str | None = None,
+    ) -> TokenResponse: ...
+
+    def token_exchange(self, request: TokenExchangeRequest | None = None, /, **token_exchange_args) -> TokenResponse:
         """Perform OAuth 2.0 Token Exchange.
+
+        Either pass a fully-formed TokenExchangeRequest *or* call with keyword
+        args for common cases.
 
         Simple usage (delegation):
             request = TokenExchangeRequest(
@@ -940,6 +1061,13 @@ class Client:
                 audience="target-service.company.com"
             )
             response = client.token_exchange(request)
+
+        Or with keyword arguments:
+            response = client.token_exchange(
+                subject_token="original_access_token",
+                subject_token_type="urn:ietf:params:oauth:token-type:access_token",
+                audience="target-service.company.com"
+            )
 
         Advanced usage (impersonation):
             request = TokenExchangeRequest(
@@ -955,17 +1083,27 @@ class Client:
 
         Args:
             request: TokenExchangeRequest with all exchange parameters
+            **token_exchange_args: Alternative to request - provide individual parameters
 
         Returns:
             TokenResponse with the exchanged token and metadata
+
+        Raises:
+            TypeError: If both request and token_exchange_args are provided
         """
+        if request is not None and token_exchange_args:
+            raise TypeError("Pass either `request` or keyword arguments, not both.")
+
+        if request is None:
+            request = _build_token_exchange_request_from_kwargs(**token_exchange_args)
+
         endpoints = self._get_current_endpoints()
 
         ctx = HTTPContext(
             endpoint=endpoints.token,
             transport=self.transport,
             auth=self.auth_strategy,
-            timeout=self.config.timeout,
+            timeout=token_exchange_args.get("timeout", self.config.timeout),
         )
 
         return token_exchange(request, ctx)
