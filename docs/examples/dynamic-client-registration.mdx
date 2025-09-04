@@ -10,21 +10,26 @@ This example demonstrates how to use OAuth 2.0 Dynamic Client Registration (RFC 
 ## Basic Registration
 
 ```python
+from keycardai.oauth import Client
+
+with Client("https://your-keycard-zone.com") as client:
+    response = client.register_client(client_name="Test Client")
+    
+    print(f"Client registered: {response.client_id}")
+    return response
+```
+
+```python
 from keycardai.oauth import AsyncClient, ClientRegistrationRequest
 
 async def register_client():
     async with AsyncClient("https://your-keycard-zone.com") as client:
-        # Create a registration request
-        registration_request = ClientRegistrationRequest(
-            client_name="My Application",
+        # Register the client
+        response = await client.register_client(client_name="My Application",
             redirect_uris=["https://myapp.com/callback"],
             grant_types=["authorization_code", "refresh_token"],
             response_types=["code"],
-            scope="openid profile email"
-        )
-        
-        # Register the client
-        response = await client.register_client(registration_request)
+            scope="openid profile email")
         
         print(f"Client ID: {response.client_id}")
         print(f"Client Secret: {response.client_secret}")
@@ -77,32 +82,6 @@ import asyncio
 client_info = asyncio.run(register_advanced_client())
 ```
 
-## Synchronous Version
-
-If you prefer synchronous code:
-
-```python
-from keycardai.oauth import Client, ClientRegistrationRequest
-
-def register_client_sync():
-    with Client("https://your-keycard-zone.com") as client:
-        registration_request = ClientRegistrationRequest(
-            client_name="Sync Application",
-            redirect_uris=["https://myapp.com/callback"],
-            grant_types=["authorization_code"],
-            response_types=["code"],
-            scope="openid profile"
-        )
-        
-        response = client.register_client(registration_request)
-        
-        print(f"Client registered: {response.client_id}")
-        return response
-
-# Run synchronously
-client_info = register_client_sync()
-```
-
 ## Error Handling
 
 ```python
@@ -134,14 +113,4 @@ async def register_with_error_handling():
 import asyncio
 asyncio.run(register_with_error_handling())
 ```
-
-## Next Steps
-
-After registering your client:
-
-1. **Store credentials securely** - Never expose client secrets in client-side code
-2. **Note expiration times** - Some client secrets may expire
-3. **Use the client ID** for authorization flows
-4. **Implement token refresh** if using refresh tokens
-
 For token exchange examples, see the [Token Exchange guide](/examples/token-exchange).

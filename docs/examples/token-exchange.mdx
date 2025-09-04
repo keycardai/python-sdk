@@ -5,262 +5,171 @@ description: "How to exchange tokens using OAuth 2.0 Token Exchange (RFC 8693)"
 
 # Token Exchange
 
-This example demonstrates how to use OAuth 2.0 Token Exchange (RFC 8693) to exchange one token for another, enabling secure token delegation and impersonation scenarios.
+This example demonstrates how to use OAuth 2.0 Token Exchange (RFC 8693) for token delegation scenarios, from simple resource access to advanced service impersonation.
 
-## Basic Token Exchange
+## Simple Token Delegation
 
-```python
-from keycardai.oauth import Client
-
-def exchange_token():
-    with Client("https://zoneid.keycard.cloud") as client:
-        access_token = client.get_access_token_for_resource(
-            "https://google.api/calendar/v3", 
-            "user_access_token"
-        )
-        print(f"Access Token: {access_token}")
-        return access_token
-
-# Run the token exchange
-new_token = exchange_token()
-```
-
-## Async Basic Token Exchange
-
-```python
-from keycardai.oauth import AsyncClient
-
-async def async_exchange_token():
-    async with AsyncClient("https://zoneid.keycard.cloud") as client:
-        access_token = await client.get_access_token_for_resource(
-            "https://google.api/calendar/v3", 
-            "user_access_token"
-        )
-        print(f"Access Token: {access_token}")
-        return access_token
-
-# Run the async token exchange
-import asyncio
-new_token = asyncio.run(async_exchange_token())
-```
-
-## Token Delegation
-
-Request access to different resources:
+The easiest way to get started with token exchange is using the `get_access_token_for_resource` helper method:
 
 ```python
 from keycardai.oauth import Client
 
-def delegate_token():
+def simple_token_delegation():
+    """
+    Simple token delegation example - exchange a user token for resource-specific access.
+    """
     with Client("https://zoneid.keycard.cloud") as client:
-        # Request access to Google Drive API
-        drive_token = client.get_access_token_for_resource(
-            "https://www.googleapis.com/auth/drive", 
-            "user_access_token"
-        )
-        print(f"Drive Access Token: {drive_token}")
-        
-        # Request access to Slack API  
-        slack_token = client.get_access_token_for_resource(
-            "https://slack.com/api", 
-            "user_access_token"
-        )
-        print(f"Slack Access Token: {slack_token}")
-        
-        return drive_token, slack_token
-
-# Run delegation
-drive_token, slack_token = delegate_token()
-```
-
-## Async Token Delegation
-
-```python
-from keycardai.oauth import AsyncClient
-
-async def async_delegate_token():
-    async with AsyncClient("https://zoneid.keycard.cloud") as client:
-        # Request access to Google Drive API
-        drive_token = await client.get_access_token_for_resource(
-            "https://www.googleapis.com/auth/drive", 
-            "user_access_token"
-        )
-        print(f"Drive Access Token: {drive_token}")
-        
-        # Request access to Slack API  
-        slack_token = await client.get_access_token_for_resource(
-            "https://slack.com/api", 
-            "user_access_token"
-        )
-        print(f"Slack Access Token: {slack_token}")
-        
-        return drive_token, slack_token
-
-# Run async delegation
-import asyncio
-drive_token, slack_token = asyncio.run(async_delegate_token())
-```
-
-## Resource Access with Context
-
-Request access to specific user resources:
-
-```python
-from keycardai.oauth import Client
-
-def access_user_resources():
-    with Client("https://zoneid.keycard.cloud") as client:
-        # Request access to user's Google Calendar
+        # Request access to Google Calendar API
         calendar_token = client.get_access_token_for_resource(
-            "https://www.googleapis.com/auth/calendar.readonly", 
+            "https://www.googleapis.com/auth/calendar.readonly",
             "user_access_token"
         )
         print(f"Calendar Access Token: {calendar_token}")
         
-        # Request access to user's GitHub repos
+        # Request access to GitHub API
         github_token = client.get_access_token_for_resource(
-            "https://api.github.com", 
+            "https://api.github.com",
             "user_access_token"
         )
         print(f"GitHub Access Token: {github_token}")
         
         return calendar_token, github_token
 
-# Run resource access
-calendar_token, github_token = access_user_resources()
+# Run simple delegation
+calendar_token, github_token = simple_token_delegation()
 ```
 
-## Async Resource Access with Context
+## Async Simple Token Delegation
 
 ```python
 from keycardai.oauth import AsyncClient
 
-async def async_access_user_resources():
+async def async_simple_token_delegation():
+    """
+    Async version of simple token delegation.
+    """
     async with AsyncClient("https://zoneid.keycard.cloud") as client:
-        # Request access to user's Google Calendar
+        # Request access to Google Calendar API
         calendar_token = await client.get_access_token_for_resource(
-            "https://www.googleapis.com/auth/calendar.readonly", 
+            "https://www.googleapis.com/auth/calendar.readonly",
             "user_access_token"
         )
         print(f"Calendar Access Token: {calendar_token}")
         
-        # Request access to user's GitHub repos
+        # Request access to GitHub API
         github_token = await client.get_access_token_for_resource(
-            "https://api.github.com", 
+            "https://api.github.com",
             "user_access_token"
         )
         print(f"GitHub Access Token: {github_token}")
         
         return calendar_token, github_token
 
-# Run async resource access
+# Run async simple delegation
 import asyncio
-calendar_token, github_token = asyncio.run(async_access_user_resources())
+calendar_token, github_token = asyncio.run(async_simple_token_delegation())
 ```
 
+## Advanced Token Exchange with Service Impersonation
 
-## Error Handling
+This example shows a real-world scenario where a service needs to impersonate a user to access multiple APIs on their behalf:
 
 ```python
-from keycardai.oauth import Client, OAuthError
+from keycardai.oauth import Client, AsyncClient
+from keycardai.oauth.types.models import TokenExchangeRequest
 
-def request_with_error_handling():
+def service_impersonation_example():
+    """
+    Advanced token exchange example demonstrating service impersonation
+    where a service exchanges tokens to access multiple resources on behalf of a user.
+    """
     with Client("https://zoneid.keycard.cloud") as client:
-        try:
-            access_token = client.get_access_token_for_resource(
-                "https://api.example.com", 
-                "user_access_token"
-            )
-            print("Token request successful!")
-            print(f"Access Token: {access_token}")
-            return access_token
-            
-        except OAuthError as e:
-            print(f"OAuth error: {e}")
-            # Handle OAuth specific errors
-        except Exception as e:
-            print(f"Unexpected error: {e}")
+        
+        # Method 1: Using TokenExchangeRequest object for full control
+        request = TokenExchangeRequest(
+            subject_token="user_original_token_xyz123",
+            subject_token_type="urn:ietf:params:oauth:token-type:access_token",
+            audience="api.microservice.company.com",
+            actor_token="service_identity_token_abc456", 
+            actor_token_type="urn:ietf:params:oauth:token-type:access_token",
+            requested_token_type="urn:ietf:params:oauth:token-type:access_token",
+            scope="calendar:read drive:write slack:message",
+            resource="https://apis.company.com/user-data"
+        )
+        
+        response = client.token_exchange(request)
+        print(f"Impersonated Token: {response.access_token}")
+        print(f"Token Type: {response.token_type}")
+        print(f"Expires In: {response.expires_in} seconds")
+        print(f"Issued Token Type: {response.issued_token_type}")
+        
+        # Method 2: Using keyword arguments for simpler cases
+        delegated_response = client.token_exchange(
+            subject_token="user_original_token_xyz123",
+            subject_token_type="urn:ietf:params:oauth:token-type:access_token",
+            audience="api.notifications.company.com",
+            scope="notifications:send",
+            timeout=30.0
+        )
+        
+        print(f"Delegated Token: {delegated_response.access_token}")
+        
+        return response, delegated_response
 
-# Run with error handling
-request_with_error_handling()
+# Run the service impersonation
+impersonated_token, delegated_token = service_impersonation_example()
 ```
 
-## Async Error Handling
+## Async Advanced Token Exchange
 
 ```python
-from keycardai.oauth import AsyncClient, OAuthError
-
-async def async_request_with_error_handling():
+async def async_service_impersonation_example():
+    """
+    Async version of advanced token exchange with service impersonation.
+    """
     async with AsyncClient("https://zoneid.keycard.cloud") as client:
-        try:
-            access_token = await client.get_access_token_for_resource(
-                "https://api.example.com", 
-                "user_access_token"
-            )
-            print("Token request successful!")
-            print(f"Access Token: {access_token}")
-            return access_token
-            
-        except OAuthError as e:
-            print(f"OAuth error: {e}")
-            # Handle OAuth specific errors
-        except Exception as e:
-            print(f"Unexpected error: {e}")
+        
+        # Method 1: Using TokenExchangeRequest object for full control
+        request = TokenExchangeRequest(
+            subject_token="user_original_token_xyz123",
+            subject_token_type="urn:ietf:params:oauth:token-type:access_token",
+            audience="api.microservice.company.com",
+            actor_token="service_identity_token_abc456",
+            actor_token_type="urn:ietf:params:oauth:token-type:access_token", 
+            requested_token_type="urn:ietf:params:oauth:token-type:access_token",
+            scope="calendar:read drive:write slack:message",
+            resource="https://apis.company.com/user-data"
+        )
+        
+        response = await client.token_exchange(request)
+        print(f"Impersonated Token: {response.access_token}")
+        print(f"Token Type: {response.token_type}")
+        print(f"Expires In: {response.expires_in} seconds")
+        print(f"Issued Token Type: {response.issued_token_type}")
+        
+        # Method 2: Using keyword arguments for simpler cases
+        delegated_response = await client.token_exchange(
+            subject_token="user_original_token_xyz123",
+            subject_token_type="urn:ietf:params:oauth:token-type:access_token",
+            audience="api.notifications.company.com", 
+            scope="notifications:send",
+            timeout=30.0
+        )
+        
+        print(f"Delegated Token: {delegated_response.access_token}")
+        
+        return response, delegated_response
 
-# Run with async error handling
+# Run the async service impersonation
 import asyncio
-asyncio.run(async_request_with_error_handling())
+impersonated_token, delegated_token = asyncio.run(async_service_impersonation_example())
 ```
 
-## Common Use Cases
+## Key Features Demonstrated
 
-### 1. Scope Reduction
-Exchange a token with broad permissions for one with limited scope:
-
-```python
-# Exchange admin token for read-only token
-TokenExchangeRequest(
-    grant_type=GrantType.TOKEN_EXCHANGE,
-    subject_token="admin-token",
-    subject_token_type=TokenType.ACCESS_TOKEN,
-    scope="read-only"
-)
-```
-
-### 2. Service-to-Service Communication
-Exchange a user token for a service token:
-
-```python
-# Exchange user token for service communication
-TokenExchangeRequest(
-    grant_type=GrantType.TOKEN_EXCHANGE,
-    subject_token="user-token",
-    subject_token_type=TokenType.ACCESS_TOKEN,
-    audience="internal-service",
-    requested_token_type=TokenType.ACCESS_TOKEN
-)
-```
-
-### 3. Cross-Domain Token Exchange
-Exchange tokens between different domains or services:
-
-```python
-# Exchange token for different domain
-TokenExchangeRequest(
-    grant_type=GrantType.TOKEN_EXCHANGE,
-    subject_token="source-domain-token",
-    subject_token_type=TokenType.ACCESS_TOKEN,
-    audience="target-domain.example.com",
-    scope="cross-domain:access"
-)
-```
-
-## Security Considerations
-
-1. **Validate tokens** before exchange
-2. **Limit scope** to minimum required permissions
-3. **Use audience** to restrict token usage
-4. **Monitor exchanges** for suspicious activity
-5. **Set appropriate expiration** for exchanged tokens
-
-For client registration examples, see the [Dynamic Client Registration guide](/examples/dynamic-client-registration).
+- **Service Impersonation**: Using `actor_token` to impersonate users while maintaining audit trails
+- **Resource-Specific Tokens**: Requesting tokens for specific audiences and resources
+- **Flexible API**: Both `TokenExchangeRequest` objects and keyword arguments supported
+- **Scope Management**: Fine-grained permission control with custom scopes
+- **Token Metadata**: Access to token expiration, type, and issuer information
+- **Async Support**: Full async/await support for high-performance applications

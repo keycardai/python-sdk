@@ -45,9 +45,9 @@
           {
             "group": "Examples",
             "pages": [
+              "examples/fastmcp-integration",
               "examples/dynamic-client-registration",
-              "examples/token-exchange",
-              "examples/fastmcp-integration"
+              "examples/token-exchange"
             ]
           }
         ],
