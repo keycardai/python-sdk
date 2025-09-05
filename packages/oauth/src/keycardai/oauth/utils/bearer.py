@@ -69,6 +69,26 @@ def validate_bearer_format(token: str) -> bool:
     )
 
 
+def create_auth_header(token: str) -> str:
+    """Create Authorization header with bearer token.
+
+    Args:
+        token: Bearer token string
+
+    Returns:
+        Formatted Authorization header value
+
+    Reference: https://datatracker.ietf.org/doc/html/rfc6750#section-2.1
+
+    Example:
+        >>> create_auth_header("eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...")
+        'Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...'
+    """
+    if not token:
+        raise ValueError("Token cannot be empty")
+    return f"Bearer {token}"
+
+
 class BearerTokenError(BaseModel):
     """Bearer token error response as defined in RFC 6750 Section 3.1.
 

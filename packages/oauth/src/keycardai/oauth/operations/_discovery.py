@@ -38,7 +38,7 @@ def _build_server_metadata_request_from_kwargs(client_base_url: str, **kwargs) -
     """
     # Use provided base_url or fall back to client's base_url
     base_url = kwargs.get("base_url", client_base_url)
-    
+
     return ServerMetadataRequest(base_url=base_url)
 
 

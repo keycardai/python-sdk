@@ -37,31 +37,30 @@ from typing import Any
 from pydantic import BaseModel
 
 
-def extract_jwt_client_id(jwt_token: str) -> str | None:
-    """Extract client_id from a JWT token payload without verification.
+def get_claims(jwt_token: str) -> dict[str, Any]:
+    """Extract all claims from a JWT token payload without verification.
 
-    This utility extracts the client_id claim from a JWT token's payload
-    without performing signature verification. Useful for token exchange
-    scenarios where you need the client_id for building requests.
+    This utility extracts all claims from a JWT token's payload without
+    performing signature verification. Useful for operational purposes
+    like extracting specific claims for token exchange requests.
 
     Args:
-        jwt_token: JWT token string (with or without 'Bearer ' prefix)
+        jwt_token: JWT token string (without Bearer prefix)
 
     Returns:
-        client_id if found in token payload, None otherwise
+        Dictionary of all claims in the JWT payload
 
     Raises:
         ValueError: If token is malformed or cannot be decoded
 
     Note:
         This function does NOT verify the token signature. It's intended
-        for extracting claims from trusted tokens for operational purposes
-        like token exchange requests.
+        for extracting claims from trusted tokens for operational purposes.
 
     Example:
-        >>> token = "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJjbGllbnRfaWQiOiJhYmMxMjMifQ.signature"
-        >>> client_id = extract_jwt_client_id(token)
-        >>> print(client_id)  # "abc123"
+        >>> token = "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJjbGllbnRfaWQiOiJhYmMxMjMiLCJzdWIiOiJ1c2VyMTIzIn0.signature"
+        >>> claims = get_claims(token)
+        >>> print(claims)  # {"client_id": "abc123", "sub": "user123"}
     """
     try:
         # JWT tokens have 3 parts separated by dots: header.payload.signature
@@ -71,6 +70,7 @@ def extract_jwt_client_id(jwt_token: str) -> str | None:
 
         payload_b64 = parts[1]
 
+        # Add padding if needed for base64 decoding
         padding = len(payload_b64) % 4
         if padding:
             payload_b64 += '=' * (4 - padding)
@@ -81,16 +81,13 @@ def extract_jwt_client_id(jwt_token: str) -> str | None:
         except (json.JSONDecodeError, UnicodeDecodeError) as e:
             raise ValueError(f"Failed to decode JWT payload: {e}") from e
 
-        # Extract client_id using OAuth 2.0 standard claim precedence:
-        # 1. 'client_id' - standard OAuth 2.0 claim (RFC 9068)
-        client_id = payload.get('client_id')
-
-        return client_id if isinstance(client_id, str) else None
+        # Return the full claims dictionary
+        return payload if isinstance(payload, dict) else {}
 
     except ValueError:
         raise
     except Exception as e:
-        raise ValueError(f"Failed to extract client_id from JWT token: {e}") from e
+        raise ValueError(f"Failed to extract claims from JWT token: {e}") from e
 
 
 class JWTClientAssertion:

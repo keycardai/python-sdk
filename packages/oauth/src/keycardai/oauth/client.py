@@ -53,7 +53,6 @@ from .types.oauth import (
     ResponseType,
     TokenEndpointAuthMethod,
 )
-from .utils.jwt import extract_jwt_client_id
 
 
 def resolve_endpoints(
@@ -640,36 +639,6 @@ class AsyncClient:
         )
 
         return await token_exchange_async(request, ctx)
-
-    async def get_access_token_for_resource(
-        self,
-        resource: str,
-        subject_token: str,
-    ) -> str:
-        """Get an access token for a specific resource using OAuth 2.0 Token Exchange.
-
-        Usage:
-            async with AsyncClient("https://zoneid.keycard.cloud") as client:
-                access_token = await client.get_access_token_for_resource(
-                    "https://api.example.com",
-                    "user_access_token"
-                )
-
-        Args:
-            resource: The target resource URL to request access for
-            subject_token: The current access token to exchange
-
-        Returns:
-            str: The exchanged access token for the specified resource
-        """
-        request = TokenExchangeRequest(
-            subject_token=subject_token,
-            subject_token_type="urn:ietf:params:oauth:token-type:access_token",
-            resource=resource,
-            client_id=extract_jwt_client_id(subject_token),
-        )
-        response = await self.token_exchange(request)
-        return response.access_token
 
     def endpoints_summary(self) -> dict[str, dict[str, str]]:
         """Get diagnostic summary of resolved endpoints.

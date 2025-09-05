@@ -60,7 +60,6 @@ from .types.oauth import (
     WellKnownEndpoint,
 )
 from .utils.bearer import extract_bearer_token, validate_bearer_format
-from .utils.jwt import extract_jwt_client_id
 
 __version__ = "0.0.1"
 
@@ -101,6 +100,5 @@ __all__ = [
     "NoneAuth",
     # Utility functions
     "extract_bearer_token",
-    "extract_jwt_client_id",
     "validate_bearer_format",
 ]

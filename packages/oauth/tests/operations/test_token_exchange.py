@@ -7,6 +7,7 @@ import pytest
 from keycardai.oauth.exceptions import OAuthHttpError, OAuthProtocolError
 from keycardai.oauth.http._context import HTTPContext
 from keycardai.oauth.http._wire import HttpResponse
+from keycardai.oauth.http.auth import BasicAuth, NoneAuth
 from keycardai.oauth.operations._token_exchange import (
     build_token_exchange_http_request,
     parse_token_exchange_http_response,
@@ -27,9 +28,9 @@ class TestTokenExchangeOperations:
             subject_token_type=TokenType.ACCESS_TOKEN,
             grant_type=GrantType.TOKEN_EXCHANGE
         )
-        auth_headers = {"Authorization": "Basic Y2xpZW50OnNlY3JldA=="}
+        auth = BasicAuth("client", "secret")
 
-        http_req = build_token_exchange_http_request(req, "https://auth.example.com/token", auth_headers)
+        http_req = build_token_exchange_http_request(req, HTTPContext(endpoint="https://auth.example.com/token", transport=Mock(), auth=auth))
 
         assert http_req.method == "POST"
         assert http_req.url == "https://auth.example.com/token"
@@ -54,9 +55,9 @@ class TestTokenExchangeOperations:
             actor_token="actor_jwt_token",
             actor_token_type=TokenType.ACCESS_TOKEN
         )
-        auth_headers = {}
+        auth = NoneAuth()
 
-        http_req = build_token_exchange_http_request(req, "https://auth.example.com/token", auth_headers)
+        http_req = build_token_exchange_http_request(req, HTTPContext(endpoint="https://auth.example.com/token", transport=Mock(), auth=auth))
 
         assert http_req.method == "POST"
         body_str = http_req.body.decode('utf-8')
@@ -73,7 +74,7 @@ class TestTokenExchangeOperations:
         )
 
         with pytest.raises(ValueError, match="subject_token is required"):
-            build_token_exchange_http_request(req, "https://auth.example.com/token", {})
+            build_token_exchange_http_request(req, HTTPContext(endpoint="https://auth.example.com/token", transport=Mock(), auth=Mock()))
 
     def test_parse_token_exchange_http_response_success(self):
         """Test parsing successful token exchange response."""

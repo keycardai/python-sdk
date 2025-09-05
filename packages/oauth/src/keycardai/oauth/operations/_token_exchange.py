@@ -10,7 +10,9 @@ from urllib.parse import urlencode
 from ..exceptions import OAuthHttpError, OAuthProtocolError
 from ..http._context import HTTPContext
 from ..http._wire import HttpRequest, HttpResponse
+from ..http.auth import NoneAuth
 from ..types.models import TokenExchangeRequest, TokenResponse
+from ..utils.jwt import get_claims
 from ._exec import execute_async, execute_sync
 
 
@@ -68,7 +70,7 @@ def _build_token_exchange_request_from_kwargs(**kwargs) -> TokenExchangeRequest:
 
 
 def build_token_exchange_http_request(
-    request: TokenExchangeRequest, endpoint: str, auth_headers: dict[str, str]
+    request: TokenExchangeRequest, context: HTTPContext
 ) -> HttpRequest:
     """Build HTTP request for token exchange.
 
@@ -84,6 +86,13 @@ def build_token_exchange_http_request(
         ValueError: If request parameters are invalid
     """
     _validate_token_exchange_params(request)
+
+    # Impersonate the client if not explicitly set to delegations
+    if request.actor_token is None and request.client_id is None and isinstance(context.auth, NoneAuth):
+        claims = get_claims(request.subject_token)
+        request.client_id = claims.get("client_id")
+
+    auth_headers = dict(context.auth.apply_headers())
 
     payload = request.model_dump(
         mode="json",
@@ -102,7 +111,7 @@ def build_token_exchange_http_request(
 
     return HttpRequest(
         method="POST",
-        url=endpoint,
+        url=context.endpoint,
         headers=headers,
         body=form_data
     )
@@ -197,12 +206,7 @@ def token_exchange(
 
     Reference: https://datatracker.ietf.org/doc/html/rfc8693#section-2.1
     """
-    # Build HTTP request
-    auth_headers = dict(context.auth.apply_headers())
-
-    http_req = build_token_exchange_http_request(
-        request, context.endpoint, auth_headers
-    )
+    http_req = build_token_exchange_http_request(request, context)
 
     # Execute HTTP request using transport
     http_res = execute_sync(context.transport, http_req, context.timeout)
@@ -236,11 +240,8 @@ async def token_exchange_async(
     Reference: https://datatracker.ietf.org/doc/html/rfc8693#section-2.1
     """
     # Build HTTP request
-    auth_headers = dict(context.auth.apply_headers())
 
-    http_req = build_token_exchange_http_request(
-        request, context.endpoint, auth_headers
-    )
+    http_req = build_token_exchange_http_request(request, context)
 
     # Execute HTTP request using async transport
     http_res = await execute_async(context.transport, http_req, context.timeout)
