@@ -5,8 +5,8 @@ and FastMCP servers, following the sync/async API design standard.
 
 Components:
 - KeycardAuthProvider: FastMCP authentication provider using KeyCard zone tokens
-- OAuthClientMiddleware: Middleware that manages OAuth client lifecycle
-- keycardai: Decorators for automated token exchange in FastMCP tools
+- AccessMiddleware: Middleware that manages OAuth client lifecycle and provides grant decorator
+- Access token management through grant decorators
 
 Example Usage:
 
@@ -14,8 +14,7 @@ Example Usage:
     import fastmcp
     from keycardai.mcp.integrations.fastmcp import (
         KeycardAuthProvider,
-        OAuthClientMiddleware,
-        keycardai
+        AccessMiddleware,
     )
 
     # Create MCP server with KeyCard authentication
@@ -28,43 +27,39 @@ Example Usage:
     )
     mcp.add_auth_provider(auth_provider)
 
-    # Add OAuth client middleware for automatic token management
-    oauth_middleware = OAuthClientMiddleware(
+    # Add access middleware for automatic token management
+    access = AccessMiddleware(
         zone_url="https://my-keycard-zone.com"
     )
-    mcp.add_middleware(oauth_middleware)
+    mcp.add_middleware(access)
 
-    # Use the decorator for automatic token exchange in tools
+    # Use the grant decorator for automatic token exchange in tools
     @mcp.tool()
-    @keycardai.get_access_token_for_resource("https://api.example.com")
-    async def call_external_api(query: str) -> str:
+    @access.grant("https://api.example.com")
+    async def call_external_api(ctx: Context, query: str) -> str:
         '''Call an external API on behalf of the authenticated user.
 
         The decorator automatically exchanges the user's token for one
         that can access the specified resource.
         '''
-        # The exchanged token is available in the context
-        context = fastmcp.get_context()
-        delegated_token = context.get("delegated_token")
-
         # Use the token to call the external API
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 "https://api.example.com/search",
                 params={"q": query},
-                headers={"Authorization": f"Bearer {delegated_token}"}
+                headers={"Authorization": create_auth_header(ctx.get_state("keycardai").access("https://api.example.com").access_token)}
             )
             return response.json()
 
     # Simplified setup for common scenarios
     @mcp.tool()
-    @keycardai.get_access_token_for_resource("calendar")
-    async def get_calendar_events() -> list:
+    @access.grant("https://www.googleapis.com/calendar/v3")
+    async def get_calendar_events(ctx: Context) -> list:
         '''Get user's calendar events with automatic token delegation.'''
-        context = fastmcp.get_context()
-        token = context.get("delegated_token")
-
         # Calendar API call with delegated token
+        from keycardai.oauth.utils.bearer import create_auth_header
+        token = ctx.get_state("keycardai").access("https://www.googleapis.com/calendar/v3").access_token
+        headers = {"Authorization": create_auth_header(token)}
         # ... implementation details ...
         return events
 
@@ -74,13 +69,10 @@ Example Usage:
 
 Advanced Configuration:
 
-    # Custom OAuth client configuration
-    oauth_middleware = OAuthClientMiddleware(
+    # Custom access middleware configuration
+    access = AccessMiddleware(
         zone_url="https://my-keycard-zone.com",
-        client_id="custom-client-id",  # Optional: auto-discovery if not provided
-        timeout=30.0,
-        auto_register_client=True,
-        enable_metadata_discovery=True
+        client_name="My Custom Client"
     )
 
     # Custom authentication with specific requirements
@@ -91,22 +83,22 @@ Advanced Configuration:
         resource_server_url="https://my-resource-server.com/"
     )
 
-    # Multiple resource decorators
+    # Multiple resource access with single decorator
     @mcp.tool()
-    @keycardai.get_access_token_for_resource("google-calendar")
-    @keycardai.get_access_token_for_resource("google-drive")
-    async def sync_calendar_to_drive():
+    @access.grant(["https://www.googleapis.com/calendar/v3", "https://www.googleapis.com/drive/v3"])
+    async def sync_calendar_to_drive(ctx: Context):
         '''Sync calendar events to Google Drive with multiple token exchanges.'''
-        context = fastmcp.get_context()
-        calendar_token = context.get("delegated_token_google-calendar")
-        drive_token = context.get("delegated_token_google-drive")
+        from keycardai.oauth.utils.bearer import create_auth_header
+        calendar_token = ctx.get_state("keycardai").access("https://www.googleapis.com/calendar/v3").access_token
+        drive_token = ctx.get_state("keycardai").access("https://www.googleapis.com/drive/v3").access_token
+        calendar_headers = {"Authorization": create_auth_header(calendar_token)}
+        drive_headers = {"Authorization": create_auth_header(drive_token)}
 
         # Use both tokens for cross-service operations
         # ... implementation ...
 """
 
-from .decorators import get_access_token_for_resource
-from .middleware import OAuthClientMiddleware
+from .middleware import AccessMiddleware
 from .provider import KeycardAuthProvider
 
 __version__ = "0.0.1"
@@ -114,6 +106,5 @@ __version__ = "0.0.1"
 __all__ = [
     "__version__",
     "KeycardAuthProvider",
-    "OAuthClientMiddleware",
-    "get_access_token_for_resource",
+    "AccessMiddleware",
 ]
