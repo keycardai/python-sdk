@@ -234,7 +234,7 @@ class AccessMiddleware(Middleware):
                     access_tokens = {}
                     for resource in resource_list:
                         try:
-                            token_response = await self.client.token_exchange(
+                            token_response = await self.client.exchange_token(
                                 subject_token=user_token.token,
                                 resource=resource,
                                 subject_token_type="urn:ietf:params:oauth:token-type:access_token"
@@ -244,7 +244,7 @@ class AccessMiddleware(Middleware):
                             return {
                                 "error": f"Token exchange failed for {resource}: {e}",
                                 "isError": True,
-                                "errorType": "token_exchange_failed",
+                                "errorType": "exchange_token_failed",
                                 "resource": resource,
                             }
 
