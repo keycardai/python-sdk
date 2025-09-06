@@ -97,14 +97,14 @@ def service_impersonation_example():
             resource="https://apis.company.com/user-data"
         )
         
-        response = client.token_exchange(request)
+        response = client.exchange_token(request)
         print(f"Impersonated Token: {response.access_token}")
         print(f"Token Type: {response.token_type}")
         print(f"Expires In: {response.expires_in} seconds")
         print(f"Issued Token Type: {response.issued_token_type}")
         
         # Method 2: Using keyword arguments for simpler cases
-        delegated_response = client.token_exchange(
+        delegated_response = client.exchange_token(
             subject_token="user_original_token_xyz123",
             subject_token_type="urn:ietf:params:oauth:token-type:access_token",
             audience="api.notifications.company.com",
@@ -141,14 +141,14 @@ async def async_service_impersonation_example():
             resource="https://apis.company.com/user-data"
         )
         
-        response = await client.token_exchange(request)
+        response = await client.exchange_token(request)
         print(f"Impersonated Token: {response.access_token}")
         print(f"Token Type: {response.token_type}")
         print(f"Expires In: {response.expires_in} seconds")
         print(f"Issued Token Type: {response.issued_token_type}")
         
         # Method 2: Using keyword arguments for simpler cases
-        delegated_response = await client.token_exchange(
+        delegated_response = await client.exchange_token(
             subject_token="user_original_token_xyz123",
             subject_token_type="urn:ietf:params:oauth:token-type:access_token",
             audience="api.notifications.company.com", 

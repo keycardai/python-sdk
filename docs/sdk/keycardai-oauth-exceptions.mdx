@@ -20,13 +20,13 @@ References:
 
 ## Classes
 
-### `OAuthError`
+### `OAuthError` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/exceptions.py#L16" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Base class for all OAuth 2.0 errors.
 
 
-### `OAuthHttpError`
+### `OAuthHttpError` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/exceptions.py#L25" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 HTTP-level errors with retry guidance.
@@ -35,7 +35,7 @@ Raised for HTTP status codes indicating server or client errors.
 Includes deterministic retriability classification.
 
 
-### `OAuthProtocolError`
+### `OAuthProtocolError` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/exceptions.py#L67" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 RFC 6749 error responses from OAuth servers.
@@ -44,7 +44,7 @@ Represents structured error responses as defined in OAuth 2.0 specifications.
 Protocol errors are never retriable as they indicate client-side issues.
 
 
-### `NetworkError`
+### `NetworkError` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/exceptions.py#L101" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Transport/network failures with retry guidance.
@@ -52,7 +52,7 @@ Transport/network failures with retry guidance.
 Covers connection failures, timeouts, and other network-level issues.
 
 
-### `ConfigError`
+### `ConfigError` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/exceptions.py#L129" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Client configuration errors.
@@ -61,7 +61,7 @@ Raised when client is misconfigured (missing endpoints, invalid parameters, etc.
 These are never retriable as they require code changes.
 
 
-### `AuthenticationError`
+### `AuthenticationError` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/exceptions.py#L140" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Authentication failures with OAuth 2.0 servers.
@@ -70,7 +70,7 @@ Raised when client authentication fails, typically due to invalid
 credentials or authentication method issues.
 
 
-### `TokenExchangeError`
+### `TokenExchangeError` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/exceptions.py#L151" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 OAuth 2.0 Token Exchange specific errors (RFC 8693).

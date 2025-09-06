@@ -40,24 +40,24 @@ JWT Access Token Benefits:
 
 ## Functions
 
-### `extract_jwt_client_id`
+### `get_claims` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/utils/jwt.py#L40" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-extract_jwt_client_id(jwt_token: str) -> str | None
+get_claims(jwt_token: str) -> dict[str, Any]
 ```
 
 
-Extract client_id from a JWT token payload without verification.
+Extract all claims from a JWT token payload without verification.
 
-This utility extracts the client_id claim from a JWT token's payload
-without performing signature verification. Useful for token exchange
-scenarios where you need the client_id for building requests.
+This utility extracts all claims from a JWT token's payload without
+performing signature verification. Useful for operational purposes
+like extracting specific claims for token exchange requests.
 
 **Args:**
-- `jwt_token`: JWT token string (with or without 'Bearer ' prefix)
+- `jwt_token`: JWT token string (without Bearer prefix)
 
 **Returns:**
-- client_id if found in token payload, None otherwise
+- Dictionary of all claims in the JWT payload
 
 **Raises:**
 - `ValueError`: If token is malformed or cannot be decoded
@@ -65,7 +65,7 @@ scenarios where you need the client_id for building requests.
 
 ## Classes
 
-### `JWTClientAssertion`
+### `JWTClientAssertion` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/utils/jwt.py#L93" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 JWT Client Assertion utilities for RFC 7523.
@@ -78,7 +78,7 @@ Reference: https://datatracker.ietf.org/doc/html/rfc7523#section-3
 
 **Methods:**
 
-#### `create_assertion`
+#### `create_assertion` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/utils/jwt.py#L106" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 create_assertion(client_id: str, audience: str, issuer: str, subject: str | None = None, expiration_seconds: int = 300, additional_claims: dict[str, Any] | None = None, private_key: str | None = None, algorithm: str = 'RS256') -> str
@@ -102,7 +102,7 @@ Create a JWT client assertion for authentication.
 Reference: https://datatracker.ietf.org/doc/html/rfc7523#section-3
 
 
-#### `verify_assertion`
+#### `verify_assertion` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/utils/jwt.py#L137" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 verify_assertion(assertion: str, expected_audience: str, public_key: str | None = None, clock_skew_seconds: int = 30) -> dict[str, Any]
@@ -123,7 +123,7 @@ Verify a JWT client assertion.
 - `OAuthInvalidTokenError`: If JWT is invalid or verification fails
 
 
-### `JWTAccessToken`
+### `JWTAccessToken` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/utils/jwt.py#L163" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 JWT Access Token profile implementing RFC 9068.
@@ -134,7 +134,7 @@ as specified in RFC 9068.
 Reference: https://datatracker.ietf.org/doc/html/rfc9068#section-2
 
 
-### `JWTAccessTokenHandler`
+### `JWTAccessTokenHandler` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/utils/jwt.py#L188" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Handler for JWT Access Tokens implementing RFC 9068.
@@ -147,7 +147,7 @@ Reference: https://datatracker.ietf.org/doc/html/rfc9068
 
 **Methods:**
 
-#### `create_access_token`
+#### `create_access_token` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/utils/jwt.py#L231" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 create_access_token(self, subject: str, client_id: str, audience: str | list[str], scope: str | None = None, expires_in: int = 3600, additional_claims: dict[str, Any] | None = None) -> str
@@ -169,7 +169,7 @@ Create a JWT access token.
 Reference: https://datatracker.ietf.org/doc/html/rfc9068#section-2
 
 
-#### `parse_access_token`
+#### `parse_access_token` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/utils/jwt.py#L258" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 parse_access_token(self, jwt_token: str, verify_signature: bool = True, public_key: str | None = None) -> JWTAccessToken
@@ -191,7 +191,7 @@ Parse and validate a JWT access token.
 Reference: https://datatracker.ietf.org/doc/html/rfc9068#section-3
 
 
-### `JWTAccessTokenValidator`
+### `JWTAccessTokenValidator` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/utils/jwt.py#L283" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 JWT Access Token validation per RFC 9068.
@@ -204,7 +204,7 @@ Reference: https://datatracker.ietf.org/doc/html/rfc9068
 
 **Methods:**
 
-#### `validate_token`
+#### `validate_token` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/utils/jwt.py#L303" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 validate_token(self, jwt_token: str, required_scope: str | None = None, clock_skew_seconds: int = 30) -> dict[str, Any]

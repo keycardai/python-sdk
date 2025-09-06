@@ -6,15 +6,11 @@ sidebarTitle: client
 # `keycardai.oauth.client`
 
 
-OAuth 2.0 client implementation following sync/async API design standard.
-
-This module provides separate AsyncClient and Client classes with proper I/O separation,
-sharing a sync-agnostic core as defined in the sync/async API design standard.
-
+OAuth 2.0 client implementation
 
 ## Functions
 
-### `resolve_endpoints`
+### `resolve_endpoints` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L51" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 resolve_endpoints(base_url: str, endpoint_overrides: Endpoints | None = None, discovered_metadata: 'AuthorizationServerMetadata | None' = None) -> Endpoints
@@ -32,10 +28,10 @@ Resolve final endpoint URLs with priority: overrides > discovered > defaults.
 - Resolved endpoints configuration with proper priority handling
 
 
-### `create_endpoints_summary`
+### `create_endpoints_summary` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L106" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-create_endpoints_summary(endpoints: Endpoints, base_url: str, endpoint_overrides: Endpoints | None = None, discovered_metadata: 'AuthorizationServerMetadata | None' = None) -> dict[str, dict[str, str]]
+create_endpoints_summary(endpoints: Endpoints, endpoint_overrides: Endpoints | None = None, discovered_metadata: 'AuthorizationServerMetadata | None' = None) -> dict[str, dict[str, str]]
 ```
 
 
@@ -43,7 +39,6 @@ Create diagnostic summary of resolved endpoints showing their sources.
 
 **Args:**
 - `endpoints`: Resolved endpoints configuration
-- `base_url`: Base URL for OAuth 2.0 server
 - `endpoint_overrides`: Optional endpoint overrides
 - `discovered_metadata`: Optional discovered server metadata
 
@@ -53,10 +48,10 @@ Create diagnostic summary of resolved endpoints showing their sources.
 
 ## Classes
 
-### `AsyncClient`
+### `AsyncClient` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L174" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
-Asynchronous OAuth 2.0 client for async/await environments.
+Asynchronous OAuth 2.0 client.
 
 Must be used inside an event loop (asyncio). Provides native async I/O
 operations for optimal performance in async applications.
@@ -70,7 +65,7 @@ registration during context entry unless explicitly disabled via ClientConfig.
 
 **Methods:**
 
-#### `get_client_id`
+#### `get_client_id` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L356" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_client_id(self) -> str | None
@@ -85,7 +80,7 @@ Get the client ID obtained from registration.
 - `RuntimeError`: If called outside of async context manager
 
 
-#### `get_client_secret`
+#### `get_client_secret` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L372" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_client_secret(self) -> str | None
@@ -100,56 +95,103 @@ Get the client secret obtained from registration.
 - `RuntimeError`: If called outside of async context manager
 
 
-#### `register_client`
+#### `register_client` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L398" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 register_client(self, request: ClientRegistrationRequest) -> ClientRegistrationResponse
 ```
 
+#### `register_client` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L404" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+register_client() -> ClientRegistrationResponse
+```
+
+#### `register_client` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L426" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+register_client(**client_registration_args) -> ClientRegistrationResponse
+```
+
 Register a new OAuth 2.0 client with the authorization server.
 
-Simple usage (S2S):
-    request = ClientRegistrationRequest(
-        client_name="MyService",
-        jwks_uri="https://zone1234.keycard.cloud/.well-known/jwks.json"
-    )
-    response = await client.register_client_async(request)
+Either pass a fully-formed ClientRegistrationRequest *or* call with keyword
+args for common cases.
 
 **Args:**
 - `request`: ClientRegistrationRequest with all registration parameters
+- `**client_registration_args`: Alternative to request - provide individual parameters
 
 **Returns:**
 - ClientRegistrationResponse with client credentials and metadata
 
+**Raises:**
+- `TypeError`: If both request and client_registration_args are provided, or client_name is empty
+- `ValidationError`: If request model validation fails (e.g., empty required fields)
+- `OAuthHttpError`: If registration endpoint returns HTTP error (4xx/5xx)
+- `OAuthProtocolError`: If registration response is invalid or contains OAuth errors
 
-#### `discover_server_metadata`
+
+#### `discover_server_metadata` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L490" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-discover_server_metadata(self, request: ServerMetadataRequest | None = None) -> AuthorizationServerMetadata
+discover_server_metadata(self, request: ServerMetadataRequest) -> AuthorizationServerMetadata
+```
+
+#### `discover_server_metadata` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L496" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+discover_server_metadata() -> AuthorizationServerMetadata
+```
+
+#### `discover_server_metadata` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L503" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+discover_server_metadata(**metadata_discovery_args) -> AuthorizationServerMetadata
 ```
 
 Discover OAuth 2.0 authorization server metadata.
 
+Either pass a fully-formed ServerMetadataRequest *or* call with keyword
+args for simple cases.
+
 **Args:**
 - `request`: Optional ServerMetadataRequest (defaults to client's base_url if not provided)
+- `**metadata_discovery_args`: Alternative to request - provide individual parameters
 
 **Returns:**
 - AuthorizationServerMetadata with discovered server capabilities
 
 **Raises:**
+- `TypeError`: If both request and metadata_discovery_args are provided
 - `ConfigError`: If base_url is empty
 - `OAuthHttpError`: If discovery endpoint is unreachable
 - `OAuthProtocolError`: If metadata format is invalid
 - `NetworkError`: If network request fails
 
 
-#### `token_exchange`
+#### `exchange_token` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L558" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-token_exchange(self, request: TokenExchangeRequest) -> TokenResponse
+exchange_token(self, request: TokenExchangeRequest) -> TokenResponse
+```
+
+#### `exchange_token` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L564" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+exchange_token() -> TokenResponse
+```
+
+#### `exchange_token` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L581" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+exchange_token(**token_exchange_args) -> TokenResponse
 ```
 
 Perform OAuth 2.0 Token Exchange.
+
+Either pass a fully-formed TokenExchangeRequest *or* call with keyword
+args for common cases.
 
 Simple usage (delegation):
     request = TokenExchangeRequest(
@@ -157,7 +199,7 @@ Simple usage (delegation):
         subject_token_type="urn:ietf:params:oauth:token-type:access_token",
         audience="target-service.company.com"
     )
-    response = await client.token_exchange_async(request)
+    response = await client.token_exchange(request)
 
 Advanced usage (impersonation):
     request = TokenExchangeRequest(
@@ -169,51 +211,20 @@ Advanced usage (impersonation):
         requested_token_type="urn:ietf:params:oauth:token-type:access_token",
         scope="read write"
     )
-    response = await client.token_exchange_async(request)
+    response = await client.token_exchange(request)
 
 **Args:**
 - `request`: TokenExchangeRequest with all exchange parameters
+- `**token_exchange_args`: Alternative to request - provide individual parameters
 
 **Returns:**
 - TokenResponse with the exchanged token and metadata
 
-
-#### `access_token_for_resource`
-
-```python
-access_token_for_resource(self, resource: str, subject_token: str) -> str
-```
-
-Perform OAuth 2.0 Token Exchange.
-
-Simple usage (delegation):
-    request = TokenExchangeRequest(
-        subject_token="original_access_token",
-        subject_token_type="urn:ietf:params:oauth:token-type:access_token",
-        audience="target-service.company.com"
-    )
-    response = await client.token_exchange_async(request)
-
-Advanced usage (impersonation):
-    request = TokenExchangeRequest(
-        subject_token="admin_token",
-        subject_token_type="urn:ietf:params:oauth:token-type:access_token",
-        audience="target-service.company.com",
-        actor_token="service_token",
-        actor_token_type="urn:ietf:params:oauth:token-type:access_token",
-        requested_token_type="urn:ietf:params:oauth:token-type:access_token",
-        scope="read write"
-    )
-    response = await client.token_exchange_async(request)
-
-**Args:**
-- `request`: TokenExchangeRequest with all exchange parameters
-
-**Returns:**
-- TokenResponse with the exchanged token and metadata
+**Raises:**
+- `TypeError`: If both request and token_exchange_args are provided
 
 
-#### `endpoints_summary`
+#### `endpoints_summary` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L643" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 endpoints_summary(self) -> dict[str, dict[str, str]]
@@ -225,7 +236,7 @@ Get diagnostic summary of resolved endpoints.
 - Dictionary showing resolved URLs and their sources
 
 
-### `Client`
+### `Client` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L656" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Synchronous OAuth 2.0 client for traditional Python applications.
@@ -240,7 +251,7 @@ unless discovery is explicitly disabled via ClientConfig.
 
 **Methods:**
 
-#### `client_id`
+#### `client_id` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L820" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 client_id(self) -> str | None
@@ -254,7 +265,7 @@ Accessing this property will trigger automatic initialization if needed.
 - Client ID string if registration was successful, None otherwise
 
 
-#### `client_secret`
+#### `client_secret` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L832" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 client_secret(self) -> str | None
@@ -268,13 +279,28 @@ Accessing this property will trigger automatic initialization if needed.
 - Client secret string if registration was successful, None otherwise
 
 
-#### `register_client`
+#### `register_client` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L845" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 register_client(self, request: ClientRegistrationRequest) -> ClientRegistrationResponse
 ```
 
+#### `register_client` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L851" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+register_client() -> ClientRegistrationResponse
+```
+
+#### `register_client` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L873" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+register_client(**client_registration_args) -> ClientRegistrationResponse
+```
+
 Register a new OAuth 2.0 client with the authorization server.
+
+Either pass a fully-formed ClientRegistrationRequest *or* call with keyword
+args for common cases.
 
 Simple usage (S2S):
     request = ClientRegistrationRequest(
@@ -285,41 +311,77 @@ Simple usage (S2S):
 
 **Args:**
 - `request`: ClientRegistrationRequest with all registration parameters
-- `timeout`: Optional timeout override (overrides request.timeout if provided)
+- `**client_registration_args`: Alternative to request - provide individual parameters
 
 **Returns:**
 - ClientRegistrationResponse with client credentials and metadata
 
+**Raises:**
+- `TypeError`: If both request and client_registration_args are provided, or client_name is empty
+- `ValidationError`: If request model validation fails (e.g., empty required fields)
+- `OAuthHttpError`: If registration endpoint returns HTTP error (4xx/5xx)
+- `OAuthProtocolError`: If registration response is invalid or contains OAuth errors
 
-#### `discover_server_metadata`
+
+#### `discover_server_metadata` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L938" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-discover_server_metadata(self, request: ServerMetadataRequest | None = None) -> AuthorizationServerMetadata
+discover_server_metadata(self, request: ServerMetadataRequest) -> AuthorizationServerMetadata
+```
+
+#### `discover_server_metadata` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L944" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+discover_server_metadata() -> AuthorizationServerMetadata
+```
+
+#### `discover_server_metadata` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L951" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+discover_server_metadata(**metadata_discovery_args) -> AuthorizationServerMetadata
 ```
 
 Discover OAuth 2.0 authorization server metadata.
 
+Either pass a fully-formed ServerMetadataRequest *or* call with keyword
+args for simple cases.
+
 **Args:**
 - `request`: Optional ServerMetadataRequest (defaults to client's base_url if not provided)
-- `timeout`: Optional timeout override (overrides request.timeout if provided)
+- `**metadata_discovery_args`: Alternative to request - provide individual parameters
 
 **Returns:**
 - AuthorizationServerMetadata with discovered server capabilities
 
 **Raises:**
-- `ConfigError`: If base_url is empty
+- `TypeError`: If both request and metadata_discovery_args are provided
 - `OAuthHttpError`: If discovery endpoint is unreachable
 - `OAuthProtocolError`: If metadata format is invalid
 - `NetworkError`: If network request fails
 
 
-#### `token_exchange`
+#### `exchange_token` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L1005" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-token_exchange(self, request: TokenExchangeRequest) -> TokenResponse
+exchange_token(self, request: TokenExchangeRequest) -> TokenResponse
+```
+
+#### `exchange_token` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L1011" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+exchange_token() -> TokenResponse
+```
+
+#### `exchange_token` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L1028" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+exchange_token(**token_exchange_args) -> TokenResponse
 ```
 
 Perform OAuth 2.0 Token Exchange.
+
+Either pass a fully-formed TokenExchangeRequest *or* call with keyword
+args for common cases.
 
 Simple usage (delegation):
     request = TokenExchangeRequest(
@@ -343,12 +405,16 @@ Advanced usage (impersonation):
 
 **Args:**
 - `request`: TokenExchangeRequest with all exchange parameters
+- `**token_exchange_args`: Alternative to request - provide individual parameters
 
 **Returns:**
 - TokenResponse with the exchanged token and metadata
 
+**Raises:**
+- `TypeError`: If both request and token_exchange_args are provided
 
-#### `endpoints_summary`
+
+#### `endpoints_summary` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L1090" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 endpoints_summary(self) -> dict[str, dict[str, str]]

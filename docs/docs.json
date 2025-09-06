@@ -93,7 +93,6 @@
             "group": "FastMCP Integration",
             "pages": [
               "sdk/keycardai-mcp-integrations-fastmcp-__init__",
-              "sdk/keycardai-mcp-integrations-fastmcp-decorators",
               "sdk/keycardai-mcp-integrations-fastmcp-middleware",
               "sdk/keycardai-mcp-integrations-fastmcp-provider"
             ]

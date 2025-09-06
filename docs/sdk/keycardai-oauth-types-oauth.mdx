@@ -31,7 +31,7 @@ References:
 
 ## Classes
 
-### `TokenEndpointAuthMethod`
+### `TokenEndpointAuthMethod` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/types/oauth.py#L30" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Token endpoint authentication methods as defined in multiple RFCs.
@@ -43,7 +43,7 @@ References:
 - RFC 8705: OAuth 2.0 Mutual-TLS Client Authentication
 
 
-### `GrantType`
+### `GrantType` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/types/oauth.py#L58" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 OAuth 2.0 grant types as defined in multiple RFCs.
@@ -56,7 +56,7 @@ References:
 - RFC 8628: OAuth 2.0 Device Authorization Grant
 
 
-### `ResponseType`
+### `ResponseType` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/types/oauth.py#L97" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 OAuth 2.0 response types as defined in RFC 6749.
@@ -67,19 +67,13 @@ References:
 - RFC 6749 Section 4.2: Implicit Grant
 
 
-### `TokenType`
+### `TokenType` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/types/oauth.py#L119" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
-OAuth 2.0 token types as defined in multiple RFCs.
-
-References:
-- RFC 6749 Section 7.1: Access Token Types
-- RFC 6750: Bearer Token Usage
-- RFC 8693 Section 3: Token Exchange Response
-- RFC 9068: JWT Profile for OAuth 2.0 Access Tokens
+OAuth 2.0 token types
 
 
-### `TokenTypeHint`
+### `TokenTypeHint` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/types/oauth.py#L138" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Token type hints for introspection and revocation as defined in RFCs.
@@ -89,7 +83,7 @@ References:
 - RFC 7009 Section 2.1: Revocation Request
 
 
-### `PKCECodeChallengeMethod`
+### `PKCECodeChallengeMethod` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/types/oauth.py#L154" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 PKCE code challenge methods as defined in RFC 7636.
@@ -98,7 +92,7 @@ References:
 - RFC 7636 Section 4.2: Client Creates the Code Challenge
 
 
-### `WellKnownEndpoint`
+### `WellKnownEndpoint` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/types/oauth.py#L172" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Well-known OAuth 2.0 and OpenID Connect discovery endpoints.
@@ -109,7 +103,7 @@ automatic discovery of server capabilities and configuration.
 
 **Methods:**
 
-#### `construct_url`
+#### `construct_url` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/types/oauth.py#L260" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 construct_url(cls, base_url: str, endpoint: 'WellKnownEndpoint') -> str
@@ -125,7 +119,7 @@ Construct a complete discovery URL from base URL and well-known endpoint.
 - Complete discovery URL
 
 
-### `OAuth2DefaultEndpoints`
+### `OAuth2DefaultEndpoints` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/types/oauth.py#L283" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Standard OAuth 2.0 endpoint paths as defined in various RFCs.
@@ -137,7 +131,7 @@ metadata discovery when possible.
 
 **Methods:**
 
-#### `construct_url`
+#### `construct_url` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/types/oauth.py#L394" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 construct_url(cls, base_url: str, endpoint: 'OAuth2DefaultEndpoints') -> str

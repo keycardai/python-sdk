@@ -29,7 +29,7 @@ Security Benefits:
 
 ## Classes
 
-### `CertificateBoundToken`
+### `CertificateBoundToken` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/utils/crypto.py#L25" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Certificate-bound access token metadata for RFC 8705.
@@ -37,7 +37,7 @@ Certificate-bound access token metadata for RFC 8705.
 Reference: https://datatracker.ietf.org/doc/html/rfc8705#section-3
 
 
-### `MutualTLSClientAuth`
+### `MutualTLSClientAuth` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/utils/crypto.py#L35" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Mutual TLS client authentication utilities for RFC 8705.
@@ -50,7 +50,7 @@ Reference: https://datatracker.ietf.org/doc/html/rfc8705
 
 **Methods:**
 
-#### `generate_cert_thumbprint`
+#### `generate_cert_thumbprint` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/utils/crypto.py#L57" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 generate_cert_thumbprint(certificate_pem: str) -> str
@@ -70,7 +70,7 @@ as defined in RFC 8705 Section 3.
 Reference: https://datatracker.ietf.org/doc/html/rfc8705#section-3
 
 
-#### `extract_certificate_info`
+#### `extract_certificate_info` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/utils/crypto.py#L77" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 extract_certificate_info(certificate_pem: str) -> dict
@@ -90,7 +90,7 @@ and other metadata useful for mTLS authentication.
 Reference: https://datatracker.ietf.org/doc/html/rfc8705#section-2
 
 
-#### `validate_cert_bound_token`
+#### `validate_cert_bound_token` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/utils/crypto.py#L94" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 validate_cert_bound_token(self, access_token: str, client_certificate: str) -> bool
@@ -111,7 +111,7 @@ certificate by comparing certificate thumbprints.
 Reference: https://datatracker.ietf.org/doc/html/rfc8705#section-3
 
 
-#### `create_certificate_bound_token`
+#### `create_certificate_bound_token` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/utils/crypto.py#L116" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 create_certificate_bound_token(self, base_token: dict, certificate_pem: str) -> dict
@@ -132,7 +132,7 @@ to a specific client certificate.
 Reference: https://datatracker.ietf.org/doc/html/rfc8705#section-3.1
 
 
-#### `validate_certificate_chain`
+#### `validate_certificate_chain` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/utils/crypto.py#L139" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 validate_certificate_chain(certificate_pem: str, ca_bundle: str | None = None) -> bool

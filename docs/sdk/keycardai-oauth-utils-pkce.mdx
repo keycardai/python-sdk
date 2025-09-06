@@ -27,7 +27,7 @@ Security Benefits:
 
 ## Classes
 
-### `PKCEChallenge`
+### `PKCEChallenge` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/utils/pkce.py#L23" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 PKCE Challenge and Verifier pair for RFC 7636.
@@ -35,7 +35,7 @@ PKCE Challenge and Verifier pair for RFC 7636.
 Reference: https://datatracker.ietf.org/doc/html/rfc7636#section-4.1
 
 
-### `PKCEMethods`
+### `PKCEMethods` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/utils/pkce.py#L34" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 PKCE code challenge methods defined in RFC 7636 Section 4.2.
@@ -43,7 +43,7 @@ PKCE code challenge methods defined in RFC 7636 Section 4.2.
 Reference: https://datatracker.ietf.org/doc/html/rfc7636#section-4.2
 
 
-### `PKCEGenerator`
+### `PKCEGenerator` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/utils/pkce.py#L44" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 PKCE challenge and verifier generator for RFC 7636.
@@ -56,7 +56,7 @@ Reference: https://datatracker.ietf.org/doc/html/rfc7636
 
 **Methods:**
 
-#### `generate_code_verifier`
+#### `generate_code_verifier` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/utils/pkce.py#L72" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 generate_code_verifier(length: int = 128) -> str
@@ -79,7 +79,7 @@ unreserved characters [A-Z] [a-z] [0-9] "-" "." "_" "~".
 Reference: https://datatracker.ietf.org/doc/html/rfc7636#section-4.1
 
 
-#### `generate_code_challenge`
+#### `generate_code_challenge` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/utils/pkce.py#L93" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 generate_code_challenge(verifier: str, method: str = 'S256') -> str
@@ -102,7 +102,7 @@ Creates a code challenge as defined in RFC 7636 Section 4.2.
 Reference: https://datatracker.ietf.org/doc/html/rfc7636#section-4.2
 
 
-#### `generate_pkce_pair`
+#### `generate_pkce_pair` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/utils/pkce.py#L113" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 generate_pkce_pair(self, method: str = 'S256', verifier_length: int = 128) -> PKCEChallenge
@@ -123,7 +123,7 @@ S256 method is recommended for security.
 Reference: https://datatracker.ietf.org/doc/html/rfc7636#section-4
 
 
-#### `validate_pkce_pair`
+#### `validate_pkce_pair` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/utils/pkce.py#L134" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 validate_pkce_pair(code_verifier: str, code_challenge: str, method: str = 'S256') -> bool
