@@ -649,7 +649,6 @@ wheels = [
 
 [[package]]
 name = "keycardai"
-version = "0.0.1"
 source = { editable = "." }
 
 [package.optional-dependencies]
@@ -697,7 +696,6 @@ dev = [
 
 [[package]]
 name = "keycardai-mcp"
-version = "0.0.1"
 source = { editable = "packages/mcp" }
 dependencies = [
     { name = "pydantic" },
@@ -708,7 +706,6 @@ requires-dist = [{ name = "pydantic", specifier = ">=2.11.7" }]
 
 [[package]]
 name = "keycardai-mcp-fastmcp"
-version = "0.0.1"
 source = { editable = "packages/mcp-fastmcp" }
 dependencies = [
     { name = "fastmcp" },
@@ -729,7 +726,6 @@ requires-dist = [
 
 [[package]]
 name = "keycardai-oauth"
-version = "0.0.1"
 source = { editable = "packages/oauth" }
 dependencies = [
     { name = "httpx" },

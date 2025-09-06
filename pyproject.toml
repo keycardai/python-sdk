@@ -1,6 +1,6 @@
 [project]
 name = "keycardai"
-version = "0.0.1"
+dynamic = ["version"]
 description = "Keycard Python SDK - A workspace for Keycard service packages"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -63,8 +63,11 @@ keycardai-mcp-fastmcp = { workspace = true }
 keycardai-mcp = { workspace = true }
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "uv-dynamic-versioning"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "uv-dynamic-versioning"
 
 [dependency-groups]
 dev = [
