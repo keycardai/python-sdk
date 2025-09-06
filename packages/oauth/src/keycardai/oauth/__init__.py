@@ -62,10 +62,7 @@ from .types.oauth import (
 )
 from .utils.bearer import extract_bearer_token, validate_bearer_format
 
-__version__ = "0.0.1"
-
 __all__ = [
-    "__version__",
     # Core clients
     "AsyncClient",
     "Client",
