@@ -10,9 +10,9 @@ from keycardai.oauth.http._wire import HttpResponse
 from keycardai.oauth.http.auth import BasicAuth, NoneAuth
 from keycardai.oauth.operations._token_exchange import (
     build_token_exchange_http_request,
+    exchange_token,
+    exchange_token_async,
     parse_token_exchange_http_response,
-    token_exchange,
-    token_exchange_async,
 )
 from keycardai.oauth.types.models import TokenExchangeRequest, TokenResponse
 from keycardai.oauth.types.oauth import GrantType, TokenType
@@ -64,17 +64,6 @@ class TestTokenExchangeOperations:
         assert "audience=https%3A%2F%2Fapi.example.com" in body_str
         assert "scope=read+write" in body_str
         assert "actor_token=actor_jwt_token" in body_str
-
-    def test_build_token_exchange_http_request_validation_error(self):
-        """Test validation error for missing subject_token."""
-        req = TokenExchangeRequest(
-            subject_token="",  # Empty subject token should fail
-            subject_token_type=TokenType.ACCESS_TOKEN,
-            grant_type=GrantType.TOKEN_EXCHANGE
-        )
-
-        with pytest.raises(ValueError, match="subject_token is required"):
-            build_token_exchange_http_request(req, HTTPContext(endpoint="https://auth.example.com/token", transport=Mock(), auth=Mock()))
 
     def test_parse_token_exchange_http_response_success(self):
         """Test parsing successful token exchange response."""
@@ -148,7 +137,7 @@ class TestTokenExchangeOperations:
             grant_type=GrantType.TOKEN_EXCHANGE
         )
 
-        result = token_exchange(req, context)
+        result = exchange_token(req, context)
 
         assert isinstance(result, TokenResponse)
         assert result.access_token == "sync_exchanged_token"
@@ -181,7 +170,7 @@ class TestTokenExchangeOperations:
             grant_type=GrantType.TOKEN_EXCHANGE
         )
 
-        result = await token_exchange_async(req, context)
+        result = await exchange_token_async(req, context)
 
         assert isinstance(result, TokenResponse)
         assert result.access_token == "async_exchanged_token"

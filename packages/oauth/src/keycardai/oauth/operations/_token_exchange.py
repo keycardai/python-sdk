@@ -13,60 +13,6 @@ from ..http._wire import HttpRequest, HttpResponse
 from ..http.auth import NoneAuth
 from ..types.models import TokenExchangeRequest, TokenResponse
 from ..utils.jwt import get_claims
-from ._exec import execute_async, execute_sync
-
-
-def _validate_token_exchange_params(request: TokenExchangeRequest) -> None:
-    """Validate token exchange parameters.
-
-    Args:
-        request: The token exchange request to validate
-
-    Raises:
-        ValueError: If required parameters are missing or invalid
-    """
-    if not request.subject_token:
-        raise ValueError("subject_token is required")
-    if not request.subject_token_type:
-        raise ValueError("subject_token_type is required")
-
-def _build_token_exchange_request_from_kwargs(**kwargs) -> TokenExchangeRequest:
-    """Build a TokenExchangeRequest from keyword arguments.
-
-    Args:
-        **kwargs: Keyword arguments matching TokenExchangeRequest fields
-
-    Returns:
-        TokenExchangeRequest built from the provided kwargs
-
-    Raises:
-        TypeError: If required parameters are missing
-    """
-    # Extract required parameters
-    subject_token = kwargs.get("subject_token")
-    if subject_token is None:
-        raise TypeError("subject_token is required when not using a request object")
-
-    subject_token_type = kwargs.get("subject_token_type")
-    if subject_token_type is None:
-        raise TypeError("subject_token_type is required when not using a request object")
-
-    # Build the request with provided values, falling back to defaults
-    # Only pass kwargs that are not None to let the model use its defaults
-    request_kwargs = {
-        "subject_token": subject_token,
-        "subject_token_type": subject_token_type
-    }
-
-    for field_name in [
-        "grant_type", "resource", "audience", "scope", "requested_token_type",
-        "actor_token", "actor_token_type", "timeout", "client_id"
-    ]:
-        value = kwargs.get(field_name)
-        if value is not None:
-            request_kwargs[field_name] = value
-
-    return TokenExchangeRequest(**request_kwargs)
 
 
 def build_token_exchange_http_request(
@@ -81,18 +27,12 @@ def build_token_exchange_http_request(
 
     Returns:
         HttpRequest for the token exchange endpoint
-
-    Raises:
-        ValueError: If request parameters are invalid
     """
-    _validate_token_exchange_params(request)
-
     # Impersonate the client if not explicitly set to delegations
     if request.actor_token is None and request.client_id is None and isinstance(context.auth, NoneAuth):
         claims = get_claims(request.subject_token)
         request.client_id = claims.get("client_id")
 
-    auth_headers = dict(context.auth.apply_headers())
 
     payload = request.model_dump(
         mode="json",
@@ -103,8 +43,10 @@ def build_token_exchange_http_request(
     headers = {
         "Accept": "application/json",
         "Content-Type": "application/x-www-form-urlencoded",
-        **auth_headers
     }
+
+    if context.auth:
+        headers.update(dict(context.auth.apply_headers()))
 
     # Convert to properly URL-encoded form data as required by OAuth 2.0 RFC 8693
     form_data = urlencode(payload).encode("utf-8")
@@ -130,6 +72,7 @@ def parse_token_exchange_http_response(res: HttpResponse) -> TokenResponse:
         OAuthHttpError: If HTTP error status
         OAuthProtocolError: If invalid response format
     """
+    # TODO: Handle errors more granularly
     if res.status >= 400:
         response_body = res.body[:512].decode("utf-8", "ignore")
         raise OAuthHttpError(
@@ -182,7 +125,7 @@ def parse_token_exchange_http_response(res: HttpResponse) -> TokenResponse:
     )
 
 
-def token_exchange(
+def exchange_token(
     request: TokenExchangeRequest,
     context: HTTPContext,
 ) -> TokenResponse:
@@ -209,13 +152,13 @@ def token_exchange(
     http_req = build_token_exchange_http_request(request, context)
 
     # Execute HTTP request using transport
-    http_res = execute_sync(context.transport, http_req, context.timeout)
+    http_res = context.transport.request_raw(http_req, timeout=context.timeout)
 
     # Parse and return token response
     return parse_token_exchange_http_response(http_res)
 
 
-async def token_exchange_async(
+async def exchange_token_async(
     request: TokenExchangeRequest,
     context: HTTPContext,
 ) -> TokenResponse:
@@ -244,7 +187,7 @@ async def token_exchange_async(
     http_req = build_token_exchange_http_request(request, context)
 
     # Execute HTTP request using async transport
-    http_res = await execute_async(context.transport, http_req, context.timeout)
+    http_res = await context.transport.request_raw(http_req, timeout=context.timeout)
 
     # Parse and return token response
     return parse_token_exchange_http_response(http_res)

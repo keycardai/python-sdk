@@ -4,8 +4,8 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from keycardai.oauth.exceptions import ConfigError, OAuthHttpError, OAuthProtocolError
-from keycardai.oauth.http._context import HTTPContext
+from keycardai.oauth.exceptions import OAuthHttpError, OAuthProtocolError
+from keycardai.oauth.http._context import build_http_context
 from keycardai.oauth.http._wire import HttpResponse
 from keycardai.oauth.operations._discovery import (
     build_discovery_http_request,
@@ -25,31 +25,42 @@ class TestDiscoveryOperations:
     def test_build_discovery_http_request_basic(self):
         """Test building discovery HTTP request."""
         req = ServerMetadataRequest(base_url="https://auth.example.com")
-        auth_headers = {"Authorization": "Bearer token"}
 
-        http_req = build_discovery_http_request(req, auth_headers)
+        mock_auth = Mock()
+        mock_auth.apply_headers.return_value = {}
+
+        context = build_http_context(
+            endpoint="https://auth.example.com",
+            transport=Mock(),
+            auth=mock_auth,
+            user_agent="TestClient/1.0"
+        )
+
+        http_req = build_discovery_http_request(req, context)
 
         assert http_req.method == "GET"
         assert http_req.url == "https://auth.example.com/.well-known/oauth-authorization-server"
         assert http_req.headers["Accept"] == "application/json"
-        assert http_req.headers["Authorization"] == "Bearer token"
+        assert http_req.headers["User-Agent"] == "TestClient/1.0"
         assert http_req.body is None
 
     def test_build_discovery_http_request_trailing_slash(self):
         """Test URL construction with trailing slash."""
         req = ServerMetadataRequest(base_url="https://auth.example.com/")
 
-        http_req = build_discovery_http_request(req, {})
+        mock_auth = Mock()
+        mock_auth.apply_headers.return_value = {}
+
+        context = build_http_context(
+            endpoint="https://auth.example.com/",
+            transport=Mock(),
+            auth=mock_auth,
+            user_agent="TestClient/1.0"
+        )
+
+        http_req = build_discovery_http_request(req, context)
 
         assert http_req.url == "https://auth.example.com/.well-known/oauth-authorization-server"
-
-    def test_build_discovery_http_request_empty_base_url(self):
-        """Test validation with empty base URL."""
-        req = ServerMetadataRequest(base_url="")
-
-        with pytest.raises(ConfigError, match="base_url cannot be empty"):
-            build_discovery_http_request(req, {})
-
 
     def test_parse_discovery_http_response_http_error(self):
         """Test parsing HTTP error response."""
@@ -85,10 +96,11 @@ class TestDiscoveryOperations:
         mock_auth = Mock()
         mock_auth.apply_headers.return_value = {"Authorization": "Bearer token"}
 
-        context = HTTPContext(
+        context = build_http_context(
             endpoint="https://auth.example.com/.well-known/oauth-authorization-server",
             transport=mock_transport,
             auth=mock_auth,
+            user_agent="TestClient/1.0",
             timeout=30.0
         )
 
@@ -113,10 +125,11 @@ class TestDiscoveryOperations:
         mock_auth = Mock()
         mock_auth.apply_headers.return_value = {"Authorization": "Bearer token"}
 
-        context = HTTPContext(
+        context = build_http_context(
             endpoint="https://auth.example.com/.well-known/oauth-authorization-server",
             transport=mock_transport,
             auth=mock_auth,
+            user_agent="TestClient/1.0",
             timeout=30.0
         )
 

@@ -1,25 +1,27 @@
 """OAuth 2.0 Request and Response Models.
 
-This module contains all OAuth 2.0 request and response models organized in pairs
-for better readability and maintainability. Each Request model is immediately
-followed by its corresponding Response model.
+This module contains all OAuth 2.0 request and response models organized in pairs.
 
 The models preserve complete RFC information plus vendor extensions for all
 OAuth 2.0 operations, providing comprehensive support for:
 - Token Exchange (RFC 8693)
-- Token Introspection (RFC 7662)
-- Token Revocation (RFC 7009)
 - Dynamic Client Registration (RFC 7591)
-- Pushed Authorization Requests (RFC 9126)
 - Authorization Server Metadata Discovery (RFC 8414)
 """
 
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import BaseModel, Field
 
-from .oauth import GrantType, ResponseType, TokenEndpointAuthMethod, TokenTypeHint
+from .oauth import (
+    GrantType,
+    PKCECodeChallengeMethod,
+    ResponseType,
+    TokenEndpointAuthMethod,
+    TokenType,
+    TokenTypeHint,
+)
 
 # =============================================================================
 # Token Exchange (RFC 8693)
@@ -35,11 +37,11 @@ class TokenExchangeRequest(BaseModel):
     resource: str | None = None
     audience: str | None = None
     scope: str | None = None
-    requested_token_type: str | None = None
-    subject_token: str
-    subject_token_type: str
+    requested_token_type: TokenType | None = None
+    subject_token: str = Field(..., min_length=1, description="The token to exchange.")
+    subject_token_type: TokenType = Field(default=TokenType.ACCESS_TOKEN, description="The type of the token to exchange.")
     actor_token: str | None = None
-    actor_token_type: str | None = None
+    actor_token_type: TokenType | None = None
     timeout: float | None = None
     client_id: str | None = None
 
@@ -54,7 +56,7 @@ class TokenResponse:
 
     # Required fields
     access_token: str
-    token_type: Literal["Bearer"] = "Bearer"
+    token_type: TokenType = TokenType.BEARER
 
     # Optional RFC fields
     expires_in: int | None = None
@@ -62,7 +64,7 @@ class TokenResponse:
     scope: list[str] | None = None
 
     # RFC 8693 specific fields
-    issued_token_type: str | None = None
+    issued_token_type: TokenType | None = None
     subject_issuer: str | None = None
 
     # Vendor extensions and debugging
@@ -98,7 +100,7 @@ class ClientRegistrationRequest(BaseModel):
 
     Reference: https://datatracker.ietf.org/doc/html/rfc7591#section-2
     """
-    client_name: str
+    client_name: str = Field(..., min_length=1, description="Human-readable name of the client application.")
     jwks_uri: str | None = None
     jwks: dict | None = None
     token_endpoint_auth_method: TokenEndpointAuthMethod = (
@@ -195,8 +197,7 @@ class ServerMetadataRequest(BaseModel):
     Reference: https://datatracker.ietf.org/doc/html/rfc8414#section-3
     """
 
-    base_url: str
-    """Base URL of the OAuth 2.0 authorization server."""
+    base_url: str = Field(..., min_length=1, description="Base URL of the OAuth 2.0 authorization server.")
 
 
 @dataclass
@@ -273,7 +274,7 @@ class PKCE:
 
     code_verifier: str
     code_challenge: str
-    code_challenge_method: Literal["S256"] = "S256"
+    code_challenge_method: PKCECodeChallengeMethod = PKCECodeChallengeMethod.S256
 
 
 @dataclass

@@ -6,50 +6,21 @@ using the new HTTP transport layer with byte-level operations.
 
 import json
 
-from ..exceptions import ConfigError, OAuthHttpError, OAuthProtocolError
+from ..exceptions import OAuthHttpError, OAuthProtocolError
 from ..http._context import HTTPContext
 from ..http._wire import HttpRequest, HttpResponse
 from ..types.models import AuthorizationServerMetadata, ServerMetadataRequest
 from ..types.oauth import WellKnownEndpoint
-from ._exec import execute_async, execute_sync
-
-
-def _validate_discovery_params(base_url: str) -> None:
-    """Validate discovery parameters.
-
-    Args:
-        base_url: The base URL to validate
-
-    Raises:
-        ConfigError: If base_url is empty or invalid
-    """
-    if not base_url or not base_url.strip():
-        raise ConfigError("base_url cannot be empty")
-
-def _build_server_metadata_request_from_kwargs(client_base_url: str, **kwargs) -> ServerMetadataRequest:
-    """Build a ServerMetadataRequest from keyword arguments.
-
-    Args:
-        client_base_url: Default base URL from the client
-        **kwargs: Keyword arguments matching ServerMetadataRequest fields
-
-    Returns:
-        ServerMetadataRequest built from the provided kwargs
-    """
-    # Use provided base_url or fall back to client's base_url
-    base_url = kwargs.get("base_url", client_base_url)
-
-    return ServerMetadataRequest(base_url=base_url)
 
 
 def build_discovery_http_request(
-    request: ServerMetadataRequest, auth_headers: dict[str, str] | None = None
+    request: ServerMetadataRequest, context: HTTPContext
 ) -> HttpRequest:
     """Build HTTP request for server metadata discovery.
 
     Args:
         request: Server metadata discovery request
-        auth_headers: Optional authentication headers
+        context: HTTP context with transport, auth, and headers
 
     Returns:
         HttpRequest for the discovery endpoint
@@ -57,8 +28,6 @@ def build_discovery_http_request(
     Raises:
         ConfigError: If base_url is invalid
     """
-    _validate_discovery_params(request.base_url)
-
     # Construct discovery URL according to RFC 8414 Section 3
     # Format: {issuer}/.well-known/oauth-authorization-server
     discovery_url = WellKnownEndpoint.construct_url(
@@ -68,10 +37,12 @@ def build_discovery_http_request(
 
     headers = {
         "Accept": "application/json",
-        "User-Agent": "KeyCardAI-OAuth/0.0.1"
     }
-    if auth_headers:
-        headers.update(auth_headers)
+    if context.headers:
+        headers.update(context.headers)
+
+    if context.auth:
+        headers.update(dict(context.auth.apply_headers()))
 
     return HttpRequest(
         method="GET",
@@ -192,17 +163,8 @@ def discover_server_metadata(
 
     Reference: https://datatracker.ietf.org/doc/html/rfc8414#section-3
     """
-    # Build HTTP request
-    auth_headers = None
-    if hasattr(context, 'auth') and context.auth:
-        auth_headers = dict(context.auth.apply_headers())
-
-    http_req = build_discovery_http_request(request, auth_headers)
-
-    # Execute HTTP request using transport
-    http_res = execute_sync(context.transport, http_req, context.timeout)
-
-    # Parse and return metadata
+    http_req = build_discovery_http_request(request, context)
+    http_res = context.transport.request_raw(http_req, timeout=context.timeout)
     return parse_discovery_http_response(http_res)
 
 
@@ -230,12 +192,6 @@ async def discover_server_metadata_async(
 
     Reference: https://datatracker.ietf.org/doc/html/rfc8414#section-3
     """
-    auth_headers = dict(context.auth.apply_headers())
-
-    http_req = build_discovery_http_request(request, auth_headers)
-
-    # Execute HTTP request using async transport
-    http_res = await execute_async(context.transport, http_req, context.timeout)
-
-    # Parse and return metadata
+    http_req = build_discovery_http_request(request, context)
+    http_res = await context.transport.request_raw(http_req, timeout=context.timeout)
     return parse_discovery_http_response(http_res)

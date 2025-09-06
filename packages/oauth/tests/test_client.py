@@ -3,6 +3,7 @@
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
+from pydantic import ValidationError
 
 from keycardai.oauth import AsyncClient, Client, ClientConfig
 from keycardai.oauth.types.models import (
@@ -227,8 +228,8 @@ class TestOverloadEquivalence:
 
             assert dict1 == dict2, f"Async requests differ: {dict1} != {dict2}"
 
-    def test_token_exchange_overload_equivalence(self):
-        """Test that token_exchange overloads create equivalent calls."""
+    def test_exchange_token_overload_equivalence(self):
+        """Test that exchange_token overloads create equivalent calls."""
         test_data = {
             "subject_token": "user_token_123",
             "subject_token_type": "urn:ietf:params:oauth:token-type:access_token",
@@ -243,17 +244,17 @@ class TestOverloadEquivalence:
 
         request_obj = TokenExchangeRequest(**test_data)
 
-        with patch('keycardai.oauth.client.token_exchange') as mock_exchange:
+        with patch('keycardai.oauth.client.exchange_token') as mock_exchange:
             mock_exchange.return_value = Mock()
             client = Client("https://test.keycard.cloud")
 
             # Method 1: Using request object
-            client.token_exchange(request_obj)
+            client.exchange_token(request_obj)
             call1_args = mock_exchange.call_args
 
             # Method 2: Using kwargs
             mock_exchange.reset_mock()
-            client.token_exchange(**test_data)
+            client.exchange_token(**test_data)
             call2_args = mock_exchange.call_args
 
             # Compare the requests
@@ -263,11 +264,11 @@ class TestOverloadEquivalence:
             dict1 = request1.model_dump(exclude_none=True)
             dict2 = request2.model_dump(exclude_none=True)
 
-            assert dict1 == dict2, f"Token exchange requests differ: {dict1} != {dict2}"
+            assert dict1 == dict2, f"Exchange token requests differ: {dict1} != {dict2}"
 
     @pytest.mark.asyncio
-    async def test_async_token_exchange_overload_equivalence(self):
-        """Test that async token_exchange overloads create equivalent calls."""
+    async def test_async_exchange_token_overload_equivalence(self):
+        """Test that async exchange_token overloads create equivalent calls."""
         test_data = {
             "subject_token": "user_token_123",
             "subject_token_type": "urn:ietf:params:oauth:token-type:access_token",
@@ -276,17 +277,17 @@ class TestOverloadEquivalence:
 
         request_obj = TokenExchangeRequest(**test_data)
 
-        with patch('keycardai.oauth.client.token_exchange_async') as mock_exchange_async:
+        with patch('keycardai.oauth.client.exchange_token_async') as mock_exchange_async:
             mock_exchange_async.return_value = Mock()
             async_client = AsyncClient("https://test.keycard.cloud")
 
             # Method 1: Using request object
-            await async_client.token_exchange(request_obj)
+            await async_client.exchange_token(request_obj)
             call1_args = mock_exchange_async.call_args
 
             # Method 2: Using kwargs
             mock_exchange_async.reset_mock()
-            await async_client.token_exchange(**test_data)
+            await async_client.exchange_token(**test_data)
             call2_args = mock_exchange_async.call_args
 
             # Compare the requests
@@ -296,7 +297,7 @@ class TestOverloadEquivalence:
             dict1 = request1.model_dump(exclude_none=True)
             dict2 = request2.model_dump(exclude_none=True)
 
-            assert dict1 == dict2, f"Async token exchange requests differ: {dict1} != {dict2}"
+            assert dict1 == dict2, f"Async exchange token requests differ: {dict1} != {dict2}"
 
     def test_discover_server_metadata_overload_equivalence(self):
         """Test that discover_server_metadata overloads create equivalent calls."""
@@ -362,13 +363,13 @@ class TestOverloadEquivalence:
         with pytest.raises(TypeError, match="both"):
             client.register_client(request, client_name="Another")
 
-        # Test token_exchange error handling
+        # Test exchange_token error handling
         request = TokenExchangeRequest(
             subject_token="token",
             subject_token_type="urn:ietf:params:oauth:token-type:access_token"
         )
         with pytest.raises(TypeError, match="both"):
-            client.token_exchange(request, subject_token="another")
+            client.exchange_token(request, subject_token="another")
 
         # Test discover_server_metadata error handling
         request = ServerMetadataRequest(base_url="https://test.com")
@@ -385,15 +386,255 @@ class TestOverloadEquivalence:
         with pytest.raises(TypeError, match="both"):
             await async_client.register_client(request, client_name="Another")
 
-        # Test async token_exchange error handling
+        # Test async exchange_token error handling
         request = TokenExchangeRequest(
             subject_token="token",
             subject_token_type="urn:ietf:params:oauth:token-type:access_token"
         )
         with pytest.raises(TypeError, match="both"):
-            await async_client.token_exchange(request, subject_token="another")
+            await async_client.exchange_token(request, subject_token="another")
 
         # Test async discover_server_metadata error handling
         request = ServerMetadataRequest(base_url="https://test.com")
         with pytest.raises(TypeError, match="both"):
             await async_client.discover_server_metadata(request, base_url="https://other.com")
+
+
+class TestClientValidation:
+    """Test client validation behavior with Pydantic models."""
+
+    def test_register_client_empty_client_name_validation(self):
+        """Test that register_client rejects empty client_name with TypeError."""
+        client = Client("https://test.keycard.cloud", config=ClientConfig(enable_metadata_discovery=False, auto_register_client=False))
+
+        # Test that empty string client_name raises TypeError (client-level validation)
+        with pytest.raises(TypeError) as exc_info:
+            client.register_client(client_name="")
+
+        # Verify the error message
+        assert "client_name is required" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_async_register_client_empty_client_name_validation(self):
+        """Test that async register_client rejects empty client_name with TypeError."""
+        async_client = AsyncClient("https://test.keycard.cloud", config=ClientConfig(enable_metadata_discovery=False, auto_register_client=False))
+
+        # Test that empty string client_name raises TypeError (client-level validation)
+        with pytest.raises(TypeError) as exc_info:
+            await async_client.register_client(client_name="")
+
+        # Verify the error message
+        assert "client_name is required" in str(exc_info.value)
+
+    def test_register_client_whitespace_only_client_name_validation(self):
+        """Test that register_client accepts whitespace-only client_name (passes client validation but may fail at server)."""
+        client = Client("https://test.keycard.cloud", config=ClientConfig(enable_metadata_discovery=False, auto_register_client=False))
+
+        # Whitespace-only client_name passes client-level validation (truthy string)
+        # but would fail at the server level - this test just verifies it gets past client validation
+        with patch('keycardai.oauth.client.register_client') as mock_register:
+            mock_register.return_value = Mock()
+            client.register_client(client_name="   ")
+            # If we get here, client validation passed
+            mock_register.assert_called_once()
+
+    def test_pydantic_model_empty_client_name_validation(self):
+        """Test that ClientRegistrationRequest model directly validates empty client_name."""
+        # Test Pydantic validation directly on the model
+        with pytest.raises(ValidationError) as exc_info:
+            ClientRegistrationRequest(client_name="")
+
+        # Verify the error is about string length
+        error = exc_info.value
+        assert len(error.errors()) == 1
+        assert error.errors()[0]["type"] == "string_too_short"
+        assert error.errors()[0]["loc"] == ("client_name",)
+        assert "at least 1 character" in str(error.errors()[0]["msg"])
+
+    def test_token_exchange_request_validation(self):
+        """Test that TokenExchangeRequest model validates required fields and handles kwargs correctly."""
+        # Test missing required field (subject_token)
+        with pytest.raises(ValidationError) as exc_info:
+            TokenExchangeRequest()
+
+        error = exc_info.value
+        assert len(error.errors()) == 1
+        assert error.errors()[0]["type"] == "missing"
+        assert error.errors()[0]["loc"] == ("subject_token",)
+
+        # Test empty subject_token (min_length validation)
+        with pytest.raises(ValidationError) as exc_info:
+            TokenExchangeRequest(subject_token="")
+
+        error = exc_info.value
+        assert len(error.errors()) == 1
+        assert error.errors()[0]["type"] == "string_too_short"
+        assert error.errors()[0]["loc"] == ("subject_token",)
+        assert "at least 1 character" in str(error.errors()[0]["msg"])
+
+        # Test valid request with minimal required fields
+        request = TokenExchangeRequest(subject_token="valid_token")
+        assert request.subject_token == "valid_token"
+        assert request.subject_token_type.value == "urn:ietf:params:oauth:token-type:access_token"  # Default value
+        assert request.grant_type == "urn:ietf:params:oauth:grant-type:token-exchange"
+
+        # Test that extra kwargs are ignored (Pydantic's default behavior)
+        request = TokenExchangeRequest(
+            subject_token="valid_token",
+            unknown_field="should_be_ignored",
+            another_unknown="also_ignored"
+        )
+        assert request.subject_token == "valid_token"
+        assert not hasattr(request, "unknown_field")
+        assert not hasattr(request, "another_unknown")
+
+        # Test valid request with all optional fields
+        from keycardai.oauth.types.oauth import TokenType
+        request = TokenExchangeRequest(
+            subject_token="valid_token",
+            subject_token_type=TokenType.JWT,
+            audience="api.example.com",
+            resource="https://api.example.com/data",
+            scope="read write",
+            requested_token_type=TokenType.ACCESS_TOKEN,
+            actor_token="actor_token",
+            actor_token_type=TokenType.ACCESS_TOKEN,
+            timeout=30.0,
+            client_id="client123"
+        )
+        assert request.subject_token == "valid_token"
+        assert request.subject_token_type == TokenType.JWT
+        assert request.audience == "api.example.com"
+        assert request.resource == "https://api.example.com/data"
+        assert request.scope == "read write"
+        assert request.requested_token_type == TokenType.ACCESS_TOKEN
+        assert request.actor_token == "actor_token"
+        assert request.actor_token_type == TokenType.ACCESS_TOKEN
+        assert request.timeout == 30.0
+        assert request.client_id == "client123"
+
+    def test_default_user_agent_in_requests(self):
+        """Test that default user agent is set correctly in all request types when not configured by user."""
+        # Create client with default config (no custom user_agent)
+        client = Client("https://test.keycard.cloud")
+
+        # Test 1: Server metadata discovery request
+        with patch('keycardai.oauth.client.build_http_context') as mock_build_context:
+            with patch('keycardai.oauth.client.discover_server_metadata') as mock_discover:
+                mock_discover.return_value = Mock()
+
+                try:
+                    client.discover_server_metadata(base_url="https://test.keycard.cloud")
+                except Exception:
+                    pass  # We just want to check the context building
+
+                # Verify build_http_context was called with default user agent
+                mock_build_context.assert_called()
+                call_kwargs = mock_build_context.call_args.kwargs
+                assert call_kwargs['user_agent'] == "KeyCardAI-OAuth/0.0.1"
+
+        # Test 2: Client registration request
+        with patch('keycardai.oauth.client.build_http_context') as mock_build_context:
+            with patch('keycardai.oauth.client.register_client') as mock_register:
+                mock_register.return_value = Mock()
+
+                try:
+                    client.register_client(client_name="TestClient")
+                except Exception:
+                    pass  # We just want to check the context building
+
+                # Verify build_http_context was called with default user agent
+                mock_build_context.assert_called()
+                call_kwargs = mock_build_context.call_args.kwargs
+                assert call_kwargs['user_agent'] == "KeyCardAI-OAuth/0.0.1"
+
+        # Test 3: Token exchange request
+        with patch('keycardai.oauth.client.build_http_context') as mock_build_context:
+            with patch('keycardai.oauth.client.exchange_token') as mock_exchange:
+                mock_exchange.return_value = Mock()
+
+                try:
+                    client.exchange_token(subject_token="test_token")
+                except Exception:
+                    pass  # We just want to check the context building
+
+                # Verify build_http_context was called with default user agent
+                mock_build_context.assert_called()
+                call_kwargs = mock_build_context.call_args.kwargs
+                assert call_kwargs['user_agent'] == "KeyCardAI-OAuth/0.0.1"
+
+    @pytest.mark.asyncio
+    async def test_default_user_agent_in_async_requests(self):
+        """Test that default user agent is set correctly in all async request types when not configured by user."""
+        # Create async client with default config (no custom user_agent)
+        async_client = AsyncClient("https://test.keycard.cloud")
+
+        # Test 1: Async server metadata discovery request
+        with patch('keycardai.oauth.client.build_http_context') as mock_build_context:
+            with patch('keycardai.oauth.client.discover_server_metadata_async') as mock_discover:
+                mock_discover.return_value = Mock()
+
+                try:
+                    await async_client.discover_server_metadata(base_url="https://test.keycard.cloud")
+                except Exception:
+                    pass  # We just want to check the context building
+
+                # Verify build_http_context was called with default user agent
+                mock_build_context.assert_called()
+                call_kwargs = mock_build_context.call_args.kwargs
+                assert call_kwargs['user_agent'] == "KeyCardAI-OAuth/0.0.1"
+
+        # Test 2: Async client registration request
+        with patch('keycardai.oauth.client.build_http_context') as mock_build_context:
+            with patch('keycardai.oauth.client.register_client_async') as mock_register:
+                mock_register.return_value = Mock()
+
+                try:
+                    await async_client.register_client(client_name="TestClient")
+                except Exception:
+                    pass  # We just want to check the context building
+
+                # Verify build_http_context was called with default user agent
+                mock_build_context.assert_called()
+                call_kwargs = mock_build_context.call_args.kwargs
+                assert call_kwargs['user_agent'] == "KeyCardAI-OAuth/0.0.1"
+
+        # Test 3: Async token exchange request
+        with patch('keycardai.oauth.client.build_http_context') as mock_build_context:
+            with patch('keycardai.oauth.client.exchange_token_async') as mock_exchange:
+                mock_exchange.return_value = Mock()
+
+                try:
+                    await async_client.exchange_token(subject_token="test_token")
+                except Exception:
+                    pass  # We just want to check the context building
+
+                # Verify build_http_context was called with default user agent
+                mock_build_context.assert_called()
+                call_kwargs = mock_build_context.call_args.kwargs
+                assert call_kwargs['user_agent'] == "KeyCardAI-OAuth/0.0.1"
+
+    def test_custom_user_agent_in_requests(self):
+        """Test that custom user agent is used when provided in client config."""
+        custom_user_agent = "MyApp/1.2.3"
+        config = ClientConfig(
+            user_agent=custom_user_agent,
+            enable_metadata_discovery=False,
+            auto_register_client=False
+        )
+        client = Client("https://test.keycard.cloud", config=config)
+
+        # Test that custom user agent is used
+        with patch('keycardai.oauth.client.build_http_context') as mock_build_context:
+            with patch('keycardai.oauth.client.register_client') as mock_register:
+                mock_register.return_value = Mock()
+
+                try:
+                    client.register_client(client_name="TestClient")
+                except Exception:
+                    pass  # We just want to check the context building
+
+                # Verify build_http_context was called with custom user agent
+                mock_build_context.assert_called()
+                call_kwargs = mock_build_context.call_args.kwargs
+                assert call_kwargs['user_agent'] == custom_user_agent

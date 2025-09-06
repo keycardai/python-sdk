@@ -1,6 +1,6 @@
 [project]
 name = "keycardai-oauth"
-version = "0.0.1"
+dynamic = ["version"]
 description = "A Python SDK for OAuth 2.0 functionality implementing multiple OAuth 2.0 standards"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -40,8 +40,11 @@ Documentation = "https://docs.keycardai.com"
 Issues = "https://github.com/keycardai/python-sdk/issues"
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "uv-dynamic-versioning"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "uv-dynamic-versioning"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/keycardai"]
@@ -98,3 +101,13 @@ addopts = "-ra -q"
 dev = [
     "pytest-cov>=6.2.1",
 ]
+
+[tool.commitizen]
+name = "cz_conventional_commits"
+version = "0.0.0"
+tag_format = "${version}-oauth"
+ignored_tag_formats = ["${version}-mcp*", "${version}-fastmcp*"]
+update_changelog_on_bump = true
+
+[tool.commitizen.customize]
+changelog_pattern = "^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)\\(oauth\\)(!)?:"

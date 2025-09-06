@@ -117,14 +117,7 @@ class ResponseType(str, Enum):
 
 
 class TokenType(str, Enum):
-    """OAuth 2.0 token types as defined in multiple RFCs.
-
-    References:
-    - RFC 6749 Section 7.1: Access Token Types
-    - RFC 6750: Bearer Token Usage
-    - RFC 8693 Section 3: Token Exchange Response
-    - RFC 9068: JWT Profile for OAuth 2.0 Access Tokens
-    """
+    """OAuth 2.0 token types"""
 
     # RFC 6750 - Bearer Token Usage
     BEARER = "Bearer"

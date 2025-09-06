@@ -5,16 +5,9 @@ multiple OAuth 2.0 standards with enterprise-ready features.
 
 Supported OAuth 2.0 Standards:
 - RFC 8693: OAuth 2.0 Token Exchange
-- RFC 7662: OAuth 2.0 Token Introspection
-- RFC 7009: OAuth 2.0 Token Revocation
 - RFC 7591: OAuth 2.0 Dynamic Client Registration
-- RFC 7523: JWT Profile for OAuth 2.0 Client Authentication
-- RFC 9068: JWT Profile for OAuth 2.0 Access Tokens
 - RFC 6750: OAuth 2.0 Bearer Token Usage
 - RFC 8414: OAuth 2.0 Authorization Server Metadata
-- RFC 8705: OAuth 2.0 Mutual-TLS Client Authentication
-- RFC 7636: Proof Key for Code Exchange (PKCE)
-- RFC 9126: OAuth 2.0 Pushed Authorization Requests
 
 Example:
     # Simple usage
@@ -22,11 +15,19 @@ Example:
 
     # Async client (primary implementation)
     async with AsyncClient("https://api.keycard.ai") as client:
-        response = await client.introspect_token("token_to_validate")
+        response = await client.exchange_token(
+            subject_token="original_access_token",
+            subject_token_type="urn:ietf:params:oauth:token-type:access_token",
+            audience="target-service.company.com"
+        )
 
     # Sync client (wrapper)
     with Client("https://api.keycard.ai") as client:
-        response = client.introspect_token("token_to_validate")
+        response = client.exchange_token(
+            subject_token="original_access_token",
+            subject_token_type="urn:ietf:params:oauth:token-type:access_token",
+            audience="target-service.company.com"
+        )
 """
 
 from .client import AsyncClient, Client

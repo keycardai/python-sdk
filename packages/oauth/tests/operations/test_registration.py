@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from keycardai.oauth.exceptions import OAuthHttpError, OAuthProtocolError
-from keycardai.oauth.http._context import HTTPContext
+from keycardai.oauth.http._context import build_http_context
 from keycardai.oauth.http._wire import HttpResponse
 from keycardai.oauth.operations._registration import (
     build_client_registration_http_request,
@@ -31,15 +31,24 @@ class TestRegistrationOperations:
             redirect_uris=["https://example.com/callback"],
             grant_types=[GrantType.AUTHORIZATION_CODE]
         )
-        auth_headers = {"Authorization": "Bearer token"}
 
-        http_req = build_client_registration_http_request(req, "https://auth.example.com/register", auth_headers)
+        mock_auth = Mock()
+        mock_auth.apply_headers.return_value = {}
+
+        context = build_http_context(
+            endpoint="https://auth.example.com/register",
+            transport=Mock(),
+            auth=mock_auth,
+            user_agent="TestClient/1.0"
+        )
+
+        http_req = build_client_registration_http_request(req, context)
 
         assert http_req.method == "POST"
         assert http_req.url == "https://auth.example.com/register"
         assert http_req.headers["Accept"] == "application/json"
         assert http_req.headers["Content-Type"] == "application/json"
-        assert http_req.headers["Authorization"] == "Bearer token"
+        assert http_req.headers["User-Agent"] == "TestClient/1.0"
         assert http_req.body is not None
 
     def test_build_registration_http_request_full(self):
@@ -52,12 +61,25 @@ class TestRegistrationOperations:
             token_endpoint_auth_method=TokenEndpointAuthMethod.CLIENT_SECRET_BASIC,
             scope="read write admin"
         )
-        auth_headers = {}
 
-        http_req = build_client_registration_http_request(req, "https://auth.example.com/register", auth_headers)
+        mock_auth = Mock()
+        mock_auth.apply_headers.return_value = {"Authorization": "Bearer token"}
+
+        context = build_http_context(
+            endpoint="https://auth.example.com/register",
+            transport=Mock(),
+            auth=mock_auth,
+            user_agent="TestClient/1.0",
+            custom_headers={"X-Custom": "value"}
+        )
+
+        http_req = build_client_registration_http_request(req, context)
 
         assert http_req.method == "POST"
         assert http_req.url == "https://auth.example.com/register"
+        assert http_req.headers["User-Agent"] == "TestClient/1.0"
+        assert http_req.headers["X-Custom"] == "value"
+        assert http_req.headers["Authorization"] == "Bearer token"
         assert http_req.body is not None
 
         # Parse the body to verify content
@@ -65,17 +87,6 @@ class TestRegistrationOperations:
         assert body_data["client_name"] == "Enterprise Client"
         assert len(body_data["redirect_uris"]) == 2
         assert "authorization_code" in body_data["grant_types"]
-
-    def test_build_registration_http_request_validation_error(self):
-        """Test validation error for missing client_name."""
-        req = ClientRegistrationRequest(
-            client_name="",  # Empty client name should fail
-            redirect_uris=["https://example.com/callback"],
-            grant_types=[GrantType.AUTHORIZATION_CODE]
-        )
-
-        with pytest.raises(ValueError, match="client_name required"):
-            build_client_registration_http_request(req, "https://auth.example.com/register", {})
 
     def test_parse_registration_http_response_success(self):
         """Test parsing successful registration response."""
@@ -136,10 +147,11 @@ class TestRegistrationOperations:
         mock_auth = Mock()
         mock_auth.apply_headers.return_value = {"Authorization": "Bearer token"}
 
-        context = HTTPContext(
+        context = build_http_context(
             endpoint="https://auth.example.com/register",
             transport=mock_transport,
             auth=mock_auth,
+            user_agent="TestClient/1.0",
             timeout=30.0
         )
 
@@ -168,10 +180,11 @@ class TestRegistrationOperations:
         mock_auth = Mock()
         mock_auth.apply_headers.return_value = {"Authorization": "Bearer token"}
 
-        context = HTTPContext(
+        context = build_http_context(
             endpoint="https://auth.example.com/register",
             transport=mock_transport,
             auth=mock_auth,
+            user_agent="TestClient/1.0",
             timeout=30.0
         )
 

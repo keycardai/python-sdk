@@ -1,8 +1,4 @@
-"""OAuth 2.0 client implementation following sync/async API design standard.
-
-This module provides separate AsyncClient and Client classes with proper I/O separation,
-sharing a sync-agnostic core as defined in the sync/async API design standard.
-"""
+"""OAuth 2.0 client implementation"""
 
 import asyncio
 import threading
@@ -15,7 +11,7 @@ from .exceptions import (
     OAuthHttpError,
     OAuthProtocolError,
 )
-from .http._context import HTTPContext
+from .http._context import build_http_context
 from .http._transports import HttpxAsyncTransport, HttpxTransport
 from .http.auth import (
     AuthStrategy,
@@ -23,19 +19,16 @@ from .http.auth import (
 )
 from .http.transport import AsyncHTTPTransport, HTTPTransport
 from .operations._discovery import (
-    _build_server_metadata_request_from_kwargs,
     discover_server_metadata,
     discover_server_metadata_async,
 )
 from .operations._registration import (
-    _build_client_registration_request_from_kwargs,
     register_client,
     register_client_async,
 )
 from .operations._token_exchange import (
-    _build_token_exchange_request_from_kwargs,
-    token_exchange,
-    token_exchange_async,
+    exchange_token,
+    exchange_token_async,
 )
 from .types.models import (
     AuthorizationServerMetadata,
@@ -112,7 +105,6 @@ def resolve_endpoints(
 
 def create_endpoints_summary(
     endpoints: Endpoints,
-    base_url: str,
     endpoint_overrides: Endpoints | None = None,
     discovered_metadata: "AuthorizationServerMetadata | None" = None,
 ) -> dict[str, dict[str, str]]:
@@ -120,7 +112,6 @@ def create_endpoints_summary(
 
     Args:
         endpoints: Resolved endpoints configuration
-        base_url: Base URL for OAuth 2.0 server
         endpoint_overrides: Optional endpoint overrides
         discovered_metadata: Optional discovered server metadata
 
@@ -181,7 +172,7 @@ def create_endpoints_summary(
 
 
 class AsyncClient:
-    """Asynchronous OAuth 2.0 client for async/await environments.
+    """Asynchronous OAuth 2.0 client.
 
     Must be used inside an event loop (asyncio). Provides native async I/O
     operations for optimal performance in async applications.
@@ -204,7 +195,7 @@ class AsyncClient:
             auth=ClientCredentialsAuth("my_client_id", "my_client_secret")
         ) as client:
             client_id = await client.get_client_id()
-            response = await client.exchange_token(request)
+            response = await client.token_exchange(request)
 
         # Enterprise usage with custom configuration
         async with AsyncClient(
@@ -216,7 +207,7 @@ class AsyncClient:
             config=ClientConfig(timeout=60, max_retries=5)
         ) as client:
             # Client is fully initialized here
-            tokens = await client.exchange_token(request)
+            tokens = await client.token_exchange(request)
 
         # Disable automatic discovery and registration
         async with AsyncClient(
@@ -244,7 +235,7 @@ class AsyncClient:
 
         Args:
             base_url: Base URL for OAuth 2.0 server
-            auth: Authentication strategy (ClientCredentialsAuth, JWTAuth, MTLSAuth, NoneAuth)
+            auth: Authentication strategy (BasicAuth, BearerAuth, NoneAuth)
             endpoints: Endpoint overrides for multi-server deployments
             transport: Custom asynchronous HTTP transport
             config: Client configuration with timeouts, retries, etc.
@@ -268,14 +259,11 @@ class AsyncClient:
 
         self._endpoint_overrides = endpoints
 
-        # Initialize with basic endpoints, discovery happens lazily
         self._endpoints = resolve_endpoints(self.base_url, endpoints)
 
-        # Lazy initialization state (async-safe)
         self._initialized = False
         self._init_lock: asyncio.Lock | None = None
 
-        # Will be set during lazy initialization
         self._client_id = None
         self._client_secret = None
         self._discovered_endpoints: Endpoints | None = None
@@ -318,10 +306,12 @@ class AsyncClient:
                 self._discovered_endpoints = self._endpoints
 
             if self.config.auto_register_client:
-                ctx = HTTPContext(
+                ctx = build_http_context(
                     endpoint=self._discovered_endpoints.register,
                     transport=self.transport,
                     auth=self.auth_strategy,
+                    user_agent=self.config.user_agent,
+                    custom_headers=self.config.custom_headers,
                     timeout=self.config.timeout,
                 )
                 client_registration_response = await register_client_async(
@@ -354,7 +344,7 @@ class AsyncClient:
     async def __aexit__(self, exc_type, exc_value, traceback) -> None:
         """Exit async context manager.
 
-        Performs cleanup of resources if the client owns them.
+        The default client does own resource cleanup. Noop.
 
         Args:
             exc_type: Exception type (if any)
@@ -470,20 +460,27 @@ class AsyncClient:
             ClientRegistrationResponse with client credentials and metadata
 
         Raises:
-            TypeError: If both request and client_registration_args are provided
+            TypeError: If both request and client_registration_args are provided, or client_name is empty
+            ValidationError: If request model validation fails (e.g., empty required fields)
+            OAuthHttpError: If registration endpoint returns HTTP error (4xx/5xx)
+            OAuthProtocolError: If registration response is invalid or contains OAuth errors
         """
         if request is not None and client_registration_args:
             raise TypeError("Pass either `request` or keyword arguments, not both.")
 
         if request is None:
-            request = _build_client_registration_request_from_kwargs(**client_registration_args)
+            if not client_registration_args.get("client_name"):
+                raise TypeError("client_name is required when not using a request object")
+            request = ClientRegistrationRequest(**client_registration_args)
 
         endpoints = await self._get_current_endpoints()
 
-        ctx = HTTPContext(
+        ctx = build_http_context(
             endpoint=endpoints.register,
             transport=self.transport,
             auth=self.auth_strategy,
+            user_agent=self.config.user_agent,
+            custom_headers=self.config.custom_headers,
             timeout=client_registration_args.get("timeout", self.config.timeout),
         )
 
@@ -540,15 +537,16 @@ class AsyncClient:
             raise TypeError("Pass either `request` or keyword arguments, not both.")
 
         if request is None:
-            request = _build_server_metadata_request_from_kwargs(
-                self.base_url, **metadata_discovery_args
-            )
+            base_url = metadata_discovery_args.get("base_url", self.base_url)
+            request = ServerMetadataRequest(base_url=base_url)
 
-        context = HTTPContext(
+        context = build_http_context(
             endpoint=self.base_url,
             transport=self.transport,
-            timeout=self.config.timeout,
             auth=self.auth_strategy,
+            user_agent=self.config.user_agent,
+            custom_headers=self.config.custom_headers,
+            timeout=self.config.timeout,
         )
 
         return await discover_server_metadata_async(
@@ -557,13 +555,13 @@ class AsyncClient:
         )
 
     @overload
-    async def token_exchange(
+    async def exchange_token(
         self,
         request: TokenExchangeRequest,
     ) -> TokenResponse: ...
 
     @overload
-    async def token_exchange(
+    async def exchange_token(
         self,
         /,
         *,
@@ -580,7 +578,7 @@ class AsyncClient:
         client_id: str | None = None,
     ) -> TokenResponse: ...
 
-    async def token_exchange(self, request: TokenExchangeRequest | None = None, /, **token_exchange_args) -> TokenResponse:
+    async def exchange_token(self, request: TokenExchangeRequest | None = None, /, **token_exchange_args) -> TokenResponse:
         """Perform OAuth 2.0 Token Exchange.
 
         Either pass a fully-formed TokenExchangeRequest *or* call with keyword
@@ -627,18 +625,20 @@ class AsyncClient:
             raise TypeError("Pass either `request` or keyword arguments, not both.")
 
         if request is None:
-            request = _build_token_exchange_request_from_kwargs(**token_exchange_args)
+            request = TokenExchangeRequest(**token_exchange_args)
 
         endpoints = await self._get_current_endpoints()
 
-        ctx = HTTPContext(
+        ctx = build_http_context(
             endpoint=endpoints.token,
             transport=self.transport,
             auth=self.auth_strategy,
+            user_agent=self.config.user_agent,
+            custom_headers=self.config.custom_headers,
             timeout=token_exchange_args.get("timeout", self.config.timeout),
         )
 
-        return await token_exchange_async(request, ctx)
+        return await exchange_token_async(request, ctx)
 
     def endpoints_summary(self) -> dict[str, dict[str, str]]:
         """Get diagnostic summary of resolved endpoints.
@@ -648,7 +648,6 @@ class AsyncClient:
         """
         return create_endpoints_summary(
             self._endpoints,
-            self.base_url,
             self._endpoint_overrides,
             None  # No cached metadata in simplified version
         )
@@ -673,14 +672,14 @@ class Client:
         # Simple usage with client credentials and automatic discovery
         with Client(
             "https://api.keycard.ai",
-            auth=ClientCredentialsAuth("my_client_id", "my_client_secret")
+            auth=BasicAuth("my_client_id", "my_client_secret")
         ) as client:
             response = client.introspect_token("token_to_validate")
 
         # Enterprise usage with custom configuration
         client = Client(
             "https://api.keycard.ai",
-            auth=ClientCredentialsAuth("enterprise_client", "enterprise_secret"),
+            auth=BasicAuth("enterprise_client", "enterprise_secret"),
             endpoints=Endpoints(
                 introspect="https://validator.internal.com/oauth2/introspect"
             ),
@@ -708,7 +707,7 @@ class Client:
 
         Args:
             base_url: Base URL for OAuth 2.0 server
-            auth: Authentication strategy (ClientCredentialsAuth, JWTAuth, MTLSAuth, NoneAuth)
+            auth: Authentication strategy (BasicAuth, BearerAuth, NoneAuth)
             endpoints: Endpoint overrides for multi-server deployments
             transport: Custom synchronous HTTP transport
             config: Client configuration with timeouts, retries, etc.
@@ -785,10 +784,12 @@ class Client:
             # Perform client registration if configured
             if self.config.auto_register_client:
                 # Use discovered endpoints directly to avoid circular dependency
-                ctx = HTTPContext(
+                ctx = build_http_context(
                     endpoint=self._discovered_endpoints.register,
                     transport=self.transport,
                     auth=self.auth_strategy,
+                    user_agent=self.config.user_agent,
+                    custom_headers=self.config.custom_headers,
                     timeout=self.config.timeout,
                 )
                 client_registration_response = register_client(
@@ -907,20 +908,27 @@ class Client:
             ClientRegistrationResponse with client credentials and metadata
 
         Raises:
-            TypeError: If both request and client_registration_args are provided
+            TypeError: If both request and client_registration_args are provided, or client_name is empty
+            ValidationError: If request model validation fails (e.g., empty required fields)
+            OAuthHttpError: If registration endpoint returns HTTP error (4xx/5xx)
+            OAuthProtocolError: If registration response is invalid or contains OAuth errors
         """
         if request is not None and client_registration_args:
             raise TypeError("Pass either `request` or keyword arguments, not both.")
 
         if request is None:
-            request = _build_client_registration_request_from_kwargs(**client_registration_args)
+            if not client_registration_args.get("client_name"):
+                raise TypeError("client_name is required when not using a request object")
+            request = ClientRegistrationRequest(**client_registration_args)
 
         endpoints = self._get_current_endpoints()
 
-        ctx = HTTPContext(
+        ctx = build_http_context(
             endpoint=endpoints.register,
             transport=self.transport,
             auth=self.auth_strategy,
+            user_agent=self.config.user_agent,
+            custom_headers=self.config.custom_headers,
             timeout=client_registration_args.get("timeout", self.config.timeout),
         )
 
@@ -968,7 +976,6 @@ class Client:
 
         Raises:
             TypeError: If both request and metadata_discovery_args are provided
-            ConfigError: If base_url is empty
             OAuthHttpError: If discovery endpoint is unreachable
             OAuthProtocolError: If metadata format is invalid
             NetworkError: If network request fails
@@ -977,15 +984,16 @@ class Client:
             raise TypeError("Pass either `request` or keyword arguments, not both.")
 
         if request is None:
-            request = _build_server_metadata_request_from_kwargs(
-                self.base_url, **metadata_discovery_args
-            )
+            base_url = metadata_discovery_args.get("base_url", self.base_url)
+            request = ServerMetadataRequest(base_url=base_url)
 
-        context = HTTPContext(
+        context = build_http_context(
             endpoint=self.base_url,
             transport=self.transport,
-            timeout=self.config.timeout,
             auth=self.auth_strategy,
+            user_agent=self.config.user_agent,
+            custom_headers=self.config.custom_headers,
+            timeout=self.config.timeout,
         )
 
         return discover_server_metadata(
@@ -994,13 +1002,13 @@ class Client:
         )
 
     @overload
-    def token_exchange(
+    def exchange_token(
         self,
         request: TokenExchangeRequest,
     ) -> TokenResponse: ...
 
     @overload
-    def token_exchange(
+    def exchange_token(
         self,
         /,
         *,
@@ -1017,7 +1025,7 @@ class Client:
         client_id: str | None = None,
     ) -> TokenResponse: ...
 
-    def token_exchange(self, request: TokenExchangeRequest | None = None, /, **token_exchange_args) -> TokenResponse:
+    def exchange_token(self, request: TokenExchangeRequest | None = None, /, **token_exchange_args) -> TokenResponse:
         """Perform OAuth 2.0 Token Exchange.
 
         Either pass a fully-formed TokenExchangeRequest *or* call with keyword
@@ -1064,18 +1072,20 @@ class Client:
             raise TypeError("Pass either `request` or keyword arguments, not both.")
 
         if request is None:
-            request = _build_token_exchange_request_from_kwargs(**token_exchange_args)
+            request = TokenExchangeRequest(**token_exchange_args)
 
         endpoints = self._get_current_endpoints()
 
-        ctx = HTTPContext(
+        ctx = build_http_context(
             endpoint=endpoints.token,
             transport=self.transport,
             auth=self.auth_strategy,
+            user_agent=self.config.user_agent,
+            custom_headers=self.config.custom_headers,
             timeout=token_exchange_args.get("timeout", self.config.timeout),
         )
 
-        return token_exchange(request, ctx)
+        return exchange_token(request, ctx)
 
     def endpoints_summary(self) -> dict[str, dict[str, str]]:
         """Get diagnostic summary of resolved endpoints.
@@ -1085,7 +1095,6 @@ class Client:
         """
         return create_endpoints_summary(
             self._endpoints,
-            self.base_url,
             self._endpoint_overrides,
             None  # No cached metadata in simplified version
         )
