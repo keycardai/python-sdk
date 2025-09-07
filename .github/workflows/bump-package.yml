@@ -1,0 +1,48 @@
+name: Bump Package Version
+
+on:
+  workflow_call:
+    inputs:
+      package_name:
+        required: true
+        type: string
+        description: "Name of the package to bump (e.g., keycardai-oauth)"
+      package_dir:
+        required: true
+        type: string
+        description: "Directory of the package (e.g., packages/oauth)"
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install commitizen
+        run: uv tool install commitizen
+
+      - name: Configure git
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+
+      - name: Create bump and changelog for ${{ inputs.package_name }}
+        run: |
+          cd ${{ inputs.package_dir }}
+          echo "Bumping version for ${{ inputs.package_name }} package..."
+          uv run cz bump --changelog --yes
+          
+          # Push changes
+          git push origin main --follow-tags

@@ -40,3 +40,19 @@ sdk-ref-oauth:
 # Clean up API reference documentation
 sdk-ref-clean:
     rm -rf docs/sdk
+
+# Validate commit messages for PR
+validate-commits BASE_BRANCH="origin/main":
+    uv run python scripts/changelog.py validate {{BASE_BRANCH}}
+
+# Preview changelog changes for each package
+preview-changelog BASE_BRANCH="origin/main":
+    uv run python scripts/changelog.py preview {{BASE_BRANCH}}
+
+# Detect packages with unreleased changes
+detect-changes:
+    uv run python scripts/changelog.py changes --output-format github
+
+# Extract package information from GitHub tag
+extract-package TAG:
+    uv run python scripts/changelog.py package {{TAG}} --output-format json

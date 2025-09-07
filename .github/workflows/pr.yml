@@ -1,0 +1,56 @@
+name: Pull Request Validation
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  validate-commits:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install just
+        uses: extractions/setup-just@v2
+
+      - name: Validate commit messages
+        run: just validate-commits
+
+  lint-and-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install just
+        uses: extractions/setup-just@v2
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Run linting and formatting checks
+        run: just check
+
+      - name: Run tests
+        run: just test

@@ -1,0 +1,80 @@
+name: Release Packages
+
+on:
+  push:
+    tags:
+      - '*-keycardai-oauth'
+      - '*-keycardai-mcp'
+      - '*-keycardai-mcp-fastmcp'
+
+jobs:
+  detect-package:
+    runs-on: ubuntu-latest
+    outputs:
+      package: ${{ steps.detect.outputs.package }}
+      version: ${{ steps.detect.outputs.version }}
+      package-dir: ${{ steps.detect.outputs.package-dir }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Detect package from tag
+        id: detect
+        run: |
+          TAG_NAME=${GITHUB_REF#refs/tags/}
+          echo "Tag: $TAG_NAME"
+          
+          # Use the changelog.py script to extract package information
+          PACKAGE_INFO=$(uv run python scripts/changelog.py package "$TAG_NAME" --output-format github)
+          
+          # Parse the JSON output
+          PACKAGE=$(echo "$PACKAGE_INFO" | jq -r '.package_name')
+          VERSION=$(echo "$PACKAGE_INFO" | jq -r '.version')
+          PACKAGE_DIR=$(echo "$PACKAGE_INFO" | jq -r '.package_dir')
+          
+          echo "package=$PACKAGE" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "package-dir=$PACKAGE_DIR" >> $GITHUB_OUTPUT
+          
+          echo "Detected package: $PACKAGE"
+          echo "Version: $VERSION"
+          echo "Package directory: $PACKAGE_DIR"
+
+  build-and-publish:
+    runs-on: ubuntu-latest
+    needs: [detect-package]
+    environment: release
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Install dependencies
+        run: uv sync --all-extras
+
+      - name: Build package
+        run: |
+          cd packages/${{ needs.detect-package.outputs.package-dir }}
+          uv build
+
+      - name: Publish to PyPI
+        env:
+          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_TOKEN }}
+        run: |
+          cd packages/${{ needs.detect-package.outputs.package-dir }}
+          uv publish
