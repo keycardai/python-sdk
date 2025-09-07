@@ -28,6 +28,9 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v4
 
+      - name: Install just
+        uses: extractions/setup-just@v2
+
       - name: Detect package changes
         id: changes
         run: |
