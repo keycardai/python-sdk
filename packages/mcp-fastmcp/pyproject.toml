@@ -1,6 +1,6 @@
 [project]
 name = "keycardai-mcp-fastmcp"
-dynamic = ["version"]
+version = "0.1.0"
 description = "FastMCP integration for KeyCard OAuth client with automated token exchange and authentication"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -37,11 +37,8 @@ Documentation = "https://docs.keycardai.com"
 Issues = "https://github.com/keycardai/python-sdk/issues"
 
 [build-system]
-requires = ["hatchling", "uv-dynamic-versioning"]
+requires = ["hatchling"]
 build-backend = "hatchling.build"
-
-[tool.hatch.version]
-source = "uv-dynamic-versioning"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/keycardai"]
@@ -95,11 +92,13 @@ testpaths = ["tests"]
 addopts = "-ra -q"
 
 [tool.commitizen]
-name = "cz_conventional_commits"
+name = "cz_customize"
 version = "0.0.0"
-tag_format = "${version}-fastmcp"
-ignored_tag_formats = ["${version}-oauth*", "${version}-mcp"]
+tag_format = "${version}-keycardai-mcp-fastmcp"
+ignored_tag_formats = ["${version}-*"]
 update_changelog_on_bump = true
+bump_message = "bump: keycardai-mcp-fastmcp $current_version → $new_version"
+major_version_zero = true
 
 [tool.commitizen.customize]
-changelog_pattern = "^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)\\(fastmcp\\)(!)?:"
+changelog_pattern = "^(feat|fix|refactor|perf|test|build|ci|revert)\\(keycardai-mcp-fastmcp\\)(!)?:"
