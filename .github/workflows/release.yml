@@ -69,12 +69,10 @@ jobs:
 
       - name: Build package
         run: |
-          cd packages/${{ needs.detect-package.outputs.package-dir }}
-          uv build
+          uv --package ${PACKAGE} build
 
       - name: Publish to PyPI
         env:
           UV_PUBLISH_TOKEN: ${{ secrets.PYPI_TOKEN }}
         run: |
-          cd packages/${{ needs.detect-package.outputs.package-dir }}
-          uv publish
+          uv --package ${PACKAGE} publish
