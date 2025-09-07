@@ -97,7 +97,7 @@ addopts = "-ra -q"
 
 [tool.commitizen]
 name = "cz_customize"
-version = "0.0.0"
+version = "0.1.0"
 tag_format = "${version}-keycardai-mcp"
 ignored_tag_formats = ["${version}-*"]
 update_changelog_on_bump = true
