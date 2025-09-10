@@ -25,9 +25,7 @@ keywords = ["keycard", "oauth", "authentication", "security", "api"]
 
 # This is a namespace/workspace root package with no source code
 # All functionality is provided by workspace member packages
-dependencies = [
-    "pre-commit>=4.3.0",
-]
+dependencies = []
 
 # Optional dependencies for development
 [project.optional-dependencies]
@@ -38,6 +36,8 @@ dev = [
     "isort>=5.13.2",
     "mypy>=1.14.1",
     "ruff>=0.12.10",
+    "pre-commit>=4.3.0",
+    "commitizen>=3.29.0",
 ]
 
 [project.urls]
@@ -94,6 +94,8 @@ dev = [
     "pytest>=8.4.1",
     "pytest-asyncio>=1.1.0",
     "ruff>=0.12.10",
+    "pre-commit>=4.3.0",
+    "commitizen>=3.29.0",
 ]
 
 # Configure as a namespace/workspace root package

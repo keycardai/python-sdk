@@ -1,3 +1,8 @@
+# Setup development environment
+dev-setup:
+    uv run pre-commit install
+    uv sync --all-extras --all-packages
+
 # Build the project
 build:
     uv sync --all-packages
