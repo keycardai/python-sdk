@@ -167,8 +167,9 @@ Using a uv workspace provides several advantages:
 
 Important architectural and design decisions are documented using [Architecture Decision Records (ADRs)](./docs/project/decisions/). These help explain the reasoning behind key technical choices in the project.
 
-- [ADR-0001: Use uv Workspaces for Multi-Package Development](./docs/project/decisions/0001-use-uv-workspaces-for-package-management.md)
-- [ADR-0002: Modular Package Structure for Minimal Dependencies](./docs/project/decisions/0002-modular-package-structure-for-minimal-dependencies.md)
+- [ADR-0001: Use uv Workspaces for Multi-Package Development](./docs/project/decisions/0001-use-uv-workspaces-for-package-management.mdx)
+- [ADR-0002: Modular Package Structure for Minimal Dependencies](./docs/project/decisions/0002-modular-package-structure-for-minimal-dependencies.mdx)
+- [ADR-0003: Use Commitizen for Commit Validation and Changelog Management](./docs/project/decisions/0003-use-commitizen-for-commit-validation-and-changelog-management.mdx)
 
 ## Contributing
 
@@ -181,6 +182,36 @@ Important architectural and design decisions are documented using [Architecture 
    just check     # Lint code
    just typecheck # Type checking
    ```
+
+### Commit Message Guidelines
+
+We use [Conventional Commits](https://www.conventionalcommits.org/) with specific scopes for our monorepo structure:
+
+**Format**: `<type>(<scope>): <description>`
+
+**Required Scopes**:
+- `keycardai-oauth`: Changes to the OAuth package
+- `keycardai-mcp`: Changes to the core MCP package  
+- `keycardai-mcp-fastmcp`: Changes to the FastMCP integration
+- `deps`: Dependency updates
+- `docs`: Documentation updates
+
+**Common Types**: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`, `ci`
+
+**Examples**:
+```bash
+feat(keycardai-oauth): add PKCE support for enhanced security
+fix(keycardai-mcp-fastmcp): resolve connection timeout in auth middleware
+docs(keycardai-oauth): update API documentation with new examples
+chore(deps): update httpx to v0.25.0 for security patch
+```
+
+**Important Notes**:
+- **Squash commits** before merging - only the final commit message appears in changelog
+- Scoped commits automatically appear in generated changelogs
+- Use `git commit --amend` to fix commit messages if needed
+- Preview changelog generation with: `just changelog-preview`
+
 5. Submit a pull request
 
 ## License

@@ -1,0 +1,214 @@
+---
+title: "ADR-0003: Use Commitizen for Commit Validation and Changelog Management"
+description: "Architecture decision to use Commitizen for standardizing commit messages and automating changelog generation in our monorepo setup"
+---
+
+# ADR-0003: Use Commitizen for Commit Validation and Changelog Management
+
+## Status
+
+**Accepted** - 7th September 2025
+
+## Context
+
+The KeycardAI Python SDK is structured as a monorepo with multiple packages (oauth, mcp, mcp-fastmcp) that need independent versioning and changelog management. We need a solution that:
+
+- **Standardizes commit messages** across the entire development team
+- **Automates changelog generation** from commit history
+- **Supports monorepo workflows** with per-package versioning
+- **Integrates with our CI/CD pipeline** for automated releases
+- **Provides flexibility** for different release cadences per package
+
+### Current Challenges
+
+Without standardized commit messages and automated changelog generation:
+
+1. **Manual changelog maintenance** is error-prone and time-consuming
+2. **Inconsistent commit message formats** make it hard to understand change impact
+3. **Release notes creation** requires manual effort and often misses important changes
+4. **Monorepo complexity** makes it difficult to track changes per package
+5. **Version bumping** requires manual coordination across multiple packages
+
+### Options Considered
+
+1. **Manual changelog management** - Continue writing changelogs by hand
+2. **Conventional Commits + custom tooling** - Implement our own changelog generator
+3. **Commitizen** - Use established tooling with monorepo support
+4. **Release Please** - Google's release automation tool
+5. **Semantic Release** - Automated semantic versioning
+
+## Decision
+
+We will use **Commitizen** for commit message standardization and changelog generation across the KeycardAI Python SDK monorepo.
+
+### Key Implementation Details
+
+**Commit Message Format**: Conventional Commits specification
+```
+<type>(<scope>): <description>
+
+[optional body]
+
+[optional footer(s)]
+```
+
+**Supported Types**:
+- `feat`: New features
+- `fix`: Bug fixes  
+- `docs`: Documentation changes
+- `style`: Code style changes (formatting, etc.)
+- `refactor`: Code refactoring without feature/fix changes
+- `test`: Adding or updating tests
+- `chore`: Maintenance tasks, dependency updates
+- `ci`: CI/CD pipeline changes
+
+**Scope Examples**:
+- `keycardai-oauth`: Changes to the OAuth package
+- `keycardai-mcp`: Changes to the core MCP package
+- `keycardai-mcp-fastmcp`: Changes to the FastMCP integration
+- `deps`: Dependency updates
+- `docs`: Documentation updates
+
+**Configuration**:
+- Use `cz-conventional-commits` as the commit style
+- Configure per-package changelog generation
+- Integrate with uv for Python project management
+- Set up pre-commit hooks for validation
+
+## Consequences
+
+### ✅ Positive Consequences
+
+**Automated Changelog Generation**
+- Changelogs are automatically generated from commit messages
+- Consistent format across all packages in the monorepo
+- Reduces manual effort and human error in release documentation
+- Clear categorization of changes (features, fixes, breaking changes)
+
+**Standardized Commit Messages**
+- Enforced conventional commit format improves code review process
+- Easy to understand the impact and scope of changes
+- Better git history readability for debugging and code archaeology
+- Automated tooling can parse commits for various purposes
+
+**Monorepo Support**
+- Per-package changelog generation using scope-based filtering
+- Independent versioning for each package while maintaining unified commit standards
+- Flexible release management - packages can be released independently or together
+- Clear attribution of changes to specific packages
+
+**CI/CD Integration**
+- Automated version bumping based on commit types
+- Integration with release pipelines for automated publishing
+- Pre-commit validation prevents non-conforming commits from entering the repository
+- Supports both manual and automated release workflows
+
+**Team Productivity**
+- Reduces cognitive load during releases - no manual changelog writing
+- Clear guidelines for commit message format reduce decision fatigue
+- Automated validation catches formatting issues early
+- Consistent process across all team members and contributors
+
+### ⚠️ Potential Negative Consequences
+
+**Learning Curve**
+- Team members need to learn conventional commit format
+- Initial setup and configuration requires time investment
+- Pre-commit hooks may slow down the commit process initially
+
+**Tooling Dependency**
+- Adds another tool to the development workflow
+- Requires maintenance of Commitizen configuration
+- Potential breaking changes in Commitizen could affect our workflow
+
+**Commit Message Overhead**
+- More structured commit messages may feel verbose for small changes
+- Developers might find the format restrictive initially
+- Risk of developers bypassing validation with `--no-verify`
+
+### 🔄 Mitigation Strategies
+
+**Team Onboarding**
+- Provide clear documentation and examples of conventional commit format
+- Set up commit message templates in git configuration
+- Conduct team training session on new commit standards
+- Create quick reference guide for common commit types and scopes
+
+**Tooling Reliability**
+- Pin Commitizen version to avoid unexpected breaking changes
+- Set up fallback procedures for manual changelog generation if needed
+- Regular review of Commitizen configuration and updates
+- Monitor community support and alternative tools
+
+**Developer Experience**
+- Configure helpful commit message templates and examples
+- Set up IDE integrations where possible
+- Provide git aliases for common commit patterns
+- Make pre-commit hooks fast and informative
+
+## Examples
+
+### ✅ Good Commit Messages
+
+```bash
+feat(keycardai-oauth): add PKCE support for enhanced security
+fix(keycardai-mcp-fastmcp): resolve connection timeout in auth middleware  
+docs(keycardai-oauth): update API documentation with new examples
+chore(deps): update httpx to v0.25.0 for security patch
+```
+
+### ❌ Avoided Commit Messages
+
+```bash
+# Too vague
+fix: bug fix
+
+# No scope for monorepo
+added new feature
+
+# Non-conventional format  
+OAuth: Fixed the thing that was broken
+```
+
+### Generated Changelog Example
+
+```markdown
+## [1.2.0] - 2025-01-15
+
+### Features
+- **keycardai-oauth**: add PKCE support for enhanced security (#123)
+- **keycardai-mcp**: implement connection pooling for better performance (#124)
+
+### Bug Fixes  
+- **keycardai-mcp-fastmcp**: resolve connection timeout in auth middleware (#125)
+- **keycardai-oauth**: fix token refresh race condition (#126)
+
+### Documentation
+- **keycardai-oauth**: update API documentation with new examples (#127)
+```
+
+## Alternative Rejected
+
+**Manual Changelog Management** was rejected because:
+- High maintenance overhead and prone to human error
+- Inconsistent formatting across different contributors
+- Difficult to maintain in monorepo with multiple packages
+- No automation benefits for CI/CD pipeline
+
+**Custom Tooling** was rejected because:
+- Significant development and maintenance effort required
+- Reinventing well-established solutions
+- Less community support and fewer integrations
+- Higher risk of bugs and edge cases
+
+**Release Please** was rejected because:
+- Primarily designed for Google's workflow patterns
+- Less flexible configuration for our specific monorepo needs
+- Heavier integration requirements with GitHub-specific features
+
+## Related Documents
+
+- [ADR-0001: Use uv Workspaces for Multi-Package Development](./0001-use-uv-workspaces-for-package-management.mdx)
+- [ADR-0002: Modular Package Structure for Minimal Dependencies](./0002-modular-package-structure-for-minimal-dependencies.mdx)
+- [Conventional Commits Specification](https://www.conventionalcommits.org/)
+- [Commitizen Documentation](https://commitizen-tools.github.io/commitizen/)
