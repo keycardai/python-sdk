@@ -76,6 +76,8 @@ class AccessMiddleware(Middleware):
         *,
         zone_url: str | None = None,
         client_name: str | None = None,
+        client: AsyncClient | None = None,
+
     ):
         """Initialize access middleware.
 
@@ -96,7 +98,7 @@ class AccessMiddleware(Middleware):
 
         self.client_name = settings.client_name or "FastMCP OAuth Client"
 
-        self.client: AsyncClient | None = None
+        self.client: AsyncClient | None = client
         self._init_lock: asyncio.Lock | None = None
         self._access_tokens: dict[str, str] = {}
 
