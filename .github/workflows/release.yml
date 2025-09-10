@@ -10,6 +10,8 @@ on:
 jobs:
   detect-package:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       package: ${{ steps.detect.outputs.package }}
       version: ${{ steps.detect.outputs.version }}
@@ -17,6 +19,8 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -53,10 +57,13 @@ jobs:
     needs: [detect-package]
     environment: pypi-release
     permissions:
+      contents: read
       id-token: write
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -71,7 +78,7 @@ jobs:
 
       - name: Build package
         run: |
-          uv build --package ${PACKAGE} 
+          uv build --package ${{ needs.detect-package.outputs.package }} 
 
       - name: Publish to PyPI
         run: |
