@@ -10,9 +10,7 @@ from urllib.parse import urlencode
 from ..exceptions import OAuthHttpError, OAuthProtocolError
 from ..http._context import HTTPContext
 from ..http._wire import HttpRequest, HttpResponse
-from ..http.auth import NoneAuth
 from ..types.models import TokenExchangeRequest, TokenResponse
-from ..utils.jwt import get_claims
 
 
 def build_token_exchange_http_request(
@@ -28,12 +26,6 @@ def build_token_exchange_http_request(
     Returns:
         HttpRequest for the token exchange endpoint
     """
-    # Impersonate the client if not explicitly set to delegations
-    if request.actor_token is None and request.client_id is None and isinstance(context.auth, NoneAuth):
-        claims = get_claims(request.subject_token)
-        request.client_id = claims.get("client_id")
-
-
     payload = request.model_dump(
         mode="json",
         exclude_none=True,
