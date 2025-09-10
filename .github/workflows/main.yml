@@ -48,6 +48,7 @@ jobs:
     strategy:
       matrix:
         package: ${{ fromJson(needs.detect-changes.outputs.changed-packages) }}
+      max-parallel: 1  # Process packages sequentially to avoid race conditions
     uses: ./.github/workflows/bump-package.yml
     with:
       package_name: ${{ matrix.package.package_name }}

@@ -35,16 +35,6 @@ jobs:
       - name: Install commitizen
         run: uv tool install commitizen
 
-      - name: Configure git
+      - name: Bump version for ${{ inputs.package_name }}
         run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-
-      - name: Create bump and changelog for ${{ inputs.package_name }}
-        run: |
-          cd ${{ inputs.package_dir }}
-          echo "Bumping version for ${{ inputs.package_name }} package..."
-          uv run cz bump --changelog --yes
-          
-          # Push changes
-          git push origin main --follow-tags
+          uv run python scripts/bump_package.py "${{ inputs.package_name }}" "${{ inputs.package_dir }}"
