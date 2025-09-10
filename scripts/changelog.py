@@ -104,30 +104,6 @@ def discover_workspace_packages() -> list[dict]:
             except Exception as e:
                 raise Exception(f"Could not parse {package_pyproject}: {e}") from e
 
-    # Also check the root package
-    root_pyproject = root_dir / "pyproject.toml"
-    if root_pyproject.exists():
-        try:
-            with open(root_pyproject, "rb") as f:
-                root_config = tomllib.load(f)
-            
-            if "tool" in root_config and "commitizen" in root_config["tool"]:
-                root_package_name = (
-                    root_config.get("project", {}).get("name") or
-                    root_config.get("name") or
-                    "keycardai"  # fallback for root package
-                )
-                
-                root_package_info = {
-                    "package_name": root_package_name,
-                    "package_dir": ".",  # root directory
-                }
-                
-                packages.append(root_package_info)
-        
-        except Exception as e:
-            raise Exception(f"Could not parse {root_pyproject}: {e}") from e
-
     if not packages:
         raise Exception("No packages with commitizen configuration found")
     return packages
