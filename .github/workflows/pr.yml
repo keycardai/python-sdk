@@ -105,18 +105,24 @@ jobs:
       - name: Display release preview
         if: steps.release-preview.outputs.has_changes == 'true'
         run: |
-          echo "${{ steps.release-preview.outputs.preview }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📝 Changelog Preview" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
+          # Use cat with here document to safely handle special characters
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          ${{ steps.release-preview.outputs.preview }}
+          
+          ### 📝 Changelog Preview
+          
+          ```
+          EOF
           just preview-changelog >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
 
       - name: No release preview
         if: steps.release-preview.outputs.has_changes == 'false'
         run: |
-          echo "${{ steps.release-preview.outputs.preview }}" >> $GITHUB_STEP_SUMMARY
+          # Use cat with here document to safely handle special characters
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          ${{ steps.release-preview.outputs.preview }}
+          EOF
 
       - name: Comment on PR with release preview
         if: github.event_name == 'pull_request'
