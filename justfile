@@ -49,6 +49,10 @@ validate-commits BASE_BRANCH="origin/main":
 preview-changelog BASE_BRANCH="origin/main":
     uv run python scripts/changelog.py preview {{BASE_BRANCH}}
 
+# Alias for changelog preview (referenced in documentation)
+changelog-preview BASE_BRANCH="origin/main":
+    uv run python scripts/changelog.py preview {{BASE_BRANCH}}
+
 # Detect packages with unreleased changes
 detect-changes:
     uv run python scripts/changelog.py changes --output-format github
