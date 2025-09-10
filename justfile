@@ -1,3 +1,8 @@
+# Setup development environment
+dev-setup:
+    uv run pre-commit install
+    uv sync --all-extras --all-packages
+
 # Build the project
 build:
     uv sync --all-packages
@@ -52,6 +57,10 @@ preview-changelog BASE_BRANCH="origin/main":
 # Alias for changelog preview (referenced in documentation)
 changelog-preview BASE_BRANCH="origin/main":
     uv run python scripts/changelog.py preview {{BASE_BRANCH}}
+
+# Preview expected version changes for packages with unreleased changes
+preview-versions FORMAT="markdown":
+    uv run python scripts/version_preview.py --format {{FORMAT}}
 
 # Detect packages with unreleased changes
 detect-changes:

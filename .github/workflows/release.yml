@@ -67,7 +67,7 @@ jobs:
         uses: astral-sh/setup-uv@v4
 
       - name: Install dependencies
-        run: uv sync --all-extras
+        run: uv sync --all-extras --all-packages
 
       - name: Build package
         run: |
@@ -75,4 +75,4 @@ jobs:
 
       - name: Publish to PyPI
         run: |
-          uv publish 
+          uv publish --index testpypi
