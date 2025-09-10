@@ -3,6 +3,7 @@ name: Release Packages
 on:
   push:
     tags:
+      - '*-keycardai'
       - '*-keycardai-oauth'
       - '*-keycardai-mcp'
       - '*-keycardai-mcp-fastmcp'
@@ -82,4 +83,4 @@ jobs:
 
       - name: Publish to PyPI
         run: |
-          uv publish --index testpypi
+          uv publish
