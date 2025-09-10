@@ -62,9 +62,10 @@ def get_existing_comment_id(pr_number: int) -> str | None:
             # Also check for release preview header as backup
             if (signature in comment_body or
                 "📦 Release Preview" in comment_body):
-                comment_id = comment.get("id")
+                # Use databaseId (numeric) instead of id (GraphQL node ID) for REST API
+                comment_id = comment.get("databaseId") or comment.get("id")
                 if comment_id:
-                    print(f"Found existing comment with ID: {comment_id}")
+                    print(f"Found existing comment with ID: {comment_id} (type: {type(comment_id)})")
                     return str(comment_id)
 
         print("No existing release preview comment found")
@@ -136,6 +137,11 @@ def create_or_update_comment(pr_number: int, comment_body: str) -> None:
     if not check_gh_cli():
         raise Exception("gh CLI is not available. Please install GitHub CLI.")
 
+    # Get repository info from environment
+    repo = os.environ.get("GH_REPO") or os.environ.get("GITHUB_REPOSITORY")
+    if not repo:
+        raise Exception("Repository not specified. Set GH_REPO or GITHUB_REPOSITORY environment variable.")
+
     # Create temporary file with comment body
     with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
         f.write(comment_body)
@@ -147,9 +153,10 @@ def create_or_update_comment(pr_number: int, comment_body: str) -> None:
 
         if existing_comment_id:
             print(f"Found existing comment {existing_comment_id}, attempting to update...")
+            print(f"Using repository: {repo}")
 
-            # Try to update existing comment
-            cmd = ["gh", "api", f"repos/{{owner}}/{{repo}}/issues/comments/{existing_comment_id}",
+            # Try to update existing comment using gh api
+            cmd = ["gh", "api", f"repos/{repo}/issues/comments/{existing_comment_id}",
                    "--method", "PATCH", "--field", f"body=@{temp_file}"]
 
             exit_code, stdout, stderr = run_command(cmd)
