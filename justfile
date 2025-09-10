@@ -62,6 +62,10 @@ changelog-preview BASE_BRANCH="origin/main":
 preview-versions FORMAT="markdown":
     uv run python scripts/version_preview.py --format {{FORMAT}}
 
+# Bump version for a specific package
+bump-package PACKAGE_NAME PACKAGE_DIR:
+    uv run python scripts/bump_package.py {{PACKAGE_NAME}} {{PACKAGE_DIR}}
+
 # Detect packages with unreleased changes
 detect-changes:
     uv run python scripts/changelog.py changes --output-format github
