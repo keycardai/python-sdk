@@ -43,6 +43,8 @@ jobs:
   bump-packages:
     if: needs.detect-changes.outputs.changed-packages != '[]' && !startsWith(github.event.head_commit.message, 'bump:')
     needs: detect-changes
+    permissions:
+      contents: write
     strategy:
       matrix:
         package: ${{ fromJson(needs.detect-changes.outputs.changed-packages) }}
