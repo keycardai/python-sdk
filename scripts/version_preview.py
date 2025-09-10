@@ -138,7 +138,7 @@ def format_as_github_summary(version_info: list[dict[str, str]]) -> str:
         return "ℹ️ No packages with unreleased changes detected."
 
     output = ["## 📦 Release Preview", ""]
-    output.append("This analysis shows the expected release impact:", "")
+    output.extend(["This analysis shows the expected release impact:", ""])
 
     # Version changes section
     output.extend(["### 📈 Expected Version Changes", "", "```"])

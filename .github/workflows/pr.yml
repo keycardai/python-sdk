@@ -116,3 +116,12 @@ jobs:
         if: steps.release-preview.outputs.has_changes == 'false'
         run: |
           echo "${{ steps.release-preview.outputs.preview }}" >> $GITHUB_STEP_SUMMARY
+
+      - name: Comment on PR with release preview
+        if: github.event_name == 'pull_request'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.number }}
+        run: |
+          uv run python scripts/pr_comment.py
