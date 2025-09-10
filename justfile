@@ -58,6 +58,10 @@ preview-changelog BASE_BRANCH="origin/main":
 changelog-preview BASE_BRANCH="origin/main":
     uv run python scripts/changelog.py preview {{BASE_BRANCH}}
 
+# Preview expected version changes for packages with unreleased changes
+preview-versions FORMAT="markdown":
+    uv run python scripts/version_preview.py --format {{FORMAT}}
+
 # Detect packages with unreleased changes
 detect-changes:
     uv run python scripts/changelog.py changes --output-format github

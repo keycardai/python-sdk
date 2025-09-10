@@ -5,6 +5,9 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
 jobs:
   validate-commits:
     runs-on: ubuntu-latest
@@ -80,41 +83,36 @@ jobs:
       - name: Install dependencies
         run: uv sync --all-extras
 
-      - name: Detect packages with changes
-        id: detect-changes
+      - name: Generate release preview
+        id: release-preview
         run: |
-          changes=$(just detect-changes)
-          echo "changes<<EOF" >> $GITHUB_OUTPUT
-          echo "$changes" >> $GITHUB_OUTPUT
+          # Get version preview information using the Python script
+          version_preview=$(uv run python scripts/version_preview.py --format github-summary)
+          
+          echo "preview<<EOF" >> $GITHUB_OUTPUT
+          echo "$version_preview" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
           
-          # Check if there are any changes
+          # Check if there are any changes by looking for version information
+          changes=$(uv run python scripts/version_preview.py --format json)
           if [ "$changes" = "[]" ] || [ -z "$changes" ]; then
             echo "has_changes=false" >> $GITHUB_OUTPUT
           else
             echo "has_changes=true" >> $GITHUB_OUTPUT
           fi
 
-      - name: Preview changelog
-        if: steps.detect-changes.outputs.has_changes == 'true'
+      - name: Display release preview
+        if: steps.release-preview.outputs.has_changes == 'true'
         run: |
-          echo "## 📦 Release Preview" >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.release-preview.outputs.preview }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "This PR will trigger releases for the following packages:" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo '```json' >> $GITHUB_STEP_SUMMARY
-          echo '${{ steps.detect-changes.outputs.changes }}' >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Changelog Preview" >> $GITHUB_STEP_SUMMARY
+          echo "### 📝 Changelog Preview" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           just preview-changelog >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
 
       - name: No release preview
-        if: steps.detect-changes.outputs.has_changes == 'false'
+        if: steps.release-preview.outputs.has_changes == 'false'
         run: |
-          echo "## 📦 Release Preview" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "ℹ️ This PR does not contain changes that would trigger a new release." >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.release-preview.outputs.preview }}" >> $GITHUB_STEP_SUMMARY
