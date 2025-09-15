@@ -7,9 +7,21 @@ dev-setup:
 build:
     uv sync --all-packages
 
-# Run tests
+# Run tests for all packages
 test: build
-    uv run --frozen pytest
+    just test-oauth
+
+# Run tests for OAuth package
+test-oauth:
+    cd packages/oauth && uv run --extra test pytest tests/ -v
+
+# Run tests for a specific package
+test-package PACKAGE:
+    cd packages/{{PACKAGE}} && uv run --extra test pytest tests/ -v
+
+# Run a specific test file within a package
+test-file PACKAGE FILE:
+    cd packages/{{PACKAGE}} && uv run --extra test pytest tests/{{FILE}} -v
 
 check:
     uv run ruff check
