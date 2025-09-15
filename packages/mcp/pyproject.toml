@@ -7,6 +7,8 @@ requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "KeyCard AI", email = "support@keycard.ai" }]
 dependencies = [
+    "keycardai-oauth",
+    "mcp>=1.13.1",
     "pydantic>=2.11.7",
 ]
 keywords = ["mcp", "model-context-protocol", "authentication", "authorization", "ai", "llm"]
@@ -49,6 +51,9 @@ name = "testpypi"
 url = "https://test.pypi.org/simple/"
 publish-url = "https://test.pypi.org/legacy/"
 explicit = true
+
+[tool.uv.sources]
+keycardai-oauth = { workspace = true }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/keycardai"]
