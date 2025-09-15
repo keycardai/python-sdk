@@ -85,6 +85,9 @@ class AccessMiddleware(Middleware):
             zone_url: OAuth server zone URL (from environment if not provided)
             client_name: OAuth client name for registration
         """
+        if zone_url is None and client is not None:
+            zone_url = client.base_url
+
         settings = AccessMiddlewareSettings.model_validate({
             "zone_url": zone_url,
             "client_name": client_name,
