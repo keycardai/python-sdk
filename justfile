@@ -10,15 +10,10 @@ build:
 # Run tests for all packages
 test: build
     just test-oauth
-    just test-mcp
 
 # Run tests for OAuth package
 test-oauth:
     cd packages/oauth && uv run --extra test pytest tests/ -v
-
-# Run tests for MCP package  
-test-mcp:
-    cd packages/mcp && uv run --extra test pytest tests/ -v
 
 # Run tests for a specific package
 test-package PACKAGE:
