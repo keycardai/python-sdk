@@ -7,12 +7,12 @@ pattern for clean separation of concerns.
 
 from __future__ import annotations
 
-from fastmcp.server.auth import RemoteAuthProvider
-from fastmcp.server.auth.providers.jwt import JWTVerifier
-from fastmcp.utilities.logging import get_logger
 from pydantic import AnyHttpUrl, field_validator
 from pydantic_settings import BaseSettings
 
+from fastmcp.server.auth import RemoteAuthProvider
+from fastmcp.server.auth.providers.jwt import JWTVerifier
+from fastmcp.utilities.logging import get_logger
 from keycardai.oauth import Client, ClientConfig
 
 logger = get_logger(__name__)
