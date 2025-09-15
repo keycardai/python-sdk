@@ -1,3 +1,8 @@
+## 0.3.0-keycardai-mcp-fastmcp (2025-09-15)
+
+
+- feat(keycardai-mcp-fastmcp): unify client arguments
+
 ## 0.2.0-keycardai-mcp-fastmcp (2025-09-10)
 
 
