@@ -12,12 +12,12 @@ from collections.abc import Callable
 from functools import wraps
 from typing import TYPE_CHECKING, Any
 
+from pydantic_settings import BaseSettings
+
 from fastmcp import Context
 from fastmcp.server.dependencies import get_access_token
 from fastmcp.server.middleware import Middleware, MiddlewareContext
 from fastmcp.utilities.logging import get_logger
-from pydantic_settings import BaseSettings
-
 from keycardai.oauth import AsyncClient, ClientConfig
 from keycardai.oauth.types.models import TokenResponse
 

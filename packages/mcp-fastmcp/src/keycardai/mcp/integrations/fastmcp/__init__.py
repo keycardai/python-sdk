@@ -101,10 +101,7 @@ Advanced Configuration:
 from .middleware import AccessMiddleware
 from .provider import KeycardAuthProvider
 
-__version__ = "0.0.1"
-
 __all__ = [
-    "__version__",
     "KeycardAuthProvider",
     "AccessMiddleware",
 ]
