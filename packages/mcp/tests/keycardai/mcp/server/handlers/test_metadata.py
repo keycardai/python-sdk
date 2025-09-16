@@ -6,7 +6,7 @@ These tests focus on URL handling and slash character edge cases.
 import pytest
 from pydantic import AnyHttpUrl
 
-from keycardai.mcp.server.starlette.handlers.metadata import (
+from keycardai.mcp.server.handlers.metadata import (
     _create_resource_url,
     _create_zone_scoped_authorization_server_url,
     _get_zone_id_from_path,

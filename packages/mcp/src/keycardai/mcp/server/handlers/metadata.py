@@ -3,11 +3,10 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 import httpx
+from mcp.shared.auth import ProtectedResourceMetadata
 from pydantic import AnyHttpUrl, Field
 from starlette.requests import Request
 from starlette.responses import Response
-
-from mcp.shared.auth import ProtectedResourceMetadata
 
 
 class InferredProtectedResourceMetadata(ProtectedResourceMetadata):

@@ -5,7 +5,7 @@ from unittest.mock import Mock
 from starlette.datastructures import URL, Headers
 from starlette.requests import Request
 
-from keycardai.mcp.server.starlette.middleware.auth.bearer import (
+from keycardai.mcp.server.middleware.bearer import (
     _get_bearer_token,
     _get_oauth_protected_resource_url,
 )
