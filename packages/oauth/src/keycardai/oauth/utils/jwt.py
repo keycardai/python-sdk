@@ -34,7 +34,61 @@ import base64
 import json
 from typing import Any
 
+from authlib.jose import JsonWebKey, JsonWebToken
 from pydantic import BaseModel
+
+from ..http._transports import HttpxAsyncTransport
+from ..http._wire import HttpRequest
+from ..types.models import ClientConfig
+
+
+def _split_jwt_token(jwt_token: str) -> tuple[str, str, str]:
+    """Split JWT token into its three parts.
+
+    Args:
+        jwt_token: JWT token string
+
+    Returns:
+        Tuple of (header_b64, payload_b64, signature_b64)
+
+    Raises:
+        ValueError: If token format is invalid
+    """
+    parts = jwt_token.split(".")
+    if len(parts) != 3:
+        raise ValueError(
+            "Invalid JWT token format - expected 3 parts separated by dots"
+        )
+    if len([part for part in parts if len(part) > 0]) != 3:
+        raise ValueError(
+            "Invalid JWT token format - parts cannot be empty"
+        )
+    return parts[0], parts[1], parts[2]
+
+
+def _decode_jwt_part(part_b64: str) -> dict[str, Any]:
+    """Decode a base64-encoded JWT part (header or payload).
+
+    Args:
+        part_b64: Base64-encoded JWT part
+
+    Returns:
+        Decoded dictionary
+
+    Raises:
+        ValueError: If decoding fails
+    """
+    padding = len(part_b64) % 4
+    if padding:
+        part_b64 += "=" * (4 - padding)
+
+    try:
+        part_bytes = base64.urlsafe_b64decode(part_b64)
+        part_data = json.loads(part_bytes.decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:
+        raise ValueError(f"Failed to decode JWT part: {e}") from e
+
+    return part_data if isinstance(part_data, dict) else {}
 
 
 def get_claims(jwt_token: str) -> dict[str, Any]:
@@ -63,26 +117,11 @@ def get_claims(jwt_token: str) -> dict[str, Any]:
         >>> print(claims)  # {"client_id": "abc123", "sub": "user123"}
     """
     try:
-        # JWT tokens have 3 parts separated by dots: header.payload.signature
-        parts = jwt_token.split('.')
-        if len(parts) != 3:
-            raise ValueError("Invalid JWT token format - expected 3 parts separated by dots")
+        # Split token and extract payload
+        _, payload_b64, _ = _split_jwt_token(jwt_token)
 
-        payload_b64 = parts[1]
-
-        # Add padding if needed for base64 decoding
-        padding = len(payload_b64) % 4
-        if padding:
-            payload_b64 += '=' * (4 - padding)
-
-        try:
-            payload_bytes = base64.urlsafe_b64decode(payload_b64)
-            payload = json.loads(payload_bytes.decode('utf-8'))
-        except (json.JSONDecodeError, UnicodeDecodeError) as e:
-            raise ValueError(f"Failed to decode JWT payload: {e}") from e
-
-        # Return the full claims dictionary
-        return payload if isinstance(payload, dict) else {}
+        # Decode payload part
+        return _decode_jwt_part(payload_b64)
 
     except ValueError:
         raise
@@ -90,81 +129,83 @@ def get_claims(jwt_token: str) -> dict[str, Any]:
         raise ValueError(f"Failed to extract claims from JWT token: {e}") from e
 
 
-class JWTClientAssertion:
-    """JWT Client Assertion utilities for RFC 7523.
+def get_header(jwt_token: str) -> dict[str, Any]:
+    """Extract header information from a JWT token without verification.
 
-    Implements JWT-based client authentication as an alternative to
-    client secrets for OAuth 2.0 token requests.
+    This utility extracts header information from a JWT token including
+    algorithm, key ID, and other header claims.
 
-    Reference: https://datatracker.ietf.org/doc/html/rfc7523#section-3
+    Args:
+        jwt_token: JWT token string (without Bearer prefix)
+
+    Returns:
+        Dictionary of all header claims in the JWT
+
+    Raises:
+        ValueError: If token is malformed or cannot be decoded
+
+    Note:
+        This function does NOT verify the token signature. It's intended
+        for extracting header information for operational purposes.
+
+    Example:
+        >>> token = "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiIsImtpZCI6ImtleTEifQ.payload.signature"
+        >>> header = get_header(token)
+        >>> print(header)  # {"typ": "JWT", "alg": "RS256", "kid": "key1"}
     """
+    try:
+        header_b64, _, _ = _split_jwt_token(jwt_token)
 
-    # Standard assertion type for JWT client authentication
-    ASSERTION_TYPE = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
+        header = _decode_jwt_part(header_b64)
+        # https://datatracker.ietf.org/doc/html/rfc9068#section-2.1
+        if header["alg"] == "none":
+            raise ValueError("none algorithm is not supported")
 
-    @staticmethod
-    def create_assertion(
-        client_id: str,
-        audience: str,
-        issuer: str,
-        subject: str | None = None,
-        expiration_seconds: int = 300,
-        additional_claims: dict[str, Any] | None = None,
-        private_key: str | None = None,
-        algorithm: str = "RS256",
-    ) -> str:
-        """Create a JWT client assertion for authentication.
+        return _decode_jwt_part(header_b64)
 
-        Args:
-            client_id: OAuth 2.0 client identifier
-            audience: Token endpoint URL (aud claim)
-            issuer: JWT issuer (iss claim)
-            subject: JWT subject (sub claim), defaults to client_id
-            expiration_seconds: Token lifetime in seconds
-            additional_claims: Extra claims to include in JWT
-            private_key: Private key for signing (PEM format)
-            algorithm: Signing algorithm (RS256, ES256, etc.)
+    except ValueError:
+        raise
+    except Exception as e:
+        raise ValueError(f"Failed to extract header from JWT token: {e}") from e
 
-        Returns:
-            Signed JWT assertion string
 
-        Reference: https://datatracker.ietf.org/doc/html/rfc7523#section-3
-        """
-        # Implementation placeholder
-        raise NotImplementedError("JWT client assertion creation not yet implemented")
+def extract_scopes(claims: dict[str, Any]) -> list[str]:
+    """Extract scopes from JWT token claims.
 
-    @staticmethod
-    def verify_assertion(
-        assertion: str,
-        expected_audience: str,
-        public_key: str | None = None,
-        clock_skew_seconds: int = 30,
-    ) -> dict[str, Any]:
-        """Verify a JWT client assertion.
+    Supports both 'scope' (space-separated string) and 'scp' (list) claims
+    as commonly used in OAuth 2.0 JWT access tokens.
 
-        Args:
-            assertion: JWT assertion to verify
-            expected_audience: Expected audience claim value
-            public_key: Public key for verification (PEM format)
-            clock_skew_seconds: Allowable clock skew for time-based claims
+    Args:
+        claims: JWT token claims dictionary
 
-        Returns:
-            Verified JWT payload claims
+    Returns:
+        List of scope strings
 
-        Raises:
-            OAuthInvalidTokenError: If JWT is invalid or verification fails
-        """
-        # Implementation placeholder
-        raise NotImplementedError(
-            "JWT client assertion verification not yet implemented"
-        )
+    Example:
+        >>> claims = {"scope": "read write admin"}
+        >>> scopes = extract_scopes(claims)
+        >>> print(scopes)  # ["read", "write", "admin"]
+
+        >>> claims = {"scp": ["read", "write", "admin"]}
+        >>> scopes = extract_scopes(claims)
+        >>> print(scopes)  # ["read", "write", "admin"]
+    """
+    for claim in ["scope", "scp"]:
+        if claim in claims:
+            if isinstance(claims[claim], str):
+                # Split space-separated scope string
+                return claims[claim].split()
+            elif isinstance(claims[claim], list):
+                # Return list of scopes as-is
+                return claims[claim]
+    return []
 
 
 class JWTAccessToken(BaseModel):
     """JWT Access Token profile implementing RFC 9068.
 
     Defines the standard claims and structure for JWT-formatted access tokens
-    as specified in RFC 9068.
+    as specified in RFC 9068. Supports custom claims and preserves the raw token.
 
     Reference: https://datatracker.ietf.org/doc/html/rfc9068#section-2
     """
@@ -184,150 +225,229 @@ class JWTAccessToken(BaseModel):
     # Optional authorization details
     authorization_details: list[dict[str, Any]] | None = None
 
+    # Custom claims - stores any additional claims not covered by standard fields
+    custom_claims: dict[str, Any] = {}
 
-class JWTAccessTokenHandler:
-    """Handler for JWT Access Tokens implementing RFC 9068.
+    # Raw token preservation
+    _raw: str  # Original JWT token string
 
-    Provides utilities for creating, parsing, and validating JWT access tokens
-    according to the standardized profile defined in RFC 9068.
+    def get_custom_claim(self, claim_name: str, default: Any = None) -> Any:
+        """Get a custom claim value.
 
-    Reference: https://datatracker.ietf.org/doc/html/rfc9068
+        Args:
+            claim_name: Name of the custom claim
+            default: Default value if claim not found
+
+        Returns:
+            Custom claim value or default
+        """
+        return self.custom_claims.get(claim_name, default)
+
+    def has_custom_claim(self, claim_name: str) -> bool:
+        """Check if a custom claim exists.
+
+        Args:
+            claim_name: Name of the custom claim
+
+        Returns:
+            True if the custom claim exists, False otherwise
+        """
+        return claim_name in self.custom_claims
+
+    def get_all_claims(self) -> dict[str, Any]:
+        """Get all claims (standard + custom) as a dictionary.
+
+        Returns:
+            Dictionary containing all token claims
+        """
+        claims = {
+            "iss": self.iss,
+            "sub": self.sub,
+            "aud": self.aud,
+            "exp": self.exp,
+            "iat": self.iat,
+            "client_id": self.client_id,
+        }
+
+        # Add optional standard claims if present
+        if self.jti is not None:
+            claims["jti"] = self.jti
+        if self.scope is not None:
+            claims["scope"] = self.scope
+        if self.authorization_details is not None:
+            claims["authorization_details"] = self.authorization_details
+
+        # Add custom claims
+        claims.update(self.custom_claims)
+
+        return claims
+
+
+def decode_and_verify_jwt(
+    jwt_token: str, verification_key: str, algorithm: str = "RS256"
+) -> dict:
+    """Decode and verify JWT token signature using authlib.
+
+    Args:
+        jwt_token: JWT token string (without Bearer prefix)
+        verification_key: Public key for verification (PEM format)
+        algorithm: JWT algorithm (default RS256)
+
+    Returns:
+        Verified JWT claims dictionary
+
+    Raises:
+        ValueError: If token is invalid, malformed, or signature verification fails
+    """
+    try:
+        jwt = JsonWebToken([algorithm])
+        claims = jwt.decode(jwt_token, verification_key)
+        return claims
+    except Exception as e:
+        raise ValueError(f"JWT verification failed: {e}") from e
+
+
+def parse_jwt_access_token(
+    jwt_token: str, verification_key: str, algorithm: str = "RS256"
+) -> JWTAccessToken:
+    """Parse a JWT token into a JWTAccessToken model with signature verification.
+
+    This function decodes and verifies the JWT token signature, then creates a
+    structured JWTAccessToken model instance. Supports custom claims and
+    preserves the original token.
+
+    Args:
+        jwt_token: JWT token string (without Bearer prefix)
+        verification_key: Public key for verification (PEM format)
+        algorithm: JWT algorithm (default RS256)
+
+    Returns:
+        JWTAccessToken model instance with verified claims
+
+    Raises:
+        ValueError: If token is malformed, signature invalid, or missing required claims
 
     Example:
-        handler = JWTAccessTokenHandler(
-            issuer="https://auth.example.com",
-            private_key=private_key_pem,
-            algorithm="RS256"
-        )
+        >>> token = "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9..."
+        >>> access_token = parse_jwt_access_token(token, public_key)
+        >>> print(f"Client: {access_token.client_id}")
+        >>> print(f"Scopes: {access_token.scope}")
+        >>> print(f"Custom claims: {access_token.custom_claims}")
+    """
+    claims = decode_and_verify_jwt(jwt_token, verification_key, algorithm)
 
-        # Create a JWT access token
-        jwt_token = handler.create_access_token(
-            subject="user123",
-            client_id="client456",
-            audience="https://api.example.com",
-            scope="read:data write:data",
-            expires_in=3600
-        )
+    required_claims = ["iss", "sub", "aud", "exp", "iat", "client_id"]
+    missing_claims = [claim for claim in required_claims if claim not in claims]
+    if missing_claims:
+        raise ValueError(f"Missing required claims: {', '.join(missing_claims)}")
 
-        # Parse and validate a JWT access token
-        claims = handler.parse_access_token(jwt_token)
-        print(f"Token for client: {claims.client_id}")
-        print(f"Token scopes: {claims.scope}")
+    scopes_list = extract_scopes(claims)
+    scope_string = " ".join(scopes_list) if scopes_list else None
+
+    standard_claims = {
+        "iss",
+        "sub",
+        "aud",
+        "exp",
+        "iat",
+        "jti",
+        "client_id",
+        "scope",
+        "scp",
+        "authorization_details",
+    }
+
+    custom_claims = {
+        key: value for key, value in claims.items() if key not in standard_claims
+    }
+
+    try:
+        return JWTAccessToken(
+            iss=claims["iss"],
+            sub=claims["sub"],
+            aud=claims["aud"],
+            exp=claims["exp"],
+            iat=claims["iat"],
+            jti=claims.get("jti"),
+            client_id=claims["client_id"],
+            scope=scope_string,
+            authorization_details=claims.get("authorization_details"),
+            custom_claims=custom_claims,
+            _raw=jwt_token,
+        )
+    except Exception as e:
+        raise ValueError(f"Failed to create JWTAccessToken model: {e}") from e
+
+
+async def get_verification_key(token: str, jwks_uri: str) -> str:
+    """Get the verification key for a JWT token from JWKS.
+
+    Args:
+        token: JWT token string
+        jwks_uri: JWKS endpoint URL for key fetching
+
+    Returns:
+        Public key for verification (PEM format)
+
+    Raises:
+        ValueError: If key cannot be obtained or token is malformed
+    """
+    # Extract kid from token header
+    try:
+        header = get_header(token)
+        kid = header.get("kid")
+        return await get_jwks_key(kid, jwks_uri)
+
+    except Exception as e:
+        raise ValueError(f"Failed to extract key ID from token: {e}") from e
+
+
+async def get_jwks_key(kid: str | None, jwks_uri: str) -> str:
+    """Fetch key from JWKS endpoint.
+
+    Args:
+        kid: Key ID from JWT header (optional)
+        jwks_uri: JWKS endpoint URL
+
+    Returns:
+        Public key for verification (PEM format)
+
+    Raises:
+        ValueError: If JWKS cannot be fetched or key not found
     """
 
-    def __init__(
-        self, issuer: str, private_key: str | None = None, algorithm: str = "RS256"
-    ):
-        """Initialize the JWT access token handler.
+    try:
+        # Use the existing transport infrastructure
+        config = ClientConfig()
+        transport = HttpxAsyncTransport(config=config)
 
-        Args:
-            issuer: Token issuer identifier
-            private_key: Private key for signing tokens (PEM format)
-            algorithm: JWT signing algorithm
-        """
-        # Implementation placeholder
-        pass
+        request = HttpRequest(method="GET", url=jwks_uri, headers={}, body=b"")
 
-    def create_access_token(
-        self,
-        subject: str,
-        client_id: str,
-        audience: str | list[str],
-        scope: str | None = None,
-        expires_in: int = 3600,
-        additional_claims: dict[str, Any] | None = None,
-    ) -> str:
-        """Create a JWT access token.
+        response = await transport.request_raw(request)
 
-        Args:
-            subject: Token subject (typically user ID)
-            client_id: OAuth 2.0 client identifier
-            audience: Token audience (resource server URLs)
-            scope: Space-separated OAuth 2.0 scopes
-            expires_in: Token lifetime in seconds
-            additional_claims: Extra claims to include
+        if response.status != 200:
+            raise ValueError(f"JWKS endpoint returned status {response.status}")
 
-        Returns:
-            Signed JWT access token string
+        jwks_data = json.loads(response.body.decode("utf-8"))
 
-        Reference: https://datatracker.ietf.org/doc/html/rfc9068#section-2
-        """
-        # Implementation placeholder
-        raise NotImplementedError("JWT access token creation not yet implemented")
+        keys = jwks_data.get("keys", [])
+        if not keys:
+            raise ValueError("No keys found in JWKS")
 
-    def parse_access_token(
-        self,
-        jwt_token: str,
-        verify_signature: bool = True,
-        public_key: str | None = None,
-    ) -> JWTAccessToken:
-        """Parse and validate a JWT access token.
+        if kid:
+            for key_data in keys:
+                if key_data.get("kid") == kid:
+                    jwk = JsonWebKey.import_key(key_data)
+                    return jwk.get_public_key()  # type: ignore
+            raise ValueError(f"Key ID '{kid}' not found")
+        else:
+            if len(keys) == 1:
+                jwk = JsonWebKey.import_key(keys[0])
+                return jwk.get_public_key()  # type: ignore
+            elif len(keys) > 1:
+                raise ValueError("Multiple keys in JWKS but no key ID (kid) in token")
+            else:
+                raise ValueError("No keys found in JWKS")
 
-        Args:
-            jwt_token: JWT access token string
-            verify_signature: Whether to verify JWT signature
-            public_key: Public key for verification (PEM format)
-
-        Returns:
-            Parsed JWT access token claims
-
-        Raises:
-            OAuthInvalidTokenError: If JWT is malformed or verification fails
-
-        Reference: https://datatracker.ietf.org/doc/html/rfc9068#section-3
-        """
-        # Implementation placeholder
-        raise NotImplementedError("JWT access token parsing not yet implemented")
-
-
-class JWTAccessTokenValidator:
-    """JWT Access Token validation per RFC 9068.
-
-    Validates JWT access tokens according to the structured format
-    and security requirements defined in RFC 9068.
-
-    Reference: https://datatracker.ietf.org/doc/html/rfc9068
-    """
-
-    def __init__(self, issuer: str, audience: str, public_key: str | None = None):
-        """Initialize JWT access token validator.
-
-        Args:
-            issuer: Expected token issuer (iss claim)
-            audience: Expected token audience (aud claim)
-            public_key: Public key for signature verification (PEM format)
-        """
-        # Implementation placeholder
-        pass
-
-    def validate_token(
-        self,
-        jwt_token: str,
-        required_scope: str | None = None,
-        clock_skew_seconds: int = 30,
-    ) -> dict[str, Any]:
-        """Validate a JWT access token.
-
-        Performs comprehensive validation including:
-        - Signature verification
-        - Expiration check
-        - Issuer/audience validation
-        - Scope validation (if required)
-        - Token structure compliance with RFC 9068
-
-        Args:
-            jwt_token: JWT access token to validate
-            required_scope: Required OAuth 2.0 scope (optional)
-            clock_skew_seconds: Allowable clock skew for exp/iat claims
-
-        Returns:
-            Validated token claims
-
-        Raises:
-            OAuthInvalidTokenError: If token is invalid or expired
-            OAuthInvalidScopeError: If required scope is not present
-
-        Reference: https://datatracker.ietf.org/doc/html/rfc9068#section-3
-        """
-        # Implementation placeholder
-        raise NotImplementedError("JWT access token validation not yet implemented")
+    except Exception as e:
+        raise ValueError(f"Failed to fetch JWKS: {e}") from e
