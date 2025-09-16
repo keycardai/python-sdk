@@ -36,15 +36,73 @@ def configure_git() -> None:
 
 
 def pull_latest_changes() -> bool:
-    """Pull latest changes from origin/main."""
+    """Pull latest changes from origin/main, handling local modifications."""
+    print("Checking for local changes before pulling...")
+
+    # Check if there are local changes
+    exit_code, stdout, stderr = run_command(["git", "status", "--porcelain"])
+
+    if exit_code != 0:
+        print(f"Failed to check git status: {stderr}")
+        return False
+
+    has_local_changes = bool(stdout.strip())
+
+    if has_local_changes:
+        print(f"Found local changes:\n{stdout}")
+        print("Stashing local changes before pulling...")
+
+        # Stash local changes
+        exit_code, stdout, stderr = run_command(["git", "stash", "push", "-m", "Auto-stash before version bump"])
+
+        if exit_code != 0:
+            print(f"Failed to stash local changes: {stderr}")
+            return False
+
+        print("Successfully stashed local changes")
+
     print("Pulling latest changes from origin/main...")
     exit_code, stdout, stderr = run_command(["git", "pull", "origin", "main"])
 
     if exit_code != 0:
         print(f"Failed to pull latest changes: {stderr}")
+
+        # If we stashed changes, try to restore them
+        if has_local_changes:
+            print("Attempting to restore stashed changes...")
+            run_command(["git", "stash", "pop"])
+
         return False
 
     print("Successfully pulled latest changes")
+
+    # If we stashed changes, restore them
+    if has_local_changes:
+        print("Restoring stashed changes...")
+        exit_code, stdout, stderr = run_command(["git", "stash", "pop"])
+
+        if exit_code != 0:
+            print(f"Warning: Failed to restore stashed changes: {stderr}")
+
+            # If the conflict is in uv.lock, we can try to resolve it automatically
+            if "uv.lock" in stderr:
+                print("Detected uv.lock conflict. Attempting automatic resolution...")
+
+                # Re-sync dependencies to regenerate uv.lock
+                sync_exit_code, sync_stdout, sync_stderr = run_command(["uv", "sync", "--all-extras", "--all-packages"])
+
+                if sync_exit_code == 0:
+                    print("Successfully regenerated uv.lock after conflict")
+                    # Drop the stash since we've resolved it
+                    run_command(["git", "stash", "drop"])
+                else:
+                    print(f"Failed to regenerate uv.lock: {sync_stderr}")
+                    print("Manual intervention may be required")
+            else:
+                print("Non-uv.lock conflict detected. Manual intervention may be required")
+
+            # Don't fail the process - the pull succeeded
+
     return True
 
 
@@ -105,13 +163,9 @@ def push_changes_with_retry(max_attempts: int = 3) -> bool:
         if attempt < max_attempts:
             print("Pulling latest changes and retrying...")
 
-            # Pull with rebase to handle any new commits
-            exit_code, stdout, stderr = run_command(
-                ["git", "pull", "origin", "main", "--rebase"]
-            )
-
-            if exit_code != 0:
-                print(f"Failed to pull with rebase: {stderr}")
+            # Use the improved pull function that handles local changes
+            if not pull_latest_changes():
+                print("Failed to pull latest changes during retry")
                 continue
 
             print("Waiting 2 seconds before retry...")

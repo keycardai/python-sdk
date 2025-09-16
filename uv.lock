@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 2
 requires-python = ">=3.10"
 
 [manifest]
@@ -7,6 +7,7 @@ members = [
     "keycardai",
     "keycardai-mcp",
     "keycardai-mcp-fastmcp",
+    "keycardai-mcp-slack",
     "keycardai-oauth",
 ]
 
@@ -866,9 +867,29 @@ requires-dist = [
 ]
 
 [[package]]
+name = "keycardai-mcp-slack"
+source = { editable = "packages/mcp-slack" }
+dependencies = [
+    { name = "httpx" },
+    { name = "keycardai-oauth" },
+    { name = "pydantic" },
+    { name = "pydantic-settings" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx", specifier = ">=0.27.2" },
+    { name = "keycardai-oauth", editable = "packages/oauth" },
+    { name = "pydantic", specifier = ">=2.11.7" },
+    { name = "pydantic-settings", specifier = ">=2.7.1" },
+]
+
+[[package]]
 name = "keycardai-oauth"
 source = { editable = "packages/oauth" }
 dependencies = [
+    { name = "authlib" },
+    { name = "cryptography" },
     { name = "httpx" },
     { name = "pydantic" },
 ]
@@ -886,6 +907,8 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "authlib", specifier = ">=1.6.3" },
+    { name = "cryptography", specifier = ">=45.0.7" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "pydantic", specifier = ">=2.11.7" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=8.4.1" },
