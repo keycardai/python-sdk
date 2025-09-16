@@ -1,3 +1,8 @@
+## 0.4.0-keycardai-oauth (2025-09-16)
+
+
+- feat(keycardai-oauth): multi-zone authentication strategy
+
 ## 0.3.0-keycardai-oauth (2025-09-16)
 
 
