@@ -80,7 +80,7 @@ def protected_resource_metadata(metadata: InferredProtectedResourceMetadata, ena
         # TODO: what is the reason for this?
         if mcp_version == "2025-03-26":
             json["authorization_servers"] = [ request.base_url ]
-        return Response(content=request_metadata.model_dump_json(), status_code=200)
+        return Response(content=request_metadata.model_dump_json(exclude_none=True), status_code=200)
     return wrapper
 
 def authorization_server_metadata(issuer: str, enable_multi_zone: bool = False) -> Callable:

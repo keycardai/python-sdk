@@ -12,6 +12,7 @@ from ..auth.verifier import TokenVerifier
 def _get_oauth_protected_resource_url(request: Request) -> str:
     path = request.url.path.lstrip("/").rstrip("/")
     base_url = str(request.base_url).rstrip("/")
+    print("[DEBUG] The base URL is", base_url)
     return str(AnyHttpUrl(f"{base_url}/.well-known/oauth-protected-resource/{path}"))
 
 def _get_bearer_token(request: Request) -> str | None:
@@ -50,7 +51,7 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
                 "No bearer token provided",
                 request
             )
-
+        print("[DEUBG] The authorization header is provided")
         token = _get_bearer_token(request)
         if token is None:
             return self._create_auth_challenge_response(
@@ -60,7 +61,22 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
                 400
             )
 
-        access_token = await self.verifier.verify_token(token)
+        zone_id = None
+        if self.verifier.enable_multi_zone:
+            zone_id = request.path_params.get("zone_id")
+            print("[DEBUG] The zone ID is", zone_id)
+            if zone_id is None:
+                return self._create_auth_challenge_response(
+                    "invalid_token",
+                    "Zone ID is required",
+                    request
+                )
+
+        # Use appropriate verification method based on multi-zone mode
+        if self.verifier.enable_multi_zone and zone_id:
+            access_token = await self.verifier.verify_token_for_zone(token, zone_id)
+        else:
+            access_token = await self.verifier.verify_token(token)
         if access_token is None:
             return self._create_auth_challenge_response(
                 "invalid_token",
@@ -69,4 +85,5 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
             )
 
         request.state.access_token = access_token
+        request.state.zone_id = zone_id
         return await call_next(request)

@@ -1,16 +1,21 @@
 import asyncio
 import inspect
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from functools import wraps
 from typing import Any
 
 from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.auth.settings import AuthSettings
+from mcp.server.fastmcp import Context
 from pydantic import AnyHttpUrl
+from starlette.routing import Route
+from starlette.types import ASGIApp
 
-from keycardai.oauth import AsyncClient, AuthStrategy, Client, ClientConfig, NoneAuth
+from keycardai.oauth import AsyncClient, AuthStrategy, ClientConfig, NoneAuth
+from keycardai.oauth.http.auth import MultiZoneBasicAuth
 from keycardai.oauth.types.models import TokenResponse
 
+from ..routers.metadata import protected_mcp_router
 from .verifier import TokenVerifier
 
 
@@ -38,8 +43,11 @@ class AccessContext:
             KeyError: If resource was not granted in the decorator
         """
         if resource not in self._access_tokens:
-            raise KeyError(f"Resource '{resource}' not granted. Available resources: {list(self._access_tokens.keys())}")
+            raise KeyError(
+                f"Resource '{resource}' not granted. Available resources: {list(self._access_tokens.keys())}"
+            )
         return self._access_tokens[resource]
+
 
 class AuthProvider:
     """KeyCard authentication provider with token exchange capabilities.
@@ -50,10 +58,25 @@ class AuthProvider:
     Example:
         ```python
         from keycardai.mcp.server import AuthProvider
+        from keycardai.oauth.http.auth import MultiZoneBasicAuth
 
+        # Single zone (default)
         provider = AuthProvider(
             zone_url="https://abc1234.keycard.cloud",
             mcp_server_name="My MCP Server"
+        )
+
+        # Multi-zone support with zone-specific credentials
+        multi_zone_auth = MultiZoneBasicAuth({
+            "zone1": ("client_id_1", "client_secret_1"),
+            "zone2": ("client_id_2", "client_secret_2"),
+        })
+
+        provider = AuthProvider(
+            zone_url="https://keycard.cloud",
+            mcp_server_name="My MCP Server",
+            auth=multi_zone_auth,
+            enable_multi_zone=True
         )
 
         @provider.grant("https://api.example.com")
@@ -63,26 +86,34 @@ class AuthProvider:
         ```
     """
 
-    def __init__(self,
+    def __init__(
+        self,
         zone_url: str,
         mcp_server_name: str | None = None,
         required_scopes: list[str] | None = None,
         mcp_server_url: AnyHttpUrl | str | None = None,
-        auth: AuthStrategy = NoneAuth):
+        auth: AuthStrategy = NoneAuth,
+        enable_multi_zone: bool = False,
+    ):
         """Initialize the KeyCard auth provider.
 
         Args:
-            zone_url: KeyCard zone URL for OAuth operations
+            zone_url: KeyCard zone URL for OAuth operations. When enable_multi_zone=True,
+                     this should be the top-level domain (e.g., "https://keycard.cloud")
             mcp_server_name: Human-readable name for the MCP server
             required_scopes: Required scopes for token validation
             mcp_server_url: Resource server URL (defaults to server URL)
-            auth: Authentication strategy for OAuth operations
+            auth: Authentication strategy for OAuth operations. For multi-zone scenarios,
+                 use MultiZoneBasicAuth to provide zone-specific credentials
+            enable_multi_zone: Enable multi-zone support where zone_url is the top-level domain
+                              and zone_id is extracted from request context
         """
         self.zone_url = zone_url
         self.mcp_server_name = mcp_server_name
         self.required_scopes = required_scopes
         self.mcp_server_url = mcp_server_url
         self.client_name = mcp_server_name or "MCP Server OAuth Client"
+        self.enable_multi_zone = enable_multi_zone
 
         self._client: AsyncClient | None = None
         self._init_lock: asyncio.Lock | None = None
@@ -92,20 +123,93 @@ class AuthProvider:
         else:
             self.auto_register_client = False
 
-    async def _ensure_client_initialized(self):
+    def _extract_auth_info_from_context(
+        self, *args, **kwargs
+    ) -> tuple[str | None, str | None]:
+        """Extract access token and zone_id from FastMCP Context if available.
+
+        Returns:
+            Tuple of (access_token, zone_id) or (None, None) if not found
+        """
+        # Look for Context parameter in args and kwargs
+        contexts = []
+
+        # Check args
+        for arg in args:
+            if isinstance(arg, Context):
+                contexts.append(arg)
+
+        # Check kwargs
+        for value in kwargs.values():
+            if isinstance(value, Context):
+                contexts.append(value)
+
+        # Extract token and zone_id from first valid context
+        for ctx in contexts:
+            try:
+                if (
+                    hasattr(ctx, "request_context")
+                    and hasattr(ctx.request_context, "request")
+                    and hasattr(ctx.request_context.request, "state")
+                ):
+                    state = ctx.request_context.request.state
+
+                    access_token = None
+                    zone_id = None
+
+                    # Extract access token
+                    access_token_obj = getattr(state, "access_token", None)
+                    if access_token_obj and hasattr(access_token_obj, "token"):
+                        access_token = access_token_obj.token
+
+                    # Extract zone_id
+                    zone_id = getattr(state, "zone_id", None)
+
+                    return access_token, zone_id
+            except Exception:
+                continue
+
+        return None, None
+
+    def _create_zone_scoped_url(self, base_url: str, zone_id: str) -> str:
+        """Create zone-scoped URL by prepending zone_id to the host."""
+        base_url_obj = AnyHttpUrl(base_url)
+
+        port_part = ""
+        if base_url_obj.port and not (
+            (base_url_obj.scheme == "https" and base_url_obj.port == 443)
+            or (base_url_obj.scheme == "http" and base_url_obj.port == 80)
+        ):
+            port_part = f":{base_url_obj.port}"
+
+        zone_url = f"{base_url_obj.scheme}://{zone_id}.{base_url_obj.host}{port_part}"
+        return zone_url
+
+    async def _ensure_client_initialized(self, zone_id: str | None = None):
         """Initialize OAuth client if not already done.
 
         This method provides thread-safe initialization of the OAuth client
         for token exchange operations.
+
+        Args:
+            zone_id: Zone ID for multi-zone scenarios. When provided with enable_multi_zone=True,
+                    creates zone-specific client for that zone.
         """
-        if self._client is not None:
+        # Use a different client for each zone when multi-zone is enabled
+        client_key = (
+            f"zone:{zone_id}" if self.enable_multi_zone and zone_id else "default"
+        )
+        if not hasattr(self, "_clients"):
+            self._clients: dict[str, AsyncClient | None] = {}
+
+        if client_key in self._clients and self._clients[client_key] is not None:
             return
 
         if self._init_lock is None:
             self._init_lock = asyncio.Lock()
 
         async with self._init_lock:
-            if self._client is not None:
+            if client_key in self._clients and self._clients[client_key] is not None:
                 return
 
             try:
@@ -115,14 +219,74 @@ class AuthProvider:
                     enable_metadata_discovery=True,
                 )
 
-                self._client = AsyncClient(
-                    base_url=self.zone_url,
+                base_url = self.zone_url
+                if self.enable_multi_zone and zone_id:
+                    base_url = self._create_zone_scoped_url(self.zone_url, zone_id)
+
+                auth_strategy = self.auth
+                if isinstance(self.auth, MultiZoneBasicAuth) and zone_id:
+                    if not self.auth.has_zone(zone_id):
+                        raise ValueError(
+                            f"No credentials configured for zone '{zone_id}'. Available zones: {self.auth.get_configured_zones()}"
+                        )
+                    auth_strategy = self.auth.get_auth_for_zone(zone_id)
+
+                import json
+
+                try:
+                    # Try to serialize the auth_strategy object
+                    auth_dict = {
+                        "type": type(auth_strategy).__name__,
+                        "module": type(auth_strategy).__module__,
+                        "attributes": {
+                            k: v
+                            for k, v in vars(auth_strategy).items()
+                            if not k.startswith("_")
+                        },
+                    }
+                    print(
+                        f"[DEBUG] auth_strategy: {json.dumps(auth_dict, indent=2, default=str)}"
+                    )
+                except Exception as e:
+                    print(
+                        f"[DEBUG] auth_strategy type: {type(auth_strategy)}, error serializing: {e}"
+                    )
+                    print(
+                        f"[DEBUG] auth_strategy dir: {[attr for attr in dir(auth_strategy) if not attr.startswith('_')]}"
+                    )
+                client = AsyncClient(
+                    base_url=base_url,
                     config=client_config,
-                    auth=self.auth,
+                    auth=auth_strategy,
                 )
+                self._clients[client_key] = client
+
+                # For backward compatibility, also set the main _client
+                if client_key == "default":
+                    self._client = client
+
             except Exception:
-                self._client = None
+                self._clients[client_key] = None
+                if client_key == "default":
+                    self._client = None
                 raise
+
+    def _get_client(self, zone_id: str | None = None) -> AsyncClient | None:
+        """Get the appropriate client for the zone.
+
+        Args:
+            zone_id: Zone ID for multi-zone scenarios
+
+        Returns:
+            AsyncClient instance for the zone, or None if not initialized
+        """
+        if not hasattr(self, "_clients"):
+            return self._client
+
+        client_key = (
+            f"zone:{zone_id}" if self.enable_multi_zone and zone_id else "default"
+        )
+        return self._clients.get(client_key) or self._client
 
     def get_auth_settings(self) -> AuthSettings:
         """Get authentication settings for the MCP server."""
@@ -134,14 +298,16 @@ class AuthProvider:
             }
         )
 
-    def get_token_verifier(self) -> TokenVerifier:
+    def get_token_verifier(
+        self, enable_multi_zone: bool | None = None
+    ) -> TokenVerifier:
         """Get a token verifier for the MCP server."""
-        with Client(self.zone_url) as client:
-            jwks_uri = client.discover_server_metadata().jwks_uri
+        if enable_multi_zone is None:
+            enable_multi_zone = self.enable_multi_zone
         return TokenVerifier(
             required_scopes=self.required_scopes,
             issuer=self.zone_url,
-            jwks_uri=jwks_uri,
+            enable_multi_zone=enable_multi_zone,
         )
 
     def grant(self, resources: str | list[str]):
@@ -175,14 +341,16 @@ class AuthProvider:
         - Returns structured error response if token exchange fails
         - Preserves original function signature and behavior
         """
+
         def decorator(func: Callable) -> Callable:
             original_sig = inspect.signature(func)
             new_params = []
             access_ctx_param_name = None
 
             for param in original_sig.parameters.values():
-                if (param.annotation == AccessContext or
-                    str(param.annotation).replace(' ', '') in ['AccessContext', 'AccessContext|None', 'Optional[AccessContext]']):
+                if param.annotation == AccessContext or str(param.annotation).replace(
+                    " ", ""
+                ) in ["AccessContext", "AccessContext|None", "Optional[AccessContext]"]:
                     access_ctx_param_name = param.name
                     continue
                 new_params.append(param)
@@ -192,17 +360,33 @@ class AuthProvider:
             @wraps(func)
             async def wrapper(*args, **kwargs) -> Any:
                 try:
-                    await self._ensure_client_initialized()
+                    # Extract token and zone_id from FastMCP Context if available
+                    user_token, zone_id = self._extract_auth_info_from_context(
+                        *args, **kwargs
+                    )
 
-                    if self._client is None:
+                    # Fallback to MCP's get_access_token if no FastMCP context found
+                    if not user_token:
+                        user_token_obj = get_access_token()
+                        user_token = user_token_obj.token if user_token_obj else None
+
+                    # For multi-zone, zone_id is required
+                    if self.enable_multi_zone and not zone_id:
+                        return {
+                            "error": "Zone ID is required for multi-zone configuration but not found in request.",
+                            "isError": True,
+                            "errorType": "missing_zone_id",
+                        }
+
+                    await self._ensure_client_initialized(zone_id)
+
+                    client = self._get_client(zone_id)
+                    if client is None:
                         return {
                             "error": "OAuth client not available. Server configuration issue.",
                             "isError": True,
                             "errorType": "server_configuration",
                         }
-
-                    user_token_obj = get_access_token()
-                    user_token = user_token_obj.token if user_token_obj else None
 
                     if not user_token:
                         return {
@@ -211,15 +395,17 @@ class AuthProvider:
                             "errorType": "authentication_required",
                         }
 
-                    resource_list = [resources] if isinstance(resources, str) else resources
+                    resource_list = (
+                        [resources] if isinstance(resources, str) else resources
+                    )
 
                     access_tokens = {}
                     for resource in resource_list:
                         try:
-                            token_response = await self._client.exchange_token(
+                            token_response = await client.exchange_token(
                                 subject_token=user_token,
                                 resource=resource,
-                                subject_token_type="urn:ietf:params:oauth:token-type:access_token"
+                                subject_token_type="urn:ietf:params:oauth:token-type:access_token",
                             )
                             access_tokens[resource] = token_response
                         except Exception as e:
@@ -241,10 +427,45 @@ class AuthProvider:
                         "error": f"Unexpected error in delegated token exchange: {e}",
                         "isError": True,
                         "errorType": "unexpected_error",
-                        "resources": resource_list if 'resource_list' in locals() else resources,
+                        "resources": resource_list
+                        if "resource_list" in locals()
+                        else resources,
                     }
 
             wrapper.__signature__ = new_sig
             return wrapper
+
         return decorator
 
+    def get_mcp_router(self, mcp_app: ASGIApp) -> Sequence[Route]:
+        """Get MCP router with authentication middleware and metadata endpoints.
+
+        This method creates the complete routing structure for a protected MCP server,
+        including OAuth metadata endpoints and the main MCP application with authentication.
+
+        Args:
+            mcp_app: The MCP FastMCP streamable HTTP application
+
+        Returns:
+            Sequence of routes including metadata mount and protected MCP mount
+
+        Example:
+            ```python
+            from starlette.applications import Starlette
+
+            # Create MCP server and auth provider
+            mcp = FastMCP("My Server")
+            provider = AuthProvider(zone_url="https://keycard.cloud", ...)
+
+            # Create Starlette app with protected routes
+            app = Starlette(routes=provider.get_mcp_router(mcp.streamable_http_app()))
+            ```
+        """
+
+        verifier = self.get_token_verifier()
+        return protected_mcp_router(
+            issuer=self.zone_url,
+            mcp_app=mcp_app,
+            verifier=verifier,
+            enable_multi_zone=self.enable_multi_zone,
+        )
