@@ -1,3 +1,8 @@
+## 0.3.0-keycardai-oauth (2025-09-16)
+
+
+- feat(keycardai-oauth): jwt capabilities
+
 ## 0.2.0-keycardai-oauth (2025-09-10)
 
 
