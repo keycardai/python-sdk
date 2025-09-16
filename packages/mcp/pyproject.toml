@@ -8,7 +8,7 @@ license = { text = "MIT" }
 authors = [{ name = "KeyCard AI", email = "support@keycard.ai" }]
 dependencies = [
     "keycardai-oauth",
-    "mcp>=1.13.1",
+    "mcp==1.14.0",
     "pydantic>=2.11.7",
 ]
 keywords = ["mcp", "model-context-protocol", "authentication", "authorization", "ai", "llm"]
@@ -26,6 +26,13 @@ classifiers = [
     "Topic :: Internet :: WWW/HTTP :: Session",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "License :: OSI Approved :: MIT License",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.4.1",
+    "pytest-asyncio>=1.1.0",
+    "pytest-cov>=6.2.1",
 ]
 
 [project.urls]

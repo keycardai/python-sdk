@@ -11,7 +11,7 @@ from pydantic import AnyHttpUrl
 from keycardai.oauth import AsyncClient, AuthStrategy, Client, ClientConfig, NoneAuth
 from keycardai.oauth.types.models import TokenResponse
 
-from .verifier import KeycardTokenVerifier
+from .verifier import TokenVerifier
 
 
 class AccessContext:
@@ -41,7 +41,7 @@ class AccessContext:
             raise KeyError(f"Resource '{resource}' not granted. Available resources: {list(self._access_tokens.keys())}")
         return self._access_tokens[resource]
 
-class KeycardAuthProvider:
+class AuthProvider:
     """KeyCard authentication provider with token exchange capabilities.
 
     This provider handles both authentication (token verification) and authorization
@@ -49,9 +49,9 @@ class KeycardAuthProvider:
 
     Example:
         ```python
-        from keycardai.mcp.server import KeycardAuthProvider
+        from keycardai.mcp.server import AuthProvider
 
-        provider = KeycardAuthProvider(
+        provider = AuthProvider(
             zone_url="https://abc1234.keycard.cloud",
             mcp_server_name="My MCP Server"
         )
@@ -68,7 +68,6 @@ class KeycardAuthProvider:
         mcp_server_name: str | None = None,
         required_scopes: list[str] | None = None,
         mcp_server_url: AnyHttpUrl | str | None = None,
-        client_name: str | None = None,
         auth: AuthStrategy = NoneAuth):
         """Initialize the KeyCard auth provider.
 
@@ -77,13 +76,13 @@ class KeycardAuthProvider:
             mcp_server_name: Human-readable name for the MCP server
             required_scopes: Required scopes for token validation
             mcp_server_url: Resource server URL (defaults to server URL)
-            client_name: OAuth client name for registration (defaults to mcp_server_name)
+            auth: Authentication strategy for OAuth operations
         """
         self.zone_url = zone_url
         self.mcp_server_name = mcp_server_name
         self.required_scopes = required_scopes
         self.mcp_server_url = mcp_server_url
-        self.client_name = client_name or mcp_server_name or "MCP Server OAuth Client"
+        self.client_name = mcp_server_name or "MCP Server OAuth Client"
 
         self._client: AsyncClient | None = None
         self._init_lock: asyncio.Lock | None = None
@@ -135,11 +134,11 @@ class KeycardAuthProvider:
             }
         )
 
-    def get_token_verifier(self) -> KeycardTokenVerifier:
+    def get_token_verifier(self) -> TokenVerifier:
         """Get a token verifier for the MCP server."""
         with Client(self.zone_url) as client:
             jwks_uri = client.discover_server_metadata().jwks_uri
-        return KeycardTokenVerifier(
+        return TokenVerifier(
             required_scopes=self.required_scopes,
             issuer=self.zone_url,
             jwks_uri=jwks_uri,

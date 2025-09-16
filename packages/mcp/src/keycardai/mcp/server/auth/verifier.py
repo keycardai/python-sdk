@@ -2,7 +2,6 @@ import time
 from typing import Any
 
 from mcp.server.auth.provider import AccessToken
-from mcp.server.auth.settings import AuthSettings
 
 from keycardai.oauth.utils.jwt import (
     get_header,
@@ -13,12 +12,12 @@ from keycardai.oauth.utils.jwt import (
 from ._cache import JWKSCache, JWKSKey
 
 
-class KeycardTokenVerifier:
+class TokenVerifier:
     """Token verifier for KeyCard zone-issued tokens."""
 
     def __init__(
         self,
-        issuer: str | None = None,
+        issuer: str,
         required_scopes: list[str] | None = None,
         jwks_uri: str | None = None,
         allowed_algorithms: list[str] = None,
@@ -27,12 +26,14 @@ class KeycardTokenVerifier:
         """Initialize the KeyCard token verifier.
 
         Args:
-            issuer: Expected token issuer
+            issuer: Expected token issuer (required)
             required_scopes: Required scopes for token validation
             jwks_uri: JWKS endpoint URL for key fetching
             allowed_algorithms: JWT algorithms (default RS256)
             cache_ttl: JWKS cache TTL in seconds (default 300 = 5 minutes)
         """
+        if not issuer:
+            raise ValueError("Issuer is required for token verification")
         if allowed_algorithms is None:
             allowed_algorithms = ["RS256"]
         self.issuer = issuer
@@ -61,7 +62,10 @@ class KeycardTokenVerifier:
         verification_key = await get_verification_key(token, self.jwks_uri)
 
         self._jwks_cache.set_key(kid, verification_key, algorithm)
-        return self._jwks_cache.get_key(kid)
+        cached_key = self._jwks_cache.get_key(kid)
+        if cached_key is None:
+            raise ValueError("Failed to cache verification key")
+        return cached_key
 
     def clear_cache(self) -> None:
         """Clear the JWKS key cache."""
@@ -105,7 +109,7 @@ class KeycardTokenVerifier:
             if jwt_access_token.exp < time.time():
                 return None
 
-            if self.issuer and jwt_access_token.iss != self.issuer:
+            if jwt_access_token.iss != self.issuer:
                 return None
 
             if self.required_scopes:
@@ -132,17 +136,3 @@ class KeycardTokenVerifier:
         except Exception:
             return None
 
-
-def get_token_verifier(auth_settings: AuthSettings) -> KeycardTokenVerifier:
-    """Get a token verifier for the MCP server.
-
-    Creates a token verifier with JWKS support for cryptographic signature verification
-    and configurable key caching.
-    """
-    return KeycardTokenVerifier(
-        required_scopes=auth_settings.required_scopes,
-        issuer=str(auth_settings.issuer_url).rstrip("/"),
-        jwks_uri=getattr(auth_settings, "jwks_uri", None),
-        algorithm=getattr(auth_settings, "algorithm", "RS256"),
-        cache_ttl=getattr(auth_settings, "cache_ttl", 300),
-    )
