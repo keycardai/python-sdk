@@ -40,7 +40,7 @@ from .exceptions import (
     OAuthProtocolError,
     TokenExchangeError,
 )
-from .http.auth import AuthStrategy, BasicAuth, BearerAuth, NoneAuth
+from .http.auth import AuthStrategy, BasicAuth, BearerAuth, MultiZoneBasicAuth, NoneAuth
 from .types.models import (
     PKCE,
     AuthorizationServerMetadata,
@@ -96,6 +96,7 @@ __all__ = [
     "BasicAuth",
     "BearerAuth",
     "NoneAuth",
+    "MultiZoneBasicAuth",
     # Utility functions
     "extract_bearer_token",
     "validate_bearer_format",
