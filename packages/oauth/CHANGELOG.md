@@ -1,3 +1,8 @@
+## 0.4.1-keycardai-oauth (2025-09-17)
+
+
+- fix(keycardai-oauth): audience checks
+
 ## 0.4.0-keycardai-oauth (2025-09-16)
 
 
