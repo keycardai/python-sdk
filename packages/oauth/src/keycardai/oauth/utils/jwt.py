@@ -282,6 +282,84 @@ class JWTAccessToken(BaseModel):
 
         return claims
 
+    def validate_audience(
+        self,
+        expected_audience: str | dict[str, str] | None,
+        zone_id: str | None = None
+    ) -> bool:
+        """Validate the token's audience claim against expected values.
+
+        Args:
+            expected_audience: Expected audience configuration. Can be:
+                - str: Single audience value for all zones
+                - dict[str, str]: Zone-specific audience mapping (zone_id -> audience)
+                - None: Skip audience validation
+            zone_id: Zone ID for multi-zone scenarios (required when expected_audience is dict)
+
+        Returns:
+            True if audience is valid, False otherwise
+        """
+        if expected_audience is None:
+            return True
+
+        # Token must have audience claim when validation is required
+        if self.aud is None:
+            return False
+
+        if isinstance(expected_audience, str):
+            # Single audience validation
+            if isinstance(self.aud, list):
+                return expected_audience in self.aud
+            else:
+                return self.aud == expected_audience
+
+        elif isinstance(expected_audience, dict):
+            # Zone-specific audience validation
+            if not zone_id:
+                # Multi-zone dict audience requires zone_id
+                return False
+
+            expected_aud = expected_audience.get(zone_id)
+            if expected_aud is None:
+                # No audience configured for this zone
+                return False
+
+            if isinstance(self.aud, list):
+                return expected_aud in self.aud
+            else:
+                return self.aud == expected_aud
+
+        return False
+
+    def validate_scopes(self, required_scopes: list[str] | None) -> bool:
+        """Validate the token's scope claim against required scopes.
+
+        Args:
+            required_scopes: List of required scopes that must be present in the token.
+                           If None or empty, scope validation is skipped.
+
+        Returns:
+            True if all required scopes are present in the token, False otherwise
+        """
+        # Skip validation if no required scopes configured
+        if not required_scopes:
+            return True
+
+        # Extract scopes from token
+        token_scopes_set = set(self.get_scopes())
+        required_scopes_set = set(required_scopes)
+
+        # Check if all required scopes are present in the token
+        return required_scopes_set.issubset(token_scopes_set)
+
+    def get_scopes(self) -> list[str]:
+        """Get the token's scopes as a list.
+
+        Returns:
+            List of scopes from the token. Empty list if no scopes present.
+        """
+        return self.scope.split() if self.scope else []
+
 
 def decode_and_verify_jwt(
     jwt_token: str, verification_key: str, algorithm: str = "RS256"
