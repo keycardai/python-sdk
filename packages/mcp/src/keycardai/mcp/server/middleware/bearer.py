@@ -12,7 +12,6 @@ from ..auth.verifier import TokenVerifier
 def _get_oauth_protected_resource_url(request: Request) -> str:
     path = request.url.path.lstrip("/").rstrip("/")
     base_url = str(request.base_url).rstrip("/")
-    print("[DEBUG] The base URL is", base_url)
     return str(AnyHttpUrl(f"{base_url}/.well-known/oauth-protected-resource/{path}"))
 
 def _get_bearer_token(request: Request) -> str | None:
@@ -51,7 +50,6 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
                 "No bearer token provided",
                 request
             )
-        print("[DEUBG] The authorization header is provided")
         token = _get_bearer_token(request)
         if token is None:
             return self._create_auth_challenge_response(
@@ -64,7 +62,6 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
         zone_id = None
         if self.verifier.enable_multi_zone:
             zone_id = request.path_params.get("zone_id")
-            print("[DEBUG] The zone ID is", zone_id)
             if zone_id is None:
                 return self._create_auth_challenge_response(
                     "invalid_token",

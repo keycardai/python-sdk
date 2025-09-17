@@ -21,6 +21,7 @@ class TestTokenVerifierVerifyToken:
         client_id: str = "test-client",
         scope: str = "read write",
         custom_claims: dict = None,
+        aud: str = "test-audience",
     ) -> Mock:
         """Create a mock JWTAccessToken for testing."""
         current_time = int(time.time())
@@ -29,9 +30,46 @@ class TestTokenVerifierVerifyToken:
         token.iss = iss
         token.client_id = client_id
         token.scope = scope
+        token.aud = aud
         token.get_custom_claim = Mock(
             side_effect=lambda key, default=None: (custom_claims or {}).get(key, default)
         )
+
+        # Add the new validation methods that actually implement the logic
+        def mock_validate_scopes(required_scopes):
+            if not required_scopes:
+                return True
+            token_scopes = scope.split() if scope else []
+            token_scopes_set = set(token_scopes)
+            required_scopes_set = set(required_scopes)
+            return required_scopes_set.issubset(token_scopes_set)
+
+        def mock_validate_audience(expected_audience, zone_id=None):
+            if expected_audience is None:
+                return True
+            if aud is None:
+                return False
+            if isinstance(expected_audience, str):
+                if isinstance(aud, list):
+                    return expected_audience in aud
+                else:
+                    return aud == expected_audience
+            elif isinstance(expected_audience, dict):
+                if not zone_id:
+                    return False
+                expected_aud = expected_audience.get(zone_id)
+                if expected_aud is None:
+                    return False
+                if isinstance(aud, list):
+                    return expected_aud in aud
+                else:
+                    return aud == expected_aud
+            return False
+
+        token.validate_audience = Mock(side_effect=mock_validate_audience)
+        token.validate_scopes = Mock(side_effect=mock_validate_scopes)
+        token.get_scopes = Mock(return_value=scope.split() if scope else [])
+
         return token
 
     @pytest.mark.asyncio
