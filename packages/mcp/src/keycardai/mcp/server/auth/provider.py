@@ -11,8 +11,8 @@ from pydantic import AnyHttpUrl
 from starlette.routing import Route
 from starlette.types import ASGIApp
 
-from keycardai.oauth import AsyncClient, AuthStrategy, ClientConfig, NoneAuth
-from keycardai.oauth.http.auth import MultiZoneBasicAuth
+from keycardai.oauth import AsyncClient, ClientConfig
+from keycardai.oauth.http.auth import AuthStrategy, MultiZoneBasicAuth, NoneAuth
 from keycardai.oauth.types.models import TokenResponse
 
 from ..routers.metadata import protected_mcp_router
@@ -91,6 +91,7 @@ class AuthProvider:
         zone_url: str,
         mcp_server_name: str | None = None,
         required_scopes: list[str] | None = None,
+        audience: str | dict[str, str] | None = None,
         mcp_server_url: AnyHttpUrl | str | None = None,
         auth: AuthStrategy = NoneAuth,
         enable_multi_zone: bool = False,
@@ -123,6 +124,8 @@ class AuthProvider:
         else:
             self.auto_register_client = False
 
+        self.audience = audience
+
     def _extract_auth_info_from_context(
         self, *args, **kwargs
     ) -> tuple[str | None, str | None]:
@@ -131,20 +134,16 @@ class AuthProvider:
         Returns:
             Tuple of (access_token, zone_id) or (None, None) if not found
         """
-        # Look for Context parameter in args and kwargs
         contexts = []
 
-        # Check args
         for arg in args:
             if isinstance(arg, Context):
                 contexts.append(arg)
 
-        # Check kwargs
         for value in kwargs.values():
             if isinstance(value, Context):
                 contexts.append(value)
 
-        # Extract token and zone_id from first valid context
         for ctx in contexts:
             try:
                 if (
@@ -157,12 +156,10 @@ class AuthProvider:
                     access_token = None
                     zone_id = None
 
-                    # Extract access token
                     access_token_obj = getattr(state, "access_token", None)
                     if access_token_obj and hasattr(access_token_obj, "token"):
                         access_token = access_token_obj.token
 
-                    # Extract zone_id
                     zone_id = getattr(state, "zone_id", None)
 
                     return access_token, zone_id
@@ -195,7 +192,6 @@ class AuthProvider:
             zone_id: Zone ID for multi-zone scenarios. When provided with enable_multi_zone=True,
                     creates zone-specific client for that zone.
         """
-        # Use a different client for each zone when multi-zone is enabled
         client_key = (
             f"zone:{zone_id}" if self.enable_multi_zone and zone_id else "default"
         )
@@ -231,29 +227,6 @@ class AuthProvider:
                         )
                     auth_strategy = self.auth.get_auth_for_zone(zone_id)
 
-                import json
-
-                try:
-                    # Try to serialize the auth_strategy object
-                    auth_dict = {
-                        "type": type(auth_strategy).__name__,
-                        "module": type(auth_strategy).__module__,
-                        "attributes": {
-                            k: v
-                            for k, v in vars(auth_strategy).items()
-                            if not k.startswith("_")
-                        },
-                    }
-                    print(
-                        f"[DEBUG] auth_strategy: {json.dumps(auth_dict, indent=2, default=str)}"
-                    )
-                except Exception as e:
-                    print(
-                        f"[DEBUG] auth_strategy type: {type(auth_strategy)}, error serializing: {e}"
-                    )
-                    print(
-                        f"[DEBUG] auth_strategy dir: {[attr for attr in dir(auth_strategy) if not attr.startswith('_')]}"
-                    )
                 client = AsyncClient(
                     base_url=base_url,
                     config=client_config,
@@ -261,7 +234,6 @@ class AuthProvider:
                 )
                 self._clients[client_key] = client
 
-                # For backward compatibility, also set the main _client
                 if client_key == "default":
                     self._client = client
 
@@ -308,6 +280,7 @@ class AuthProvider:
             required_scopes=self.required_scopes,
             issuer=self.zone_url,
             enable_multi_zone=enable_multi_zone,
+            audience=self.audience,
         )
 
     def grant(self, resources: str | list[str]):

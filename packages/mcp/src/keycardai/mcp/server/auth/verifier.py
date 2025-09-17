@@ -25,6 +25,7 @@ class TokenVerifier:
         allowed_algorithms: list[str] = None,
         cache_ttl: int = 300,  # 5 minutes default
         enable_multi_zone: bool = False,
+        audience: str | dict[str, str] | None = None,
     ):
         """Initialize the KeyCard token verifier.
 
@@ -37,6 +38,10 @@ class TokenVerifier:
             allowed_algorithms: JWT algorithms (default RS256)
             cache_ttl: JWKS cache TTL in seconds (default 300 = 5 minutes)
             enable_multi_zone: Enable multi-zone support where issuer is top-level domain
+            audience: Expected token audience. Can be:
+                     - str: Single audience value for all zones
+                     - dict[str, str]: Zone-specific audience mapping (zone_id -> audience)
+                     - None: Skip audience validation (not recommended for production)
         """
         if not issuer:
             raise ValueError("Issuer is required for token verification")
@@ -53,6 +58,7 @@ class TokenVerifier:
         self._discovered_jwks_uris: dict[str, str] = {}  # Initialize the cache dict
 
         self.enable_multi_zone = enable_multi_zone
+        self.audience = audience
 
     def _discover_jwks_uri(self, zone_id: str | None = None) -> str:
         """Discover JWKS URI from issuer lazily.
@@ -167,7 +173,6 @@ class TokenVerifier:
             if jwt_access_token.exp < time.time():
                 return None
 
-            # Validate issuer, handling multi-zone scenarios
             expected_issuer = self.issuer
             if self.enable_multi_zone and zone_id:
                 expected_issuer = self._create_zone_scoped_url(self.issuer, zone_id)
@@ -175,18 +180,13 @@ class TokenVerifier:
             if jwt_access_token.iss != expected_issuer:
                 return None
 
-            if self.required_scopes:
-                token_scopes = (
-                    jwt_access_token.scope.split() if jwt_access_token.scope else []
-                )
-                token_scopes_set = set(token_scopes)
-                required_scopes_set = set(self.required_scopes)
-                if not required_scopes_set.issubset(token_scopes_set):
-                    return None
+            if not jwt_access_token.validate_audience(self.audience, zone_id):
+                return None
 
-            token_scopes = (
-                jwt_access_token.scope.split() if jwt_access_token.scope else []
-            )
+            if not jwt_access_token.validate_scopes(self.required_scopes):
+                return None
+
+            token_scopes = jwt_access_token.get_scopes()
 
             return AccessToken(
                 token=token,
