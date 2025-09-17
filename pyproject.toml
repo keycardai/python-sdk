@@ -25,7 +25,9 @@ keywords = ["keycard", "oauth", "authentication", "security", "api"]
 
 # This is a namespace/workspace root package with no source code
 # All functionality is provided by workspace member packages
-dependencies = []
+dependencies = [
+    "nanoid>=2.0.0",
+]
 
 # Optional dependencies for development
 [project.optional-dependencies]

@@ -15,9 +15,14 @@ from starlette.types import ASGIApp
 
 from keycardai.oauth import AsyncClient, ClientConfig
 from keycardai.oauth.http.auth import AuthStrategy, MultiZoneBasicAuth, NoneAuth
-from keycardai.oauth.types.models import TokenResponse
+from keycardai.oauth.types.models import JsonWebKey, JsonWebKeySet, TokenResponse
 
 from ..routers.metadata import protected_mcp_router
+from .identity import (
+    FilePrivateKeyStorage,
+    PrivateKeyIdentityManager,
+    PrivateKeyStorageProtocol,
+)
 from .verifier import TokenVerifier
 
 
@@ -100,6 +105,8 @@ class AuthProvider:
         enable_multi_zone: bool = False,
         base_url: str | None = None,
         enable_private_key_identity: bool = False,
+        private_key_storage: PrivateKeyStorageProtocol | None = None,
+        private_key_storage_dir: str | None = None,
     ):
         """Initialize the KeyCard auth provider.
 
@@ -114,6 +121,9 @@ class AuthProvider:
                  use MultiZoneBasicAuth to provide zone-specific credentials
             enable_multi_zone: Enable multi-zone support where zone_url is the top-level domain
                               and zone_id is extracted from request context
+            enable_private_key_identity: Enable private key JWT authentication
+            private_key_storage: Custom storage backend for private keys (optional)
+            private_key_storage_dir: Directory for file-based key storage (default: ./mcp_keys)
         """
         if zone_url is None and zone_id is None:
             raise ValueError("zone_url or zone_id is required")
@@ -142,15 +152,34 @@ class AuthProvider:
         self.audience = audience
         self.enable_private_key_identity = enable_private_key_identity
 
+        self._identity_manager: PrivateKeyIdentityManager | None = None
+        if enable_private_key_identity:
+            if private_key_storage is not None:
+                storage = private_key_storage
+            else:
+                storage_dir = private_key_storage_dir or "./mcp_keys"
+                storage = FilePrivateKeyStorage(storage_dir)
+
+            stable_client_id = self.mcp_server_name or f"mcp-server-{generate()}"
+            stable_client_id = "".join(c if c.isalnum() or c in "-_" else "_" for c in stable_client_id)
+
+            self._identity_manager = PrivateKeyIdentityManager(
+                storage=storage,
+                key_id=stable_client_id,
+                audience_config=audience
+            )
+
     def _bootstrap_private_key_identity(self):
         """Bootstrap private key identity.
 
-        Indepotent operation which checks if the key pais already exists
-        Loads the pair into the memory or
-        Creates a private key pair using cryptography package.
-        Stores the key pair in the configured file path.
+        Idempotent operation which checks if the key pair already exists,
+        loads the pair into memory, or creates a private key pair using
+        cryptography package and stores the key pair in the configured storage.
         """
-        pass
+        if not self.enable_private_key_identity or self._identity_manager is None:
+            return
+
+        self._identity_manager.bootstrap_identity()
 
     def _extract_auth_info_from_context(
         self, *args, **kwargs
@@ -235,9 +264,13 @@ class AuthProvider:
                 return
 
             try:
+                # Bootstrap private key identity if enabled
+                if self.enable_private_key_identity:
+                    self._bootstrap_private_key_identity()
+
                 """
                 When enable_private_key_identity is True, the client is configured to use the private key identity.
-                It uses client registration endpoint but configures itself with jwt authoorization strategy
+                It uses client registration endpoint but configures itself with jwt authorization strategy
                 The client_id is configured to the audience for the zone or by default to the url of the resource
                 """
                 client_config = ClientConfig(
@@ -487,15 +520,26 @@ class AuthProvider:
         """
 
         verifier = self.get_token_verifier()
-        """
-        When enable_private_key_identity is True, metadata endpoint has to expose the url to the jwks via well-known endpoint.
-        """
+
+        jwks = None
+        if self.enable_private_key_identity and self._identity_manager is not None:
+            try:
+                self._bootstrap_private_key_identity()
+                jwks_dict = self._identity_manager.get_public_jwks()
+                jwk_objects = []
+                for jwk_data in jwks_dict["keys"]:
+                    jwk_objects.append(JsonWebKey(**jwk_data))
+                jwks = JsonWebKeySet(keys=jwk_objects)
+            except Exception as e:
+                print(f"Error getting JWKS: {e}")
+                pass
+
         return protected_mcp_router(
             issuer=self.zone_url,
             mcp_app=mcp_app,
             verifier=verifier,
             enable_multi_zone=self.enable_multi_zone,
-            enable_private_key_identity=self.enable_private_key_identity,
+            jwks=jwks
         )
 
     def app(self, mcp_app: FastMCP) -> ASGIApp:

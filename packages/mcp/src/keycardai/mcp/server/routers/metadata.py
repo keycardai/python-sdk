@@ -4,6 +4,8 @@ from starlette.middleware import Middleware
 from starlette.routing import Mount, Route
 from starlette.types import ASGIApp
 
+from keycardai.oauth.types import JsonWebKeySet
+
 from ..auth.verifier import TokenVerifier
 from ..handlers.jwks import jwks_endpoint
 from ..handlers.metadata import (
@@ -14,34 +16,40 @@ from ..handlers.metadata import (
 from ..middleware import BearerAuthMiddleware
 
 
-def auth_metadata_mount(issuer: str, enable_multi_zone: bool = False, enable_private_key_identity: bool = False) -> Mount:
-    return Mount(
-        path="/.well-known",
-        routes=[
-            Route(
-                "/oauth-protected-resource{resource_path:path}",
-                protected_resource_metadata(
-                    InferredProtectedResourceMetadata(
-                        authorization_servers=[issuer],
-                    ),
-                    enable_multi_zone=enable_multi_zone,
+def auth_metadata_mount(issuer: str, enable_multi_zone: bool = False, jwks: JsonWebKeySet | None = None) -> Mount:
+    routes = [
+        Route(
+            "/oauth-protected-resource{resource_path:path}",
+            protected_resource_metadata(
+                InferredProtectedResourceMetadata(
+                    authorization_servers=[issuer],
                 ),
-                name="oauth-protected-resource",
+                enable_multi_zone=enable_multi_zone,
             ),
-            Route(
+            name="oauth-protected-resource",
+        ),
+        Route(
                 "/oauth-authorization-server{resource_path:path}",
                 authorization_server_metadata(
                     issuer, enable_multi_zone=enable_multi_zone
                 ),
                 name="oauth-authorization-server",
             ),
+    ]
+
+    if jwks:
+        routes.append(
             Route(
                 "/jwks.json",
-                jwks_endpoint(
-                ),
+                jwks_endpoint(jwks),
                 name="jwks",
             )
-        ],
+        )
+
+
+    return Mount(
+        path="/.well-known",
+        routes=routes,
         name="well-known",
     )
 
@@ -51,7 +59,7 @@ def protected_mcp_router(
     mcp_app: ASGIApp,
     verifier: TokenVerifier,
     enable_multi_zone: bool = False,
-    enable_private_key_identity: bool = False,
+    jwks: JsonWebKeySet | None = None,
 ) -> Sequence[Route]:
     """Create a protected MCP router with authentication middleware.
 
@@ -68,7 +76,7 @@ def protected_mcp_router(
         Sequence of routes including metadata mount and protected MCP mount
     """
     routes = [
-        auth_metadata_mount(issuer, enable_multi_zone=enable_multi_zone, enable_private_key_identity=enable_private_key_identity),
+        auth_metadata_mount(issuer, enable_multi_zone=enable_multi_zone, jwks=jwks),
     ]
 
     if enable_multi_zone:
