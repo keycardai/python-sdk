@@ -265,6 +265,53 @@ class AuthorizationServerMetadata:
     headers: dict[str, str] | None = None
 
 # =============================================================================
+# JSON Web Key Set (RFC 7517)
+# =============================================================================
+
+class JsonWebKey(BaseModel):
+    """JSON Web Key (JWK) as defined in RFC 7517 Section 4.
+
+    Reference: https://datatracker.ietf.org/doc/html/rfc7517#section-4
+    """
+
+    # Required fields
+    kty: str = Field(..., description="Key type (e.g., 'RSA', 'EC', 'oct')")
+
+    # Optional standard fields
+    use: str | None = Field(None, description="Intended use of the key ('sig' or 'enc')")
+    key_ops: list[str] | None = Field(None, description="Key operations")
+    alg: str | None = Field(None, description="Algorithm intended for use with the key")
+    kid: str | None = Field(None, description="Key ID")
+
+    # RSA key parameters
+    n: str | None = Field(None, description="RSA modulus")
+    e: str | None = Field(None, description="RSA exponent")
+
+    # EC key parameters
+    crv: str | None = Field(None, description="Curve name for elliptic curve keys")
+    x: str | None = Field(None, description="X coordinate for elliptic curve keys")
+    y: str | None = Field(None, description="Y coordinate for elliptic curve keys")
+
+    # Symmetric key parameters
+    k: str | None = Field(None, description="Key value for symmetric keys")
+
+    # Certificate chain
+    x5c: list[str] | None = Field(None, description="X.509 certificate chain")
+    x5t: str | None = Field(None, description="X.509 certificate SHA-1 thumbprint")
+    x5t_s256: str | None = Field(None, alias="x5t#S256", description="X.509 certificate SHA-256 thumbprint")
+    x5u: str | None = Field(None, description="X.509 certificate URL")
+
+
+class JsonWebKeySet(BaseModel):
+    """JSON Web Key Set (JWKS) as defined in RFC 7517 Section 5.
+
+    Reference: https://datatracker.ietf.org/doc/html/rfc7517#section-5
+    """
+
+    keys: list[JsonWebKey] = Field(..., description="Array of JSON Web Key objects")
+
+
+# =============================================================================
 # Utility Models
 # =============================================================================
 
