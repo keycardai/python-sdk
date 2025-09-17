@@ -99,6 +99,7 @@ class AuthProvider:
         auth: AuthStrategy = NoneAuth,
         enable_multi_zone: bool = False,
         base_url: str | None = None,
+        enable_private_key_identity: bool = False,
     ):
         """Initialize the KeyCard auth provider.
 
@@ -139,6 +140,17 @@ class AuthProvider:
             self.auto_register_client = False
 
         self.audience = audience
+        self.enable_private_key_identity = enable_private_key_identity
+
+    def _bootstrap_private_key_identity(self):
+        """Bootstrap private key identity.
+
+        Indepotent operation which checks if the key pais already exists
+        Loads the pair into the memory or
+        Creates a private key pair using cryptography package.
+        Stores the key pair in the configured file path.
+        """
+        pass
 
     def _extract_auth_info_from_context(
         self, *args, **kwargs
@@ -223,6 +235,11 @@ class AuthProvider:
                 return
 
             try:
+                """
+                When enable_private_key_identity is True, the client is configured to use the private key identity.
+                It uses client registration endpoint but configures itself with jwt authoorization strategy
+                The client_id is configured to the audience for the zone or by default to the url of the resource
+                """
                 client_config = ClientConfig(
                     client_name=self.client_name,
                     auto_register_client=self.auto_register_client,
@@ -470,11 +487,15 @@ class AuthProvider:
         """
 
         verifier = self.get_token_verifier()
+        """
+        When enable_private_key_identity is True, metadata endpoint has to expose the url to the jwks via well-known endpoint.
+        """
         return protected_mcp_router(
             issuer=self.zone_url,
             mcp_app=mcp_app,
             verifier=verifier,
             enable_multi_zone=self.enable_multi_zone,
+            enable_private_key_identity=self.enable_private_key_identity,
         )
 
     def app(self, mcp_app: FastMCP) -> ASGIApp:
