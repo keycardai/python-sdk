@@ -38,12 +38,15 @@ class TokenExchangeRequest(BaseModel):
     audience: str | None = None
     scope: str | None = None
     requested_token_type: TokenType | None = None
-    subject_token: str = Field(..., min_length=1, description="The token to exchange.")
-    subject_token_type: TokenType = Field(default=TokenType.ACCESS_TOKEN, description="The type of the token to exchange.")
+    subject_token: str | None = Field(default=None, min_length=1, description="The token to exchange.")
+    subject_token_type: TokenType | None = Field(default=TokenType.ACCESS_TOKEN, description="The type of the token to exchange.")
     actor_token: str | None = None
     actor_token_type: TokenType | None = None
     timeout: float | None = None
     client_id: str | None = None
+
+    client_assertion_type: str | None = None
+    client_assertion: str | None = None
 
 
 @dataclass
@@ -100,6 +103,7 @@ class ClientRegistrationRequest(BaseModel):
 
     Reference: https://datatracker.ietf.org/doc/html/rfc7591#section-2
     """
+    client_id: str | None = None
     client_name: str = Field(..., min_length=1, description="Human-readable name of the client application.")
     jwks_uri: str | None = None
     jwks: dict | None = None
@@ -349,7 +353,10 @@ class ClientConfig:
     enable_metadata_discovery: bool = True
     auto_register_client: bool = False
 
+    client_id: str | None = None
     client_name: str = "KeycardAI OAuth Client"
     client_redirect_uris: list[str] = field(default_factory=lambda: ["http://localhost:8080/callback"])
     client_grant_types: list[GrantType] = field(default_factory=lambda: [GrantType.AUTHORIZATION_CODE, GrantType.REFRESH_TOKEN, GrantType.TOKEN_EXCHANGE])
     client_token_endpoint_auth_method: TokenEndpointAuthMethod = field(default_factory=lambda: TokenEndpointAuthMethod.NONE)
+
+    client_jwks_url: str | None = None
