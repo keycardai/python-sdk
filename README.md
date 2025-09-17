@@ -2,6 +2,165 @@
 
 A collection of Python packages for KeyCard services, organized as a uv workspace.
 
+## Quick Start
+
+Get up and running with KeyCard's MCP (Model Context Protocol) integration in minutes:
+
+### 1. Install the Package
+
+```bash
+pip install keycardai-mcp```
+
+### 2. Create Your First MCP Server
+
+```python
+from mcp.server.fastmcp import FastMCP, Context
+from typing import Any
+
+from keycardai.mcp.server.auth import AuthProvider
+
+# Obtain this from Keycard Console UI
+zone_id = "5hp9n12kibpg042gwrsvrqiqiv"
+
+access = AuthProvider(
+    zone_url=f"https://{zone_id}.keycard.cloud",
+    mcp_server_name="Hello World Mcp",
+    mcp_server_url="http://127.0.0.1:8000"
+)
+
+mcp = FastMCP("Minimal MCP", auth=access.get_auth_settings(), token_verifier=access.get_token_verifier())
+
+@mcp.tool()
+async def get_hello_world(request_ctx: Context) -> dict[str, Any]:
+    return {"message": "Hello, World!"}
+
+app = mcp.streamable_http_app()
+```
+
+### 3. Run Your Server
+
+```bash
+uvicorn main:app --host 0.0.0.0 --port 8000
+```
+
+Your MCP server is now running with KeyCard authentication! 🎉
+
+### 4. Add Access Control (Optional)
+
+Protect your tools with fine-grained access control and automatic token management:
+
+```python
+import os
+from mcp.server.fastmcp import FastMCP, Context
+from typing import Any
+
+from keycardai.mcp.server.auth import AuthProvider, AccessContext, BasicAuth
+
+# Obtain this from Keycard Console UI
+zone_id = "5hp9n12kibpg042gwrsvrqiqiv"
+
+access = AuthProvider(
+    zone_url=f"https://{zone_id}.keycard.cloud",
+    mcp_server_name="Hello World Mcp",
+    mcp_server_url="http://127.0.0.1:8000",
+    auth=BasicAuth(
+        client_id=os.getenv("KEYCARD_CLIENT_ID"),
+        client_secret=os.getenv("KEYCARD_CLIENT_SECRET")
+    )
+)
+
+mcp = FastMCP("Minimal MCP", auth=access.get_auth_settings(), token_verifier=access.get_token_verifier())
+
+@mcp.tool()
+@access.grant("https://protected-api.com")
+async def get_hello_world(ctx: AccessContext, request_ctx: Context) -> dict[str, Any]:
+    access_token = ctx.access("https://protected-api.com").access_token
+    return {"message": "Hello, World!", "access_token": access_token}
+
+app = mcp.streamable_http_app()
+```
+
+Set your KeyCard credentials as environment variables:
+```bash
+export KEYCARD_CLIENT_ID="your_client_id"
+export KEYCARD_CLIENT_SECRET="your_client_secret"
+```
+
+The `@access.grant()` decorator ensures users have proper permissions and automatically provides access tokens for external APIs.
+
+### 5. Multi-Zone Support (Advanced)
+
+For production applications serving multiple organizations, you can configure a single server to handle multiple KeyCard zones:
+
+```python
+import contextlib
+import os
+import json
+from typing import Any
+from dotenv import load_dotenv
+
+from starlette.applications import Starlette
+from starlette.middleware import Middleware
+from starlette.middleware.cors import CORSMiddleware
+from mcp.server.fastmcp import FastMCP, Context
+
+from keycardai.mcp.server.auth import AuthProvider, AccessContext, MultiZoneBasicAuth
+
+# Load environment variables from .env file
+load_dotenv()
+
+# Parse zone configuration from environment variable
+zone_config_str = os.getenv("KEYCARD_ZONE_CONFIG", "[]")
+zone_configs = json.loads(zone_config_str)
+
+# Create auth credentials map for MultiZoneBasicAuth
+auth_map = {}
+for config in zone_configs:
+    zone_id = config["zone_id"]
+    auth_map[zone_id] = (config["client_id"], config["client_secret"])
+
+access = AuthProvider(
+    zone_url="https://keycard.cloud",
+    mcp_server_name="Multi-Zone MCP",
+    auth=MultiZoneBasicAuth(auth_map),
+    enable_multi_zone=True,
+)
+
+mcp = FastMCP("Multi-Zone MCP")
+
+@mcp.tool()
+@access.grant("https://protected-api.com")
+async def get_hello_world(ctx: AccessContext, request_ctx: Context) -> dict[str, Any]:
+    access_token = ctx.access("https://protected-api.com").access_token
+    return {"message": "Hello, World!", "access_token": access_token}
+
+@contextlib.asynccontextmanager
+async def lifespan(app: Starlette):
+    async with contextlib.AsyncExitStack() as stack:
+        await stack.enter_async_context(mcp.session_manager.run())
+        yield
+
+middleware = [
+    Middleware(CORSMiddleware, allow_origins=['*'])
+]
+
+app = Starlette(
+    routes=access.get_mcp_router(mcp.streamable_http_app()), 
+    middleware=middleware, 
+    lifespan=lifespan
+)
+```
+
+Set your zone configuration via environment variables:
+```bash
+export KEYCARD_ZONE_CONFIG='[
+    {"zone_id": "zone1", "client_id": "client1", "client_secret": "secret1"},
+    {"zone_id": "zone2", "client_id": "client2", "client_secret": "secret2"}
+]'
+```
+
+> **Need a KeyCard zone?** Sign up at [keycard.cloud](https://keycard.cloud) to get your zone ID and start building secure MCP applications.
+
 ## Overview
 
 This workspace contains multiple Python packages that provide various KeyCard functionality:
