@@ -1,3 +1,8 @@
+## 0.3.1-keycardai-mcp (2025-09-17)
+
+
+- fix(keycardai-mcp): check audience when configured
+
 ## 0.3.0-keycardai-mcp (2025-09-16)
 
 
