@@ -16,6 +16,7 @@ from starlette.types import ASGIApp
 from keycardai.oauth import AsyncClient, ClientConfig
 from keycardai.oauth.http.auth import AuthStrategy, MultiZoneBasicAuth, NoneAuth
 from keycardai.oauth.types.models import JsonWebKey, JsonWebKeySet, TokenResponse
+from keycardai.oauth.types.oauth import GrantType, TokenEndpointAuthMethod
 
 from ..routers.metadata import protected_mcp_router
 from .identity import (
@@ -101,7 +102,7 @@ class AuthProvider:
         required_scopes: list[str] | None = None,
         audience: str | dict[str, str] | None = None,
         mcp_server_url: AnyHttpUrl | str | None = None,
-        auth: AuthStrategy = NoneAuth,
+        auth: AuthStrategy | None = None,
         enable_multi_zone: bool = False,
         base_url: str | None = None,
         enable_private_key_identity: bool = False,
@@ -143,8 +144,8 @@ class AuthProvider:
 
         self._client: AsyncClient | None = None
         self._init_lock: asyncio.Lock | None = None
-        self.auth = auth
-        if isinstance(auth, NoneAuth):
+        self.auth = auth or NoneAuth()
+        if isinstance(self.auth, NoneAuth):
             self.auto_register_client = True
         else:
             self.auto_register_client = False
@@ -264,7 +265,6 @@ class AuthProvider:
                 return
 
             try:
-                # Bootstrap private key identity if enabled
                 if self.enable_private_key_identity:
                     self._bootstrap_private_key_identity()
 
@@ -276,8 +276,15 @@ class AuthProvider:
                 client_config = ClientConfig(
                     client_name=self.client_name,
                     auto_register_client=self.auto_register_client,
-                    enable_metadata_discovery=True,
+                    enable_metadata_discovery=self.auto_register_client,
                 )
+
+                if self.enable_private_key_identity:
+                    client_config.client_id = "http://192.168.1.64:8000/.well-known/oauth-protected-resource/5hp9n12kibpg042gwrsvrqiqiv/mcp"
+                    client_config.auto_register_client = True
+                    client_config.client_jwks_url = self._identity_manager.get_client_jwks_url()
+                    client_config.client_token_endpoint_auth_method = TokenEndpointAuthMethod.PRIVATE_KEY_JWT
+                    client_config.client_grant_types = [GrantType.CLIENT_CREDENTIALS]
 
                 base_url = self.zone_url
                 if self.enable_multi_zone and zone_id:
@@ -296,6 +303,8 @@ class AuthProvider:
                     config=client_config,
                     auth=auth_strategy,
                 )
+                if self.auto_register_client:
+                    await client._ensure_initialized()
                 self._clients[client_key] = client
 
                 if client_key == "default":
@@ -460,6 +469,8 @@ class AuthProvider:
                                 subject_token=user_token,
                                 resource=resource,
                                 subject_token_type="urn:ietf:params:oauth:token-type:access_token",
+                                client_assertion_type=GrantType.JWT_BEARER_CLIENT_ASSERTION,
+                                client_assertion=self._identity_manager.create_client_assertion(f"http://192.168.1.64:8000/.well-known/oauth-protected-resource/{zone_id}/mcp", zone_id),
                             )
                             access_tokens[resource] = token_response
                         except Exception as e:
@@ -531,8 +542,7 @@ class AuthProvider:
                     jwk_objects.append(JsonWebKey(**jwk_data))
                 jwks = JsonWebKeySet(keys=jwk_objects)
             except Exception as e:
-                print(f"Error getting JWKS: {e}")
-                pass
+                raise ValueError(f"Error getting JWKS: {e}") from e
 
         return protected_mcp_router(
             issuer=self.zone_url,

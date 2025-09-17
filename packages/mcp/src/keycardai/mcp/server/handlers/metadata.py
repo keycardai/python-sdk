@@ -8,10 +8,18 @@ from pydantic import AnyHttpUrl, Field
 from starlette.requests import Request
 from starlette.responses import Response
 
+from keycardai.oauth.types.oauth import GrantType, TokenEndpointAuthMethod
+
 
 class InferredProtectedResourceMetadata(ProtectedResourceMetadata):
     """Extended ProtectedResourceMetadata that allows resource to be inferred from request."""
     resource: AnyHttpUrl | None = Field(default=None)  # Override to make it optional
+    client_id: str | None = Field(default=None)
+    client_name: str | None = Field(default=None)
+    redirect_uris: list[AnyHttpUrl] | None = Field(default=None)
+    token_endpoint_auth_method: TokenEndpointAuthMethod | None = Field(default=None)
+    grant_types: list[GrantType] | None = Field(default=None)
+    jwks_uri: AnyHttpUrl | None = Field(default=None)
 
 @dataclass
 class AuthorizationServerMetadata:

@@ -386,16 +386,16 @@ class PrivateKeyIdentityManager:
         if self._private_key_pem is None or self._public_key_jwk is None:
             raise RuntimeError("Identity not bootstrapped. Call bootstrap_identity() first.")
 
-        resolved_audience = self._resolve_audience(audience, zone_id)
+        self._resolve_audience(audience, zone_id)
 
         now = int(time.time())
         payload = {
-            "iss": self.key_id,  # Client ID is the key ID
-            "sub": self.key_id,  # Subject is also the key ID
-            "aud": resolved_audience,
+            "iss": audience,  # Client ID is the key ID
+            "sub": audience,  # Subject is also the key ID
+            "aud": audience,
             "jti": str(uuid.uuid4()),  # Unique token ID
             "iat": now,
-            "exp": now + expiry_seconds
+            "exp": now + expiry_seconds,
         }
 
         header = {
@@ -459,3 +459,6 @@ class PrivateKeyIdentityManager:
                 deleted.append(key_id)
 
         return deleted
+
+    def get_client_jwks_url(self) -> str:
+        return "http://192.168.1.64:8000/.well-known/jwks.json"

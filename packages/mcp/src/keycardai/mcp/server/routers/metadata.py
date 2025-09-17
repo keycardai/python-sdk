@@ -1,10 +1,12 @@
 from collections.abc import Sequence
 
+from pydantic import AnyHttpUrl
 from starlette.middleware import Middleware
 from starlette.routing import Mount, Route
 from starlette.types import ASGIApp
 
 from keycardai.oauth.types import JsonWebKeySet
+from keycardai.oauth.types.oauth import GrantType, TokenEndpointAuthMethod
 
 from ..auth.verifier import TokenVerifier
 from ..handlers.jwks import jwks_endpoint
@@ -17,13 +19,21 @@ from ..middleware import BearerAuthMiddleware
 
 
 def auth_metadata_mount(issuer: str, enable_multi_zone: bool = False, jwks: JsonWebKeySet | None = None) -> Mount:
+    inferred_metadata = InferredProtectedResourceMetadata(
+        authorization_servers=[issuer],
+    )
+    if jwks:
+        inferred_metadata.jwks_uri = AnyHttpUrl("http://192.168.1.64:8000/.well-known/jwks.json")
+        inferred_metadata.client_id = "http://192.168.1.64:8000/5hp9n12kibpg042gwrsvrqiqiv/mcp"
+        inferred_metadata.client_name = "MCP Server"
+        inferred_metadata.token_endpoint_auth_method = TokenEndpointAuthMethod.PRIVATE_KEY_JWT
+        inferred_metadata.grant_types = [GrantType.CLIENT_CREDENTIALS]
+
     routes = [
         Route(
             "/oauth-protected-resource{resource_path:path}",
             protected_resource_metadata(
-                InferredProtectedResourceMetadata(
-                    authorization_servers=[issuer],
-                ),
+                inferred_metadata,
                 enable_multi_zone=enable_multi_zone,
             ),
             name="oauth-protected-resource",
