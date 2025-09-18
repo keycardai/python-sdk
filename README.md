@@ -14,13 +14,13 @@ pip install mcp keycardai-mcp
 
 or 
 
-```
+```bash
 uv add mcp keycardai-mcp
 ```
 
 ### Create Your First MCP Server
 
-```
+```python
 from mcp.server.fastmcp import FastMCP
 
 mcp = FastMCP("Hello World")
@@ -35,7 +35,7 @@ if __name__ == "__main__":
 
 ### Run your MCP server
 
-```
+```bash
 python server.py
 ```
 
@@ -43,7 +43,7 @@ For more detail refer to the [mcp](https://github.com/modelcontextprotocol/pytho
 
 ### Configure the remote MCP in your AI client, like [Cursor](https://cursor.com/?from=home)
 
-```
+```json
 {
   "mcpServers": {
     "hello-world": {
@@ -99,12 +99,14 @@ The authorization flows require additonal handlers to advertise the metadata.
 This is implemented using underlying starlett application, for more information refer to official [mcp](https://github.com/modelcontextprotocol/python-sdk?tab=readme-ov-file#streamablehttp-servers) documentation
 
 You can use any async server, for example [uvicorn](https://www.uvicorn.org/)
-```
+
+```bash
 uv add uvicorn
 ```
 
 or
-```
+
+```bash
 pip install uvicorn
 ```
 
