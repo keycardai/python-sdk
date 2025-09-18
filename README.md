@@ -55,21 +55,21 @@ For more detail refer to the [mcp](https://github.com/modelcontextprotocol/pytho
 
 ### Test the remote server with client, 
 
-![Cursor Hello World Agent Call](docs/images/cursor_hello_world_agent_call.png)
+<img src="docs/images/cursor_hello_world_agent_call.png" alt="Cursor Hello World Agent Call" width="500">
 
 ### Signup to Keycard and get your zone identifier
 
 Refer to [docs](https://docs.keycard.ai/) on how to signup. Navigate to Zone Settings to obtain the zone id
 
-![Keycard ZoneId Information](docs/images/keycard_zone_information.png)
+<img src="docs/images/keycard_zone_information.png" alt="Keycard ZoneId Information" width="400">
 
 ### Configure Your prefered Identity Provider
 
-![Keycard Identity Provider Configuration](docs/images/keycard_identity_provider_config.png)
+<img src="docs/images/keycard_identity_provider_config.png" alt="Keycard Identity Provider Configuration" width="400">
 
 ### Setup MCP resource
 
-![Create MCP Resource](docs/images/create_mcp_resource.png)
+<img src="docs/images/create_mcp_resource.png" alt="Create MCP Resource" width="400">
 
 ### Add authentication to the MCP server
 
@@ -120,7 +120,7 @@ uvicorn server:app
 
 ### Authenticate in client
 
-![Cursor Authentication Prompt](docs/images/cursor_authenticate.png)
+<img src="docs/images/cursor_authenticate.png" alt="Cursor Authentication Prompt" width="500">
 
 
 ### 🎉 Your MCP server is now running with KeyCard authentication! 🎉
