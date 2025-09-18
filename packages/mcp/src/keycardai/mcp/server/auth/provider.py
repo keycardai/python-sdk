@@ -312,8 +312,18 @@ class AuthProvider:
 
         Usage:
             ```python
+            from mcp.server.fastmcp import Context
+            # Async function
             @provider.grant("https://api.example.com")
-            async def my_tool(ctx: AccessContext, user_id: str):
+            async def my_async_tool(ctx: AccessContext, request_ctx: Context, user_id: str):
+                token = ctx.access("https://api.example.com").access_token
+                # Use token to call the external API
+                headers = {"Authorization": f"Bearer {token}"}
+                # ... make API call
+
+            # Sync function (also supported)
+            @provider.grant("https://api.example.com")
+            def my_sync_tool(ctx: AccessContext, request_ctx: Context, user_id: str):
                 token = ctx.access("https://api.example.com").access_token
                 # Use token to call the external API
                 headers = {"Authorization": f"Bearer {token}"}
@@ -322,7 +332,11 @@ class AuthProvider:
 
         The decorated function must:
         - Have a parameter annotated with `AccessContext` type (e.g., `my_ctx: AccessContext = None`)
-        - Be async (token exchange is async)
+        - Have a parameter annotated with `Context` type from FastMCP (e.g., `request_ctx: Context`)
+        - Can be either async or sync (the decorator handles both cases)
+
+        Note: The `Context` parameter is required for accessing request authentication information.
+        Without it, the decorator cannot extract the user's authentication token.
 
         Error handling:
         - Returns structured error response if token exchange fails
@@ -343,6 +357,9 @@ class AuthProvider:
                 new_params.append(param)
 
             new_sig = original_sig.replace(parameters=new_params)
+
+            # mcp.server.fastmcp always run in async mode
+            is_async_func = inspect.iscoroutinefunction(func)
 
             @wraps(func)
             async def wrapper(*args, **kwargs) -> Any:
@@ -407,7 +424,10 @@ class AuthProvider:
                     if access_ctx_param_name:
                         kwargs[access_ctx_param_name] = access_ctx
 
-                    return await func(*args, **kwargs)
+                    if is_async_func:
+                        return await func(*args, **kwargs)
+                    else:
+                        return func(*args, **kwargs)
 
                 except Exception as e:
                     return {

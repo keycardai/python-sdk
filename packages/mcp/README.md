@@ -22,7 +22,7 @@ pip install keycardai-mcp
 
 1. Sign up at [keycard.ai](https://keycard.ai)
 2. Navigate to Zone Settings to get your zone ID
-3. Configure your preferred identity provider
+3. Configure your preferred identity provider (Google, Microsoft, etc.)
 4. Create an MCP resource in your zone
 
 ### Add Authentication to Your MCP Server
@@ -65,13 +65,54 @@ uvicorn server:app
 - ✅ **Token Exchange**: Automatic delegated token exchange for accessing external APIs
 - ✅ **Production Ready**: Battle-tested security patterns and error handling
 
+### Delegated Access
+
+KeyCard allows MCP servers to access other resources on behalf of users with automatic consent and secure token exchange.
+
+#### Setup Protected Resources
+
+1. **Configure credential provider** (e.g., Google Workspace)
+2. **Configure protected resource** (e.g., Google Drive API)  
+3. **Set MCP server dependencies** to allow delegated access
+4. **Create client secret identity** to provide authentication method
+
+#### Add Delegation to Your Tools
+
+```python
+from mcp.server.fastmcp import FastMCP, Context
+from keycardai.mcp.server.auth import AuthProvider, AccessContext, BasicAuth
+import os
+
+# Configure your provider
+access = AuthProvider(
+    zone_id="your_zone_id",
+    mcp_server_name="My MCP Server",
+    auth=BasicAuth(
+        os.getenv("KEYCARD_CLIENT_ID"), 
+        os.getenv("KEYCARD_CLIENT_SECRET")
+    )
+)
+
+mcp = FastMCP("My MCP Server")
+
+@mcp.tool()
+@access.grant("https://protected-api")
+def protected_tool(ctx: Context, access_context: AccessContext, name: str) -> str:
+    # Use the access_context to call external APIs on behalf of the user
+    token = access_context.access("https://protected-api").access_token
+    # Make authenticated API calls...
+    return f"Protected data for {name}"
+
+app = access.app(mcp)
+```
+
 ## Examples
 
 For complete examples and advanced usage patterns, see our [documentation](https://docs.keycard.ai).
 
 ## License
 
-MIT License - see [LICENSE](../../LICENSE) file for details.
+MIT License - see [LICENSE](https://github.com/keycardai/python-sdk/blob/main/LICENSE) file for details.
 
 ## Support
 
