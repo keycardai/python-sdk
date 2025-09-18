@@ -1,3 +1,8 @@
+## 0.4.0-keycardai-mcp (2025-09-18)
+
+
+- feat(keycardai-mcp): default domain handling
+
 ## 0.3.1-keycardai-mcp (2025-09-17)
 
 
