@@ -63,6 +63,10 @@ Refer to [docs](https://docs.keycard.ai/) on how to signup. Navigate to Zone Set
 
 ![Keycard ZoneId Information](docs/images/keycard_zone_information.png)
 
+### Configure Your prefered Identity Provider
+
+![Keycard Identity Provider Configuration](docs/images/keycard_identity_provider_config.png)
+
 ### Setup MCP resource
 
 ![Create MCP Resource](docs/images/create_mcp_resource.png)
@@ -114,14 +118,13 @@ pip install uvicorn
 uvicorn server:app
 ```
 
-Your MCP server is now running with KeyCard authentication! 🎉
-
-
 ### Authenticate in client
 
 ![Cursor Authentication Prompt](docs/images/cursor_authenticate.png)
 
-> **Need a KeyCard zone?** Sign up at [keycard.cloud](https://keycard.cloud) to get your zone ID and start building secure MCP applications.
+
+### 🎉 Your MCP server is now running with KeyCard authentication! 🎉
+
 
 ## Overview
 
