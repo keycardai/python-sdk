@@ -5,6 +5,7 @@ from mcp.server.auth.provider import AccessToken
 from pydantic import AnyHttpUrl
 
 from keycardai.oauth import Client
+from keycardai.oauth.exceptions import OAuthHttpError
 from keycardai.oauth.utils.jwt import (
     get_header,
     get_jwks_key,
@@ -12,6 +13,14 @@ from keycardai.oauth.utils.jwt import (
 )
 
 from ._cache import JWKSCache, JWKSKey
+from .exceptions import (
+    AuthenticationError,
+    CacheError,
+    JWKSDiscoveryError,
+    TokenValidationError,
+    UnsupportedAlgorithmError,
+    VerifierConfigError,
+)
 
 
 class TokenVerifier:
@@ -44,7 +53,7 @@ class TokenVerifier:
                      - None: Skip audience validation (not recommended for production)
         """
         if not issuer:
-            raise ValueError("Issuer is required for token verification")
+            raise VerifierConfigError("Issuer is required for token verification")
         if allowed_algorithms is None:
             allowed_algorithms = ["RS256"]
         self.issuer = issuer
@@ -86,7 +95,7 @@ class TokenVerifier:
                 discovered_uri = server_metadata.jwks_uri
 
             if not discovered_uri:
-                raise ValueError(f"Could not discover JWKS URI from issuer: {discovery_issuer}")
+                raise JWKSDiscoveryError(discovery_issuer, zone_id)
 
             # Cache the successful discovery
             self._discovered_jwks_uris[cache_key] = discovered_uri
@@ -94,7 +103,7 @@ class TokenVerifier:
 
         except Exception as e:
             # Don't cache failures, let them retry
-            raise ValueError(f"Could not discover JWKS URI from issuer {discovery_issuer}: {e}") from e
+            raise JWKSDiscoveryError(discovery_issuer, zone_id, cause=e) from e
 
     def _create_zone_scoped_url(self, base_url: str, zone_id: str) -> str:
         """Create zone-scoped URL by prepending zone_id to the host."""
@@ -115,7 +124,7 @@ class TokenVerifier:
         kid = header.get("kid")
         algorithm = header.get("alg")
         if algorithm not in self.allowed_algorithms:
-            raise ValueError(f"Unsupported algorithm: {algorithm}")
+            raise UnsupportedAlgorithmError(algorithm)
         return [kid, algorithm]
 
     def _get_zone_jwks_uri(self, jwks_uri: str, zone_id: str) -> str:
@@ -144,7 +153,7 @@ class TokenVerifier:
         self._jwks_cache.set_key(kid, verification_key, algorithm)
         cached_key = self._jwks_cache.get_key(kid)
         if cached_key is None:
-            raise ValueError("Failed to cache verification key")
+            raise CacheError("Failed to cache verification key")
         return cached_key
 
 
@@ -162,8 +171,23 @@ class TokenVerifier:
 
     async def verify_token_for_zone(self, token: str, zone_id: str) -> AccessToken | None:
         """Verify a JWT token for a specific zone and return AccessToken if valid."""
-        key = await self._get_verification_key(token, zone_id)
-        return self._verify_token(token, key, zone_id)
+        try:
+            key = await self._get_verification_key(token, zone_id)
+            return self._verify_token(token, key, zone_id)
+        except AuthenticationError:
+            # All authentication errors should result in 401 responses
+            # This includes: JWKS discovery failures, invalid tokens, unsupported algorithms, etc.
+            return None
+        except ValueError as e:
+            # Wrap remaining ValueError as TokenValidationError for consistent handling
+            # This catches JWT parsing errors and other validation failures from oauth utils
+            raise TokenValidationError(f"Token validation failed: {e}") from e
+        except OAuthHttpError as e:
+            # Handle HTTP errors during JWKS discovery (e.g., invalid zone_id leading to 404)
+            # This prevents 500 errors and allows proper 401 responses
+            if e.status_code == 404:
+                return None
+            raise
 
     def _verify_token(self, token: str, key: JWKSKey, zone_id: str | None = None) -> AccessToken | None:
             jwt_access_token = parse_jwt_access_token(
@@ -220,7 +244,13 @@ class TokenVerifier:
         try:
             key = await self._get_verification_key(token)
             return self._verify_token(token, key)
-
+        except AuthenticationError:
+            # All authentication errors should result in 401 responses
+            return None
+        except ValueError as e:
+            # Wrap remaining ValueError as TokenValidationError for consistent handling
+            raise TokenValidationError(f"Token validation failed: {e}") from e
         except Exception:
+            # Catch any other unexpected errors
             return None
 
