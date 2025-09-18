@@ -1,3 +1,8 @@
+## 0.4.1-keycardai-mcp (2025-09-18)
+
+
+- fix(keycardai-mcp): support both sync and async tool calls
+
 ## 0.4.0-keycardai-mcp (2025-09-18)
 
 
