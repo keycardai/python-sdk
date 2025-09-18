@@ -6,158 +6,118 @@ A collection of Python packages for KeyCard services, organized as a uv workspac
 
 Get up and running with KeyCard's MCP (Model Context Protocol) integration in minutes:
 
-### 1. Install the Package
+### Install the Packages
 
 ```bash
-pip install keycardai-mcp```
+pip install mcp keycardai-mcp
+```
 
-### 2. Create Your First MCP Server
+or 
+
+```
+uv add mcp keycardai-mcp
+```
+
+### Create Your First MCP Server
+
+```
+from mcp.server.fastmcp import FastMCP
+
+mcp = FastMCP("Hello World")
+
+@mcp.tool()
+def hello_world(name: str) -> str:
+    return f"Hello, {name}!"
+
+if __name__ == "__main__":
+    mcp.run(transport="streamable-http")
+```
+
+### Run your MCP server
+
+```
+python server.py
+```
+
+For more detail refer to the [mcp](https://github.com/modelcontextprotocol/python-sdk?tab=readme-ov-file#streamable-http-transport) documentation
+
+### Configure the remote MCP in your AI client, like [Cursor](https://cursor.com/?from=home)
+
+```
+{
+  "mcpServers": {
+    "hello-world": {
+      "url": "http://localhost:8000/mcp"
+    }
+  }
+}
+```
+
+### Test the remote server with client, 
+
+![Cursor Hello World Agent Call](docs/images/cursor_hello_world_agent_call.png)
+
+### Signup to Keycard and get your zone identifier
+
+Refer to [docs](https://docs.keycard.ai/) on how to signup. Navigate to Zone Settings to obtain the zone id
+
+![Keycard ZoneId Information](docs/images/keycard_zone_information.png)
+
+### Setup MCP resource
+
+![Create MCP Resource](docs/images/create_mcp_resource.png)
+
+### Add authentication to the MCP server
 
 ```python
-from mcp.server.fastmcp import FastMCP, Context
-from typing import Any
+from mcp.server.fastmcp import FastMCP
 
 from keycardai.mcp.server.auth import AuthProvider
 
-# Obtain this from Keycard Console UI
-zone_id = "5hp9n12kibpg042gwrsvrqiqiv"
+# From the zone setting above
+zone_id = "90zqtq5lvtobrmyl3b0i0k2z1q"
 
 access = AuthProvider(
-    zone_url=f"https://{zone_id}.keycard.cloud",
-    mcp_server_name="Hello World Mcp",
-    mcp_server_url="http://127.0.0.1:8000"
+   zone_id = zone_id,
+   mcp_server_name="Hello World Mcp",
 )
 
-mcp = FastMCP("Minimal MCP", auth=access.get_auth_settings(), token_verifier=access.get_token_verifier())
+mcp = FastMCP("Minimal MCP")
 
 @mcp.tool()
-async def get_hello_world(request_ctx: Context) -> dict[str, Any]:
-    return {"message": "Hello, World!"}
+def hello_world(name: str) -> str:
+    return f"Hello, {name}!"
 
-app = mcp.streamable_http_app()
+# Create starlett app to handle authorization flows
+app = access.app(mcp)
 ```
 
-### 3. Run Your Server
+### Run Your Server
+
+The authorization flows require additonal handlers to advertise the metadata.
+
+This is implemented using underlying starlett application, for more information refer to official [mcp](https://github.com/modelcontextprotocol/python-sdk?tab=readme-ov-file#streamablehttp-servers) documentation
+
+You can use any async server, for example [uvicorn](https://www.uvicorn.org/)
+```
+uv add uvicorn
+```
+
+or
+```
+pip install uvicorn
+```
 
 ```bash
-uvicorn main:app --host 0.0.0.0 --port 8000
+uvicorn server:app
 ```
 
 Your MCP server is now running with KeyCard authentication! 🎉
 
-### 4. Add Access Control (Optional)
 
-Protect your tools with fine-grained access control and automatic token management:
+### Authenticate in client
 
-```python
-import os
-from mcp.server.fastmcp import FastMCP, Context
-from typing import Any
-
-from keycardai.mcp.server.auth import AuthProvider, AccessContext, BasicAuth
-
-# Obtain this from Keycard Console UI
-zone_id = "5hp9n12kibpg042gwrsvrqiqiv"
-
-access = AuthProvider(
-    zone_url=f"https://{zone_id}.keycard.cloud",
-    mcp_server_name="Hello World Mcp",
-    mcp_server_url="http://127.0.0.1:8000",
-    auth=BasicAuth(
-        client_id=os.getenv("KEYCARD_CLIENT_ID"),
-        client_secret=os.getenv("KEYCARD_CLIENT_SECRET")
-    )
-)
-
-mcp = FastMCP("Minimal MCP", auth=access.get_auth_settings(), token_verifier=access.get_token_verifier())
-
-@mcp.tool()
-@access.grant("https://protected-api.com")
-async def get_hello_world(ctx: AccessContext, request_ctx: Context) -> dict[str, Any]:
-    access_token = ctx.access("https://protected-api.com").access_token
-    return {"message": "Hello, World!", "access_token": access_token}
-
-app = mcp.streamable_http_app()
-```
-
-Set your KeyCard credentials as environment variables:
-```bash
-export KEYCARD_CLIENT_ID="your_client_id"
-export KEYCARD_CLIENT_SECRET="your_client_secret"
-```
-
-The `@access.grant()` decorator ensures users have proper permissions and automatically provides access tokens for external APIs.
-
-### 5. Multi-Zone Support (Advanced)
-
-For production applications serving multiple organizations, you can configure a single server to handle multiple KeyCard zones:
-
-```python
-import contextlib
-import os
-import json
-from typing import Any
-from dotenv import load_dotenv
-
-from starlette.applications import Starlette
-from starlette.middleware import Middleware
-from starlette.middleware.cors import CORSMiddleware
-from mcp.server.fastmcp import FastMCP, Context
-
-from keycardai.mcp.server.auth import AuthProvider, AccessContext, MultiZoneBasicAuth
-
-# Load environment variables from .env file
-load_dotenv()
-
-# Parse zone configuration from environment variable
-zone_config_str = os.getenv("KEYCARD_ZONE_CONFIG", "[]")
-zone_configs = json.loads(zone_config_str)
-
-# Create auth credentials map for MultiZoneBasicAuth
-auth_map = {}
-for config in zone_configs:
-    zone_id = config["zone_id"]
-    auth_map[zone_id] = (config["client_id"], config["client_secret"])
-
-access = AuthProvider(
-    zone_url="https://keycard.cloud",
-    mcp_server_name="Multi-Zone MCP",
-    auth=MultiZoneBasicAuth(auth_map),
-    enable_multi_zone=True,
-)
-
-mcp = FastMCP("Multi-Zone MCP")
-
-@mcp.tool()
-@access.grant("https://protected-api.com")
-async def get_hello_world(ctx: AccessContext, request_ctx: Context) -> dict[str, Any]:
-    access_token = ctx.access("https://protected-api.com").access_token
-    return {"message": "Hello, World!", "access_token": access_token}
-
-@contextlib.asynccontextmanager
-async def lifespan(app: Starlette):
-    async with contextlib.AsyncExitStack() as stack:
-        await stack.enter_async_context(mcp.session_manager.run())
-        yield
-
-middleware = [
-    Middleware(CORSMiddleware, allow_origins=['*'])
-]
-
-app = Starlette(
-    routes=access.get_mcp_router(mcp.streamable_http_app()), 
-    middleware=middleware, 
-    lifespan=lifespan
-)
-```
-
-Set your zone configuration via environment variables:
-```bash
-export KEYCARD_ZONE_CONFIG='[
-    {"zone_id": "zone1", "client_id": "client1", "client_secret": "secret1"},
-    {"zone_id": "zone2", "client_id": "client2", "client_secret": "secret2"}
-]'
-```
+![Cursor Authentication Prompt](docs/images/cursor_authenticate.png)
 
 > **Need a KeyCard zone?** Sign up at [keycard.cloud](https://keycard.cloud) to get your zone ID and start building secure MCP applications.
 
@@ -165,146 +125,35 @@ export KEYCARD_ZONE_CONFIG='[
 
 This workspace contains multiple Python packages that provide various KeyCard functionality:
 
-- **keycardai-oauth**: OAuth 2.0 implementation with support for RFC 8693 (Token Exchange), RFC 7662 (Introspection), RFC 7009 (Revocation), and more
+- **keycardai-oauth**: OAuth 2.0 implementation with support for RFC 8693 (Token Exchange)
 - **keycardai-mcp**: Core MCP (Model Context Protocol) integration utilities
 - **keycardai-mcp-fastmcp**: FastMCP-specific integration package with decorators and middleware
 
-## Getting Started
+## Installation
 
-### Prerequisites
+Install the SDK packages using pip:
 
-- Python 3.10 or higher
-- [uv](https://docs.astral.sh/uv/) package manager
-- [just](https://github.com/casey/just) task runner (optional, for convenience commands)
-
-### Installation
-
-1. Clone the repository:
 ```bash
+# Install individual packages as needed
+pip install keycardai-oauth
+pip install keycardai-mcp
+pip install keycardai-mcp-fastmcp
+
+# Or install from source
 git clone git@github.com:keycardai/python-sdk.git
 cd python-sdk
-```
-
-2. Install the workspace:
-```bash
-uv sync
+pip install ./packages/oauth
+pip install ./packages/mcp
+pip install ./packages/mcp-fastmcp
 ```
 
 ## Documentation
 
-### Launch Documentation Server
-
-The project includes comprehensive documentation built with Mint. To view the docs locally:
-
-```bash
-# Using just (recommended)
-just docs
-
-# Or directly with npx
-cd docs && npx --yes mint@latest dev
-```
-
-This will start a local documentation server (typically at `http://localhost:3000`) with:
+Comprehensive documentation is available at our [documentation site](https://docs.keycard.ai), including:
 - API reference for all packages
-- Usage examples  
+- Usage examples and tutorials
 - Integration guides
 - Architecture decisions
-
-### Generate API Documentation
-
-To regenerate the API reference documentation:
-
-```bash
-# Generate docs for all packages
-just sdk-ref-all
-
-# Or generate for specific packages
-just sdk-ref-oauth
-just sdk-ref-mcp
-just sdk-ref-mcp-fastmcp
-```
-
-## Development
-
-This project uses uv workspaces to manage multiple related packages. Each package lives in the `packages/` directory and has its own `pyproject.toml`.
-
-### Common Tasks
-
-```bash
-# Install all dependencies
-uv sync
-
-# Run tests
-just test
-# or: uv run pytest
-
-# Lint and format code
-just check          # Check for issues
-just fix            # Fix auto-fixable issues
-just fix-all        # Fix all issues (including unsafe fixes)
-
-# Type checking
-just typecheck
-# or: uv run mypy .
-
-# Build packages
-just build
-```
-
-### Working with the workspace
-
-- **Install all dependencies**: `uv sync`
-- **Run commands in the workspace root**: `uv run <command>`
-- **Run commands in a specific package**: `uv run --package <package-name> <command>`
-- **Add dependencies to the workspace**: Add to the root `pyproject.toml`
-- **Add dependencies to a specific package**: Add to the package's `pyproject.toml`
-
-### Adding a new package
-
-1. Create a new directory in `packages/`
-2. Initialize the package: `uv init packages/your-package-name`
-3. Update the package's `pyproject.toml` with appropriate metadata
-4. The package will automatically be included in the workspace
-
-## Package Structure
-
-```
-python-sdk/
-├── pyproject.toml          # Workspace root configuration
-├── justfile               # Task runner commands
-├── README.md              # This file
-├── docs/                  # Documentation
-│   ├── docs.json          # Mint documentation config
-│   ├── examples/          # Usage examples
-│   ├── sdk/              # Auto-generated API reference
-│   └── standards/        # Development standards
-├── packages/              # Individual packages
-│   ├── oauth/            # OAuth 2.0 implementation
-│   ├── mcp/              # Core MCP utilities  
-│   └── mcp-fastmcp/      # FastMCP integration
-├── src/                   # Workspace-level source
-└── uv.lock               # Shared lockfile
-```
-
-## Available Packages
-
-### keycardai-oauth
-OAuth 2.0 client implementation with comprehensive support for:
-- Token Exchange (RFC 8693)
-- Dynamic Client Registration (RFC 7591)
-- Server Metadata Discovery (RFC 8414)
-- Token Introspection (RFC 7662)
-- Token Revocation (RFC 7009)
-
-### keycardai-mcp
-Core utilities for MCP (Model Context Protocol) integration.
-
-### keycardai-mcp-fastmcp  
-FastMCP-specific integration package providing:
-- Authentication providers
-- OAuth middleware
-- Decorators for token exchange
-- MCP server utilities
 
 ## Examples
 
@@ -313,65 +162,7 @@ Each package includes practical examples in their respective `examples/` directo
 - **OAuth examples**: Anonymous token exchange, server discovery, dynamic registration
 - **MCP examples**: Google API integration with delegated token exchange
 
-## Workspace Benefits
-
-Using a uv workspace provides several advantages:
-
-- **Consistent Dependencies**: All packages share the same lockfile, ensuring consistent versions
-- **Cross-package Development**: Easy to develop and test packages that depend on each other
-- **Simplified CI/CD**: Single lockfile and unified testing across all packages
-- **Shared Development Tools**: Common linting, formatting, and testing configuration
-
-## Architecture Decision Records
-
-Important architectural and design decisions are documented using [Architecture Decision Records (ADRs)](./docs/project/decisions/). These help explain the reasoning behind key technical choices in the project.
-
-- [ADR-0001: Use uv Workspaces for Multi-Package Development](./docs/project/decisions/0001-use-uv-workspaces-for-package-management.mdx)
-- [ADR-0002: Modular Package Structure for Minimal Dependencies](./docs/project/decisions/0002-modular-package-structure-for-minimal-dependencies.mdx)
-- [ADR-0003: Use Commitizen for Commit Validation and Changelog Management](./docs/project/decisions/0003-use-commitizen-for-commit-validation-and-changelog-management.mdx)
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Run the development tools to ensure quality:
-   ```bash
-   just test      # Run tests
-   just check     # Lint code
-   just typecheck # Type checking
-   ```
-
-### Commit Message Guidelines
-
-We use [Conventional Commits](https://www.conventionalcommits.org/) with specific scopes for our monorepo structure:
-
-**Format**: `<type>(<scope>): <description>`
-
-**Required Scopes**:
-- `keycardai-oauth`: Changes to the OAuth package
-- `keycardai-mcp`: Changes to the core MCP package  
-- `keycardai-mcp-fastmcp`: Changes to the FastMCP integration
-- `deps`: Dependency updates
-- `docs`: Documentation updates
-
-**Common Types**: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`, `ci`
-
-**Examples**:
-```bash
-feat(keycardai-oauth): add PKCE support for enhanced security
-fix(keycardai-mcp-fastmcp): resolve connection timeout in auth middleware
-docs(keycardai-oauth): update API documentation with new examples
-chore(deps): update httpx to v0.25.0 for security patch
-```
-
-**Important Notes**:
-- **Squash commits** before merging - only the final commit message appears in changelog
-- Scoped commits automatically appear in generated changelogs
-- Use `git commit --amend` to fix commit messages if needed
-- Preview changelog generation with: `just changelog-preview`
-
-5. Submit a pull request
+For detailed examples and usage patterns, see our [documentation](https://docs.keycard.ai).
 
 ## License
 
@@ -382,5 +173,5 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 For questions, issues, or support:
 
 - GitHub Issues: [https://github.com/keycardai/python-sdk/issues](https://github.com/keycardai/python-sdk/issues)
-- Documentation: [https://docs.keycardai.com](https://docs.keycardai.com)
-- Email: support@keycardai.com
+- Documentation: [https://docs.keycardai.com](https://docs.keycard.ai/)
+- Email: support@keycard.ai

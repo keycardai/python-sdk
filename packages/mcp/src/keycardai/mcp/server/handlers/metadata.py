@@ -69,7 +69,7 @@ def protected_resource_metadata(metadata: InferredProtectedResourceMetadata, ena
         # Create a copy of the metadata to avoid mutating the original
         request_metadata = metadata.model_copy(deep=True)
         path = _remove_well_known_prefix(request.url.path)
-        if enable_multi_zone or not _is_authorization_server_zone_scoped(request_metadata.authorization_servers):
+        if enable_multi_zone:
             zone_id = _get_zone_id_from_path(path)
             if zone_id:
                 request_metadata.authorization_servers = [ _create_zone_scoped_authorization_server_url(zone_id, request_metadata.authorization_servers[0]) ]
@@ -89,7 +89,7 @@ def authorization_server_metadata(issuer: str, enable_multi_zone: bool = False) 
             actual_issuer = issuer
             path = _remove_authorization_server_prefix(request.url.path)
 
-            if enable_multi_zone or not _is_authorization_server_zone_scoped([AnyHttpUrl(issuer)]):
+            if enable_multi_zone:
                 zone_id = _get_zone_id_from_path(path)
                 if zone_id:
                     actual_issuer = str(_create_zone_scoped_authorization_server_url(zone_id, AnyHttpUrl(issuer)))
@@ -100,7 +100,25 @@ def authorization_server_metadata(issuer: str, enable_multi_zone: bool = False) 
                 authorization_server_metadata = resp.json()
                 authorization_server_metadata["authorization_endpoint"] = f"{request.base_url}{authorization_server_metadata['authorization_endpoint']}"
                 return Response(content=json.dumps(authorization_server_metadata), status_code=200)
+        except httpx.HTTPStatusError as e:
+            # Return the same status code as the upstream server
+            # This includes 404 for invalid zone_id/non-existent servers
+            error_message = {
+                "error": f"Upstream authorization server returned {e.response.status_code}: {e.response.text}",
+                "type": "upstream_error",
+                "url": str(e.request.url)
+            }
+            return Response(content=json.dumps(error_message), status_code=e.response.status_code)
+        except (httpx.ConnectError, httpx.TimeoutException) as e:
+            # Network connectivity issues - return 503 Service Unavailable
+            error_message = {
+                "error": f"Unable to connect to authorization server: {str(e)}",
+                "type": "connectivity_error",
+                "url": f"{actual_issuer}/.well-known/oauth-authorization-server"
+            }
+            return Response(content=json.dumps(error_message), status_code=503)
         except Exception as e:
+            # All other errors are server configuration issues - return 500
             error_message = {"error": str(e), "type": type(e).__name__}
             return Response(content=json.dumps(error_message), status_code=500)
     return wrapper

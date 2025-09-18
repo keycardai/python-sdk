@@ -7,7 +7,13 @@ import pytest
 from mcp.server.auth.provider import AccessToken
 
 from keycardai.mcp.server.auth._cache import JWKSKey
+from keycardai.mcp.server.auth.exceptions import (
+    JWKSDiscoveryError,
+    TokenValidationError,
+    VerifierConfigError,
+)
 from keycardai.mcp.server.auth.verifier import TokenVerifier
+from keycardai.oauth.exceptions import OAuthHttpError
 from keycardai.oauth.utils.jwt import JWTAccessToken
 
 
@@ -497,14 +503,127 @@ class TestTokenVerifierVerifyToken:
 
     def test_token_verifier_requires_issuer(self):
         """Test that TokenVerifier raises error when no issuer is provided."""
-        with pytest.raises(ValueError, match="Issuer is required for token verification"):
+        with pytest.raises(VerifierConfigError, match="Issuer is required for token verification"):
             TokenVerifier(
                 issuer="",  # Empty issuer should raise error
                 jwks_uri="https://example.com/.well-known/jwks.json"
             )
 
-        with pytest.raises(ValueError, match="Issuer is required for token verification"):
+        with pytest.raises(VerifierConfigError, match="Issuer is required for token verification"):
             TokenVerifier(
                 issuer=None,  # None issuer should raise error
                 jwks_uri="https://example.com/.well-known/jwks.json"
             )
+
+    @pytest.mark.asyncio
+    async def test_verify_token_for_zone_invalid_zone_id(self):
+        """Test that invalid zone_id returns None instead of raising exception."""
+        verifier = TokenVerifier(
+            issuer="https://keycard.cloud",
+            enable_multi_zone=True
+        )
+
+        # Mock _get_verification_key to raise OAuthHttpError with 404 (simulating invalid zone)
+        with patch.object(verifier, '_get_verification_key', new_callable=AsyncMock) as mock_get_key:
+            mock_get_key.side_effect = OAuthHttpError(
+                status_code=404,
+                response_body="Not Found",
+                operation="GET /.well-known/oauth-authorization-server"
+            )
+
+            result = await verifier.verify_token_for_zone("test.jwt.token", "invalid-zone-id")
+
+            assert result is None
+            mock_get_key.assert_called_once_with("test.jwt.token", "invalid-zone-id")
+
+    @pytest.mark.asyncio
+    async def test_verify_token_for_zone_discovery_error(self):
+        """Test that JWKS discovery error returns None instead of raising exception."""
+        verifier = TokenVerifier(
+            issuer="https://keycard.cloud",
+            enable_multi_zone=True
+        )
+
+        # Mock _get_verification_key to raise JWKSDiscoveryError from discovery failure
+        with patch.object(verifier, '_get_verification_key', new_callable=AsyncMock) as mock_get_key:
+            mock_get_key.side_effect = JWKSDiscoveryError(
+                "http://invalid.keycard.cloud", "invalid-zone"
+            )
+
+            result = await verifier.verify_token_for_zone("test.jwt.token", "invalid-zone")
+
+            assert result is None
+            mock_get_key.assert_called_once_with("test.jwt.token", "invalid-zone")
+
+    @pytest.mark.asyncio
+    async def test_verify_token_for_zone_other_http_errors_propagate(self):
+        """Test that HTTP errors other than 404 are properly propagated."""
+        verifier = TokenVerifier(
+            issuer="https://keycard.cloud",
+            enable_multi_zone=True
+        )
+
+        # Mock _get_verification_key to raise OAuthHttpError with 500 (should propagate)
+        with patch.object(verifier, '_get_verification_key', new_callable=AsyncMock) as mock_get_key:
+            mock_get_key.side_effect = OAuthHttpError(
+                status_code=500,
+                response_body="Internal Server Error",
+                operation="GET /.well-known/oauth-authorization-server"
+            )
+
+            with pytest.raises(OAuthHttpError) as exc_info:
+                await verifier.verify_token_for_zone("test.jwt.token", "some-zone-id")
+
+            assert exc_info.value.status_code == 500
+            mock_get_key.assert_called_once_with("test.jwt.token", "some-zone-id")
+
+    @pytest.mark.asyncio
+    async def test_verify_token_for_zone_value_errors_converted_to_token_validation_error(self):
+        """Test that ValueError are converted to TokenValidationError for proper error handling."""
+        verifier = TokenVerifier(
+            issuer="https://keycard.cloud",
+            enable_multi_zone=True
+        )
+
+        # Mock _get_verification_key to raise ValueError (should be wrapped as TokenValidationError)
+        with patch.object(verifier, '_get_verification_key', new_callable=AsyncMock) as mock_get_key:
+            mock_get_key.side_effect = ValueError(
+                "JWT parsing failed"
+            )
+
+            with pytest.raises(TokenValidationError) as exc_info:
+                await verifier.verify_token_for_zone("test.jwt.token", "some-zone-id")
+
+            assert "Token validation failed: JWT parsing failed" in str(exc_info.value)
+            mock_get_key.assert_called_once_with("test.jwt.token", "some-zone-id")
+
+    @pytest.mark.asyncio
+    async def test_verify_token_for_zone_success(self):
+        """Test successful multi-zone token verification."""
+        verifier = TokenVerifier(
+            issuer="https://keycard.cloud",
+            enable_multi_zone=True
+        )
+
+        mock_key = JWKSKey(
+            key="mock-public-key",
+            timestamp=time.time(),
+            algorithm="RS256"
+        )
+        mock_jwt_token = self.create_mock_jwt_access_token(
+            iss="https://zone1.keycard.cloud"  # Zone-scoped issuer
+        )
+
+        with patch.object(verifier, '_get_verification_key', new_callable=AsyncMock) as mock_get_key, \
+             patch('keycardai.mcp.server.auth.verifier.parse_jwt_access_token') as mock_parse:
+
+            mock_get_key.return_value = mock_key
+            mock_parse.return_value = mock_jwt_token
+
+            result = await verifier.verify_token_for_zone("test.jwt.token", "zone1")
+
+            assert result is not None
+            assert isinstance(result, AccessToken)
+            assert result.token == "test.jwt.token"
+            assert result.client_id == "test-client"
+            mock_get_key.assert_called_once_with("test.jwt.token", "zone1")

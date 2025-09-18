@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import inspect
 from collections.abc import Callable, Sequence
 from functools import wraps
@@ -6,8 +7,9 @@ from typing import Any
 
 from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.auth.settings import AuthSettings
-from mcp.server.fastmcp import Context
+from mcp.server.fastmcp import Context, FastMCP
 from pydantic import AnyHttpUrl
+from starlette.applications import Starlette
 from starlette.routing import Route
 from starlette.types import ASGIApp
 
@@ -88,17 +90,20 @@ class AuthProvider:
 
     def __init__(
         self,
-        zone_url: str,
+        zone_id: str | None = None,
+        zone_url: str | None = None,
         mcp_server_name: str | None = None,
         required_scopes: list[str] | None = None,
         audience: str | dict[str, str] | None = None,
         mcp_server_url: AnyHttpUrl | str | None = None,
         auth: AuthStrategy = NoneAuth,
         enable_multi_zone: bool = False,
+        base_url: str | None = None,
     ):
         """Initialize the KeyCard auth provider.
 
         Args:
+            zone_id: KeyCard zone ID for OAuth operations.
             zone_url: KeyCard zone URL for OAuth operations. When enable_multi_zone=True,
                      this should be the top-level domain (e.g., "https://keycard.cloud")
             mcp_server_name: Human-readable name for the MCP server
@@ -109,6 +114,15 @@ class AuthProvider:
             enable_multi_zone: Enable multi-zone support where zone_url is the top-level domain
                               and zone_id is extracted from request context
         """
+        if zone_url is None and zone_id is None:
+            raise ValueError("zone_url or zone_id is required")
+
+        if zone_url is None:
+            if base_url:
+                zone_url = f"{AnyHttpUrl(base_url).scheme}://{zone_id}.{AnyHttpUrl(base_url).host}"
+            else:
+                zone_url = f"https://{zone_id}.keycard.cloud"
+
         self.zone_url = zone_url
         self.mcp_server_name = mcp_server_name
         self.required_scopes = required_scopes
@@ -441,4 +455,16 @@ class AuthProvider:
             mcp_app=mcp_app,
             verifier=verifier,
             enable_multi_zone=self.enable_multi_zone,
+        )
+
+    def app(self, mcp_app: FastMCP) -> ASGIApp:
+        """Get the MCP app with authentication middleware and metadata endpoints."""
+        @contextlib.asynccontextmanager
+        async def lifespan(app: Starlette):
+            async with contextlib.AsyncExitStack() as stack:
+                await stack.enter_async_context(mcp_app.session_manager.run())
+                yield
+        return Starlette(
+            routes=self.get_mcp_router(mcp_app.streamable_http_app()),
+            lifespan=lifespan,
         )
