@@ -1,3 +1,8 @@
+## 0.4.0-keycardai-mcp-fastmcp (2025-09-18)
+
+
+- feat(keycardai-mcp-fastmcp): refactor API for the provider
+
 ## 0.3.0-keycardai-mcp-fastmcp (2025-09-15)
 
 
