@@ -165,6 +165,7 @@ Note: For demonstration, we will print a different message when access is grante
 In real use cases, you would use the token to make requests to downstream APIs.
 
 ```python
+import os
 from mcp.server.fastmcp import FastMCP, Context
 
 from keycardai.mcp.server.auth import AuthProvider, AccessContext, BasicAuth
@@ -175,7 +176,7 @@ zone_id = "90zqtq5lvtobrmyl3b0i0k2z1q"
 access = AuthProvider(
    zone_id = zone_id,
    mcp_server_name="Hello World Mcp",
-   auth=BasicAuth(os.getenv("KEYCARD_CLIENT_ID"), os.getenv("KEYCARD_CLIENT_SECRET")))
+   auth=BasicAuth(os.getenv("KEYCARD_CLIENT_ID"), os.getenv("KEYCARD_CLIENT_SECRET"))
 )
 
 mcp = FastMCP("Minimal MCP")
