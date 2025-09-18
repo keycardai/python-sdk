@@ -10,73 +10,69 @@ pip install keycardai-mcp-fastmcp
 
 ## Quick Start
 
-```python
-from fastmcp import FastMCP, Context
-from keycardai.mcp.integrations.fastmcp import KeycardAuthProvider, OAuthClientMiddleware, get_access_token_for_resource
+Add KeyCard authentication to your existing FastMCP server:
 
-# Create FastMCP server with KeyCard authentication
-mcp = FastMCP("My Secure Service")
-
-# Add KeyCard authentication
-auth = KeycardAuthProvider(
-    zone_url="https://abc1234.keycard.cloud",
-    mcp_server_name="My MCP Service"
-)
-mcp.set_auth_provider(auth)
-
-# Add OAuth client middleware for token exchange
-oauth_middleware = OAuthClientMiddleware(
-    zone_url="https://abc1234.keycard.cloud",
-    client_name="My MCP Service"
-)
-mcp.add_middleware(oauth_middleware)
-
-# Use decorator for automatic token exchange
-@mcp.tool()
-@get_access_token_for_resource("https://www.googleapis.com/calendar/v3")
-async def get_calendar_events(ctx: Context, maxResults: int = 10) -> dict:
-    # ctx.access_token is automatically available with Google Calendar access
-    access_token = ctx.access_token
-    # Make API calls with the exchanged token...
-    return {"events": [...], "totalEvents": 5}
-```
-
-## 🏗️ Architecture & Features
-
-This integration package provides FastMCP-specific components for KeyCard OAuth:
-
-### Core Components
-
-| Component | Module | Description |
-|-----------|---------|-------------|
-| **KeycardAuthProvider** | `provider.py` | **FastMCP Authentication** - Integrates KeyCard zone tokens with FastMCP auth system |
-| **OAuthClientMiddleware** | `middleware.py` | **Client Lifecycle** - Manages OAuth client initialization and context injection |
-| **Token Exchange Decorators** | `decorators.py` | **Automated Exchange** - Decorators for seamless resource-specific token exchange |
-
-### Authentication Flow
-
-1. **Token Verification**: `KeycardAuthProvider` validates incoming JWT tokens using KeyCard zone JWKS
-2. **Client Management**: `OAuthClientMiddleware` provides OAuth client to tools via FastMCP context
-3. **Token Exchange**: `@get_access_token_for_resource()` decorator automates RFC 8693 token exchange
-4. **API Access**: Tools receive resource-specific access tokens transparently
-
-## Development
-
-This package is part of the [KeycardAI Python SDK](../../README.md). 
-
-To develop:
+### Install the Package
 
 ```bash
-# From workspace root
-uv sync
-uv run --package keycardai-mcp-fastmcp pytest
+pip install keycardai-mcp-fastmcp
 ```
+
+### Get Your KeyCard Zone ID
+
+1. Sign up at [keycard.ai](https://keycard.ai)
+2. Navigate to Zone Settings to get your zone ID
+3. Configure your preferred identity provider (Google, Microsoft, etc.)
+4. Create an MCP resource in your zone
+
+### Add Authentication to Your FastMCP Server
+
+```python
+from fastmcp import FastMCP, Context
+from keycardai.mcp.integrations.fastmcp import AuthProvider
+
+# Configure KeyCard authentication (recommended: use zone_id)
+auth_provider = AuthProvider(
+    zone_id="your-zone-id",  # Get this from keycard.ai
+    mcp_server_name="My Secure FastMCP Server",
+    mcp_server_url="http://127.0.0.1:8000/"
+)
+
+# Get the RemoteAuthProvider for FastMCP
+auth = auth_provider.get_remote_auth_provider()
+
+# Create authenticated FastMCP server
+mcp = FastMCP("My Secure FastMCP Server", auth=auth)
+
+@mcp.tool()
+def hello_world(name: str) -> str:
+    return f"Hello, {name}!"
+
+# Example with token exchange for external API access
+@mcp.tool()
+@auth_provider.grant("https://api.example.com")
+def call_external_api(ctx: Context, query: str) -> str:
+    # Access delegated token through context namespace
+    token = ctx.get_state("keycardai").access("https://api.example.com").access_token
+    # Use token to call external API
+    return f"Results for {query}"
+
+if __name__ == "__main__":
+    mcp.run(transport="streamable-http")
+```
+
+### 🎉 Your FastMCP server is now protected with KeyCard authentication! 🎉
+
+## Examples
+
+For complete examples and advanced usage patterns, see our [documentation](https://docs.keycard.ai).
+
 ## License
 
-MIT License - see [LICENSE](../../LICENSE) file for details.
+MIT License - see [LICENSE](https://github.com/keycardai/python-sdk/blob/main/LICENSE) file for details.
 
 ## Support
 
+- 📖 [Documentation](https://docs.keycard.ai)
 - 🐛 [Issue Tracker](https://github.com/keycardai/python-sdk/issues)
-- 💬 [Community Discussions](https://github.com/keycardai/python-sdk/discussions)
 - 📧 [Support Email](mailto:support@keycard.ai)
