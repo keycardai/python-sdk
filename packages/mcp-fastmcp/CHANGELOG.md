@@ -1,3 +1,8 @@
+## 0.4.1-keycardai-mcp-fastmcp (2025-09-19)
+
+
+- fix(keycardai-mcp-fastmcp): lock the oauth dependency
+
 ## 0.4.0-keycardai-mcp-fastmcp (2025-09-18)
 
 
