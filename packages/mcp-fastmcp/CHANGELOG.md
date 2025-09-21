@@ -1,3 +1,8 @@
+## 0.5.0-keycardai-mcp-fastmcp (2025-09-21)
+
+
+- feat(keycardai-mcp-fastmcp): client factory and base url update
+
 ## 0.4.1-keycardai-mcp-fastmcp (2025-09-19)
 
 
