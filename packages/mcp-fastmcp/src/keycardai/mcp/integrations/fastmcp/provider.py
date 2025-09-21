@@ -8,14 +8,12 @@ and JWT token verification.
 
 from __future__ import annotations
 
-import asyncio
 import inspect
 from collections.abc import Callable
 from functools import wraps
-from typing import Any
+from typing import Any, Protocol
 
-from pydantic import AnyHttpUrl, field_validator
-from pydantic_settings import BaseSettings
+from pydantic import AnyHttpUrl
 
 from fastmcp import Context
 from fastmcp.server.auth import RemoteAuthProvider
@@ -25,17 +23,112 @@ from keycardai.oauth import AsyncClient, Client, ClientConfig
 from keycardai.oauth.http.auth import AuthStrategy, NoneAuth
 from keycardai.oauth.types.models import TokenResponse
 
+from .exceptions import (
+    AuthProviderConfigurationError,
+    MissingContextError,
+    OAuthClientConfigurationError,
+    ResourceAccessError,
+    ZoneDiscoveryError,
+)
+
+
+class ClientFactory(Protocol):
+    """Protocol for creating OAuth clients."""
+    def create_client(self, base_url: str, auth: AuthStrategy | None = None) -> Client:
+        """Create an OAuth client."""
+        pass
+    def create_async_client(self, base_url: str, auth: AuthStrategy | None = None) -> AsyncClient:
+        """Create an asynchronous OAuth client."""
+        pass
+
+class DefaultClientFactory(ClientFactory):
+    """Default client factory."""
+    def create_client(self, base_url: str, auth: AuthStrategy | None = None) -> Client:
+        """Create discovery client."""
+        return Client(base_url, auth=auth, config=ClientConfig(enable_metadata_discovery=True, auto_register_client=False))
+    def create_async_client(self, base_url: str, auth: AuthStrategy | None = None) -> AsyncClient:
+        """Create an asynchronous OAuth client."""
+        return AsyncClient(base_url, auth=auth)
+
+
 
 class AccessContext:
-    """Context object that provides access to exchanged tokens for specific resources."""
+    """Context object that provides access to exchanged tokens for specific resources.
 
-    def __init__(self, access_tokens: dict[str, TokenResponse]):
+    Supports both successful token storage and per-resource error tracking,
+    allowing partial success scenarios where some resources succeed while others fail.
+    """
+
+    def __init__(self, access_tokens: dict[str, TokenResponse] | None = None):
         """Initialize with access tokens for resources.
 
         Args:
             access_tokens: Dict mapping resource URLs to their TokenResponse objects
         """
-        self._access_tokens = access_tokens
+        self._access_tokens: dict[str, TokenResponse] = access_tokens or {}
+        self._resource_errors: dict[str, dict[str, str]] = {}
+        self._error: dict[str, str] | None = None
+
+    def set_bulk_tokens(self, access_tokens: dict[str, TokenResponse]):
+        """Set access tokens for resources."""
+        self._access_tokens.update(access_tokens)
+
+    def set_token(self, resource: str, token: TokenResponse):
+        """Set token for the specified resource."""
+        self._access_tokens[resource] = token
+        # Clear any previous error for this resource
+        self._resource_errors.pop(resource, None)
+
+    def set_resource_error(self, resource: str, error: dict[str, str]):
+        """Set error for a specific resource."""
+        self._resource_errors[resource] = error
+        # Remove token if it exists (error takes precedence)
+        self._access_tokens.pop(resource, None)
+
+    def set_error(self, error: dict[str, str]):
+        """Set error that affects all resources."""
+        self._error = error
+
+    def has_resource_error(self, resource: str) -> bool:
+        """Check if a specific resource has an error."""
+        return resource in self._resource_errors
+
+    def has_error(self) -> bool:
+        """Check if there's a global error."""
+        return self._error is not None
+
+    def has_errors(self) -> bool:
+        """Check if there are any errors (global or resource-specific)."""
+        return self.has_error() or len(self._resource_errors) > 0
+
+    def get_errors(self) -> dict[str, Any] | None:
+        """Get global errors if any."""
+        return {"resource_errors": self._resource_errors.copy(), "error": self._error}
+
+    def get_error(self) -> dict[str, str] | None:
+        """Get global error if any."""
+        return self._error
+
+    def get_resource_errors(self, resource: str) -> dict[str, str] | None:
+        """Get error for a specific resource."""
+        return self._resource_errors.get(resource)
+
+    def get_status(self) -> str:
+        """Get overall status of the access context."""
+        if self.has_error():
+            return "error"
+        elif self.has_errors():
+            return "partial_error"
+        else:
+            return "success"
+
+    def get_successful_resources(self) -> list[str]:
+        """Get list of resources that have successful tokens."""
+        return list(self._access_tokens.keys())
+
+    def get_failed_resources(self) -> list[str]:
+        """Get list of resources that have errors."""
+        return list(self._resource_errors.keys())
 
     def access(self, resource: str) -> TokenResponse:
         """Get token response for the specified resource.
@@ -47,31 +140,21 @@ class AccessContext:
             TokenResponse object with access_token attribute
 
         Raises:
-            KeyError: If resource was not granted in the decorator
+            ResourceAccessError: If resource was not granted or has an error
         """
+        # Check for global error first
+        if self.has_error():
+            raise ResourceAccessError()
+
+        # Check for resource-specific error
+        if self.has_resource_error(resource):
+            raise ResourceAccessError()
+
+        # Check if token exists
         if resource not in self._access_tokens:
-            raise KeyError(
-                f"Resource '{resource}' not granted. Available resources: {list(self._access_tokens.keys())}"
-            )
+            raise ResourceAccessError()
+
         return self._access_tokens[resource]
-
-
-class AuthProviderSettings(BaseSettings):
-    """Settings for KeyCard authentication provider."""
-
-    zone_id: str | None = None
-    zone_url: str | None = None
-    mcp_server_name: str | None = None
-    required_scopes: list[str] | None = None
-    mcp_server_url: AnyHttpUrl | str | None = None
-    base_url: str | None = None
-
-    @field_validator("required_scopes", mode="before")
-    @classmethod
-    def _parse_scopes(cls, v):
-        if isinstance(v, str):
-            return [scope.strip() for scope in v.split(",") if scope.strip()]
-        return v
 
 
 class AuthProvider:
@@ -88,36 +171,34 @@ class AuthProvider:
     - RemoteAuthProvider creation for FastMCP integration
     - Support for both zone_id and zone_url configuration
     - Token exchange with grant decorator for delegated access
-    - Thread-safe OAuth client initialization
-    - Flexible authentication strategies (NoneAuth, BasicAuth, MultiZoneBasicAuth)
 
     Example:
         ```python
         from fastmcp import FastMCP, Context
-        from keycardai.mcp.integrations.fastmcp import AuthProvider
+        from keycardai.mcp.integrations.fastmcp import AuthProvider, AccessContext
 
         # Using zone_id (recommended)
         auth_provider = AuthProvider(
             zone_id="abc1234",
             mcp_server_name="My FastMCP Service",
             required_scopes=["calendar:read", "drive:read"],
-            mcp_server_url="http://localhost:8000"
+            # The keycard configured resource must have a trailing slash.
+            # If trailing slash is not present, it will be added automatically.
+            mcp_base_url="http://localhost:8000/"
         )
 
         # Or using full zone_url
         auth_provider = AuthProvider(
             zone_url="https://abc1234.keycard.cloud",
             mcp_server_name="My FastMCP Service",
-            mcp_server_url="http://localhost:8000"
+            mcp_base_url="http://localhost:8000/"
         )
 
-        # With custom authentication (e.g., BasicAuth for client credentials)
-        from keycardai.mcp.integrations.fastmcp import BasicAuth
-
+        # To configure access delegation, provide client credentials
         auth_provider = AuthProvider(
             zone_id="abc1234",
             mcp_server_name="My FastMCP Service",
-            mcp_server_url="http://localhost:8000",
+            mcp_base_url="http://localhost:8000/",
             auth=BasicAuth("client_id", "client_secret")
         )
 
@@ -129,10 +210,21 @@ class AuthProvider:
         @mcp.tool()
         @auth_provider.grant("https://api.example.com")
         def my_tool(ctx: Context, user_id: str):
-            token = ctx.get_state("keycardai").access("https://api.example.com").access_token
+            # Use access context to check the status of the token exchange
+            # and handle the error state accordingly
+            access_context: AccessContext = ctx.get_state("keycardai")
+            if access_context.has_errors():
+                print("Failed to obtain access token for resource")
+                print(f"Error: {access_context.get_errors()}")
+                return
+            token = access_context.access("https://api.example.com").access_token
             # Use token to call external API
             return f"Data for user {user_id}"
         ```
+
+    Advanced use cases:
+    - If you want to customize the HTTP clients used in the discovery or token exchange, you can provide a custom client factory.
+
     """
 
     def __init__(
@@ -142,9 +234,10 @@ class AuthProvider:
         zone_url: str | None = None,
         mcp_server_name: str | None = None,
         required_scopes: list[str] | None = None,
-        mcp_server_url: AnyHttpUrl | str,
+        mcp_base_url: str,
         base_url: str | None = None,
         auth: AuthStrategy | None = None,
+        client_factory: ClientFactory | None = None,
     ):
         """Initialize KeyCard authentication provider.
 
@@ -154,44 +247,81 @@ class AuthProvider:
                      will be constructed using base_url or default keycard.cloud domain.
             mcp_server_name: Human-readable service name for metadata
             required_scopes: Required KeyCard scopes for access
-            mcp_server_url: Resource server URL for the FastMCP server
-            base_url: Base URL for constructing zone URLs from zone_id
+            mcp_base_url: Resource server URL for the FastMCP server
+            base_url: Base URL for Keycard tenant
             auth: Authentication strategy for OAuth operations. Defaults to NoneAuth() for
-                 automatic client registration. For multi-zone scenarios, use MultiZoneBasicAuth
+                 automatic client registration. For client credentials, use BasicAuth
+            client_factory: Client factory for creating OAuth clients. Defaults to DefaultClientFactory
         """
-        settings = AuthProviderSettings.model_validate({
-            "zone_id": zone_id,
-            "zone_url": zone_url,
-            "mcp_server_name": mcp_server_name,
-            "required_scopes": required_scopes,
-            "mcp_server_url": mcp_server_url,
-            "base_url": base_url,
-        })
+        if zone_url is None and zone_id is None:
+            raise AuthProviderConfigurationError()
 
-        if settings.zone_url is None and settings.zone_id is None:
-            raise ValueError("zone_url or zone_id is required")
+        self.zone_url = self._build_zone_url(zone_url, zone_id, base_url)
+        self.mcp_server_name = mcp_server_name or "Authenticated FastMCP Server"
+        self.required_scopes = required_scopes or []
+        # Appends `/` to any URL. Required to ensure audience is properly aligned with FastMCP JWTVerifier which appends `/` to the audience.
+        self.mcp_base_url = str(AnyHttpUrl(mcp_base_url))
+        self.client_name = self.mcp_server_name or "Keycard Auth Client"
 
-        if settings.zone_url is None:
-            if settings.base_url:
-                base_url_obj = AnyHttpUrl(settings.base_url)
-                settings.zone_url = f"{base_url_obj.scheme}://{settings.zone_id}.{base_url_obj.host}"
-            else:
-                settings.zone_url = f"https://{settings.zone_id}.keycard.cloud"
-
-        self.zone_url = settings.zone_url.rstrip("/")
-        self.mcp_server_name = settings.mcp_server_name or "FastMCP Service with KeyCard Auth"
-        self.required_scopes = settings.required_scopes or []
-        self.mcp_server_url = settings.mcp_server_url
-        self.client_name = self.mcp_server_name or "FastMCP OAuth Client"
+        self.client_factory = client_factory or DefaultClientFactory()
 
         # OAuth client for token exchange operations
-        self._client: AsyncClient | None = None
-        self._init_lock: asyncio.Lock | None = None
+        # FastMCP operates in the async context, so we need to use an async client
+        self.client: AsyncClient | None = self.client_factory.create_async_client(self.zone_url, auth=auth)
+        if self.client is None:
+            raise OAuthClientConfigurationError()
+
+        try:
+            self.jwks_uri = self._discover_jwks_uri(self.client_factory.create_client(self.zone_url))
+        except Exception as e:
+            raise ZoneDiscoveryError() from e
+
         self.auth = auth if auth is not None else NoneAuth()
-        if isinstance(self.auth, NoneAuth):
-            self.auto_register_client = True
+
+    def _build_zone_url(self, zone_url: str | None, zone_id: str | None, base_url: str | None) -> str:
+        """Build the zone URL from the provided parameters.
+
+        Args:
+            zone_url: Explicit zone URL if provided
+            zone_id: Zone ID to construct URL from
+            base_url: Custom base URL for zone construction
+
+        Returns:
+            str: The constructed zone URL
+        """
+        if zone_url is not None:
+            return zone_url
+
+        if base_url:
+            base_url_obj = AnyHttpUrl(base_url)
+            # Only include port if it's non-default (not 443 for https, not 80 for http)
+            default_ports = {"https": 443, "http": 80}
+            if base_url_obj.port and base_url_obj.port != default_ports.get(base_url_obj.scheme):
+                host_with_port = f"{base_url_obj.host}:{base_url_obj.port}"
+            else:
+                host_with_port = base_url_obj.host
+            constructed_url = f"{base_url_obj.scheme}://{zone_id}.{host_with_port}"
         else:
-            self.auto_register_client = False
+            constructed_url = f"https://{zone_id}.keycard.cloud"
+
+        return constructed_url
+
+    def _discover_jwks_uri(self, client: Client) -> str:
+        """Discover JWKS URI from the OAuth server metadata.
+
+        Args:
+            client: OAuth client to use for discovery
+
+        Returns:
+            str: The JWKS URI from the server metadata
+
+        Raises:
+            Exception: If discovery fails or JWKS URI is not available
+        """
+        metadata = client.discover_server_metadata()
+        if not metadata.jwks_uri:
+            raise Exception("KeyCard zone does not provide a JWKS URI")
+        return metadata.jwks_uri
 
     def get_jwt_token_verifier(self) -> JWTVerifier:
         """Create a JWT token verifier for KeyCard zone tokens.
@@ -199,45 +329,32 @@ class AuthProvider:
         Discovers KeyCard zone metadata and creates a JWTVerifier configured
         with the zone's JWKS URI and issuer information.
 
+        This method uses eager discovery of the zone metadata, and performs HTTP calls using the initialized client.
+
         Returns:
             JWTVerifier: Configured JWT token verifier for the KeyCard zone
 
         Raises:
-            ValueError: If zone metadata discovery fails or JWKS URI is not available
+            ZoneDiscoveryError: If zone metadata discovery fails
+            JWKSValidationError: If JWKS URI is not available
         """
-        try:
-            client_config = ClientConfig(
-                enable_metadata_discovery=True,
-                auto_register_client=False,
-            )
-
-            with Client(
-                base_url=self.zone_url,
-                config=client_config,
-            ) as client:
-                metadata = client.discover_server_metadata()
-
-                jwks_uri = metadata.jwks_uri
-                issuer = metadata.issuer
-
-                if not jwks_uri:
-                    raise ValueError(f"KeyCard zone {self.zone_url} does not provide JWKS URI")
-
-        except Exception as e:
-            raise ValueError(f"Failed to discover KeyCard zone endpoints: {e}") from e
-
         return JWTVerifier(
-            jwks_uri=jwks_uri,
-            issuer=issuer,
+            jwks_uri=self.jwks_uri,
+            issuer=self.zone_url,
             required_scopes=self.required_scopes,
-            audience=self.mcp_server_url,
+            audience=self.mcp_base_url,
         )
 
     def get_remote_auth_provider(self) -> RemoteAuthProvider:
         """Get a RemoteAuthProvider instance configured for KeyCard authentication.
 
+        This method uses eager discovery of the zone metadata, and performs HTTP calls using the initialized client.
+
         Returns:
             RemoteAuthProvider: Configured authentication provider for use with FastMCP
+
+        Raises:
+            ValueError: If zone metadata discovery fails or JWKS URI is not available
         """
 
         authorization_servers = [AnyHttpUrl(self.zone_url)]
@@ -245,42 +362,9 @@ class AuthProvider:
         return RemoteAuthProvider(
             token_verifier=self.get_jwt_token_verifier(),
             authorization_servers=authorization_servers,
-            resource_server_url=self.mcp_server_url,
+            resource_server_url=self.mcp_base_url,
             resource_name=self.mcp_server_name,
         )
-
-    async def _ensure_client_initialized(self):
-        """Initialize OAuth client if not already done.
-
-        This method provides thread-safe initialization of the OAuth client
-        for token exchange operations.
-        """
-        if self._client is not None:
-            return
-
-        if self._init_lock is None:
-            self._init_lock = asyncio.Lock()
-
-        async with self._init_lock:
-            if self._client is not None:
-                return
-
-            try:
-                client_config = ClientConfig(
-                    client_name=self.client_name,
-                    auto_register_client=self.auto_register_client,
-                    enable_metadata_discovery=True,
-                )
-
-                self._client = AsyncClient(
-                    base_url=self.zone_url,
-                    config=client_config,
-                    auth=self.auth,
-                )
-
-            except Exception:
-                self._client = None
-                raise
 
     def grant(self, resources: str | list[str]):
         """Decorator for automatic delegated token exchange.
@@ -288,6 +372,10 @@ class AuthProvider:
         This decorator automates the OAuth token exchange process for accessing
         external resources on behalf of authenticated users. It follows the FastMCP
         Context namespace pattern, making tokens available through ctx.get_state("keycardai").
+
+        The returned value is an instance of AccessContext, which can be used to check the status of the token exchange
+
+        The decorator avoids raising exceptions, and instead sets the error state in the AccessContext.
 
         Args:
             resources: Target resource URL(s) for token exchange.
@@ -298,9 +386,9 @@ class AuthProvider:
         Usage:
             ```python
             from fastmcp import FastMCP, Context
-            from keycardai.mcp.integrations.fastmcp import AuthProvider
+            from keycardai.mcp.integrations.fastmcp import AuthProvider, AccessContext
 
-            auth_provider = AuthProvider(zone_id="abc1234", mcp_server_url="http://localhost:8000")
+            auth_provider = AuthProvider(zone_id="abc1234", mcp_base_url="http://localhost:8000")
             auth = auth_provider.get_remote_auth_provider()
             mcp = FastMCP("Server", auth=auth)
 
@@ -308,7 +396,12 @@ class AuthProvider:
             @auth_provider.grant("https://api.example.com")
             def my_tool(ctx: Context, user_id: str):
                 # Access token available through context namespace
-                token = ctx.get_state("keycardai").access("https://api.example.com").access_token
+                access_context: AccessContext = ctx.get_state("keycardai")
+                if access_context.has_errors():
+                    print("Failed to obtain access token for resource")
+                    print(f"Error: {access_context.get_errors()}")
+                    return
+                token = access_context.access("https://api.example.com").access_token
                 headers = {"Authorization": f"Bearer {token}"}
                 # Use headers to call external API
                 return f"Data for {user_id}"
@@ -332,85 +425,83 @@ class AuthProvider:
         - Provides detailed error messages for debugging
         """
         def decorator(func: Callable) -> Callable:
-            # Check if function is async - FastMCP always runs in async mode but tools can be sync
             is_async_func = inspect.iscoroutinefunction(func)
+            def _has_context(func: Callable) -> bool:
+                sig = inspect.signature(func)
+                for value in sig.parameters.values():
+                    if value.annotation == Context:
+                        return True
+                return False
+
+            if not _has_context(func):
+                raise MissingContextError()
+
+            def _get_context(*args, **kwargs) -> Context | None:
+                for value in args:
+                    if isinstance(value, Context):
+                        return value
+                for value in kwargs.values():
+                    if isinstance(value, Context):
+                        return value
+                return None
+
+            def _set_error(error: dict[str, str], resource: str | None, access_context: AccessContext, ctx: Context):
+                """Helper to set error context and call function."""
+                if resource:
+                    access_context.set_resource_error(resource, error)
+                else:
+                    access_context.set_error(error)
+                ctx.set_state("keycardai", access_context)
+
+            async def _call_func(func: Callable, *args, **kwargs):
+                if is_async_func:
+                    return await func(*args, **kwargs)
+                else:
+                    return func(*args, **kwargs)
 
             @wraps(func)
             async def wrapper(*args, **kwargs) -> Any:
-                try:
-                    # Find Context parameter in function arguments
-                    ctx = None
-                    for arg in args:
-                        if isinstance(arg, Context):
-                            ctx = arg
-                            break
-                    if ctx is None:
-                        for _key, value in kwargs.items():
-                            if isinstance(value, Context):
-                                ctx = value
-                                break
-                    if ctx is None:
-                        return {
-                            "error": "No Context parameter found in function arguments.",
-                            "isError": True,
-                            "errorType": "missing_context",
-                        }
+                ctx = _get_context(*args, **kwargs)
+                if ctx is None:
+                    raise MissingContextError()
 
-                    # Get user token from FastMCP auth context
+                access_context = AccessContext()
+                try:
                     user_token = get_access_token()
                     if not user_token:
-                        return {
+                        _set_error({
                             "error": "No authentication token available. Please ensure you're properly authenticated.",
-                            "isError": True,
-                            "errorType": "authentication_required",
-                        }
-
-                    await self._ensure_client_initialized()
-
-                    if self._client is None:
-                        return {
-                            "error": "OAuth client not available. Server configuration issue.",
-                            "isError": True,
-                            "errorType": "server_configuration",
-                        }
-
-                    resource_list = [resources] if isinstance(resources, str) else resources
-
-                    access_tokens = {}
-                    for resource in resource_list:
-                        try:
-                            token_response = await self._client.exchange_token(
-                                subject_token=user_token.token,
-                                resource=resource,
-                                subject_token_type="urn:ietf:params:oauth:token-type:access_token"
-                            )
-                            access_tokens[resource] = token_response
-                        except Exception as e:
-                            return {
-                                "error": f"Token exchange failed for {resource}: {e}",
-                                "isError": True,
-                                "errorType": "exchange_token_failed",
-                                "resource": resource,
-                            }
-
-                    # Set keycardai namespace in context
-                    access_context = AccessContext(access_tokens)
-                    ctx.set_state("keycardai", access_context)
-
-                    # Call the original function - handle both sync and async
-                    if is_async_func:
-                        return await func(*args, **kwargs)
-                    else:
-                        return func(*args, **kwargs)
-
+                            "error_code": "authentication_required",
+                        }, None, access_context, ctx)
+                        return await _call_func(func, *args, **kwargs)
                 except Exception as e:
-                    print(f"Unexpected error in delegated token exchange: {e}")
-                    return {
-                        "error": f"Unexpected error in delegated token exchange: {e}",
-                        "isError": True,
-                        "errorType": "unexpected_error",
-                        "resources": resource_list if 'resource_list' in locals() else resources,
-                    }
+                    _set_error({
+                        "error": "Failed to get access token from FastMCP context. Ensure the Context parameter is properly annotated.",
+                        "error_code": "unexpected_error",
+                        "raw_error": str(e),
+                    }, None, access_context, ctx)
+                    return await _call_func(func, *args, **kwargs)
+                resource_list = [resources] if isinstance(resources, str) else resources
+                access_tokens = {}
+                for resource in resource_list:
+                    try:
+                        token_response = await self.client.exchange_token(
+                            subject_token=user_token.token,
+                            resource=resource,
+                            subject_token_type="urn:ietf:params:oauth:token-type:access_token"
+                        )
+                        access_tokens[resource] = token_response
+                    except Exception as e:
+                        _set_error({
+                            "error": f"Token exchange failed for {resource}: {e}",
+                            "error_code": "exchange_token_failed",
+                            "raw_error": str(e),
+                        }, resource, access_context, ctx)
+                        return await _call_func(func, *args, **kwargs)
 
+                # Set successful tokens on the existing access_context (preserves any resource errors)
+                access_context.set_bulk_tokens(access_tokens)
+                ctx.set_state("keycardai", access_context)
+                return await _call_func(func, *args, **kwargs)
             return wrapper
         return decorator

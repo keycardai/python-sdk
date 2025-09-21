@@ -30,6 +30,12 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
 ]
 
+[project.optional-dependencies]
+test = [
+    "pytest>=8.4.1",
+    "pytest-asyncio>=1.1.0",
+]
+
 [project.urls]
 Homepage = "https://github.com/keycardai/python-sdk"
 Repository = "https://github.com/keycardai/python-sdk"
@@ -53,6 +59,9 @@ name = "testpypi"
 url = "https://test.pypi.org/simple/"
 publish-url = "https://test.pypi.org/legacy/"
 explicit = true
+
+[tool.uv.sources]
+keycardai-oauth = { workspace = true }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/keycardai"]
@@ -104,6 +113,11 @@ exclude_also = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra -q"
+
+[dependency-groups]
+dev = [
+    "pytest-cov>=6.2.1",
+]
 
 [tool.commitizen]
 name = "cz_customize"

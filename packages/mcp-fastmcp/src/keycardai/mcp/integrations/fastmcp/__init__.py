@@ -74,14 +74,54 @@ from keycardai.oauth.http.auth import (
     NoneAuth,
 )
 
+from .exceptions import (
+    # Convenience aliases
+    AccessError,
+    # Specific exceptions
+    AuthProviderConfigurationError,
+    ClientInitializationError,
+    ConfigurationError,
+    DecoratorError,
+    DiscoveryError,
+    ExchangeError,
+    # Base exception
+    FastMCPIntegrationError,
+    InitializationError,
+    JWKSValidationError,
+    ResourceAccessError,
+    TokenExchangeError,
+    ZoneDiscoveryError,
+)
 from .provider import AccessContext, AuthProvider
 
 __all__ = [
+    # Core classes
     "AuthProvider",
     "AccessContext",
+
     # Auth strategies
     "AuthStrategy",
     "BasicAuth",
     "MultiZoneBasicAuth",
     "NoneAuth",
+
+    # Exceptions - Base
+    "FastMCPIntegrationError",
+
+    # Exceptions - Specific
+    "AuthProviderConfigurationError",
+    "ClientInitializationError",
+    "DecoratorError",
+    "JWKSValidationError",
+    "ResourceAccessError",
+    "TokenExchangeError",
+    "ZoneDiscoveryError",
+
+    # Exceptions - Convenience aliases
+    "AccessError",
+    "ConfigurationError",
+    "DecoratorError",
+    "DiscoveryError",
+    "ExchangeError",
+    "InitializationError",
 ]

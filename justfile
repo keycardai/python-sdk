@@ -11,6 +11,7 @@ build:
 test: build
     just test-package oauth
     just test-package mcp
+    just test-package mcp-fastmcp
 
 # Run tests for a specific package
 test-package PACKAGE:
