@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import inspect
+import uuid
 from collections.abc import Callable, Sequence
 from functools import wraps
 from typing import Any
@@ -19,6 +20,7 @@ from keycardai.oauth.types.models import JsonWebKey, JsonWebKeySet, TokenRespons
 from keycardai.oauth.types.oauth import GrantType, TokenEndpointAuthMethod
 
 from ..routers.metadata import protected_mcp_router
+from .exceptions import MissingAccessContextError, MissingContextError
 from .identity import (
     FilePrivateKeyStorage,
     PrivateKeyIdentityManager,
@@ -28,15 +30,82 @@ from .verifier import TokenVerifier
 
 
 class AccessContext:
-    """Context object that provides access to exchanged tokens for specific resources."""
+    """Context object that provides access to exchanged tokens for specific resources.
 
-    def __init__(self, access_tokens: dict[str, TokenResponse]):
+    Supports both successful token storage and per-resource error tracking,
+    allowing partial success scenarios where some resources succeed while others fail.
+    """
+
+    def __init__(self, access_tokens: dict[str, TokenResponse] | None = None):
         """Initialize with access tokens for resources.
 
         Args:
             access_tokens: Dict mapping resource URLs to their TokenResponse objects
         """
-        self._access_tokens = access_tokens
+        self._access_tokens: dict[str, TokenResponse] = access_tokens or {}
+        self._resource_errors: dict[str, dict[str, str]] = {}
+        self._error: dict[str, str] | None = None
+
+    def set_bulk_tokens(self, access_tokens: dict[str, TokenResponse]):
+        """Set access tokens for resources."""
+        self._access_tokens.update(access_tokens)
+
+    def set_token(self, resource: str, token: TokenResponse):
+        """Set token for the specified resource."""
+        self._access_tokens[resource] = token
+        # Clear any previous error for this resource
+        self._resource_errors.pop(resource, None)
+
+    def set_resource_error(self, resource: str, error: dict[str, str]):
+        """Set error for a specific resource."""
+        self._resource_errors[resource] = error
+        # Remove token if it exists (error takes precedence)
+        self._access_tokens.pop(resource, None)
+
+    def set_error(self, error: dict[str, str]):
+        """Set error that affects all resources."""
+        self._error = error
+
+    def has_resource_error(self, resource: str) -> bool:
+        """Check if a specific resource has an error."""
+        return resource in self._resource_errors
+
+    def has_error(self) -> bool:
+        """Check if there's a global error."""
+        return self._error is not None
+
+    def has_errors(self) -> bool:
+        """Check if there are any errors (global or resource-specific)."""
+        return self.has_error() or len(self._resource_errors) > 0
+
+    def get_errors(self) -> dict[str, Any] | None:
+        """Get global errors if any."""
+        return {"resource_errors": self._resource_errors.copy(), "error": self._error}
+
+    def get_error(self) -> dict[str, str] | None:
+        """Get global error if any."""
+        return self._error
+
+    def get_resource_errors(self, resource: str) -> dict[str, str] | None:
+        """Get error for a specific resource."""
+        return self._resource_errors.get(resource)
+
+    def get_status(self) -> str:
+        """Get overall status of the access context."""
+        if self.has_error():
+            return "error"
+        elif self.has_errors():
+            return "partial_error"
+        else:
+            return "success"
+
+    def get_successful_resources(self) -> list[str]:
+        """Get list of resources that have successful tokens."""
+        return list(self._access_tokens.keys())
+
+    def get_failed_resources(self) -> list[str]:
+        """Get list of resources that have errors."""
+        return list(self._resource_errors.keys())
 
     def access(self, resource: str) -> TokenResponse:
         """Get token response for the specified resource.
@@ -48,12 +117,23 @@ class AccessContext:
             TokenResponse object with access_token attribute
 
         Raises:
-            KeyError: If resource was not granted in the decorator
+            ResourceAccessError: If resource was not granted or has an error
         """
+        # Check for global error first
+        if self.has_error():
+            from .exceptions import ResourceAccessError
+            raise ResourceAccessError()
+
+        # Check for resource-specific error
+        if self.has_resource_error(resource):
+            from .exceptions import ResourceAccessError
+            raise ResourceAccessError()
+
+        # Check if token exists
         if resource not in self._access_tokens:
-            raise KeyError(
-                f"Resource '{resource}' not granted. Available resources: {list(self._access_tokens.keys())}"
-            )
+            from .exceptions import ResourceAccessError
+            raise ResourceAccessError()
+
         return self._access_tokens[resource]
 
 
@@ -161,7 +241,7 @@ class AuthProvider:
                 storage_dir = private_key_storage_dir or "./mcp_keys"
                 storage = FilePrivateKeyStorage(storage_dir)
 
-            stable_client_id = self.mcp_server_name or f"mcp-server-{generate()}"
+            stable_client_id = self.mcp_server_name or f"mcp-server-{uuid.uuid4()}"
             stable_client_id = "".join(c if c.isalnum() or c in "-_" else "_" for c in stable_client_id)
 
             self._identity_manager = PrivateKeyIdentityManager(
@@ -276,7 +356,7 @@ class AuthProvider:
                 client_config = ClientConfig(
                     client_name=self.client_name,
                     auto_register_client=self.auto_register_client,
-                    enable_metadata_discovery=self.auto_register_client,
+                    enable_metadata_discovery=True
                 )
 
                 if self.enable_private_key_identity:
@@ -363,6 +443,8 @@ class AuthProvider:
         external resources on behalf of authenticated users. The decorated function
         will receive an AccessContext parameter that provides access to exchanged tokens.
 
+        The decorator avoids raising exceptions, and instead sets the error state in the AccessContext.
+
         Args:
             resources: Target resource URL(s) for token exchange.
                       Can be a single string or list of strings.
@@ -372,98 +454,148 @@ class AuthProvider:
         Usage:
             ```python
             from mcp.server.fastmcp import Context
-            # Async function
-            @provider.grant("https://api.example.com")
-            async def my_async_tool(ctx: AccessContext, request_ctx: Context, user_id: str):
-                token = ctx.access("https://api.example.com").access_token
-                # Use token to call the external API
-                headers = {"Authorization": f"Bearer {token}"}
-                # ... make API call
+            from keycardai.mcp.server.auth import AccessContext
 
-            # Sync function (also supported)
             @provider.grant("https://api.example.com")
-            def my_sync_tool(ctx: AccessContext, request_ctx: Context, user_id: str):
-                token = ctx.access("https://api.example.com").access_token
-                # Use token to call the external API
+            def my_tool(access_ctx: AccessContext, ctx: Context, user_id: str):
+                # Check for errors first
+                if access_ctx.has_errors():
+                    print("Failed to obtain access token for resource")
+                    print(f"Error: {access_ctx.get_errors()}")
+                    return
+
+                # Access token for successful resources
+                token = access_ctx.access("https://api.example.com").access_token
                 headers = {"Authorization": f"Bearer {token}"}
-                # ... make API call
+                # Use headers to call external API
+                return f"Data for {user_id}"
+
+            # Also works with async functions
+            @provider.grant("https://api.example.com")
+            async def my_async_tool(access_ctx: AccessContext, ctx: Context, user_id: str):
+                if access_ctx.has_errors():
+                    return {"error": "Token exchange failed"}
+                token = access_ctx.access("https://api.example.com").access_token
+                # Async API call
+                return f"Async data for {user_id}"
             ```
 
         The decorated function must:
-        - Have a parameter annotated with `AccessContext` type (e.g., `my_ctx: AccessContext = None`)
-        - Have a parameter annotated with `Context` type from FastMCP (e.g., `request_ctx: Context`)
-        - Can be either async or sync (the decorator handles both cases)
-
-        Note: The `Context` parameter is required for accessing request authentication information.
-        Without it, the decorator cannot extract the user's authentication token.
+        - Have a parameter annotated with `AccessContext` type (e.g., `access_ctx: AccessContext`)
+        - Have a parameter annotated with `Context` type from MCP (e.g., `ctx: Context`)
+        - Can be either async or sync (the decorator handles both cases automatically)
 
         Error handling:
-        - Returns structured error response if token exchange fails
+        - Sets error state in AccessContext if token exchange fails
         - Preserves original function signature and behavior
+        - Provides detailed error messages for debugging
         """
-
         def decorator(func: Callable) -> Callable:
-            original_sig = inspect.signature(func)
-            new_params = []
-            access_ctx_param_name = None
+            def _get_param_name_by_type(func: Callable, param_type: type) -> str | None:
+                sig = inspect.signature(func)
+                for value in sig.parameters.values():
+                    if value.annotation == param_type:
+                        return value.name
+                return None
 
-            for param in original_sig.parameters.values():
-                if param.annotation == AccessContext or str(param.annotation).replace(
-                    " ", ""
-                ) in ["AccessContext", "AccessContext|None", "Optional[AccessContext]"]:
-                    access_ctx_param_name = param.name
-                    continue
-                new_params.append(param)
+            def _get_safe_func_signature(func: Callable) -> inspect.Signature:
+                sig = inspect.signature(func)
+                safe_params = []
+                for param in sig.parameters.values():
+                    if param.annotation == AccessContext:
+                        continue
+                    safe_params.append(param)
+                return sig.replace(parameters=safe_params)
 
-            new_sig = original_sig.replace(parameters=new_params)
+            def _get_context(*args, **kwargs) -> Context | None:
+                for value in args:
+                    if isinstance(value, Context):
+                        return value
+                for value in kwargs.values():
+                    if isinstance(value, Context):
+                        return value
+                return None
 
-            # mcp.server.fastmcp always run in async mode
+            def _set_error(error: dict[str, str], resource: str | None, access_context: AccessContext):
+                """Helper to set error context."""
+                if resource:
+                    access_context.set_resource_error(resource, error)
+                else:
+                    access_context.set_error(error)           # mcp.server.fastmcp always run in async mode
+
+            async def _call_func(func: Callable, *args, **kwargs):
+                if is_async_func:
+                    return await func(*args, **kwargs)
+                else:
+                    return func(*args, **kwargs)
+
             is_async_func = inspect.iscoroutinefunction(func)
+            if _get_param_name_by_type(func, Context) is None:
+                raise MissingContextError("Function must have a Context parameter for grant decorator")
 
+            access_ctx_param_name = _get_param_name_by_type(func, AccessContext)
+            # TODO(p0tr3c): Update the error types to match the keycardai-mcp-fastmcp
+            if access_ctx_param_name is None:
+                raise MissingAccessContextError("Function must have an AccessContext parameter for grant decorator")
             @wraps(func)
             async def wrapper(*args, **kwargs) -> Any:
+                kwargs[access_ctx_param_name] = AccessContext()
+                user_token, zone_id = None, None
                 try:
                     # Extract token and zone_id from FastMCP Context if available
                     user_token, zone_id = self._extract_auth_info_from_context(
                         *args, **kwargs
                     )
-
                     # Fallback to MCP's get_access_token if no FastMCP context found
                     if not user_token:
                         user_token_obj = get_access_token()
                         user_token = user_token_obj.token if user_token_obj else None
 
+                    if not user_token:
+                        _set_error({
+                            "error": "No authentication token available. Please ensure you're properly authenticated.",
+                            "error_code": "authentication_required",
+                        }, None, kwargs[access_ctx_param_name])
+                        return await _call_func(func, *args, **kwargs)
+                except Exception as e:
+                    _set_error({
+                        "error": "Failed to get access token from context. Ensure the Context parameter is properly annotated.",
+                        "error_code": "unexpected_error",
+                        "raw_error": str(e),
+                    }, None, kwargs[access_ctx_param_name])
+                    return await _call_func(func, *args, **kwargs)
+                try:
                     # For multi-zone, zone_id is required
                     if self.enable_multi_zone and not zone_id:
-                        return {
+                        _set_error({
                             "error": "Zone ID is required for multi-zone configuration but not found in request.",
-                            "isError": True,
-                            "errorType": "missing_zone_id",
-                        }
+                            "error_code": "missing_zone_id",
+                        }, None, kwargs[access_ctx_param_name])
+                        # Inject AccessContext and call function
+                        return await _call_func(func, *args, **kwargs)
 
                     await self._ensure_client_initialized(zone_id)
-
-                    client = self._get_client(zone_id)
-                    if client is None:
-                        return {
-                            "error": "OAuth client not available. Server configuration issue.",
-                            "isError": True,
-                            "errorType": "server_configuration",
-                        }
-
-                    if not user_token:
-                        return {
-                            "error": "No authentication token available. Please ensure you're properly authenticated.",
-                            "isError": True,
-                            "errorType": "authentication_required",
-                        }
-
-                    resource_list = (
-                        [resources] if isinstance(resources, str) else resources
-                    )
-
-                    access_tokens = {}
-                    for resource in resource_list:
+                except Exception as e:
+                    _set_error({
+                        "error": "Failed to initialize OAuth client. Server configuration issue.",
+                        "error_code": "server_configuration",
+                        "raw_error": str(e),
+                    }, None, kwargs[access_ctx_param_name])
+                    return await _call_func(func, *args, **kwargs)
+                client = self._get_client(zone_id)
+                if client is None:
+                    _set_error({
+                        "error": "OAuth client not available. Server configuration issue.",
+                        "error_code": "server_configuration",
+                    }, None, kwargs[access_ctx_param_name])
+                    # Inject AccessContext and call function
+                    return await _call_func(func, *args, **kwargs)
+                resource_list = (
+                    [resources] if isinstance(resources, str) else resources
+                )
+                access_tokens = {}
+                for resource in resource_list:
+                    if self.enable_private_key_identity:
                         try:
                             token_response = await client.exchange_token(
                                 subject_token=user_token,
@@ -474,35 +606,31 @@ class AuthProvider:
                             )
                             access_tokens[resource] = token_response
                         except Exception as e:
-                            return {
+                            _set_error({
                                 "error": f"Token exchange failed for {resource}: {e}",
-                                "isError": True,
-                                "errorType": "exchange_token_failed",
-                                "resource": resource,
-                            }
-
-                    access_ctx = AccessContext(access_tokens)
-                    if access_ctx_param_name:
-                        kwargs[access_ctx_param_name] = access_ctx
-
-                    if is_async_func:
-                        return await func(*args, **kwargs)
+                                "error_code": "exchange_token_failed",
+                                "raw_error": str(e),
+                            }, resource, kwargs[access_ctx_param_name])
                     else:
-                        return func(*args, **kwargs)
+                        try:
+                            token_response = await client.exchange_token(
+                                subject_token=user_token,
+                                resource=resource,
+                                subject_token_type="urn:ietf:params:oauth:token-type:access_token",
+                            )
+                            access_tokens[resource] = token_response
+                        except Exception as e:
+                            _set_error({
+                                "error": f"Token exchange failed for {resource}: {e}",
+                                "error_code": "exchange_token_failed",
+                                "raw_error": str(e),
+                            }, resource, kwargs[access_ctx_param_name])
 
-                except Exception as e:
-                    return {
-                        "error": f"Unexpected error in delegated token exchange: {e}",
-                        "isError": True,
-                        "errorType": "unexpected_error",
-                        "resources": resource_list
-                        if "resource_list" in locals()
-                        else resources,
-                    }
-
-            wrapper.__signature__ = new_sig
+                # Set successful tokens on the existing access_context (preserves any resource errors)
+                kwargs[access_ctx_param_name].set_bulk_tokens(access_tokens)
+                return await _call_func(func, *args, **kwargs)
+            wrapper.__signature__ = _get_safe_func_signature(func)
             return wrapper
-
         return decorator
 
     def get_mcp_router(self, mcp_app: ASGIApp) -> Sequence[Route]:

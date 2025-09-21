@@ -65,3 +65,16 @@ class VerifierConfigError(AuthConfigError):
 class CacheError(AuthConfigError):
     """JWKS cache operation failed."""
     pass
+
+
+class ResourceAccessError(AuthError):
+    """Resource access failed due to missing or invalid token."""
+    pass
+
+class MissingAccessContextError(AuthError):
+    """Missing AccessContext parameter in function."""
+    pass
+
+class MissingContextError(AuthError):
+    """Missing Context parameter in function."""
+    pass
