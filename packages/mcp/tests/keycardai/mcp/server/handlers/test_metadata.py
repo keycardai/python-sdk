@@ -5,6 +5,8 @@ These tests focus on URL handling and slash character edge cases.
 
 import pytest
 from pydantic import AnyHttpUrl
+from starlette.datastructures import URL
+from starlette.requests import Request
 
 from keycardai.mcp.server.handlers.metadata import (
     _create_resource_url,
@@ -14,6 +16,7 @@ from keycardai.mcp.server.handlers.metadata import (
     _remove_well_known_prefix,
     _strip_zone_id_from_path,
 )
+from keycardai.mcp.server.shared.starlette import get_base_url
 
 
 class TestIsAuthorizationServerZoneScoped:
@@ -397,6 +400,87 @@ class TestEdgeCases:
         result = _strip_zone_id_from_path(zone_id, path)
         # Should not match due to case difference
         assert result == "zone123/api/v1"
+
+
+class TestGetBaseUrl:
+    """Test get_base_url function."""
+
+    def _create_mock_request(self, base_url: str, headers: dict[str, str] | None = None) -> Request:
+        """Create a mock request with specified base URL and headers."""
+        if headers is None:
+            headers = {}
+
+        parsed_url = URL(base_url)
+        # Create a minimal ASGI scope for testing
+        scope = {
+            "type": "http",
+            "method": "GET",
+            "scheme": parsed_url.scheme,
+            "server": (parsed_url.hostname, parsed_url.port or (443 if parsed_url.scheme == "https" else 80)),
+            "path": parsed_url.path or "/",
+            "query_string": b"",
+            "headers": [(k.lower().encode(), v.encode()) for k, v in headers.items()],
+        }
+        return Request(scope)
+
+    def test_no_proxy_headers(self):
+        """Test with no proxy headers - should return original base URL."""
+        request = self._create_mock_request("http://example.com")
+        result = get_base_url(request)
+        assert result == "http://example.com"
+
+    def test_with_x_forwarded_proto_https(self):
+        """Test with X-Forwarded-Proto header indicating HTTPS."""
+        headers = {"x-forwarded-proto": "https"}
+        request = self._create_mock_request("http://example.com", headers)
+        result = get_base_url(request)
+        assert result == "https://example.com"
+
+    def test_with_x_forwarded_proto_http(self):
+        """Test with X-Forwarded-Proto header indicating HTTP."""
+        headers = {"x-forwarded-proto": "http"}
+        request = self._create_mock_request("https://example.com", headers)
+        result = get_base_url(request)
+        assert result == "http://example.com"
+
+    def test_with_port_number(self):
+        """Test with port number in base URL."""
+        headers = {"x-forwarded-proto": "https"}
+        request = self._create_mock_request("http://example.com:8080", headers)
+        result = get_base_url(request)
+        assert result == "https://example.com:8080"
+
+    def test_with_path_in_base_url(self):
+        """Test with path in base URL - path should be ignored for base URL."""
+        headers = {"x-forwarded-proto": "https"}
+        request = self._create_mock_request("http://example.com/api/v1", headers)
+        result = get_base_url(request)
+        assert result == "https://example.com"
+
+    def test_case_insensitive_header(self):
+        """Test that header matching is case insensitive (Starlette handles this)."""
+        headers = {"X-Forwarded-Proto": "https"}
+        request = self._create_mock_request("http://example.com", headers)
+        result = get_base_url(request)
+        assert result == "https://example.com"
+
+    def test_trailing_slash_handling(self):
+        """Test that trailing slashes are properly handled."""
+        headers = {"x-forwarded-proto": "https"}
+        request = self._create_mock_request("http://example.com/", headers)
+        result = get_base_url(request)
+        assert result == "https://example.com"
+
+    def test_aws_app_runner_scenario(self):
+        """Test the specific AWS App Runner scenario from the issue."""
+        headers = {
+            "host": "ppxrhd2bw4.us-east-1.awsapprunner.com",
+            "x-forwarded-proto": "https",
+            "x-forwarded-for": "92.238.31.228"
+        }
+        request = self._create_mock_request("http://ppxrhd2bw4.us-east-1.awsapprunner.com", headers)
+        result = get_base_url(request)
+        assert result == "https://ppxrhd2bw4.us-east-1.awsapprunner.com"
 
 
 if __name__ == "__main__":
