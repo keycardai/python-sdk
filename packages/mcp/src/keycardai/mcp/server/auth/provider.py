@@ -192,6 +192,7 @@ class AuthProvider:
         private_key_storage: PrivateKeyStorageProtocol | None = None,
         private_key_storage_dir: str | None = None,
         client_factory: ClientFactory | None = None,
+        enable_dynamic_client_registration: bool | None = None,
     ):
         """Initialize the KeyCard auth provider.
 
@@ -227,6 +228,7 @@ class AuthProvider:
         self.client_name = mcp_server_name or "MCP Server OAuth Client"
         self.enable_multi_zone = enable_multi_zone
         self.client_factory = client_factory or DefaultClientFactory()
+        self.enable_dynamic_client_registration = enable_dynamic_client_registration
 
         self._clients: dict[str, AsyncClient | None] = {}
 
@@ -310,7 +312,7 @@ class AuthProvider:
                 """
                 client_config = ClientConfig(
                     client_name=self.client_name,
-                    enable_metadata_discovery=True
+                    enable_metadata_discovery=True,
                 )
 
                 if self.enable_private_key_identity:
@@ -330,7 +332,9 @@ class AuthProvider:
                         raise AuthProviderConfigurationError()
                     auth_strategy = self.auth.get_auth_for_zone(auth_info['zone_id'])
 
-                if isinstance(auth_strategy, NoneAuth) or self.enable_private_key_identity:
+                if self.enable_dynamic_client_registration is not None:
+                    client_config.auto_register_client = self.enable_dynamic_client_registration
+                elif isinstance(auth_strategy, NoneAuth):
                     client_config.auto_register_client = True
 
                 client = self.client_factory.create_async_client(
