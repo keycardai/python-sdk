@@ -10,6 +10,8 @@ from starlette.responses import Response
 
 from keycardai.oauth.types.oauth import GrantType, TokenEndpointAuthMethod
 
+from ..shared.starlette import get_base_url
+
 
 class InferredProtectedResourceMetadata(ProtectedResourceMetadata):
     """Extended ProtectedResourceMetadata that allows resource to be inferred from request."""
@@ -56,6 +58,7 @@ def _strip_zone_id_from_path(zone_id: str, path: str) -> str:
         return path[len(zone_id):]
     return path
 
+
 def _create_resource_url(base_url: str | AnyHttpUrl, path: str) -> AnyHttpUrl:
     base_url_str = str(base_url).rstrip("/")
     if path and not path.startswith("/"):
@@ -80,13 +83,17 @@ def protected_resource_metadata(metadata: InferredProtectedResourceMetadata, ena
         # Create a copy of the metadata to avoid mutating the original
         request_metadata = metadata.model_copy(deep=True)
         path = _remove_well_known_prefix(request.url.path)
+
+        # Get proxy-aware base URL for correct scheme handling
+        base_url = get_base_url(request)
+
         if enable_multi_zone:
             zone_id = _get_zone_id_from_path(path)
             if zone_id:
                 request_metadata.authorization_servers = [ _create_zone_scoped_authorization_server_url(zone_id, request_metadata.authorization_servers[0]) ]
 
-        request_metadata.resource = _create_resource_url(request.base_url, path)
-        request_metadata.jwks_uri = _create_jwks_uri(str(request.base_url))
+        request_metadata.resource = _create_resource_url(base_url, path)
+        request_metadata.jwks_uri = _create_jwks_uri(base_url)
         request_metadata.client_id = str(request_metadata.resource)
         request_metadata.client_name = "MCP Server"
         request_metadata.token_endpoint_auth_method = TokenEndpointAuthMethod.PRIVATE_KEY_JWT
@@ -96,7 +103,7 @@ def protected_resource_metadata(metadata: InferredProtectedResourceMetadata, ena
         mcp_version = request.headers.get("mcp-protocol-version")
         # TODO: what is the reason for this?
         if mcp_version == "2025-03-26":
-            json["authorization_servers"] = [ request.base_url ]
+            json["authorization_servers"] = [ base_url ]
         return Response(content=request_metadata.model_dump_json(exclude_none=True), status_code=200)
     return wrapper
 
@@ -115,7 +122,8 @@ def authorization_server_metadata(issuer: str, enable_multi_zone: bool = False) 
                 resp = client.get(f"{actual_issuer}/.well-known/oauth-authorization-server")
                 resp.raise_for_status()
                 authorization_server_metadata = resp.json()
-                authorization_server_metadata["authorization_endpoint"] = f"{request.base_url}{authorization_server_metadata['authorization_endpoint']}"
+                base_url = get_base_url(request)
+                authorization_server_metadata["authorization_endpoint"] = f"{base_url}{authorization_server_metadata['authorization_endpoint']}"
                 return Response(content=json.dumps(authorization_server_metadata), status_code=200)
         except httpx.HTTPStatusError as e:
             # Return the same status code as the upstream server

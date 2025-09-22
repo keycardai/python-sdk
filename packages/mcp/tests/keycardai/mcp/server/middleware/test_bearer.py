@@ -246,3 +246,51 @@ class TestGetBearerToken:
 
             result = _get_bearer_token(request)
             assert result == expected_token, f"Failed for auth scheme: {auth_scheme}"
+
+
+class TestGetBaseUrlMiddleware:
+    """Tests for get_base_url function in middleware."""
+
+    def _create_mock_request(self, base_url: str, path: str = "/", headers: dict[str, str] | None = None) -> Request:
+        """Create a mock request with specified base URL, path, and headers."""
+        if headers is None:
+            headers = {}
+
+        # Create a minimal ASGI scope for testing
+        scope = {
+            "type": "http",
+            "method": "GET",
+            "scheme": URL(base_url).scheme,
+            "server": (URL(base_url).hostname, URL(base_url).port or (443 if URL(base_url).scheme == "https" else 80)),
+            "path": path,
+            "query_string": b"",
+            "headers": [(k.lower().encode(), v.encode()) for k, v in headers.items()],
+        }
+        return Request(scope)
+
+    def test_proxy_aware_url_in_oauth_resource_url(self):
+        """Test that _get_oauth_protected_resource_url uses proxy-aware base URL."""
+        headers = {"x-forwarded-proto": "https"}
+        request = self._create_mock_request("http://example.com", "/api/resource", headers)
+
+        result = _get_oauth_protected_resource_url(request)
+        assert result == "https://example.com/.well-known/oauth-protected-resource/api/resource"
+
+    def test_no_proxy_headers_in_oauth_resource_url(self):
+        """Test _get_oauth_protected_resource_url without proxy headers."""
+        request = self._create_mock_request("http://example.com", "/api/resource")
+
+        result = _get_oauth_protected_resource_url(request)
+        assert result == "http://example.com/.well-known/oauth-protected-resource/api/resource"
+
+    def test_aws_app_runner_scenario_in_middleware(self):
+        """Test the AWS App Runner scenario in middleware context."""
+        headers = {
+            "host": "ppxrhd2bw4.us-east-1.awsapprunner.com",
+            "x-forwarded-proto": "https",
+            "x-forwarded-for": "92.238.31.228"
+        }
+        request = self._create_mock_request("http://ppxrhd2bw4.us-east-1.awsapprunner.com", "/zone123/api", headers)
+
+        result = _get_oauth_protected_resource_url(request)
+        assert result == "https://ppxrhd2bw4.us-east-1.awsapprunner.com/.well-known/oauth-protected-resource/zone123/api"

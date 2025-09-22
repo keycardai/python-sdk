@@ -7,11 +7,12 @@ from starlette.responses import Response
 from starlette.types import ASGIApp
 
 from ..auth.verifier import TokenVerifier
+from ..shared.starlette import get_base_url
 
 
 def _get_oauth_protected_resource_url(request: Request) -> str:
     path = request.url.path.lstrip("/").rstrip("/")
-    base_url = str(request.base_url).rstrip("/")
+    base_url = get_base_url(request)
     return str(AnyHttpUrl(f"{base_url}/.well-known/oauth-protected-resource/{path}"))
 
 def _get_bearer_token(request: Request) -> str | None:
