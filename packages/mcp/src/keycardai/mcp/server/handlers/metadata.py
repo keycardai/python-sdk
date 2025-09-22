@@ -72,11 +72,8 @@ def _remove_authorization_server_prefix(path: str) -> str:
         return path[len(auth_server_prefix):]
     return path
 
-def _create_jwks_uri(base_url: str, path: str) -> str:
-    return f"{base_url}/.well-known/jwks.json"
-
-def _create_client_id_uri(base_url: str, path: str) -> str:
-    return f"{base_url}/{path}"
+def _create_jwks_uri(base_url: str) -> AnyHttpUrl:
+    return AnyHttpUrl(f"{base_url.rstrip('/')}/.well-known/jwks.json")
 
 def protected_resource_metadata(metadata: InferredProtectedResourceMetadata, enable_multi_zone: bool = False) -> Callable:
     def wrapper(request: Request) -> Response:
@@ -89,8 +86,8 @@ def protected_resource_metadata(metadata: InferredProtectedResourceMetadata, ena
                 request_metadata.authorization_servers = [ _create_zone_scoped_authorization_server_url(zone_id, request_metadata.authorization_servers[0]) ]
 
         request_metadata.resource = _create_resource_url(request.base_url, path)
-        request_metadata.jwks_uri = _create_jwks_uri(request.base_url, ".well-known/jwks.json")
-        request_metadata.client_id = _create_client_id_uri(request.base_url, "5hp9n12kibpg042gwrsvrqiqiv/mcp")
+        request_metadata.jwks_uri = _create_jwks_uri(str(request.base_url))
+        request_metadata.client_id = str(request_metadata.resource)
         request_metadata.client_name = "MCP Server"
         request_metadata.token_endpoint_auth_method = TokenEndpointAuthMethod.PRIVATE_KEY_JWT
         request_metadata.grant_types = [GrantType.CLIENT_CREDENTIALS]

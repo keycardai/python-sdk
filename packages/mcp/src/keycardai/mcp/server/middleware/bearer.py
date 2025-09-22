@@ -81,6 +81,13 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
                 request
             )
 
-        request.state.access_token = access_token
-        request.state.zone_id = zone_id
+        request.state.resource_client_id = _get_oauth_protected_resource_url(request)
+        resource_server_url = _get_oauth_protected_resource_url(request)
+        keycardai_auth_info = {
+            "access_token": access_token.token,
+            "zone_id": zone_id,
+            "resource_client_id": resource_server_url,
+            "resource_server_url": resource_server_url
+        }
+        request.state.keycardai_auth_info = keycardai_auth_info
         return await call_next(request)

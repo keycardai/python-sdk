@@ -6,7 +6,6 @@ from collections.abc import Callable, Sequence
 from functools import wraps
 from typing import Any
 
-from mcp.server.auth.middleware.auth_context import get_access_token
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.fastmcp import Context, FastMCP
 from pydantic import AnyHttpUrl
@@ -16,11 +15,18 @@ from starlette.types import ASGIApp
 
 from keycardai.oauth import AsyncClient, ClientConfig
 from keycardai.oauth.http.auth import AuthStrategy, MultiZoneBasicAuth, NoneAuth
-from keycardai.oauth.types.models import JsonWebKey, JsonWebKeySet, TokenResponse
+from keycardai.oauth.types.models import JsonWebKeySet, TokenResponse
 from keycardai.oauth.types.oauth import GrantType, TokenEndpointAuthMethod
 
+from ..exceptions import (
+    AuthProviderConfigurationError,
+    JWKSInitializationError,
+    MissingAccessContextError,
+    MissingContextError,
+    ResourceAccessError,
+)
 from ..routers.metadata import protected_mcp_router
-from .exceptions import MissingAccessContextError, MissingContextError
+from .client_factory import ClientFactory, DefaultClientFactory
 from .identity import (
     FilePrivateKeyStorage,
     PrivateKeyIdentityManager,
@@ -121,17 +127,14 @@ class AccessContext:
         """
         # Check for global error first
         if self.has_error():
-            from .exceptions import ResourceAccessError
             raise ResourceAccessError()
 
         # Check for resource-specific error
         if self.has_resource_error(resource):
-            from .exceptions import ResourceAccessError
             raise ResourceAccessError()
 
         # Check if token exists
         if resource not in self._access_tokens:
-            from .exceptions import ResourceAccessError
             raise ResourceAccessError()
 
         return self._access_tokens[resource]
@@ -188,6 +191,7 @@ class AuthProvider:
         enable_private_key_identity: bool = False,
         private_key_storage: PrivateKeyStorageProtocol | None = None,
         private_key_storage_dir: str | None = None,
+        client_factory: ClientFactory | None = None,
     ):
         """Initialize the KeyCard auth provider.
 
@@ -205,36 +209,42 @@ class AuthProvider:
             enable_private_key_identity: Enable private key JWT authentication
             private_key_storage: Custom storage backend for private keys (optional)
             private_key_storage_dir: Directory for file-based key storage (default: ./mcp_keys)
+            client_factory: Client factory for creating OAuth clients. Defaults to DefaultClientFactory
         """
-        if zone_url is None and zone_id is None:
-            raise ValueError("zone_url or zone_id is required")
+        self.base_url = base_url or "https://keycard.cloud"
 
-        if zone_url is None:
-            if base_url:
-                zone_url = f"{AnyHttpUrl(base_url).scheme}://{zone_id}.{AnyHttpUrl(base_url).host}"
-            else:
-                zone_url = f"https://{zone_id}.keycard.cloud"
-
+        if zone_url is None and not enable_multi_zone:
+            if zone_id is None:
+                raise AuthProviderConfigurationError()
+            zone_url = f"{AnyHttpUrl(self.base_url).scheme}://{zone_id}.{AnyHttpUrl(self.base_url).host}"
         self.zone_url = zone_url
+        # issuer is the URL used to validate tokens.
+        # When enable_multi_zone is True, it must be the top-level domain. Zones are inferred from the request.
+        self.issuer = self.zone_url or self.base_url
         self.mcp_server_name = mcp_server_name
         self.required_scopes = required_scopes
         self.mcp_server_url = mcp_server_url
         self.client_name = mcp_server_name or "MCP Server OAuth Client"
         self.enable_multi_zone = enable_multi_zone
+        self.client_factory = client_factory or DefaultClientFactory()
 
-        self._client: AsyncClient | None = None
+        self._clients: dict[str, AsyncClient | None] = {}
+
         self._init_lock: asyncio.Lock | None = None
         self.auth = auth or NoneAuth()
-        if isinstance(self.auth, NoneAuth):
-            self.auto_register_client = True
-        else:
-            self.auto_register_client = False
-
         self.audience = audience
         self.enable_private_key_identity = enable_private_key_identity
 
+        # TODO(p0tr3c): Refactor this
         self._identity_manager: PrivateKeyIdentityManager | None = None
+        self.jwks: JsonWebKeySet | None = None
         if enable_private_key_identity:
+            self._identity_manager = self._create_and_initialize_identity_manager(private_key_storage, private_key_storage_dir, audience)
+            self.jwks = self._identity_manager.get_jwks()
+
+    def _create_and_initialize_identity_manager(self, private_key_storage: PrivateKeyStorageProtocol | None, private_key_storage_dir: str | None, audience: str | dict[str, str] | None) -> PrivateKeyIdentityManager:
+        try:
+            storage = None
             if private_key_storage is not None:
                 storage = private_key_storage
             else:
@@ -244,65 +254,15 @@ class AuthProvider:
             stable_client_id = self.mcp_server_name or f"mcp-server-{uuid.uuid4()}"
             stable_client_id = "".join(c if c.isalnum() or c in "-_" else "_" for c in stable_client_id)
 
-            self._identity_manager = PrivateKeyIdentityManager(
+            manager = PrivateKeyIdentityManager(
                 storage=storage,
                 key_id=stable_client_id,
                 audience_config=audience
             )
-
-    def _bootstrap_private_key_identity(self):
-        """Bootstrap private key identity.
-
-        Idempotent operation which checks if the key pair already exists,
-        loads the pair into memory, or creates a private key pair using
-        cryptography package and stores the key pair in the configured storage.
-        """
-        if not self.enable_private_key_identity or self._identity_manager is None:
-            return
-
-        self._identity_manager.bootstrap_identity()
-
-    def _extract_auth_info_from_context(
-        self, *args, **kwargs
-    ) -> tuple[str | None, str | None]:
-        """Extract access token and zone_id from FastMCP Context if available.
-
-        Returns:
-            Tuple of (access_token, zone_id) or (None, None) if not found
-        """
-        contexts = []
-
-        for arg in args:
-            if isinstance(arg, Context):
-                contexts.append(arg)
-
-        for value in kwargs.values():
-            if isinstance(value, Context):
-                contexts.append(value)
-
-        for ctx in contexts:
-            try:
-                if (
-                    hasattr(ctx, "request_context")
-                    and hasattr(ctx.request_context, "request")
-                    and hasattr(ctx.request_context.request, "state")
-                ):
-                    state = ctx.request_context.request.state
-
-                    access_token = None
-                    zone_id = None
-
-                    access_token_obj = getattr(state, "access_token", None)
-                    if access_token_obj and hasattr(access_token_obj, "token"):
-                        access_token = access_token_obj.token
-
-                    zone_id = getattr(state, "zone_id", None)
-
-                    return access_token, zone_id
-            except Exception:
-                continue
-
-        return None, None
+            manager.bootstrap_identity()
+            return manager
+        except Exception as e:
+            raise JWKSInitializationError() from e
 
     def _create_zone_scoped_url(self, base_url: str, zone_id: str) -> str:
         """Create zone-scoped URL by prepending zone_id to the host."""
@@ -318,83 +278,70 @@ class AuthProvider:
         zone_url = f"{base_url_obj.scheme}://{zone_id}.{base_url_obj.host}{port_part}"
         return zone_url
 
-    async def _ensure_client_initialized(self, zone_id: str | None = None):
-        """Initialize OAuth client if not already done.
+    def _get_client_key(self, zone_id: str | None = None) -> str:
+        """Get the client key for the given auth info."""
+        if self.enable_multi_zone and zone_id:
+            return f"zone:{zone_id}"
+        return "default"
 
-        This method provides thread-safe initialization of the OAuth client
-        for token exchange operations.
-
-        Args:
-            zone_id: Zone ID for multi-zone scenarios. When provided with enable_multi_zone=True,
-                    creates zone-specific client for that zone.
+    async def _get_or_create_client(self, auth_info: dict[str, str] | None = None) -> AsyncClient | None:
         """
-        client_key = (
-            f"zone:{zone_id}" if self.enable_multi_zone and zone_id else "default"
-        )
-        if not hasattr(self, "_clients"):
-            self._clients: dict[str, AsyncClient | None] = {}
-
+        This method is executed in request context.
+        Global lock is used to ensure that only one client is created for zone.
+        """
+        client = None
+        client_key = self._get_client_key(auth_info["zone_id"])
         if client_key in self._clients and self._clients[client_key] is not None:
-            return
+            return self._clients[client_key]
 
         if self._init_lock is None:
             self._init_lock = asyncio.Lock()
 
         async with self._init_lock:
             if client_key in self._clients and self._clients[client_key] is not None:
-                return
+                return self._clients[client_key]
 
+            # TODO(p0tr3c): Break this down into smaller failure modes. Return useful debug info/context.
             try:
-                if self.enable_private_key_identity:
-                    self._bootstrap_private_key_identity()
-
                 """
                 When enable_private_key_identity is True, the client is configured to use the private key identity.
-                It uses client registration endpoint but configures itself with jwt authorization strategy
-                The client_id is configured to the audience for the zone or by default to the url of the resource
+                It uses the client registration endpoint but configures itself with JWT authorization strategy.
+                The client_id is configured as the URL of the resource.
                 """
                 client_config = ClientConfig(
                     client_name=self.client_name,
-                    auto_register_client=self.auto_register_client,
                     enable_metadata_discovery=True
                 )
 
                 if self.enable_private_key_identity:
-                    client_config.client_id = "http://192.168.1.64:8000/.well-known/oauth-protected-resource/5hp9n12kibpg042gwrsvrqiqiv/mcp"
+                    client_config.client_id = auth_info["resource_client_id"]
                     client_config.auto_register_client = True
-                    client_config.client_jwks_url = self._identity_manager.get_client_jwks_url()
+                    client_config.client_jwks_url = self._identity_manager.get_client_jwks_url(auth_info)
                     client_config.client_token_endpoint_auth_method = TokenEndpointAuthMethod.PRIVATE_KEY_JWT
                     client_config.client_grant_types = [GrantType.CLIENT_CREDENTIALS]
 
-                base_url = self.zone_url
-                if self.enable_multi_zone and zone_id:
-                    base_url = self._create_zone_scoped_url(self.zone_url, zone_id)
+                base_url = self.base_url
+                if self.enable_multi_zone and auth_info['zone_id']:
+                    base_url = self._create_zone_scoped_url(self.base_url, auth_info['zone_id'])
 
                 auth_strategy = self.auth
-                if isinstance(self.auth, MultiZoneBasicAuth) and zone_id:
-                    if not self.auth.has_zone(zone_id):
-                        raise ValueError(
-                            f"No credentials configured for zone '{zone_id}'. Available zones: {self.auth.get_configured_zones()}"
-                        )
-                    auth_strategy = self.auth.get_auth_for_zone(zone_id)
+                if isinstance(self.auth, MultiZoneBasicAuth) and auth_info['zone_id']:
+                    if not self.auth.has_zone(auth_info['zone_id']):
+                        raise AuthProviderConfigurationError()
+                    auth_strategy = self.auth.get_auth_for_zone(auth_info['zone_id'])
 
-                client = AsyncClient(
+                if isinstance(auth_strategy, NoneAuth) or self.enable_private_key_identity:
+                    client_config.auto_register_client = True
+
+                client = self.client_factory.create_async_client(
                     base_url=base_url,
-                    config=client_config,
                     auth=auth_strategy,
+                    config=client_config
                 )
-                if self.auto_register_client:
-                    await client._ensure_initialized()
                 self._clients[client_key] = client
-
-                if client_key == "default":
-                    self._client = client
-
             except Exception:
-                self._clients[client_key] = None
-                if client_key == "default":
-                    self._client = None
-                raise
+                self._clients[client_key] = client
+            return client
 
     def _get_client(self, zone_id: str | None = None) -> AsyncClient | None:
         """Get the appropriate client for the zone.
@@ -405,13 +352,8 @@ class AuthProvider:
         Returns:
             AsyncClient instance for the zone, or None if not initialized
         """
-        if not hasattr(self, "_clients"):
-            return self._client
-
-        client_key = (
-            f"zone:{zone_id}" if self.enable_multi_zone and zone_id else "default"
-        )
-        return self._clients.get(client_key) or self._client
+        client_key = self._get_client_key(zone_id)
+        return self._clients.get(client_key)
 
     def get_auth_settings(self) -> AuthSettings:
         """Get authentication settings for the MCP server."""
@@ -431,9 +373,10 @@ class AuthProvider:
             enable_multi_zone = self.enable_multi_zone
         return TokenVerifier(
             required_scopes=self.required_scopes,
-            issuer=self.zone_url,
+            issuer=self.issuer,
             enable_multi_zone=enable_multi_zone,
             audience=self.audience,
+            client_factory=self.client_factory,
         )
 
     def grant(self, resources: str | list[str]):
@@ -498,6 +441,11 @@ class AuthProvider:
                         return value.name
                 return None
 
+            """
+            @mcp.tool() decorator uses function signatures to construct tool schemas.
+            The access context is not supposed to be added to the LLM tool call signature.
+            This helper returns tool func signature without the AccessContext parameter.
+            """
             def _get_safe_func_signature(func: Callable) -> inspect.Signature:
                 sig = inspect.signature(func)
                 safe_params = []
@@ -516,119 +464,131 @@ class AuthProvider:
                         return value
                 return None
 
+            """
+            The FastMCP Context object abstracts the request context.
+            This helper extracts the auth info from the request context.
+            The auth info object is set by the bearer token middleware during authorization.
+            """
+            def _extract_auth_info_from_context(
+                *args, **kwargs
+            ) -> dict[str, str] | None:
+                """Use _var naming to avoid clashing with the args, kwargs."""
+                _fastmcp_request_context = _get_context(*args, **kwargs)
+                if _fastmcp_request_context is None:
+                    return None
+                try:
+                    return _fastmcp_request_context.request_context.request.state.keycardai_auth_info
+                except Exception:
+                    return None
+
             def _set_error(error: dict[str, str], resource: str | None, access_context: AccessContext):
                 """Helper to set error context."""
                 if resource:
                     access_context.set_resource_error(resource, error)
                 else:
-                    access_context.set_error(error)           # mcp.server.fastmcp always run in async mode
+                    access_context.set_error(error)           # mcp.server.fastmcp always runs in async mode
 
-            async def _call_func(func: Callable, *args, **kwargs):
-                if is_async_func:
+            async def _call_func(_is_async_func: bool, func: Callable, *args, **kwargs):
+                if _is_async_func:
                     return await func(*args, **kwargs)
                 else:
                     return func(*args, **kwargs)
 
-            is_async_func = inspect.iscoroutinefunction(func)
+            _is_async_func = inspect.iscoroutinefunction(func)
             if _get_param_name_by_type(func, Context) is None:
-                raise MissingContextError("Function must have a Context parameter for grant decorator")
+                raise MissingContextError()
 
-            access_ctx_param_name = _get_param_name_by_type(func, AccessContext)
-            # TODO(p0tr3c): Update the error types to match the keycardai-mcp-fastmcp
-            if access_ctx_param_name is None:
-                raise MissingAccessContextError("Function must have an AccessContext parameter for grant decorator")
+            _access_ctx_param_name = _get_param_name_by_type(func, AccessContext)
+            if _access_ctx_param_name is None:
+                raise MissingAccessContextError()
             @wraps(func)
             async def wrapper(*args, **kwargs) -> Any:
-                kwargs[access_ctx_param_name] = AccessContext()
-                user_token, zone_id = None, None
+                kwargs[_access_ctx_param_name] = AccessContext()
+                _keycardai_auth_info: dict[str, str] | None = None
                 try:
-                    # Extract token and zone_id from FastMCP Context if available
-                    user_token, zone_id = self._extract_auth_info_from_context(
-                        *args, **kwargs
-                    )
-                    # Fallback to MCP's get_access_token if no FastMCP context found
-                    if not user_token:
-                        user_token_obj = get_access_token()
-                        user_token = user_token_obj.token if user_token_obj else None
+                    _keycardai_auth_info = _extract_auth_info_from_context(*args, **kwargs)
+                    if not _keycardai_auth_info:
+                        _set_error({
+                            "error": "No request authentication information available. Ensure the provider is correctly configured.",
+                            "error_code": "provider_configuration",
+                        }, None, kwargs[_access_ctx_param_name])
+                        return await _call_func(_is_async_func, func, *args, **kwargs)
 
-                    if not user_token:
+                    if not _keycardai_auth_info["access_token"]:
                         _set_error({
                             "error": "No authentication token available. Please ensure you're properly authenticated.",
                             "error_code": "authentication_required",
-                        }, None, kwargs[access_ctx_param_name])
-                        return await _call_func(func, *args, **kwargs)
+                        }, None, kwargs[_access_ctx_param_name])
+                        return await _call_func(_is_async_func, func, *args, **kwargs)
                 except Exception as e:
                     _set_error({
                         "error": "Failed to get access token from context. Ensure the Context parameter is properly annotated.",
                         "error_code": "unexpected_error",
                         "raw_error": str(e),
-                    }, None, kwargs[access_ctx_param_name])
-                    return await _call_func(func, *args, **kwargs)
+                    }, None, kwargs[_access_ctx_param_name])
+                    return await _call_func(_is_async_func, func, *args, **kwargs)
+                _client = None
+                if self.enable_multi_zone and not _keycardai_auth_info["zone_id"]:
+                    _set_error({
+                        "error": "Zone ID is required for multi-zone configuration but not found in request.",
+                        "error_code": "configuration_error",
+                    }, None, kwargs[_access_ctx_param_name])
+                    return await _call_func(_is_async_func, func, *args, **kwargs)
                 try:
-                    # For multi-zone, zone_id is required
-                    if self.enable_multi_zone and not zone_id:
+                    _client = await self._get_or_create_client(_keycardai_auth_info)
+                    if _client is None:
                         _set_error({
-                            "error": "Zone ID is required for multi-zone configuration but not found in request.",
-                            "error_code": "missing_zone_id",
-                        }, None, kwargs[access_ctx_param_name])
-                        # Inject AccessContext and call function
-                        return await _call_func(func, *args, **kwargs)
-
-                    await self._ensure_client_initialized(zone_id)
+                            "error": "OAuth client not available. Server configuration issue.",
+                            "error_code": "configuration_error",
+                        }, None, kwargs[_access_ctx_param_name])
+                        return await _call_func(_is_async_func, func, *args, **kwargs)
                 except Exception as e:
                     _set_error({
                         "error": "Failed to initialize OAuth client. Server configuration issue.",
-                        "error_code": "server_configuration",
+                        "error_code": "configuration_error",
                         "raw_error": str(e),
-                    }, None, kwargs[access_ctx_param_name])
-                    return await _call_func(func, *args, **kwargs)
-                client = self._get_client(zone_id)
-                if client is None:
-                    _set_error({
-                        "error": "OAuth client not available. Server configuration issue.",
-                        "error_code": "server_configuration",
-                    }, None, kwargs[access_ctx_param_name])
-                    # Inject AccessContext and call function
-                    return await _call_func(func, *args, **kwargs)
-                resource_list = (
+                    }, None, kwargs[_access_ctx_param_name])
+                    return await _call_func(_is_async_func, func, *args, **kwargs)
+                _resource_list = (
                     [resources] if isinstance(resources, str) else resources
                 )
-                access_tokens = {}
-                for resource in resource_list:
+                _access_tokens = {}
+                for resource in _resource_list:
                     if self.enable_private_key_identity:
                         try:
-                            token_response = await client.exchange_token(
-                                subject_token=user_token,
+                            _token_response = await _client.exchange_token(
+                                subject_token=_keycardai_auth_info["access_token"],
                                 resource=resource,
                                 subject_token_type="urn:ietf:params:oauth:token-type:access_token",
                                 client_assertion_type=GrantType.JWT_BEARER_CLIENT_ASSERTION,
-                                client_assertion=self._identity_manager.create_client_assertion(f"http://192.168.1.64:8000/.well-known/oauth-protected-resource/{zone_id}/mcp", zone_id),
-                            )
-                            access_tokens[resource] = token_response
+                                client_assertion=self._identity_manager.create_client_assertion(
+                                    _keycardai_auth_info["resource_client_id"]),
+                                )
+                            _access_tokens[resource] = _token_response
                         except Exception as e:
                             _set_error({
-                                "error": f"Token exchange failed for {resource}: {e}",
+                                "error": f"Token exchange failed for {resource} with client id: {_keycardai_auth_info['resource_client_id']}: {e}",
                                 "error_code": "exchange_token_failed",
                                 "raw_error": str(e),
-                            }, resource, kwargs[access_ctx_param_name])
+                            }, resource, kwargs[_access_ctx_param_name])
                     else:
                         try:
-                            token_response = await client.exchange_token(
-                                subject_token=user_token,
+                            _token_response = await _client.exchange_token(
+                                subject_token=_keycardai_auth_info["access_token"],
                                 resource=resource,
                                 subject_token_type="urn:ietf:params:oauth:token-type:access_token",
                             )
-                            access_tokens[resource] = token_response
+                            _access_tokens[resource] = _token_response
                         except Exception as e:
                             _set_error({
                                 "error": f"Token exchange failed for {resource}: {e}",
                                 "error_code": "exchange_token_failed",
                                 "raw_error": str(e),
-                            }, resource, kwargs[access_ctx_param_name])
+                            }, resource, kwargs[_access_ctx_param_name])
 
                 # Set successful tokens on the existing access_context (preserves any resource errors)
-                kwargs[access_ctx_param_name].set_bulk_tokens(access_tokens)
-                return await _call_func(func, *args, **kwargs)
+                kwargs[_access_ctx_param_name].set_bulk_tokens(_access_tokens)
+                return await _call_func(_is_async_func, func, *args, **kwargs)
             wrapper.__signature__ = _get_safe_func_signature(func)
             return wrapper
         return decorator
@@ -657,27 +617,12 @@ class AuthProvider:
             app = Starlette(routes=provider.get_mcp_router(mcp.streamable_http_app()))
             ```
         """
-
-        verifier = self.get_token_verifier()
-
-        jwks = None
-        if self.enable_private_key_identity and self._identity_manager is not None:
-            try:
-                self._bootstrap_private_key_identity()
-                jwks_dict = self._identity_manager.get_public_jwks()
-                jwk_objects = []
-                for jwk_data in jwks_dict["keys"]:
-                    jwk_objects.append(JsonWebKey(**jwk_data))
-                jwks = JsonWebKeySet(keys=jwk_objects)
-            except Exception as e:
-                raise ValueError(f"Error getting JWKS: {e}") from e
-
         return protected_mcp_router(
-            issuer=self.zone_url,
+            issuer=self.issuer,
             mcp_app=mcp_app,
-            verifier=verifier,
+            verifier=self.get_token_verifier(),
             enable_multi_zone=self.enable_multi_zone,
-            jwks=jwks
+            jwks=self.jwks
         )
 
     def app(self, mcp_app: FastMCP) -> ASGIApp:

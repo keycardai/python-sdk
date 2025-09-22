@@ -26,7 +26,9 @@ from authlib.jose import JsonWebKey, JsonWebToken
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.serialization import PublicFormat
-from pydantic import BaseModel
+from pydantic import AnyHttpUrl, BaseModel
+
+from keycardai.oauth.types.models import JsonWebKey as KeycardJsonWebKey, JsonWebKeySet
 
 
 class PrivateKeyStorageProtocol(Protocol):
@@ -148,7 +150,6 @@ class FilePrivateKeyStorage:
         key_file = self._get_key_file_path(key_id)
         metadata_file = self._get_metadata_file_path(key_id)
 
-        # Create metadata
         metadata = {
             "key_id": key_id,
             "public_key_jwk": public_key_jwk,
@@ -156,14 +157,11 @@ class FilePrivateKeyStorage:
             "algorithm": "RS256"
         }
 
-        # Write files atomically
-        # Write private key with restricted permissions
         key_file.write_text(private_key_pem, encoding="utf-8")
-        key_file.chmod(0o600)  # Read/write for owner only
+        key_file.chmod(0o600)
 
-        # Write metadata
         metadata_file.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
-        metadata_file.chmod(0o644)  # Read for all, write for owner
+        metadata_file.chmod(0o644)
 
     def load_key_pair(self, key_id: str) -> tuple[str, dict[str, Any]]:
         """Load private key and metadata from files."""
@@ -285,13 +283,11 @@ class PrivateKeyIdentityManager:
 
         public_key = private_key.public_key()
 
-        # Convert public key to PEM format first
         public_key_pem = public_key.public_bytes(
             encoding=serialization.Encoding.PEM,
             format=PublicFormat.SubjectPublicKeyInfo
         )
 
-        # Import the PEM-formatted public key to create JWK
         jwk = JsonWebKey.import_key(public_key_pem)
         public_key_jwk = jwk.as_dict()
 
@@ -362,8 +358,9 @@ class PrivateKeyIdentityManager:
 
     def create_client_assertion(
         self,
-        audience: str,
-        zone_id: str | None = None,
+        issuer: str,
+        subject: str | None = None,
+        audience: str | None = None,
         expiry_seconds: int = 300
     ) -> str:
         """Create JWT assertion for the given audience.
@@ -383,15 +380,18 @@ class PrivateKeyIdentityManager:
             RuntimeError: If identity not bootstrapped
             ValueError: If zone_id required but not provided
         """
+        if subject is None:
+            subject = issuer
+        if audience is None:
+            audience = issuer
+
         if self._private_key_pem is None or self._public_key_jwk is None:
             raise RuntimeError("Identity not bootstrapped. Call bootstrap_identity() first.")
 
-        self._resolve_audience(audience, zone_id)
-
         now = int(time.time())
         payload = {
-            "iss": audience,  # Client ID is the key ID
-            "sub": audience,  # Subject is also the key ID
+            "iss": issuer,
+            "sub": subject,
             "aud": audience,
             "jti": str(uuid.uuid4()),  # Unique token ID
             "iat": now,
@@ -460,5 +460,20 @@ class PrivateKeyIdentityManager:
 
         return deleted
 
-    def get_client_jwks_url(self) -> str:
-        return "http://192.168.1.64:8000/.well-known/jwks.json"
+    def get_client_jwks_url(self, auth_info: dict[str, str]) -> str:
+        resource_url = AnyHttpUrl(auth_info["resource_server_url"])
+        base_url = f"{resource_url.scheme}://{resource_url.host.rstrip('/')}"
+        if resource_url.port not in [443, 80]:
+            base_url += ":" + str(resource_url.port)
+        return f"{base_url}/.well-known/jwks.json"
+
+    def get_jwks(self) -> JsonWebKeySet:
+        """Get JWKS for the identity.
+
+        Returns:
+            JWKS dictionary with the public key
+        """
+        key_objects = []
+        for jwk_data in self.get_public_jwks()["keys"]:
+            key_objects.append(KeycardJsonWebKey(**jwk_data))
+        return JsonWebKeySet(keys=key_objects)

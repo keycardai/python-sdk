@@ -4,23 +4,20 @@ from typing import Any
 from mcp.server.auth.provider import AccessToken
 from pydantic import AnyHttpUrl
 
-from keycardai.oauth import Client
-from keycardai.oauth.exceptions import OAuthHttpError
 from keycardai.oauth.utils.jwt import (
     get_header,
     get_jwks_key,
     parse_jwt_access_token,
 )
 
-from ._cache import JWKSCache, JWKSKey
-from .exceptions import (
-    AuthenticationError,
+from ..exceptions import (
     CacheError,
     JWKSDiscoveryError,
-    TokenValidationError,
     UnsupportedAlgorithmError,
     VerifierConfigError,
 )
+from ._cache import JWKSCache, JWKSKey
+from .client_factory import ClientFactory, DefaultClientFactory
 
 
 class TokenVerifier:
@@ -35,6 +32,7 @@ class TokenVerifier:
         cache_ttl: int = 300,  # 5 minutes default
         enable_multi_zone: bool = False,
         audience: str | dict[str, str] | None = None,
+        client_factory: ClientFactory | None = None,
     ):
         """Initialize the KeyCard token verifier.
 
@@ -51,6 +49,7 @@ class TokenVerifier:
                      - str: Single audience value for all zones
                      - dict[str, str]: Zone-specific audience mapping (zone_id -> audience)
                      - None: Skip audience validation (not recommended for production)
+            client_factory: Client factory for creating OAuth clients. Defaults to DefaultClientFactory
         """
         if not issuer:
             raise VerifierConfigError("Issuer is required for token verification")
@@ -68,6 +67,7 @@ class TokenVerifier:
 
         self.enable_multi_zone = enable_multi_zone
         self.audience = audience
+        self.client_factory = client_factory or DefaultClientFactory()
 
     def _discover_jwks_uri(self, zone_id: str | None = None) -> str:
         """Discover JWKS URI from issuer lazily.
@@ -90,9 +90,9 @@ class TokenVerifier:
             discovery_issuer = self._create_zone_scoped_url(self.issuer, zone_id)
 
         try:
-            with Client(discovery_issuer) as client:
-                server_metadata = client.discover_server_metadata()
-                discovered_uri = server_metadata.jwks_uri
+            client = self.client_factory.create_client(discovery_issuer)
+            server_metadata = client.discover_server_metadata()
+            discovered_uri = server_metadata.jwks_uri
 
             if not discovered_uri:
                 raise JWKSDiscoveryError(discovery_issuer, zone_id)
@@ -174,20 +174,8 @@ class TokenVerifier:
         try:
             key = await self._get_verification_key(token, zone_id)
             return self._verify_token(token, key, zone_id)
-        except AuthenticationError:
-            # All authentication errors should result in 401 responses
-            # This includes: JWKS discovery failures, invalid tokens, unsupported algorithms, etc.
+        except Exception:
             return None
-        except ValueError as e:
-            # Wrap remaining ValueError as TokenValidationError for consistent handling
-            # This catches JWT parsing errors and other validation failures from oauth utils
-            raise TokenValidationError(f"Token validation failed: {e}") from e
-        except OAuthHttpError as e:
-            # Handle HTTP errors during JWKS discovery (e.g., invalid zone_id leading to 404)
-            # This prevents 500 errors and allows proper 401 responses
-            if e.status_code == 404:
-                return None
-            raise
 
     def _verify_token(self, token: str, key: JWKSKey, zone_id: str | None = None) -> AccessToken | None:
             jwt_access_token = parse_jwt_access_token(
@@ -244,13 +232,5 @@ class TokenVerifier:
         try:
             key = await self._get_verification_key(token)
             return self._verify_token(token, key)
-        except AuthenticationError:
-            # All authentication errors should result in 401 responses
-            return None
-        except ValueError as e:
-            # Wrap remaining ValueError as TokenValidationError for consistent handling
-            raise TokenValidationError(f"Token validation failed: {e}") from e
         except Exception:
-            # Catch any other unexpected errors
             return None
-
