@@ -85,6 +85,7 @@ class GrantType(str, Enum):
     TOKEN_EXCHANGE = "urn:ietf:params:oauth:grant-type:token-exchange"
 
     # RFC 7523 - JWT Bearer Grant
+    JWT_BEARER_CLIENT_ASSERTION = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
     JWT_BEARER = "urn:ietf:params:oauth:grant-type:jwt-bearer"
 
     # RFC 7522 - SAML 2.0 Bearer Grant

@@ -316,10 +316,12 @@ class AsyncClient:
                 )
                 client_registration_response = await register_client_async(
                     ClientRegistrationRequest(
+                        client_id=self.config.client_id,
                         client_name=self.config.client_name,
                         redirect_uris=self.config.client_redirect_uris,
                         grant_types=self.config.client_grant_types,
                         token_endpoint_auth_method=self.config.client_token_endpoint_auth_method,
+                        jwks_uri=self.config.client_jwks_url,
                     ),
                     ctx
                 )
@@ -576,6 +578,8 @@ class AsyncClient:
         actor_token_type: str | None = None,
         timeout: float | None = None,
         client_id: str | None = None,
+        client_assertion_type: str | None = None,
+        client_assertion: str | None = None,
     ) -> TokenResponse: ...
 
     async def exchange_token(self, request: TokenExchangeRequest | None = None, /, **token_exchange_args) -> TokenResponse:

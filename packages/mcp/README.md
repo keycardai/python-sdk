@@ -88,7 +88,7 @@ access = AuthProvider(
     zone_id="your_zone_id",
     mcp_server_name="My MCP Server",
     auth=BasicAuth(
-        os.getenv("KEYCARD_CLIENT_ID"), 
+        os.getenv("KEYCARD_CLIENT_ID"),
         os.getenv("KEYCARD_CLIENT_SECRET")
     )
 )

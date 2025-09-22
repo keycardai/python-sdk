@@ -1,37 +1,35 @@
 """Integration tests for grant decorator interface.
 
 This module tests the grant decorator which is one of the core interfaces
-in the mcp-fastmcp package. It tests the complete flow of token exchange
+in the mcp package. It tests the complete flow of token exchange
 and context injection for both sync and async functions.
 """
 
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, Mock
 
 import pytest
-from fastmcp import Context
-from fastmcp.server.dependencies import AccessToken
+from mcp.server.fastmcp import Context
 
-from keycardai.mcp.integrations.fastmcp import (
+from keycardai.mcp.server.auth import (
     AccessContext,
     AuthProvider,
+    MissingAccessContextError,
+    MissingContextError,
     ResourceAccessError,
 )
-from keycardai.mcp.server.exceptions import MissingContextError
 from keycardai.oauth.types.models import TokenResponse
 
 
-def check_access_context_for_errors(ctx: Context, resource: str = None):
+def check_access_context_for_errors(access_ctx: AccessContext, resource: str = None):
     """Helper function to check AccessContext for errors and return error dict if found.
 
     Args:
-        ctx: The FastMCP Context object
+        access_ctx: The AccessContext object
         resource: Optional specific resource to check for errors
 
     Returns:
         dict: Error dictionary if error found, None otherwise
     """
-    access_ctx = ctx.get_state("keycardai")
-
     # Check for global error first
     if access_ctx.has_error():
         error = access_ctx.get_error()
@@ -44,28 +42,48 @@ def check_access_context_for_errors(ctx: Context, resource: str = None):
 
     return None
 
+def create_missing_auth_info_context():
+    """Helper function to create a mock Context with missing auth info."""
+    mock_context = Mock(spec=Context)
+    mock_context.request_context = Mock()
+    mock_context.request_context.request = Mock()
+    mock_context.request_context.request.state = {}
+    return mock_context
 
 def create_mock_context():
     """Helper function to create a mock Context with proper state management."""
     mock_context = Mock(spec=Context)
 
     # Create a state storage for the mock context
-    context_state = {}
+    context_state = {
+        "access_token": "test_token",
+        "zone_id": "test123",
+        "resource_client_id": "https://api.example.com",
+        "resource_server_url": "https://api.example.com"
+    }
 
-    def mock_set_state(key: str, value):
-        context_state[key] = value
-
-    def mock_get_state(key: str):
-        return context_state.get(key)
-
-    mock_context.set_state = mock_set_state
-    mock_context.get_state = mock_get_state
+    mock_context.request_context = Mock()
+    mock_context.request_context.request = Mock()
+    mock_context.request_context.request.state.keycardai_auth_info = context_state
 
     return mock_context
 
 
 class TestGrantDecoratorExecution:
     """Test grant decorator execution and token exchange."""
+
+    @pytest.mark.asyncio
+    async def test_grant_decorator_missing_access_context(self, auth_provider_config, mock_client_factory):
+        """Test grant decorator handles missing AccessContext parameter."""
+        auth_provider = AuthProvider(
+            **auth_provider_config,
+            client_factory=mock_client_factory
+        )
+
+        with pytest.raises(MissingAccessContextError):
+            @auth_provider.grant("https://api.example.com")
+            def test_function(ctx: Context, user_id: str) -> str:  # No AccessContext parameter
+                return f"Hello {user_id}"
 
     @pytest.mark.asyncio
     async def test_grant_decorator_missing_context(self, auth_provider_config, mock_client_factory):
@@ -77,58 +95,50 @@ class TestGrantDecoratorExecution:
 
         with pytest.raises(MissingContextError):
             @auth_provider.grant("https://api.example.com")
-            def test_function(user_id: str) -> str:  # No Context parameter
+            def test_function(access_ctx: AccessContext, user_id: str) -> str:  # No Context parameter
                 return f"Hello {user_id}"
 
     @pytest.mark.asyncio
-    @patch('keycardai.mcp.integrations.fastmcp.provider.get_access_token')
-    async def test_grant_decorator_missing_auth_token(self, mock_get_token, auth_provider_config, mock_client_factory):
+    async def test_grant_decorator_missing_auth_token(self, auth_provider_config, mock_client_factory):
         """Test grant decorator handles missing authentication token."""
-        mock_get_token.return_value = None
-
         auth_provider = AuthProvider(
             **auth_provider_config,
             client_factory=mock_client_factory
         )
 
         @auth_provider.grant("https://api.example.com")
-        def test_function(ctx: Context, user_id: str):
-            # Check if there's an error in the context
-            access_ctx = ctx.get_state("keycardai")
+        def test_function(access_ctx: AccessContext, ctx: Context, user_id: str):
+            # Check if there's an error in the access context
             if access_ctx.has_error():
                 error = access_ctx.get_error()
                 return {"error": error["error"], "isError": True, "errorType": error["error_code"]}
             return f"Hello {user_id}"
 
-        mock_context = create_mock_context()
+        mock_context = create_missing_auth_info_context()
 
-        result = await test_function(mock_context, "user123")
+        result = await test_function(ctx=mock_context, user_id="user123")
 
         assert result["isError"] is True
-        assert result["errorType"] == "authentication_required"
-        assert "No authentication token available" in result["error"]
+        assert result["errorType"] == "provider_configuration"
+        assert "No request authentication information available" in result["error"]
 
     @pytest.mark.asyncio
-    @patch('keycardai.mcp.integrations.fastmcp.provider.get_access_token')
-    async def test_grant_decorator_token_exchange_failure_with_injected_client(self, mock_get_token, auth_provider_config, mock_client_factory):
+    async def test_grant_decorator_token_exchange_failure_with_injected_client(self, auth_provider_config):
         """Test grant decorator handles token exchange failure with injected client."""
-        mock_get_token.return_value = AccessToken(token="test_token", client_id="test_client", scopes=["test_scope"])
-
         # Mock client with failing exchange_token
         mock_client = AsyncMock()
         mock_client.exchange_token.side_effect = Exception("Exchange failed")
+        mock_client_factory = Mock()
+        mock_client_factory.create_async_client.return_value = mock_client
 
         auth_provider = AuthProvider(
             **auth_provider_config,
             client_factory=mock_client_factory
         )
-        # Override with failing client
-        auth_provider.client = mock_client
 
         @auth_provider.grant("https://api.example.com")
-        def test_function(ctx: Context, user_id: str):
+        def test_function(access_ctx: AccessContext, ctx: Context, user_id: str):
             # Check if there's a resource error
-            access_ctx = ctx.get_state("keycardai")
             if access_ctx.has_resource_error("https://api.example.com"):
                 error = access_ctx.get_resource_errors("https://api.example.com")
                 return {"error": error["error"], "isError": True, "errorType": error["error_code"]}
@@ -136,86 +146,72 @@ class TestGrantDecoratorExecution:
 
         mock_context = create_mock_context()
 
-        result = await test_function(mock_context, "user123")
+        result = await test_function(ctx=mock_context, user_id="user123")
 
         assert result["error"] == "Token exchange failed for https://api.example.com: Exchange failed"
         assert result["isError"] is True
         assert result["errorType"] == "exchange_token_failed"
 
     @pytest.mark.asyncio
-    @patch('keycardai.mcp.integrations.fastmcp.provider.get_access_token')
-    async def test_grant_decorator_successful_sync_function_with_injected_client(self, mock_get_token, auth_provider_config, mock_client_factory):
+    async def test_grant_decorator_successful_sync_function_with_injected_client(self, auth_provider_config, mock_client_factory):
         """Test grant decorator with successful token exchange for sync function using injected client."""
-        mock_get_token.return_value = AccessToken(token="test_token", client_id="test_client", scopes=["test_scope"])
-
         auth_provider = AuthProvider(
             **auth_provider_config,
             client_factory=mock_client_factory
         )
 
-        @auth_provider.grant("https://api.example.com")
-        def test_function(ctx: Context, user_id: str):
-            # Access the token through context
-            token = ctx.get_state("keycardai").access("https://api.example.com").access_token
+        @auth_provider.grant("https://api1.example.com")
+        def test_function(access_ctx: AccessContext, ctx: Context, user_id: str):
+            # Access the token through AccessContext
+            token = access_ctx.access("https://api1.example.com").access_token
             return f"Hello {user_id}, token: {token}"
 
         mock_context = create_mock_context()
 
-        result = await test_function(mock_context, "user123")
-
-        # Verify context was set with AccessContext
-        keycardai_context = mock_context.get_state("keycardai")
-        assert keycardai_context is not None
-        assert isinstance(keycardai_context, AccessContext)
+        result = await test_function(ctx=mock_context, user_id="user123")
 
         # Verify function executed successfully
-        assert result == "Hello user123, token: exchanged_token_123"
+        assert result == "Hello user123, token: token_api1_123"
 
     @pytest.mark.asyncio
-    @patch('keycardai.mcp.integrations.fastmcp.provider.get_access_token')
-    async def test_grant_decorator_successful_async_function_with_injected_client(self, mock_get_token, auth_provider_config, mock_client_factory):
+    async def test_grant_decorator_successful_async_function_with_injected_client(self, auth_provider_config, mock_client_factory):
         """Test grant decorator with successful token exchange for async function using injected client."""
-        mock_get_token.return_value = AccessToken(token="test_token", client_id="test_client", scopes=["test_scope"])
-
         auth_provider = AuthProvider(
             **auth_provider_config,
             client_factory=mock_client_factory
         )
 
-        @auth_provider.grant("https://api.example.com")
-        async def test_async_function(ctx: Context, user_id: str):
-            # Access the token through context
-            token = ctx.get_state("keycardai").access("https://api.example.com").access_token
+        @auth_provider.grant("https://api1.example.com")
+        async def test_async_function(access_ctx: AccessContext, ctx: Context, user_id: str):
+            # Access the token through AccessContext
+            token = access_ctx.access("https://api1.example.com").access_token
             return f"Async Hello {user_id}, token: {token}"
 
         mock_context = create_mock_context()
 
-        result = await test_async_function(mock_context, "user123")
+        result = await test_async_function(ctx=mock_context, user_id="user123")
 
         # Verify function executed successfully
-        assert result == "Async Hello user123, token: exchanged_token_123"
+        assert result == "Async Hello user123, token: token_api1_123"
 
     @pytest.mark.asyncio
-    @patch('keycardai.mcp.integrations.fastmcp.provider.get_access_token')
-    async def test_grant_decorator_multiple_resources_success_with_injected_client(self, mock_get_token, auth_provider_config, mock_client_factory):
+    async def test_grant_decorator_multiple_resources_success_with_injected_client(self, auth_provider_config, mock_client_factory):
         """Test grant decorator with multiple resources successful token exchange using injected client."""
-        mock_get_token.return_value = AccessToken(token="test_token", client_id="test_client", scopes=["test_scope"])
-
         auth_provider = AuthProvider(
             **auth_provider_config,
             client_factory=mock_client_factory
         )
 
         @auth_provider.grant(["https://api1.example.com", "https://api2.example.com"])
-        def test_function(ctx: Context, user_id: str):
+        def test_function(access_ctx: AccessContext, ctx: Context, user_id: str):
             # Access tokens for both resources
-            token1 = ctx.get_state("keycardai").access("https://api1.example.com").access_token
-            token2 = ctx.get_state("keycardai").access("https://api2.example.com").access_token
+            token1 = access_ctx.access("https://api1.example.com").access_token
+            token2 = access_ctx.access("https://api2.example.com").access_token
             return f"Hello {user_id}, token1: {token1}, token2: {token2}"
 
         mock_context = create_mock_context()
 
-        result = await test_function(mock_context, "user123")
+        result = await test_function(ctx=mock_context, user_id="user123")
 
         # Verify function executed successfully with both tokens
         assert result == "Hello user123, token1: token_api1_123, token2: token_api2_456"
@@ -330,48 +326,3 @@ class TestAccessContext:
         # Access failed resource should raise error
         with pytest.raises(ResourceAccessError):
             access_context.access("https://api2.com")
-
-
-class TestGrantDecoratorIntegration:
-    """Integration tests for grant decorator end-to-end functionality."""
-
-    @pytest.mark.asyncio
-    @patch('keycardai.mcp.integrations.fastmcp.provider.get_access_token')
-    async def test_full_grant_decorator_flow_with_injected_client(self, mock_get_token, auth_provider_config, mock_client_factory):
-        """Test complete grant decorator flow from decoration to execution using injected client."""
-        # Setup mocks
-        mock_get_token.return_value = AccessToken(token="user_jwt_token", client_id="test_client", scopes=["test_scope"])
-
-        # Create AuthProvider and apply decorator
-        auth_provider = AuthProvider(
-            **auth_provider_config,
-            client_factory=mock_client_factory
-        )
-
-        @auth_provider.grant("https://api.integration.com")
-        def integration_tool(ctx: Context, query: str):
-            """Integration test tool that uses delegated token."""
-            token = ctx.get_state("keycardai").access("https://api.integration.com").access_token
-            return {
-                "query": query,
-                "token": token,
-                "status": "success"
-            }
-
-        # Create mock context
-        mock_context = create_mock_context()
-
-        # Execute the decorated function
-        result = await integration_tool(mock_context, "test query")
-
-        # Verify complete flow
-        assert result["query"] == "test query"
-        assert result["token"] == "delegated_access_token"
-        assert result["status"] == "success"
-
-        # Verify the integration flow worked correctly
-
-        # Verify context state was set correctly
-        keycardai_context = mock_context.get_state("keycardai")
-        assert keycardai_context is not None
-        assert isinstance(keycardai_context, AccessContext)

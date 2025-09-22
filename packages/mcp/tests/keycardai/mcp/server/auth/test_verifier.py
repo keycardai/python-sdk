@@ -7,12 +7,11 @@ import pytest
 from mcp.server.auth.provider import AccessToken
 
 from keycardai.mcp.server.auth._cache import JWKSKey
-from keycardai.mcp.server.auth.exceptions import (
+from keycardai.mcp.server.auth.verifier import TokenVerifier
+from keycardai.mcp.server.exceptions import (
     JWKSDiscoveryError,
-    TokenValidationError,
     VerifierConfigError,
 )
-from keycardai.mcp.server.auth.verifier import TokenVerifier
 from keycardai.oauth.exceptions import OAuthHttpError
 from keycardai.oauth.utils.jwt import JWTAccessToken
 
@@ -571,10 +570,9 @@ class TestTokenVerifierVerifyToken:
                 operation="GET /.well-known/oauth-authorization-server"
             )
 
-            with pytest.raises(OAuthHttpError) as exc_info:
-                await verifier.verify_token_for_zone("test.jwt.token", "some-zone-id")
+            access_token = await verifier.verify_token_for_zone("test.jwt.token", "some-zone-id")
 
-            assert exc_info.value.status_code == 500
+            assert access_token is None
             mock_get_key.assert_called_once_with("test.jwt.token", "some-zone-id")
 
     @pytest.mark.asyncio
@@ -591,10 +589,9 @@ class TestTokenVerifierVerifyToken:
                 "JWT parsing failed"
             )
 
-            with pytest.raises(TokenValidationError) as exc_info:
-                await verifier.verify_token_for_zone("test.jwt.token", "some-zone-id")
+            access_token = await verifier.verify_token_for_zone("test.jwt.token", "some-zone-id")
 
-            assert "Token validation failed: JWT parsing failed" in str(exc_info.value)
+            assert access_token is None
             mock_get_key.assert_called_once_with("test.jwt.token", "some-zone-id")
 
     @pytest.mark.asyncio

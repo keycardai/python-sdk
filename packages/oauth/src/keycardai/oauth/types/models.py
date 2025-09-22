@@ -38,12 +38,15 @@ class TokenExchangeRequest(BaseModel):
     audience: str | None = None
     scope: str | None = None
     requested_token_type: TokenType | None = None
-    subject_token: str = Field(..., min_length=1, description="The token to exchange.")
-    subject_token_type: TokenType = Field(default=TokenType.ACCESS_TOKEN, description="The type of the token to exchange.")
+    subject_token: str | None = Field(default=None, min_length=1, description="The token to exchange.")
+    subject_token_type: TokenType | None = Field(default=TokenType.ACCESS_TOKEN, description="The type of the token to exchange.")
     actor_token: str | None = None
     actor_token_type: TokenType | None = None
     timeout: float | None = None
     client_id: str | None = None
+
+    client_assertion_type: str | None = None
+    client_assertion: str | None = None
 
 
 @dataclass
@@ -100,6 +103,7 @@ class ClientRegistrationRequest(BaseModel):
 
     Reference: https://datatracker.ietf.org/doc/html/rfc7591#section-2
     """
+    client_id: str | None = None
     client_name: str = Field(..., min_length=1, description="Human-readable name of the client application.")
     jwks_uri: str | None = None
     jwks: dict | None = None
@@ -265,6 +269,53 @@ class AuthorizationServerMetadata:
     headers: dict[str, str] | None = None
 
 # =============================================================================
+# JSON Web Key Set (RFC 7517)
+# =============================================================================
+
+class JsonWebKey(BaseModel):
+    """JSON Web Key (JWK) as defined in RFC 7517 Section 4.
+
+    Reference: https://datatracker.ietf.org/doc/html/rfc7517#section-4
+    """
+
+    # Required fields
+    kty: str = Field(..., description="Key type (e.g., 'RSA', 'EC', 'oct')")
+
+    # Optional standard fields
+    use: str | None = Field(None, description="Intended use of the key ('sig' or 'enc')")
+    key_ops: list[str] | None = Field(None, description="Key operations")
+    alg: str | None = Field(None, description="Algorithm intended for use with the key")
+    kid: str | None = Field(None, description="Key ID")
+
+    # RSA key parameters
+    n: str | None = Field(None, description="RSA modulus")
+    e: str | None = Field(None, description="RSA exponent")
+
+    # EC key parameters
+    crv: str | None = Field(None, description="Curve name for elliptic curve keys")
+    x: str | None = Field(None, description="X coordinate for elliptic curve keys")
+    y: str | None = Field(None, description="Y coordinate for elliptic curve keys")
+
+    # Symmetric key parameters
+    k: str | None = Field(None, description="Key value for symmetric keys")
+
+    # Certificate chain
+    x5c: list[str] | None = Field(None, description="X.509 certificate chain")
+    x5t: str | None = Field(None, description="X.509 certificate SHA-1 thumbprint")
+    x5t_s256: str | None = Field(None, alias="x5t#S256", description="X.509 certificate SHA-256 thumbprint")
+    x5u: str | None = Field(None, description="X.509 certificate URL")
+
+
+class JsonWebKeySet(BaseModel):
+    """JSON Web Key Set (JWKS) as defined in RFC 7517 Section 5.
+
+    Reference: https://datatracker.ietf.org/doc/html/rfc7517#section-5
+    """
+
+    keys: list[JsonWebKey] = Field(..., description="Array of JSON Web Key objects")
+
+
+# =============================================================================
 # Utility Models
 # =============================================================================
 
@@ -302,7 +353,10 @@ class ClientConfig:
     enable_metadata_discovery: bool = True
     auto_register_client: bool = False
 
+    client_id: str | None = None
     client_name: str = "KeycardAI OAuth Client"
     client_redirect_uris: list[str] = field(default_factory=lambda: ["http://localhost:8080/callback"])
     client_grant_types: list[GrantType] = field(default_factory=lambda: [GrantType.AUTHORIZATION_CODE, GrantType.REFRESH_TOKEN, GrantType.TOKEN_EXCHANGE])
     client_token_endpoint_auth_method: TokenEndpointAuthMethod = field(default_factory=lambda: TokenEndpointAuthMethod.NONE)
+
+    client_jwks_url: str | None = None

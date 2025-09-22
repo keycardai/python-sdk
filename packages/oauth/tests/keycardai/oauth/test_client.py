@@ -453,15 +453,6 @@ class TestClientValidation:
 
     def test_token_exchange_request_validation(self):
         """Test that TokenExchangeRequest model validates required fields and handles kwargs correctly."""
-        # Test missing required field (subject_token)
-        with pytest.raises(ValidationError) as exc_info:
-            TokenExchangeRequest()
-
-        error = exc_info.value
-        assert len(error.errors()) == 1
-        assert error.errors()[0]["type"] == "missing"
-        assert error.errors()[0]["loc"] == ("subject_token",)
-
         # Test empty subject_token (min_length validation)
         with pytest.raises(ValidationError) as exc_info:
             TokenExchangeRequest(subject_token="")

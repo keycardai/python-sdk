@@ -8,10 +8,18 @@ from pydantic import AnyHttpUrl, Field
 from starlette.requests import Request
 from starlette.responses import Response
 
+from keycardai.oauth.types.oauth import GrantType, TokenEndpointAuthMethod
+
 
 class InferredProtectedResourceMetadata(ProtectedResourceMetadata):
     """Extended ProtectedResourceMetadata that allows resource to be inferred from request."""
     resource: AnyHttpUrl | None = Field(default=None)  # Override to make it optional
+    client_id: str | None = Field(default=None)
+    client_name: str | None = Field(default=None)
+    redirect_uris: list[AnyHttpUrl] | None = Field(default=None)
+    token_endpoint_auth_method: TokenEndpointAuthMethod | None = Field(default=None)
+    grant_types: list[GrantType] | None = Field(default=None)
+    jwks_uri: AnyHttpUrl | None = Field(default=None)
 
 @dataclass
 class AuthorizationServerMetadata:
@@ -64,6 +72,9 @@ def _remove_authorization_server_prefix(path: str) -> str:
         return path[len(auth_server_prefix):]
     return path
 
+def _create_jwks_uri(base_url: str) -> AnyHttpUrl:
+    return AnyHttpUrl(f"{base_url.rstrip('/')}/.well-known/jwks.json")
+
 def protected_resource_metadata(metadata: InferredProtectedResourceMetadata, enable_multi_zone: bool = False) -> Callable:
     def wrapper(request: Request) -> Response:
         # Create a copy of the metadata to avoid mutating the original
@@ -74,9 +85,15 @@ def protected_resource_metadata(metadata: InferredProtectedResourceMetadata, ena
             if zone_id:
                 request_metadata.authorization_servers = [ _create_zone_scoped_authorization_server_url(zone_id, request_metadata.authorization_servers[0]) ]
 
-        resource = _create_resource_url(request.base_url, path)
+        request_metadata.resource = _create_resource_url(request.base_url, path)
+        request_metadata.jwks_uri = _create_jwks_uri(str(request.base_url))
+        request_metadata.client_id = str(request_metadata.resource)
+        request_metadata.client_name = "MCP Server"
+        request_metadata.token_endpoint_auth_method = TokenEndpointAuthMethod.PRIVATE_KEY_JWT
+        request_metadata.grant_types = [GrantType.CLIENT_CREDENTIALS]
+
+
         mcp_version = request.headers.get("mcp-protocol-version")
-        request_metadata.resource = resource
         # TODO: what is the reason for this?
         if mcp_version == "2025-03-26":
             json["authorization_servers"] = [ request.base_url ]
