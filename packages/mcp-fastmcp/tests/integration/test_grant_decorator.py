@@ -16,7 +16,7 @@ from keycardai.mcp.integrations.fastmcp import (
     AuthProvider,
     ResourceAccessError,
 )
-from keycardai.mcp.integrations.fastmcp.exceptions import MissingContextError
+from keycardai.mcp.server.exceptions import MissingContextError
 from keycardai.oauth.types.models import TokenResponse
 
 

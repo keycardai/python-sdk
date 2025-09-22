@@ -67,6 +67,19 @@ Advanced Configuration:
 """
 
 # Re-export commonly used auth strategies for convenience
+from keycardai.mcp.server.auth.client_factory import ClientFactory, DefaultClientFactory
+from keycardai.mcp.server.exceptions import (
+    # Specific exceptions
+    AuthProviderConfigurationError,
+    ClientInitializationError,
+    JWKSValidationError,
+    # Base exception
+    MCPServerError,
+    MetadataDiscoveryError,
+    MissingContextError,
+    ResourceAccessError,
+    TokenExchangeError,
+)
 from keycardai.oauth.http.auth import (
     AuthStrategy,
     BasicAuth,
@@ -74,30 +87,16 @@ from keycardai.oauth.http.auth import (
     NoneAuth,
 )
 
-from .exceptions import (
-    # Convenience aliases
-    AccessError,
-    # Specific exceptions
-    AuthProviderConfigurationError,
-    ClientInitializationError,
-    ConfigurationError,
-    DecoratorError,
-    DiscoveryError,
-    ExchangeError,
-    # Base exception
-    FastMCPIntegrationError,
-    InitializationError,
-    JWKSValidationError,
-    ResourceAccessError,
-    TokenExchangeError,
-    ZoneDiscoveryError,
-)
 from .provider import AccessContext, AuthProvider
 
 __all__ = [
     # Core classes
     "AuthProvider",
     "AccessContext",
+
+    # Client factory
+    "ClientFactory",
+    "DefaultClientFactory",
 
     # Auth strategies
     "AuthStrategy",
@@ -106,22 +105,14 @@ __all__ = [
     "NoneAuth",
 
     # Exceptions - Base
-    "FastMCPIntegrationError",
+    "MCPServerError",
 
     # Exceptions - Specific
     "AuthProviderConfigurationError",
     "ClientInitializationError",
-    "DecoratorError",
     "JWKSValidationError",
+    "MissingContextError",
     "ResourceAccessError",
     "TokenExchangeError",
-    "ZoneDiscoveryError",
-
-    # Exceptions - Convenience aliases
-    "AccessError",
-    "ConfigurationError",
-    "DecoratorError",
-    "DiscoveryError",
-    "ExchangeError",
-    "InitializationError",
+    "MetadataDiscoveryError",
 ]

@@ -862,6 +862,7 @@ source = { editable = "packages/mcp-fastmcp" }
 dependencies = [
     { name = "fastmcp" },
     { name = "httpx" },
+    { name = "keycardai-mcp" },
     { name = "keycardai-oauth" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
@@ -882,6 +883,7 @@ dev = [
 requires-dist = [
     { name = "fastmcp", specifier = "==2.12.0" },
     { name = "httpx", specifier = ">=0.27.2" },
+    { name = "keycardai-mcp", editable = "packages/mcp" },
     { name = "keycardai-oauth", editable = "packages/oauth" },
     { name = "pydantic", specifier = ">=2.11.7" },
     { name = "pydantic-settings", specifier = ">=2.7.1" },
@@ -903,13 +905,30 @@ dependencies = [
     { name = "pydantic-settings" },
 ]
 
+[package.optional-dependencies]
+test = [
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "pytest-cov" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "httpx", specifier = ">=0.27.2" },
     { name = "keycardai-oauth", editable = "packages/oauth" },
     { name = "pydantic", specifier = ">=2.11.7" },
     { name = "pydantic-settings", specifier = ">=2.7.1" },
+    { name = "pytest", marker = "extra == 'test'", specifier = ">=8.4.1" },
+    { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=1.1.0" },
 ]
+provides-extras = ["test"]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pytest-cov", specifier = ">=6.2.1" }]
 
 [[package]]
 name = "keycardai-oauth"

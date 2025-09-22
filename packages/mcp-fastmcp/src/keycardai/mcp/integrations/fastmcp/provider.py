@@ -11,7 +11,7 @@ from __future__ import annotations
 import inspect
 from collections.abc import Callable
 from functools import wraps
-from typing import Any, Protocol
+from typing import Any
 
 from pydantic import AnyHttpUrl
 
@@ -19,37 +19,17 @@ from fastmcp import Context
 from fastmcp.server.auth import RemoteAuthProvider
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.server.dependencies import get_access_token
-from keycardai.oauth import AsyncClient, Client, ClientConfig
-from keycardai.oauth.http.auth import AuthStrategy, NoneAuth
-from keycardai.oauth.types.models import TokenResponse
-
-from .exceptions import (
+from keycardai.mcp.server.auth.client_factory import ClientFactory, DefaultClientFactory
+from keycardai.mcp.server.exceptions import (
     AuthProviderConfigurationError,
+    MetadataDiscoveryError,
     MissingContextError,
     OAuthClientConfigurationError,
     ResourceAccessError,
-    ZoneDiscoveryError,
 )
-
-
-class ClientFactory(Protocol):
-    """Protocol for creating OAuth clients."""
-    def create_client(self, base_url: str, auth: AuthStrategy | None = None) -> Client:
-        """Create an OAuth client."""
-        pass
-    def create_async_client(self, base_url: str, auth: AuthStrategy | None = None) -> AsyncClient:
-        """Create an asynchronous OAuth client."""
-        pass
-
-class DefaultClientFactory(ClientFactory):
-    """Default client factory."""
-    def create_client(self, base_url: str, auth: AuthStrategy | None = None) -> Client:
-        """Create discovery client."""
-        return Client(base_url, auth=auth, config=ClientConfig(enable_metadata_discovery=True, auto_register_client=False))
-    def create_async_client(self, base_url: str, auth: AuthStrategy | None = None) -> AsyncClient:
-        """Create an asynchronous OAuth client."""
-        return AsyncClient(base_url, auth=auth)
-
+from keycardai.oauth import AsyncClient, Client
+from keycardai.oauth.http.auth import AuthStrategy, NoneAuth
+from keycardai.oauth.types.models import TokenResponse
 
 
 class AccessContext:
@@ -274,7 +254,7 @@ class AuthProvider:
         try:
             self.jwks_uri = self._discover_jwks_uri(self.client_factory.create_client(self.zone_url))
         except Exception as e:
-            raise ZoneDiscoveryError() from e
+            raise MetadataDiscoveryError() from e
 
         self.auth = auth if auth is not None else NoneAuth()
 
@@ -335,7 +315,7 @@ class AuthProvider:
             JWTVerifier: Configured JWT token verifier for the KeyCard zone
 
         Raises:
-            ZoneDiscoveryError: If zone metadata discovery fails
+            MetadataDiscoveryError: If zone metadata discovery fails
             JWKSValidationError: If JWKS URI is not available
         """
         return JWTVerifier(
