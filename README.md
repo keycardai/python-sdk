@@ -4,26 +4,132 @@ A collection of Python packages for KeyCard services, organized as a uv workspac
 
 ## Quick Start
 
-Get up and running with KeyCard's MCP (Model Context Protocol) integration in minutes:
+Choose the integration that best fits your MCP setup:
 
-### Install the Packages
+## Quick Start with keycardai-mcp (Standard MCP)
 
-```bash
-pip install mcp keycardai-mcp
-```
+For standard MCP servers using the official MCP Python SDK:
 
-or 
+### Install the Package
 
 ```bash
-uv add mcp keycardai-mcp
+pip install keycardai-mcp
 ```
 
-### Create Your First MCP Server
+or
+
+```bash
+uv add keycardai-mcp
+```
+
+### Get Your KeyCard Zone ID
+
+1. Sign up at [keycard.ai](https://keycard.ai)
+2. Navigate to Zone Settings to get your zone ID
+3. Configure your preferred identity provider (Google, Microsoft, etc.)
+4. Create an MCP resource in your zone
+
+### Add Authentication to Your MCP Server
 
 ```python
 from mcp.server.fastmcp import FastMCP
+from keycardai.mcp.server.auth import AuthProvider
 
-mcp = FastMCP("Hello World")
+# Your existing MCP server
+mcp = FastMCP("My Secure MCP Server")
+
+@mcp.tool()
+def my_protected_tool(data: str) -> str:
+    return f"Processed: {data}"
+
+# Add KeyCard authentication
+access = AuthProvider(
+    zone_id="your_zone_id_here",
+    mcp_server_name="My Secure MCP Server",
+)
+
+# Create authenticated app
+app = access.app(mcp)
+```
+
+### Run with Authentication
+
+```bash
+pip install uvicorn
+uvicorn server:app
+```
+
+### Add Delegated Access (Optional)
+
+```python
+import os
+from mcp.server.fastmcp import FastMCP, Context
+from keycardai.mcp.server.auth import AuthProvider, AccessContext, BasicAuth
+
+# Configure your provider with client credentials
+access = AuthProvider(
+    zone_id="your_zone_id",
+    mcp_server_name="My MCP Server",
+    auth=BasicAuth(
+        os.getenv("KEYCARD_CLIENT_ID"),
+        os.getenv("KEYCARD_CLIENT_SECRET")
+    )
+)
+
+mcp = FastMCP("My MCP Server")
+
+@mcp.tool()
+@access.grant("https://protected-api")
+def protected_tool(ctx: Context, access_context: AccessContext, name: str) -> str:
+    # Use the access_context to call external APIs on behalf of the user
+    token = access_context.access("https://protected-api").access_token
+    # Make authenticated API calls...
+    return f"Protected data for {name}"
+
+app = access.app(mcp)
+```
+
+## Quick Start with keycardai-mcp-fastmcp (FastMCP)
+
+For FastMCP servers using the FastMCP framework:
+
+### Install the Package
+
+```bash
+pip install keycardai-mcp-fastmcp
+```
+
+or
+
+```bash
+uv add keycardai-mcp-fastmcp
+```
+
+### Get Your KeyCard Zone ID
+
+1. Sign up at [keycard.ai](https://keycard.ai)
+2. Navigate to Zone Settings to get your zone ID
+3. Configure your preferred identity provider (Google, Microsoft, etc.)
+4. Create an MCP resource in your zone
+
+### Add Authentication to Your FastMCP Server
+
+```python
+from fastmcp import FastMCP, Context
+from keycardai.mcp.integrations.fastmcp import AuthProvider
+
+# Configure KeyCard authentication
+auth_provider = AuthProvider(
+    zone_id="your-zone-id",  # Get this from keycard.ai
+    mcp_server_name="My Secure FastMCP Server",
+    mcp_base_url="http://127.0.0.1:8000/"
+)
+
+# Get the RemoteAuthProvider for FastMCP
+auth = auth_provider.get_remote_auth_provider()
+
+# Create authenticated FastMCP server
+mcp = FastMCP("My Secure FastMCP Server", auth=auth)
 
 @mcp.tool()
 def hello_world(name: str) -> str:
@@ -33,171 +139,73 @@ if __name__ == "__main__":
     mcp.run(transport="streamable-http")
 ```
 
-### Run your MCP server
+### Add Delegated Access (Optional)
 
-```bash
-python server.py
+```python
+from fastmcp import FastMCP, Context
+from keycardai.mcp.integrations.fastmcp import AuthProvider, AccessContext
+
+# Configure KeyCard authentication
+auth_provider = AuthProvider(
+    zone_id="your-zone-id",
+    mcp_server_name="My Secure FastMCP Server",
+    mcp_base_url="http://127.0.0.1:8000/"
+)
+
+# Get the RemoteAuthProvider for FastMCP
+auth = auth_provider.get_remote_auth_provider()
+
+# Create authenticated FastMCP server
+mcp = FastMCP("My Secure FastMCP Server", auth=auth)
+
+# Example with token exchange for external API access
+@mcp.tool()
+@auth_provider.grant("https://api.example.com")
+def call_external_api(ctx: Context, query: str) -> str:
+    # Get access context to check token exchange status
+    access_context: AccessContext = ctx.get_state("keycardai")
+    
+    # Check for errors before accessing token
+    if access_context.has_errors():
+        return f"Error: Failed to obtain access token - {access_context.get_errors()}"
+    
+    # Access delegated token through context namespace
+    token = access_context.access("https://api.example.com").access_token
+    # Use token to call external API
+    return f"Results for {query}"
+
+if __name__ == "__main__":
+    mcp.run(transport="streamable-http")
 ```
 
-For more details, refer to the [mcp](https://github.com/modelcontextprotocol/python-sdk?tab=readme-ov-file#streamable-http-transport) documentation.
+### Configure Your AI Client
 
-### Configure the remote MCP in your AI client, like [Cursor](https://cursor.com/?from=home)
+Configure the remote MCP in your AI client, like [Cursor](https://cursor.com/?from=home):
 
 ```json
 {
   "mcpServers": {
-    "hello-world": {
+    "my-secure-server": {
       "url": "http://localhost:8000/mcp"
     }
   }
 }
 ```
 
-### Test the remote server with client 
-
-<img src="docs/images/cursor_hello_world_agent_call.png" alt="Cursor Hello World Agent Call" width="500">
-
-### Signup to Keycard and get your zone identifier
-
-Refer to [docs](https://docs.keycard.ai/) on how to sign up. Navigate to Zone Settings to obtain the zone ID.
-
-<img src="docs/images/keycard_zone_information.png" alt="Keycard ZoneId Information" width="400">
-
-### Configure Your Preferred Identity Provider
-
-<img src="docs/images/keycard_identity_provider_config.png" alt="Keycard Identity Provider Configuration" width="400">
-
-### Setup MCP resource
-
-<img src="docs/images/create_mcp_resource.png" alt="Create MCP Resource" width="400">
-
-### Add authentication to the MCP server
-
-```python
-from mcp.server.fastmcp import FastMCP
-
-from keycardai.mcp.server.auth import AuthProvider
-
-# From the zone setting above
-zone_id = "90zqtq5lvtobrmyl3b0i0k2z1q"
-
-access = AuthProvider(
-   zone_id = zone_id,
-   mcp_server_name="Hello World Mcp",
-)
-
-mcp = FastMCP("Minimal MCP")
-
-@mcp.tool()
-def hello_world(name: str) -> str:
-    return f"Hello, {name}!"
-
-# Create Starlette app to handle authorization flows
-app = access.app(mcp)
-```
-
-### Run Your Server
-
-The authorization flows require additional handlers to advertise the metadata.
-
-This is implemented using the underlying Starlette application. For more information, refer to the official [mcp](https://github.com/modelcontextprotocol/python-sdk?tab=readme-ov-file#streamablehttp-servers) documentation.
-
-You can use any async server, for example [uvicorn](https://www.uvicorn.org/):
-
-```bash
-uv add uvicorn
-```
-
-or
-
-```bash
-pip install uvicorn
-```
-
-```bash
-python -m uvicorn server:app
-```
-
-### Authenticate in client
-
-<img src="docs/images/cursor_authenticate.png" alt="Cursor Authentication Prompt" width="500">
-
-
-### 🎉 Your MCP server is now running with KeyCard authentication! 🎉
+### 🎉 Your MCP server is now protected with KeyCard authentication! 🎉
 
 ## Features
 
 ### Delegated Access
 
-You can use Keycard to allow MCP servers to access other resources on behalf of the user.
+KeyCard allows MCP servers to access other resources on behalf of users with automatic consent and secure token exchange.
 
-It automatically requests user consent and performs necessary secure exchanges to provide granular access to resources. 
+#### Setup Protected Resources
 
-#### Configure credential provider
-
-Configure a credential provider for your resource, for example Google Workspace.
-
-<img src="docs/images/keycard_credential_provider_config.png" alt="Keycard Credential Provider Configuration" width="400">
-
-#### Configure protected resource
-
-Configure a protected resource, for example the Google Drive API.
-
-<img src="docs/images/keycard_resource_create.png" alt="Keycard Resource Creation" width="400">
-
-#### Allow access from MCP to protected resource
-
-To allow the MCP server to make delegated calls to the API, set the dependency on the MCP server for the protected resource.
-
-<img src="docs/images/keycard_set_dependency.png" alt="Keycard Set Dependency" width="400">
-
-#### Give the MCP server identity secret
-
-In order for the MCP server to securely perform exchanges, it requires an identity secret. 
-
-<img src="docs/images/keycard_identity_configuration.png" alt="Keycard Resource Identity" width="400">
-
-Note: Keep the client_id and client_secret safe. We will use them in the next steps.
-
-#### Add delegation control to tool calls
-
-Note: For demonstration, we will print a different message when access is granted.
-In real use cases, you would use the token to make requests to downstream APIs.
-
-```python
-import os
-from mcp.server.fastmcp import FastMCP, Context
-
-from keycardai.mcp.server.auth import AuthProvider, AccessContext, BasicAuth
-
-# From the zone setting above
-zone_id = "90zqtq5lvtobrmyl3b0i0k2z1q"
-
-access = AuthProvider(
-   zone_id = zone_id,
-   mcp_server_name="Hello World Mcp",
-   auth=BasicAuth(os.getenv("KEYCARD_CLIENT_ID"), os.getenv("KEYCARD_CLIENT_SECRET"))
-)
-
-mcp = FastMCP("Minimal MCP")
-
-protected_resource_identifier = "https://protected-api"
-
-@mcp.tool()
-@access.grant(protected_resource_identifier)
-def hello_world(ctx: Context, access_context: AccessContext, name: str) -> str:
-    msg = f"Hello, {name}!"
-    if access_context.access(protected_resource_identifier).access_token:
-      msg = f"Hello, {name}! I can see you have extra access"
-    return msg
-
-# Create Starlette app to handle authorization flows
-app = access.app(mcp)
-```
-
-#### Use obtained access to make API calls on behalf of users
-
-<img src="docs/images/cursor_delegated_access_example.png" alt="Keycard Set Dependency" width="400">
+1. **Configure credential provider** (e.g., Google Workspace)
+2. **Configure protected resource** (e.g., Google Drive API)  
+3. **Set MCP server dependencies** to allow delegated access
+4. **Create client secret identity** for secure authentication
 
 
 ## Overview
@@ -205,22 +213,54 @@ app = access.app(mcp)
 This workspace contains multiple Python packages that provide various KeyCard functionality:
 
 - **keycardai-oauth**: OAuth 2.0 implementation with support for RFC 8693 (Token Exchange)
-- **keycardai-mcp**: Core MCP (Model Context Protocol) integration utilities
+- **keycardai-mcp**: Core MCP (Model Context Protocol) integration utilities for standard MCP servers
 - **keycardai-mcp-fastmcp**: FastMCP-specific integration package with decorators and middleware
 
 ## Installation
 
-Install the SDK packages using pip:
+### For Standard MCP Servers
+
+If you're using the official MCP Python SDK:
 
 ```bash
-# Install individual packages as needed
-pip install keycardai-oauth
 pip install keycardai-mcp
-pip install keycardai-mcp-fastmcp
+```
 
-# Or install from source
+or
+
+```bash
+uv add keycardai-mcp
+```
+
+### For FastMCP Servers
+
+If you're using the FastMCP framework:
+
+```bash
+pip install keycardai-mcp-fastmcp
+```
+
+or
+
+```bash
+uv add keycardai-mcp-fastmcp
+```
+
+### For OAuth Functionality Only
+
+If you only need OAuth capabilities:
+
+```bash
+pip install keycardai-oauth
+```
+
+### Install from Source
+
+```bash
 git clone git@github.com:keycardai/python-sdk.git
 cd python-sdk
+
+# Install specific packages as needed
 pip install ./packages/oauth
 pip install ./packages/mcp
 pip install ./packages/mcp-fastmcp
