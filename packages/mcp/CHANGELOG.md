@@ -1,3 +1,11 @@
+## 0.5.0-keycardai-mcp (2025-09-22)
+
+
+- feat(keycardai-mcp): dcr can be toggled on/off
+- feat(keycardai-mcp): private key jwt support with global key
+- feat(keycardai-mcp): grant decorator exception handling
+- feat(keycardai-mcp): private key manager protocol
+
 ## 0.4.1-keycardai-mcp (2025-09-18)
 
 
