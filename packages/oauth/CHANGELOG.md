@@ -1,3 +1,9 @@
+## 0.5.0-keycardai-oauth (2025-09-22)
+
+
+- feat(keycardai-oauth): client assertion support
+- feat(keycardai-oauth): JWKS type support
+
 ## 0.4.1-keycardai-oauth (2025-09-17)
 
 
