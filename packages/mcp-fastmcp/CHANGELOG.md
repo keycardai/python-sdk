@@ -1,3 +1,8 @@
+## 0.6.0-keycardai-mcp-fastmcp (2025-09-22)
+
+
+- feat(keycardai-mcp-fastmcp): unify exceptions with keycardai-mcp package
+
 ## 0.5.0-keycardai-mcp-fastmcp (2025-09-21)
 
 
