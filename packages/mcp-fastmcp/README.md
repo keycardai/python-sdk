@@ -2,6 +2,42 @@
 
 A Python package that provides seamless integration between KeyCard and FastMCP servers, enabling secure token exchange and authentication for MCP tools.
 
+## Requirements
+
+- **Python 3.9 or greater**
+- Virtual environment (recommended)
+
+## Setup Guide
+
+### Option 1: Using uv (Recommended)
+
+If you have [uv](https://docs.astral.sh/uv/) installed:
+
+```bash
+# Create a new project with uv
+uv init my-fastmcp-project
+cd my-fastmcp-project
+
+# Create and activate virtual environment
+uv venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+```
+
+### Option 2: Using Standard Python
+
+```bash
+# Create project directory
+mkdir my-fastmcp-project
+cd my-fastmcp-project
+
+# Create and activate virtual environment
+python3 -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+
+# Upgrade pip (recommended)
+pip install --upgrade pip
+```
+
 ## Installation
 
 ```bash
