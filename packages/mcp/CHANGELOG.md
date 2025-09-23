@@ -1,3 +1,8 @@
+## 0.6.0-keycardai-mcp (2025-09-23)
+
+
+- feat(keycardai-mcp): enable custom middleware injection
+
 ## 0.5.1-keycardai-mcp (2025-09-22)
 
 
