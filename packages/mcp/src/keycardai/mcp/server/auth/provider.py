@@ -10,6 +10,7 @@ from mcp.server.auth.settings import AuthSettings
 from mcp.server.fastmcp import Context, FastMCP
 from pydantic import AnyHttpUrl
 from starlette.applications import Starlette
+from starlette.middleware import Middleware
 from starlette.routing import Route
 from starlette.types import ASGIApp
 
@@ -629,7 +630,7 @@ class AuthProvider:
             jwks=self.jwks
         )
 
-    def app(self, mcp_app: FastMCP) -> ASGIApp:
+    def app(self, mcp_app: FastMCP, middleware: list[Middleware] | None = None) -> ASGIApp:
         """Get the MCP app with authentication middleware and metadata endpoints."""
         @contextlib.asynccontextmanager
         async def lifespan(app: Starlette):
@@ -639,4 +640,5 @@ class AuthProvider:
         return Starlette(
             routes=self.get_mcp_router(mcp_app.streamable_http_app()),
             lifespan=lifespan,
+            middleware=middleware,
         )
