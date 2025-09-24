@@ -1,10 +1,10 @@
-"""FastMCP integration for KeyCard OAuth client.
+"""FastMCP integration for Keycard OAuth client.
 
-This module provides seamless integration between KeyCard's OAuth client
+This module provides seamless integration between Keycard's OAuth client
 and FastMCP servers, enabling secure authentication and authorization.
 
 Components:
-- AuthProvider: KeyCard authentication provider with RemoteAuthProvider creation and grant decorator
+- AuthProvider: Keycard authentication provider with RemoteAuthProvider creation and grant decorator
 - AccessContext: Context object for accessing delegated tokens (used in FastMCP Context namespace)
 - Auth strategies: BasicAuth, MultiZoneBasicAuth, NoneAuth for different authentication scenarios
 

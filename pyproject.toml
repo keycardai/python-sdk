@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [
-    { name = "KeycardAI", email = "support@keycardai.com" }
+    { name = "Keycard", email = "support@keycardai.com" }
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",

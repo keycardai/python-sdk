@@ -1,1 +1,1 @@
-"""Tests for KeyCard AI Oauth SDK."""
+"""Tests for Keycard Oauth SDK."""

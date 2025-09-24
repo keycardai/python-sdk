@@ -1,6 +1,6 @@
-# KeyCard AI FastMCP Integration
+# Keycard FastMCP Integration
 
-A Python package that provides seamless integration between KeyCard and FastMCP servers, enabling secure token exchange and authentication for MCP tools.
+A Python package that provides seamless integration between Keycard and FastMCP servers, enabling secure token exchange and authentication for MCP tools.
 
 ## Requirements
 
@@ -52,7 +52,7 @@ pip install keycardai-mcp-fastmcp
 
 ## Quick Start
 
-Add KeyCard authentication to your existing FastMCP server:
+Add Keycard authentication to your existing FastMCP server:
 
 ### Install the Package
 
@@ -60,7 +60,7 @@ Add KeyCard authentication to your existing FastMCP server:
 uv add keycardai-mcp-fastmcp
 ```
 
-### Get Your KeyCard Zone ID
+### Get Your Keycard Zone ID
 
 1. Sign up at [keycard.ai](https://keycard.ai)
 2. Navigate to Zone Settings to get your zone ID
@@ -73,7 +73,7 @@ uv add keycardai-mcp-fastmcp
 from fastmcp import FastMCP, Context
 from keycardai.mcp.integrations.fastmcp import AuthProvider
 
-# Configure KeyCard authentication (recommended: use zone_id)
+# Configure Keycard authentication (recommended: use zone_id)
 auth_provider = AuthProvider(
     zone_id="your-zone-id",  # Get this from keycard.ai
     mcp_server_name="My Secure FastMCP Server",
@@ -100,7 +100,7 @@ if __name__ == "__main__":
 from fastmcp import FastMCP, Context
 from keycardai.mcp.integrations.fastmcp import AuthProvider, AccessContext
 
-# Configure KeyCard authentication (recommended: use zone_id)
+# Configure Keycard authentication (recommended: use zone_id)
 auth_provider = AuthProvider(
     zone_id="your-zone-id",  # Get this from keycard.ai
     mcp_server_name="My Secure FastMCP Server",
@@ -133,7 +133,7 @@ if __name__ == "__main__":
     mcp.run(transport="streamable-http")
 ```
 
-### 🎉 Your FastMCP server is now protected with KeyCard authentication! 🎉
+### 🎉 Your FastMCP server is now protected with Keycard authentication! 🎉
 
 ## Working with AccessContext
 
@@ -239,7 +239,7 @@ failed_resources = access_context.get_failed_resources()
 
 ⚠️ **Important**: The `mcp_base_url` parameter will automatically have a trailing slash (`/`) appended if not present. This is required for proper JWT audience validation with FastMCP.
 
-**When configuring your KeyCard Resource**, ensure the resource URL in your KeyCard zone settings matches exactly, including the trailing slash:
+**When configuring your Keycard Resource**, ensure the resource URL in your Keycard zone settings matches exactly, including the trailing slash:
 
 ```python
 # This configuration...
@@ -249,7 +249,7 @@ auth_provider = AuthProvider(
 )
 
 # Will become "http://localhost:8000/" internally
-# So your KeyCard Resource must be configured as: http://localhost:8000/
+# So your Keycard Resource must be configured as: http://localhost:8000/
 ```
 
 ### Client Credentials for Token Exchange

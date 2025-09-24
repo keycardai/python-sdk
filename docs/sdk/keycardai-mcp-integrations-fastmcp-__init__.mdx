@@ -6,27 +6,27 @@ sidebarTitle: __init__
 # `keycardai.mcp.integrations.fastmcp`
 
 
-FastMCP integration for KeyCard OAuth client.
+FastMCP integration for Keycard OAuth client.
 
-This module provides seamless integration between KeyCard's OAuth client
+This module provides seamless integration between Keycard's OAuth client
 and FastMCP servers, following the sync/async API design standard.
 
 Components:
-- KeycardAuthProvider: FastMCP authentication provider using KeyCard zone tokens
+- KeycardAuthProvider: FastMCP authentication provider using Keycard zone tokens
 - AccessMiddleware: Middleware that manages OAuth client lifecycle and provides grant decorator
 - Access token management through grant decorators
 
 Example Usage:
 
-    # Basic FastMCP server setup with KeyCard authentication
+    # Basic FastMCP server setup with Keycard authentication
     import fastmcp
     from keycardai.mcp.integrations.fastmcp import (
         KeycardAuthProvider,
         AccessMiddleware,
     )
 
-    # Create MCP server with KeyCard authentication
-    mcp = fastmcp.MCP("My KeyCard Server")
+    # Create MCP server with Keycard authentication
+    mcp = fastmcp.MCP("My Keycard Server")
 
     # Add authentication provider
     auth_provider = KeycardAuthProvider(

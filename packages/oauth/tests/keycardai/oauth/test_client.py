@@ -522,7 +522,7 @@ class TestClientValidation:
                 # Verify build_http_context was called with default user agent
                 mock_build_context.assert_called()
                 call_kwargs = mock_build_context.call_args.kwargs
-                assert call_kwargs['user_agent'] == "KeyCardAI-OAuth/0.0.1"
+                assert call_kwargs['user_agent'] == "Keycard-OAuth/0.0.1"
 
         # Test 2: Client registration request
         with patch('keycardai.oauth.client.build_http_context') as mock_build_context:
@@ -537,7 +537,7 @@ class TestClientValidation:
                 # Verify build_http_context was called with default user agent
                 mock_build_context.assert_called()
                 call_kwargs = mock_build_context.call_args.kwargs
-                assert call_kwargs['user_agent'] == "KeyCardAI-OAuth/0.0.1"
+                assert call_kwargs['user_agent'] == "Keycard-OAuth/0.0.1"
 
         # Test 3: Token exchange request
         with patch('keycardai.oauth.client.build_http_context') as mock_build_context:
@@ -552,7 +552,7 @@ class TestClientValidation:
                 # Verify build_http_context was called with default user agent
                 mock_build_context.assert_called()
                 call_kwargs = mock_build_context.call_args.kwargs
-                assert call_kwargs['user_agent'] == "KeyCardAI-OAuth/0.0.1"
+                assert call_kwargs['user_agent'] == "Keycard-OAuth/0.0.1"
 
     @pytest.mark.asyncio
     async def test_default_user_agent_in_async_requests(self):
@@ -573,7 +573,7 @@ class TestClientValidation:
                 # Verify build_http_context was called with default user agent
                 mock_build_context.assert_called()
                 call_kwargs = mock_build_context.call_args.kwargs
-                assert call_kwargs['user_agent'] == "KeyCardAI-OAuth/0.0.1"
+                assert call_kwargs['user_agent'] == "Keycard-OAuth/0.0.1"
 
         # Test 2: Async client registration request
         with patch('keycardai.oauth.client.build_http_context') as mock_build_context:
@@ -588,7 +588,7 @@ class TestClientValidation:
                 # Verify build_http_context was called with default user agent
                 mock_build_context.assert_called()
                 call_kwargs = mock_build_context.call_args.kwargs
-                assert call_kwargs['user_agent'] == "KeyCardAI-OAuth/0.0.1"
+                assert call_kwargs['user_agent'] == "Keycard-OAuth/0.0.1"
 
         # Test 3: Async token exchange request
         with patch('keycardai.oauth.client.build_http_context') as mock_build_context:
@@ -603,7 +603,7 @@ class TestClientValidation:
                 # Verify build_http_context was called with default user agent
                 mock_build_context.assert_called()
                 call_kwargs = mock_build_context.call_args.kwargs
-                assert call_kwargs['user_agent'] == "KeyCardAI-OAuth/0.0.1"
+                assert call_kwargs['user_agent'] == "Keycard-OAuth/0.0.1"
 
     def test_custom_user_agent_in_requests(self):
         """Test that custom user agent is used when provided in client config."""

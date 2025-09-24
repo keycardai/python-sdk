@@ -1,4 +1,4 @@
-# KeyCard AI MCP SDK
+# Keycard MCP SDK
 
 A comprehensive Python SDK for Model Context Protocol (MCP) functionality that simplifies authentication and authorization concerns for developers working with AI/LLM integrations.
 
@@ -46,7 +46,7 @@ pip install keycardai-mcp
 
 ## Quick Start
 
-Add KeyCard authentication to your existing MCP server:
+Add Keycard authentication to your existing MCP server:
 
 ### Install the Package
 
@@ -54,7 +54,7 @@ Add KeyCard authentication to your existing MCP server:
 pip install keycardai-mcp
 ```
 
-### Get Your KeyCard Zone ID
+### Get Your Keycard Zone ID
 
 1. Sign up at [keycard.ai](https://keycard.ai)
 2. Navigate to Zone Settings to get your zone ID
@@ -74,7 +74,7 @@ mcp = FastMCP("My Secure MCP Server")
 def my_protected_tool(data: str) -> str:
     return f"Processed: {data}"
 
-# Add KeyCard authentication
+# Add Keycard authentication
 access = AuthProvider(
     zone_id="your_zone_id_here",
     mcp_server_name="My Secure MCP Server",
@@ -91,19 +91,19 @@ pip install uvicorn
 uvicorn server:app
 ```
 
-### 🎉 Your MCP server is now protected with KeyCard authentication! 🎉
+### 🎉 Your MCP server is now protected with Keycard authentication! 🎉
 
 ## Features
 
 - ✅ **OAuth 2.0 Authentication**: Secure your MCP server with industry-standard OAuth flows
 - ✅ **Easy Integration**: Add authentication with just a few lines of code
-- ✅ **Multi-Zone Support**: Support multiple KeyCard zones in one application
+- ✅ **Multi-Zone Support**: Support multiple Keycard zones in one application
 - ✅ **Token Exchange**: Automatic delegated token exchange for accessing external APIs
 - ✅ **Production Ready**: Battle-tested security patterns and error handling
 
 ### Delegated Access
 
-KeyCard allows MCP servers to access other resources on behalf of users with automatic consent and secure token exchange.
+Keycard allows MCP servers to access other resources on behalf of users with automatic consent and secure token exchange.
 
 #### Setup Protected Resources
 

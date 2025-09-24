@@ -1,6 +1,6 @@
 # Developer Guide
 
-This guide covers development workflows, architecture decisions, and contribution guidelines for the KeyCard AI Python SDK.
+This guide covers development workflows, architecture decisions, and contribution guidelines for the Keycard Python SDK.
 
 ## Getting Started
 

@@ -1,7 +1,7 @@
 [project]
 name = "dynamic-client-registration"
 version = "0.1.0"
-description = "OAuth 2.0 Dynamic Client Registration demonstration with KeyCard"
+description = "OAuth 2.0 Dynamic Client Registration demonstration with Keycard"
 requires-python = ">=3.10"
 dependencies = [
     "keycardai-oauth",

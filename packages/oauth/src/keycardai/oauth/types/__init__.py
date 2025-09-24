@@ -1,4 +1,4 @@
-"""KeyCard AI OAuth SDK Types"""
+"""Keycard OAuth SDK Types"""
 
 from .models import (
     PKCE,

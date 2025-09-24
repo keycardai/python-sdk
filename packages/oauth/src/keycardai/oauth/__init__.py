@@ -1,4 +1,4 @@
-"""KeyCard AI OAuth SDK
+"""Keycard OAuth SDK
 
 A unified, developer-friendly Python SDK for OAuth 2.0 functionality implementing
 multiple OAuth 2.0 standards with enterprise-ready features.

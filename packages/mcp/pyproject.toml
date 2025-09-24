@@ -5,7 +5,7 @@ description = "A Python SDK for Model Context Protocol (MCP) functionality with 
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
-authors = [{ name = "KeyCard AI", email = "support@keycard.ai" }]
+authors = [{ name = "Keycard", email = "support@keycard.ai" }]
 dependencies = [
     "keycardai-oauth>=0.5.0",
     "mcp>=1.13.1",

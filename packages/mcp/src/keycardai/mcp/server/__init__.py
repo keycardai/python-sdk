@@ -1,1 +1,1 @@
-"""Keycard AI MCP Server package."""
+"""Keycard MCP Server package."""

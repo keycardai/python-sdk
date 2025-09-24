@@ -1,1 +1,1 @@
-"""KeyCard AI OAuth SDK HTTP Package"""
+"""Keycard OAuth SDK HTTP Package"""
