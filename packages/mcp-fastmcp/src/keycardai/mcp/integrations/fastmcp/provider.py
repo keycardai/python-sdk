@@ -1,8 +1,8 @@
-"""KeyCard authentication provider for FastMCP.
+"""Keycard authentication provider for FastMCP.
 
-This module provides AuthProvider, which integrates KeyCard's OAuth
+This module provides AuthProvider, which integrates Keycard's OAuth
 token verification with FastMCP's authentication system. The AuthProvider
-creates a RemoteAuthProvider instance with automatic KeyCard zone discovery
+creates a RemoteAuthProvider instance with automatic Keycard zone discovery
 and JWT token verification.
 """
 
@@ -138,14 +138,14 @@ class AccessContext:
 
 
 class AuthProvider:
-    """KeyCard authentication provider for FastMCP.
+    """Keycard authentication provider for FastMCP.
 
-    This provider integrates KeyCard's zone-based authentication with FastMCP's
-    authentication system. It provides a clean interface for configuring KeyCard
+    This provider integrates Keycard's zone-based authentication with FastMCP's
+    authentication system. It provides a clean interface for configuring Keycard
     authentication and returns a RemoteAuthProvider instance for FastMCP integration.
 
     Features:
-    - Automatic KeyCard zone metadata discovery
+    - Automatic Keycard zone metadata discovery
     - JWT token verification with JWKS endpoint discovery
     - Configurable OAuth scope requirements
     - RemoteAuthProvider creation for FastMCP integration
@@ -219,14 +219,14 @@ class AuthProvider:
         auth: AuthStrategy | None = None,
         client_factory: ClientFactory | None = None,
     ):
-        """Initialize KeyCard authentication provider.
+        """Initialize Keycard authentication provider.
 
         Args:
-            zone_id: KeyCard zone ID for OAuth operations.
-            zone_url: KeyCard zone URL for OAuth operations. If not provided and zone_id is given,
+            zone_id: Keycard zone ID for OAuth operations.
+            zone_url: Keycard zone URL for OAuth operations. If not provided and zone_id is given,
                      will be constructed using base_url or default keycard.cloud domain.
             mcp_server_name: Human-readable service name for metadata
-            required_scopes: Required KeyCard scopes for access
+            required_scopes: Required Keycard scopes for access
             mcp_base_url: Resource server URL for the FastMCP server
             base_url: Base URL for Keycard tenant
             auth: Authentication strategy for OAuth operations. Defaults to NoneAuth() for
@@ -300,19 +300,19 @@ class AuthProvider:
         """
         metadata = client.discover_server_metadata()
         if not metadata.jwks_uri:
-            raise Exception("KeyCard zone does not provide a JWKS URI")
+            raise Exception("Keycard zone does not provide a JWKS URI")
         return metadata.jwks_uri
 
     def get_jwt_token_verifier(self) -> JWTVerifier:
-        """Create a JWT token verifier for KeyCard zone tokens.
+        """Create a JWT token verifier for Keycard zone tokens.
 
-        Discovers KeyCard zone metadata and creates a JWTVerifier configured
+        Discovers Keycard zone metadata and creates a JWTVerifier configured
         with the zone's JWKS URI and issuer information.
 
         This method uses eager discovery of the zone metadata, and performs HTTP calls using the initialized client.
 
         Returns:
-            JWTVerifier: Configured JWT token verifier for the KeyCard zone
+            JWTVerifier: Configured JWT token verifier for the Keycard zone
 
         Raises:
             MetadataDiscoveryError: If zone metadata discovery fails
@@ -326,7 +326,7 @@ class AuthProvider:
         )
 
     def get_remote_auth_provider(self) -> RemoteAuthProvider:
-        """Get a RemoteAuthProvider instance configured for KeyCard authentication.
+        """Get a RemoteAuthProvider instance configured for Keycard authentication.
 
         This method uses eager discovery of the zone metadata, and performs HTTP calls using the initialized client.
 

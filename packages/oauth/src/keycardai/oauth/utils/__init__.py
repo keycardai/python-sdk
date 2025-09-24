@@ -1,1 +1,1 @@
-"""KeyCard AI OAuth Utils"""
+"""Keycard OAuth Utils"""

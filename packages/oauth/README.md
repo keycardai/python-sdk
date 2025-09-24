@@ -1,4 +1,4 @@
-# KeyCard AI OAuth SDK
+# Keycard OAuth SDK
 
 A comprehensive Python SDK for OAuth 2.0 functionality implementing multiple OAuth 2.0 standards for enterprise-grade token management.
 
@@ -60,7 +60,7 @@ with Client("https://oauth.example.com/token") as client:
 
 ## Development
 
-This package is part of the [KeycardAI Python SDK workspace](../../README.md). 
+This package is part of the [Keycard Python SDK workspace](../../README.md). 
 
 To develop:
 

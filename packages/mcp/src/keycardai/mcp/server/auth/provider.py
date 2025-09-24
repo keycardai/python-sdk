@@ -142,7 +142,7 @@ class AccessContext:
 
 
 class AuthProvider:
-    """KeyCard authentication provider with token exchange capabilities.
+    """Keycard authentication provider with token exchange capabilities.
 
     This provider handles both authentication (token verification) and authorization
     (token exchange for resource access) in MCP servers.
@@ -195,11 +195,11 @@ class AuthProvider:
         client_factory: ClientFactory | None = None,
         enable_dynamic_client_registration: bool | None = None,
     ):
-        """Initialize the KeyCard auth provider.
+        """Initialize the Keycard auth provider.
 
         Args:
-            zone_id: KeyCard zone ID for OAuth operations.
-            zone_url: KeyCard zone URL for OAuth operations. When enable_multi_zone=True,
+            zone_id: Keycard zone ID for OAuth operations.
+            zone_url: Keycard zone URL for OAuth operations. When enable_multi_zone=True,
                      this should be the top-level domain (e.g., "https://keycard.cloud")
             mcp_server_name: Human-readable name for the MCP server
             required_scopes: Required scopes for token validation

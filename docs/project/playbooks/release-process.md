@@ -1,6 +1,6 @@
 # Release Process Playbook
 
-This document explains how the automated release process works in the KeycardAI Python SDK monorepo and what developers need to do to trigger releases.
+This document explains how the automated release process works in the Keycard Python SDK monorepo and what developers need to do to trigger releases.
 
 ## Overview
 

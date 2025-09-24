@@ -21,7 +21,7 @@ from .client_factory import ClientFactory, DefaultClientFactory
 
 
 class TokenVerifier:
-    """Token verifier for KeyCard zone-issued tokens."""
+    """Token verifier for Keycard zone-issued tokens."""
 
     def __init__(
         self,
@@ -34,7 +34,7 @@ class TokenVerifier:
         audience: str | dict[str, str] | None = None,
         client_factory: ClientFactory | None = None,
     ):
-        """Initialize the KeyCard token verifier.
+        """Initialize the Keycard token verifier.
 
         Args:
             issuer: Expected token issuer (required). When enable_multi_zone=True,

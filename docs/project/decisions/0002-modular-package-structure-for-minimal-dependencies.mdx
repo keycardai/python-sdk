@@ -11,7 +11,7 @@ description: "Architecture decision to structure the SDK as multiple focused pac
 
 ## Context
 
-As the KeycardAI Python SDK grows to support multiple integration patterns and frameworks, we need to ensure that consumers only install the dependencies they actually need. Different users have different requirements:
+As the Keycard Python SDK grows to support multiple integration patterns and frameworks, we need to ensure that consumers only install the dependencies they actually need. Different users have different requirements:
 
 - **Core OAuth users** only need basic OAuth 2.0 client functionality
 - **FastMCP users** want OAuth integration with FastMCP servers but don't need other MCP implementations
@@ -36,7 +36,7 @@ This creates several problems:
 
 ### Real-World Example: FastMCP Integration
 
-Consider a user who wants to add KeyCard OAuth to their existing FastMCP server:
+Consider a user who wants to add Keycard OAuth to their existing FastMCP server:
 
 ```python
 # With modular structure ✅
@@ -50,7 +50,7 @@ The modular approach installs only the essential dependencies, while a monolithi
 
 ## Decision
 
-We will structure the KeycardAI Python SDK as **multiple focused packages** rather than a single monolithic package, following the principle of **minimal necessary dependencies**.
+We will structure the Keycard Python SDK as **multiple focused packages** rather than a single monolithic package, following the principle of **minimal necessary dependencies**.
 
 ### Package Structure
 

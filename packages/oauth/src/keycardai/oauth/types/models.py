@@ -347,14 +347,14 @@ class ClientConfig:
     timeout: float = 30.0
     max_retries: int = 3
     verify_ssl: bool = True
-    user_agent: str = "KeyCardAI-OAuth/0.0.1"
+    user_agent: str = "Keycard-OAuth/0.0.1"
     custom_headers: dict[str, str] | None = None
 
     enable_metadata_discovery: bool = True
     auto_register_client: bool = False
 
     client_id: str | None = None
-    client_name: str = "KeycardAI OAuth Client"
+    client_name: str = "Keycard OAuth Client"
     client_redirect_uris: list[str] = field(default_factory=lambda: ["http://localhost:8080/callback"])
     client_grant_types: list[GrantType] = field(default_factory=lambda: [GrantType.AUTHORIZATION_CODE, GrantType.REFRESH_TOKEN, GrantType.TOKEN_EXCHANGE])
     client_token_endpoint_auth_method: TokenEndpointAuthMethod = field(default_factory=lambda: TokenEndpointAuthMethod.NONE)

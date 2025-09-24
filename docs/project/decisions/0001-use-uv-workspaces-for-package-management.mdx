@@ -1,6 +1,6 @@
 ---
 title: "ADR-0001: Use uv Workspaces for Multi-Package Development"
-description: "Architecture decision to use uv workspaces for managing multiple related packages in the KeyCard Python SDK"
+description: "Architecture decision to use uv workspaces for managing multiple related packages in the Keycard Python SDK"
 ---
 
 # ADR-0001: Use uv Workspaces for Multi-Package Development
@@ -11,7 +11,7 @@ description: "Architecture decision to use uv workspaces for managing multiple r
 
 ## Context
 
-KeycardAI is developing a Python SDK that will consist of multiple related packages (starting with keycard-oauth). We need to decide on the optimal development and packaging strategy that balances:
+Keycard is developing a Python SDK that will consist of multiple related packages (starting with keycard-oauth). We need to decide on the optimal development and packaging strategy that balances:
 
 - Development velocity and convenience
 - Dependency management and consistency
@@ -26,7 +26,7 @@ KeycardAI is developing a Python SDK that will consist of multiple related packa
 
 ## Decision
 
-We will use **uv workspaces** for multi-package development in the KeycardAI Python SDK.
+We will use **uv workspaces** for multi-package development in the Keycard Python SDK.
 
 ### Key Implementation Details
 

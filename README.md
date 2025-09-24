@@ -1,6 +1,6 @@
-# KeyCard Python SDK
+# Keycard Python SDK
 
-A collection of Python packages for KeyCard services, organized as a uv workspace.
+A collection of Python packages for Keycard services, organized as a uv workspace.
 
 ## Requirements
 
@@ -58,7 +58,7 @@ or
 uv add keycardai-mcp
 ```
 
-### Get Your KeyCard Zone ID
+### Get Your Keycard Zone ID
 
 1. Sign up at [keycard.ai](https://keycard.ai)
 2. Navigate to Zone Settings to get your zone ID
@@ -78,7 +78,7 @@ mcp = FastMCP("My Secure MCP Server")
 def my_protected_tool(data: str) -> str:
     return f"Processed: {data}"
 
-# Add KeyCard authentication
+# Add Keycard authentication
 access = AuthProvider(
     zone_id="your_zone_id_here",
     mcp_server_name="My Secure MCP Server",
@@ -141,7 +141,7 @@ or
 uv add keycardai-mcp-fastmcp
 ```
 
-### Get Your KeyCard Zone ID
+### Get Your Keycard Zone ID
 
 1. Sign up at [keycard.ai](https://keycard.ai)
 2. Navigate to Zone Settings to get your zone ID
@@ -154,7 +154,7 @@ uv add keycardai-mcp-fastmcp
 from fastmcp import FastMCP, Context
 from keycardai.mcp.integrations.fastmcp import AuthProvider
 
-# Configure KeyCard authentication
+# Configure Keycard authentication
 auth_provider = AuthProvider(
     zone_id="your-zone-id",  # Get this from keycard.ai
     mcp_server_name="My Secure FastMCP Server",
@@ -181,7 +181,7 @@ if __name__ == "__main__":
 from fastmcp import FastMCP, Context
 from keycardai.mcp.integrations.fastmcp import AuthProvider, AccessContext
 
-# Configure KeyCard authentication
+# Configure Keycard authentication
 auth_provider = AuthProvider(
     zone_id="your-zone-id",
     mcp_server_name="My Secure FastMCP Server",
@@ -228,13 +228,13 @@ Configure the remote MCP in your AI client, like [Cursor](https://cursor.com/?fr
 }
 ```
 
-### 🎉 Your MCP server is now protected with KeyCard authentication! 🎉
+### 🎉 Your MCP server is now protected with Keycard authentication! 🎉
 
 ## Features
 
 ### Delegated Access
 
-KeyCard allows MCP servers to access other resources on behalf of users with automatic consent and secure token exchange.
+Keycard allows MCP servers to access other resources on behalf of users with automatic consent and secure token exchange.
 
 #### Setup Protected Resources
 
@@ -246,7 +246,7 @@ KeyCard allows MCP servers to access other resources on behalf of users with aut
 
 ## Overview
 
-This workspace contains multiple Python packages that provide various KeyCard functionality:
+This workspace contains multiple Python packages that provide various Keycard functionality:
 
 - **keycardai-oauth**: OAuth 2.0 implementation with support for RFC 8693 (Token Exchange)
 - **keycardai-mcp**: Core MCP (Model Context Protocol) integration utilities for standard MCP servers

@@ -5,7 +5,7 @@ description = "A Python SDK for OAuth 2.0 functionality implementing multiple OA
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
-authors = [{ name = "KeyCard AI", email = "support@keycard.ai" }]
+authors = [{ name = "Keycard", email = "support@keycard.ai" }]
 dependencies = [
     "pydantic>=2.11.7",
     "httpx>=0.28.1",

@@ -2,7 +2,7 @@
 """
 Dynamic Client Registration (DCR) Example with Server Metadata
 
-Demonstrates OAuth 2.0 Dynamic Client Registration (RFC 7591) with KeyCard
+Demonstrates OAuth 2.0 Dynamic Client Registration (RFC 7591) with Keycard
 using real server metadata and endpoint configuration.
 Registers a client for authorization code flow with refresh token support.
 """

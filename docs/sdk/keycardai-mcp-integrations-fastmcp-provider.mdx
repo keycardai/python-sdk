@@ -6,9 +6,9 @@ sidebarTitle: provider
 # `keycardai.mcp.integrations.fastmcp.provider`
 
 
-KeyCard authentication provider for FastMCP.
+Keycard authentication provider for FastMCP.
 
-This module provides KeycardAuthProvider, which integrates KeyCard's OAuth
+This module provides KeycardAuthProvider, which integrates Keycard's OAuth
 token verification with FastMCP's authentication system using the RemoteAuthProvider
 pattern for clean separation of concerns.
 
@@ -18,9 +18,9 @@ pattern for clean separation of concerns.
 ### `KeycardTokenVerifier` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/integrations/fastmcp/provider.py#L21" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
-Token verifier for KeyCard zone-issued tokens.
+Token verifier for Keycard zone-issued tokens.
 
-This verifier automatically discovers KeyCard zone endpoints using the Keycard client,
+This verifier automatically discovers Keycard zone endpoints using the Keycard client,
 extracts the JWKS URI, and uses FastMCP's JWTVerifier for actual token verification.
 This provides the best of both worlds: automatic endpoint discovery and robust JWT validation.
 
@@ -28,20 +28,20 @@ This provides the best of both worlds: automatic endpoint discovery and robust J
 ### `KeycardAuthProviderSettings` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/integrations/fastmcp/provider.py#L77" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
-Settings for KeyCard authentication provider.
+Settings for Keycard authentication provider.
 
 
 ### `KeycardAuthProvider` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/integrations/fastmcp/provider.py#L93" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
-Complete KeyCard authentication provider for FastMCP.
+Complete Keycard authentication provider for FastMCP.
 
-This provider integrates KeyCard's zone-based authentication with FastMCP's
-authentication system. It uses KeyCard's token introspection endpoint to
+This provider integrates Keycard's zone-based authentication with FastMCP's
+authentication system. It uses Keycard's token introspection endpoint to
 verify tokens and provides RFC 9728 compliant protected resource metadata.
 
 Features:
-- Token verification via KeyCard zone introspection (RFC 7662)
+- Token verification via Keycard zone introspection (RFC 7662)
 - Automatic authorization server discovery from zone
 - RFC 9728 protected resource metadata endpoints
 - Configurable scope requirements

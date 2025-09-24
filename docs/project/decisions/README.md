@@ -1,6 +1,6 @@
 # Architecture Decision Records (ADRs)
 
-This directory contains Architecture Decision Records for the KeycardAI Python SDK project.
+This directory contains Architecture Decision Records for the Keycard Python SDK project.
 
 ## What are ADRs?
 

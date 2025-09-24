@@ -1,7 +1,7 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "name": "KeyCard Python SDK",
-  "description": "Python SDK for KeyCard OAuth 2.0 and Model Context Protocol (MCP) integration.",
+  "name": "Keycard Python SDK",
+  "description": "Python SDK for Keycard OAuth 2.0 and Model Context Protocol (MCP) integration.",
   "theme": "linden",
   "colors": {
     "primary": "#5B5BD6",

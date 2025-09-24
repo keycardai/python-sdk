@@ -1,11 +1,11 @@
 [project]
 name = "keycardai-mcp-fastmcp"
 dynamic = ["version"]
-description = "FastMCP integration for KeyCard OAuth client with automated token exchange and authentication"
+description = "FastMCP integration for Keycard OAuth client with automated token exchange and authentication"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
-authors = [{ name = "KeyCard AI", email = "support@keycard.ai" }]
+authors = [{ name = "Keycard", email = "support@keycard.ai" }]
 dependencies = [
     "pydantic>=2.11.7",
     "pydantic-settings>=2.7.1",

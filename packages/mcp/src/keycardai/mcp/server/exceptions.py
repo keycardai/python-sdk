@@ -1,4 +1,4 @@
-"""Exception classes for KeyCard MCP integration.
+"""Exception classes for Keycard MCP integration.
 
 This module defines all custom exceptions used throughout the mcp package,
 providing clear error types and documentation for different failure scenarios.
@@ -8,7 +8,7 @@ from __future__ import annotations
 
 
 class MCPServerError(Exception):
-    """Base exception for all KeyCard MCP server errors.
+    """Base exception for all Keycard MCP server errors.
 
     This is the base class for all exceptions raised by the KeyCard MCP
     server package. It provides a common interface for error handling
@@ -63,11 +63,11 @@ class OAuthClientConfigurationError(MCPServerError):
 
 
 class MetadataDiscoveryError(MCPServerError):
-    """Raised when KeyCard zone metadata discovery fails."""
+    """Raised when Keycard zone metadata discovery fails."""
 
     def __init__(self, issuer: str | None = None, zone_id: str | None = None):
         """Initialize zone discovery error."""
-        message = "Failed to discover KeyCard zone endpoints"
+        message = "Failed to discover Keycard zone endpoints"
         if issuer:
             message += f" from issuer: {issuer}"
         if zone_id:
@@ -92,7 +92,7 @@ class JWKSValidationError(MCPServerError):
     def __init__(self):
         """Initialize JWKS validation error."""
         super().__init__(
-            "KeyCard zone does not provide a JWKS URI",
+            "Keycard zone does not provide a JWKS URI",
         )
 
 
@@ -165,7 +165,7 @@ class MissingContextError(MCPServerError):
 class MissingAccessContextError(MCPServerError):
     """Raised when grant decorator encounters a missing AccessContext error."""
 
-    def __init__(self, message: str = "Missing AccessContext parameter. Ensure the AccessContext parameter is properly annotated."):
+    def __init__(self, message: str = "Missing AccessContext parameter. Ensure the AccessContext parameter is properly annotated, and set via named parameter (kwargs)."):
         """Initialize missing access context error."""
         super().__init__(message)
 

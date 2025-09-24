@@ -1,6 +1,6 @@
 # Dynamic Client Registration Example with Server Metadata
 
-Demonstration of OAuth 2.0 Dynamic Client Registration (RFC 7591) using real KeyCard server metadata and endpoint configuration.
+Demonstration of OAuth 2.0 Dynamic Client Registration (RFC 7591) using real Keycard server metadata and endpoint configuration.
 
 ## What it does
 
@@ -15,7 +15,7 @@ Registers a new OAuth client with:
 
 ## Features
 
-- **Real server metadata**: Uses actual KeyCard authorization server endpoints
+- **Real server metadata**: Uses actual Keycard authorization server endpoints
 - **Endpoint configuration**: Demonstrates how to configure custom endpoints
 - **Comprehensive output**: Shows all registration details including access tokens and URIs
 - **Error handling**: Graceful handling of registration failures
@@ -59,4 +59,4 @@ Client Secret: Never expires
 
 - Python 3.10+
 - keycardai-oauth package
-- Access to a KeyCard authorization server
+- Access to a Keycard authorization server
