@@ -1,3 +1,8 @@
+## 0.7.0-keycardai-mcp (2025-09-27)
+
+
+- feat(keycardai-mcp): lowlevel support for RequestContext
+
 ## 0.6.0-keycardai-mcp (2025-09-23)
 
 
