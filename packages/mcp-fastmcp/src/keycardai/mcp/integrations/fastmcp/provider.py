@@ -451,13 +451,11 @@ class AuthProvider:
                     if not user_token:
                         _set_error({
                             "error": "No authentication token available. Please ensure you're properly authenticated.",
-                            "error_code": "authentication_required",
                         }, None, access_context, ctx)
                         return await _call_func(func, *args, **kwargs)
                 except Exception as e:
                     _set_error({
-                        "error": "Failed to get access token from FastMCP context. Ensure the Context parameter is properly annotated.",
-                        "error_code": "unexpected_error",
+                        "error": "Failed to get access token from context. Ensure the Context parameter is properly annotated.",
                         "raw_error": str(e),
                     }, None, access_context, ctx)
                     return await _call_func(func, *args, **kwargs)
@@ -474,7 +472,6 @@ class AuthProvider:
                     except Exception as e:
                         _set_error({
                             "error": f"Token exchange failed for {resource}: {e}",
-                            "error_code": "exchange_token_failed",
                             "raw_error": str(e),
                         }, resource, access_context, ctx)
                         return await _call_func(func, *args, **kwargs)
