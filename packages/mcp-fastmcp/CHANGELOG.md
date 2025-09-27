@@ -1,3 +1,8 @@
+## 0.7.0-keycardai-mcp-fastmcp (2025-09-27)
+
+
+- refactor(keycardai-mcp-fastmcp): remove the error codes from AccessContext
+
 ## 0.6.0-keycardai-mcp-fastmcp (2025-09-22)
 
 
