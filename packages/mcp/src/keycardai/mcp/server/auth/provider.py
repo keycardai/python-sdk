@@ -8,6 +8,7 @@ from typing import Any
 
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.fastmcp import Context, FastMCP
+from mcp.shared.context import RequestContext
 from pydantic import AnyHttpUrl
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
@@ -438,121 +439,162 @@ class AuthProvider:
         - Preserves original function signature and behavior
         - Provides detailed error messages for debugging
         """
+        """
+        Return the name and the index of the parameter with the given type.
+        Used to locatethe AccessContext parameter.
+        """
+        def _get_param_info_by_type(func: Callable, param_type: type) -> tuple[str, int] | None:
+            sig = inspect.signature(func)
+            for index, value in enumerate(sig.parameters.values()):
+                if value.annotation == param_type:
+                    return value.name, index
+            return None
+
+        """
+        @mcp.tool() decorator uses function signatures to construct tool schemas.
+        The access context is not supposed to be added to the LLM tool call signature.
+        This helper returns tool func signature without the AccessContext parameter.
+        """
+        def _get_safe_func_signature(func: Callable) -> inspect.Signature:
+            sig = inspect.signature(func)
+            safe_params = []
+            for param in sig.parameters.values():
+                if param.annotation == AccessContext:
+                    continue
+                safe_params.append(param)
+            return sig.replace(parameters=safe_params)
+
+        """
+        Return the Context parameter from the function arguments.
+        """
+        def _get_context(*args, **kwargs) -> Context | None:
+            for value in args:
+                if isinstance(value, Context):
+                    return value
+            for value in kwargs.values():
+                if isinstance(value, Context):
+                    return value
+            return None
+
+        """
+        Return the RequestContext parameter from the function arguments.
+        """
+        def _get_request_context(*args, **kwargs) -> RequestContext | None:
+            for value in args:
+                if isinstance(value, RequestContext):
+                    return value
+            for value in kwargs.values():
+                if isinstance(value, RequestContext):
+                    return value
+            return None
+
+        """
+        The auth info object is set by the bearer token middleware during authorization.
+        This helper extracts the auth info from the request context from either the RequestContext or the Context parameter.
+        Required to support both FastMCP and lowlevel server implementations.
+        """
+        def _extract_auth_info_from_context(
+            *args, **kwargs
+        ) -> dict[str, str] | None:
+            """Use _var naming to avoid clashing with the args, kwargs."""
+            _request_context = _get_request_context(*args, **kwargs)
+            if _request_context is None:
+                _fastmcp_context = _get_context(*args, **kwargs)
+                if _fastmcp_context is not None:
+                    _request_context = _fastmcp_context.request_context
+            if _request_context is None:
+                return None
+            try:
+                return _request_context.request.state.keycardai_auth_info
+            except Exception:
+                return None
+
+        """
+        Helper to set error context on the AccessContext.
+        """
+        def _set_error(error: dict[str, str], resource: str | None, access_context: AccessContext):
+            """Helper to set error context."""
+            if resource:
+                access_context.set_resource_error(resource, error)
+            else:
+                access_context.set_error(error)           # mcp.server.fastmcp always runs in async mode
+
+        """
+        The mcp package always runs in async mode, however users can supply functions with either sync or async signature.
+        This helper calls the function with the appropriate signature.
+        """
+        async def _call_func(_is_async_func: bool, func: Callable, *args, **kwargs):
+            if _is_async_func:
+                return await func(*args, **kwargs)
+            else:
+                return func(*args, **kwargs)
+
+        def _is_access_ctx_in_args(access_ctx_param_index: int, args: tuple) -> bool:
+            return access_ctx_param_index < len(args)
+
+        def _get_access_ctx_from_args(_access_ctx_param_index: str, *args) -> tuple:
+            if isinstance(args[_access_ctx_param_index], AccessContext):
+                return args, args[_access_ctx_param_index]
+            _new_args = (*args[:_access_ctx_param_index], AccessContext(), *args[_access_ctx_param_index + 1:])
+            return _new_args, _new_args[_access_ctx_param_index]
+
         def decorator(func: Callable) -> Callable:
-            def _get_param_name_by_type(func: Callable, param_type: type) -> str | None:
-                sig = inspect.signature(func)
-                for value in sig.parameters.values():
-                    if value.annotation == param_type:
-                        return value.name
-                return None
-
-            """
-            @mcp.tool() decorator uses function signatures to construct tool schemas.
-            The access context is not supposed to be added to the LLM tool call signature.
-            This helper returns tool func signature without the AccessContext parameter.
-            """
-            def _get_safe_func_signature(func: Callable) -> inspect.Signature:
-                sig = inspect.signature(func)
-                safe_params = []
-                for param in sig.parameters.values():
-                    if param.annotation == AccessContext:
-                        continue
-                    safe_params.append(param)
-                return sig.replace(parameters=safe_params)
-
-            def _get_context(*args, **kwargs) -> Context | None:
-                for value in args:
-                    if isinstance(value, Context):
-                        return value
-                for value in kwargs.values():
-                    if isinstance(value, Context):
-                        return value
-                return None
-
-            """
-            The FastMCP Context object abstracts the request context.
-            This helper extracts the auth info from the request context.
-            The auth info object is set by the bearer token middleware during authorization.
-            """
-            def _extract_auth_info_from_context(
-                *args, **kwargs
-            ) -> dict[str, str] | None:
-                """Use _var naming to avoid clashing with the args, kwargs."""
-                _fastmcp_request_context = _get_context(*args, **kwargs)
-                if _fastmcp_request_context is None:
-                    return None
-                try:
-                    return _fastmcp_request_context.request_context.request.state.keycardai_auth_info
-                except Exception:
-                    return None
-
-            def _set_error(error: dict[str, str], resource: str | None, access_context: AccessContext):
-                """Helper to set error context."""
-                if resource:
-                    access_context.set_resource_error(resource, error)
-                else:
-                    access_context.set_error(error)           # mcp.server.fastmcp always runs in async mode
-
-            async def _call_func(_is_async_func: bool, func: Callable, *args, **kwargs):
-                if _is_async_func:
-                    return await func(*args, **kwargs)
-                else:
-                    return func(*args, **kwargs)
-
             _is_async_func = inspect.iscoroutinefunction(func)
-            if _get_param_name_by_type(func, Context) is None:
-                raise MissingContextError()
+            if _get_param_info_by_type(func, Context) is None:
+                if _get_param_info_by_type(func, RequestContext) is None:
+                    raise MissingContextError()
 
-            _access_ctx_param_name = _get_param_name_by_type(func, AccessContext)
-            if _access_ctx_param_name is None:
+            _access_ctx_param_info = _get_param_info_by_type(func, AccessContext)
+            if _access_ctx_param_info is None:
                 raise MissingAccessContextError()
             @wraps(func)
             async def wrapper(*args, **kwargs) -> Any:
-                kwargs[_access_ctx_param_name] = AccessContext()
+                _access_ctx = None
+                if _is_access_ctx_in_args(_access_ctx_param_info[1], args):
+                    args, _access_ctx = _get_access_ctx_from_args(_access_ctx_param_info[1], *args)
+                elif _access_ctx_param_info[0] not in kwargs or kwargs[_access_ctx_param_info[0]] is None:
+                    kwargs[_access_ctx_param_info[0]] = AccessContext()
+                    _access_ctx = kwargs[_access_ctx_param_info[0]]
+                else:
+                    _access_ctx = kwargs[_access_ctx_param_info[0]]
                 _keycardai_auth_info: dict[str, str] | None = None
                 try:
                     _keycardai_auth_info = _extract_auth_info_from_context(*args, **kwargs)
                     if not _keycardai_auth_info:
                         _set_error({
                             "error": "No request authentication information available. Ensure the provider is correctly configured.",
-                            "error_code": "provider_configuration",
-                        }, None, kwargs[_access_ctx_param_name])
+                        }, None, _access_ctx)
                         return await _call_func(_is_async_func, func, *args, **kwargs)
 
                     if not _keycardai_auth_info["access_token"]:
                         _set_error({
                             "error": "No authentication token available. Please ensure you're properly authenticated.",
-                            "error_code": "authentication_required",
-                        }, None, kwargs[_access_ctx_param_name])
+                        }, None, _access_ctx)
                         return await _call_func(_is_async_func, func, *args, **kwargs)
                 except Exception as e:
                     _set_error({
                         "error": "Failed to get access token from context. Ensure the Context parameter is properly annotated.",
-                        "error_code": "unexpected_error",
                         "raw_error": str(e),
-                    }, None, kwargs[_access_ctx_param_name])
+                    }, None, _access_ctx)
                     return await _call_func(_is_async_func, func, *args, **kwargs)
                 _client = None
                 if self.enable_multi_zone and not _keycardai_auth_info["zone_id"]:
                     _set_error({
                         "error": "Zone ID is required for multi-zone configuration but not found in request.",
-                        "error_code": "configuration_error",
-                    }, None, kwargs[_access_ctx_param_name])
+                    }, None, _access_ctx)
                     return await _call_func(_is_async_func, func, *args, **kwargs)
                 try:
                     _client = await self._get_or_create_client(_keycardai_auth_info)
                     if _client is None:
                         _set_error({
                             "error": "OAuth client not available. Server configuration issue.",
-                            "error_code": "configuration_error",
-                        }, None, kwargs[_access_ctx_param_name])
+                        }, None, _access_ctx)
                         return await _call_func(_is_async_func, func, *args, **kwargs)
                 except Exception as e:
                     _set_error({
                         "error": "Failed to initialize OAuth client. Server configuration issue.",
-                        "error_code": "configuration_error",
                         "raw_error": str(e),
-                    }, None, kwargs[_access_ctx_param_name])
+                    }, None, _access_ctx)
                     return await _call_func(_is_async_func, func, *args, **kwargs)
                 _resource_list = (
                     [resources] if isinstance(resources, str) else resources
@@ -573,9 +615,8 @@ class AuthProvider:
                         except Exception as e:
                             _set_error({
                                 "error": f"Token exchange failed for {resource} with client id: {_keycardai_auth_info['resource_client_id']}: {e}",
-                                "error_code": "exchange_token_failed",
                                 "raw_error": str(e),
-                            }, resource, kwargs[_access_ctx_param_name])
+                            }, resource, _access_ctx)
                     else:
                         try:
                             _token_response = await _client.exchange_token(
@@ -587,12 +628,11 @@ class AuthProvider:
                         except Exception as e:
                             _set_error({
                                 "error": f"Token exchange failed for {resource}: {e}",
-                                "error_code": "exchange_token_failed",
                                 "raw_error": str(e),
-                            }, resource, kwargs[_access_ctx_param_name])
+                            }, resource, _access_ctx)
 
                 # Set successful tokens on the existing access_context (preserves any resource errors)
-                kwargs[_access_ctx_param_name].set_bulk_tokens(_access_tokens)
+                _access_ctx.set_bulk_tokens(_access_tokens)
                 return await _call_func(_is_async_func, func, *args, **kwargs)
             wrapper.__signature__ = _get_safe_func_signature(func)
             return wrapper
