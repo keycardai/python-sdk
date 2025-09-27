@@ -33,12 +33,12 @@ def check_access_context_for_errors(access_ctx: AccessContext, resource: str = N
     # Check for global error first
     if access_ctx.has_error():
         error = access_ctx.get_error()
-        return {"error": error["error"], "isError": True, "errorType": error["error_code"]}
+        return {"error": error["error"], "isError": True}
 
     # Check for resource-specific error if resource specified
     if resource and access_ctx.has_resource_error(resource):
         error = access_ctx.get_resource_error(resource)
-        return {"error": error["error"], "isError": True, "errorType": error["error_code"]}
+        return {"error": error["error"], "isError": True}
 
     return None
 
@@ -111,7 +111,7 @@ class TestGrantDecoratorExecution:
             # Check if there's an error in the access context
             if access_ctx.has_error():
                 error = access_ctx.get_error()
-                return {"error": error["error"], "isError": True, "errorType": error["error_code"]}
+                return {"error": error["error"], "isError": True}
             return f"Hello {user_id}"
 
         mock_context = create_missing_auth_info_context()
@@ -119,7 +119,6 @@ class TestGrantDecoratorExecution:
         result = await test_function(ctx=mock_context, user_id="user123")
 
         assert result["isError"] is True
-        assert result["errorType"] == "provider_configuration"
         assert "No request authentication information available" in result["error"]
 
     @pytest.mark.asyncio
@@ -141,8 +140,8 @@ class TestGrantDecoratorExecution:
             # Check if there's a resource error
             if access_ctx.has_resource_error("https://api.example.com"):
                 error = access_ctx.get_resource_errors("https://api.example.com")
-                return {"error": error["error"], "isError": True, "errorType": error["error_code"]}
-            return {"error": "No error", "isError": False, "errorType": "no_error", "access_ctx": access_ctx}
+                return {"error": error["error"], "isError": True}
+            return {"error": "No error", "isError": False, "access_ctx": access_ctx}
 
         mock_context = create_mock_context()
 
@@ -150,7 +149,6 @@ class TestGrantDecoratorExecution:
 
         assert result["error"] == "Token exchange failed for https://api.example.com: Exchange failed"
         assert result["isError"] is True
-        assert result["errorType"] == "exchange_token_failed"
 
     @pytest.mark.asyncio
     async def test_grant_decorator_successful_sync_function_with_injected_client(self, auth_provider_config, mock_client_factory):
@@ -277,7 +275,7 @@ class TestAccessContext:
         access_context = AccessContext()
 
         # Test global error
-        access_context.set_error({"error": "Global failure", "error_code": "global_error"})
+        access_context.set_error({"error": "Global failure"})
         assert access_context.has_error()
         assert access_context.get_status() == "error"
         assert access_context.get_error()["error"] == "Global failure"
@@ -286,7 +284,6 @@ class TestAccessContext:
         access_context = AccessContext()
         access_context.set_resource_error("https://api1.com", {
             "error": "Resource failed",
-            "error_code": "resource_error"
         })
         assert access_context.has_resource_error("https://api1.com")
         assert access_context.get_status() == "partial_error"
@@ -304,7 +301,6 @@ class TestAccessContext:
         access_context.set_token("https://api1.com", token_response)
         access_context.set_resource_error("https://api2.com", {
             "error": "Failed to get token",
-            "error_code": "exchange_failed"
         })
 
         # Check status
