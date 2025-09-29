@@ -538,6 +538,11 @@ class AuthProvider:
             _new_args = (*args[:_access_ctx_param_index], AccessContext(), *args[_access_ctx_param_index + 1:])
             return _new_args, _new_args[_access_ctx_param_index]
 
+        async def _get_token_exchange_audience(client: AsyncClient) -> str:
+            if not client._initialized:
+                await client._ensure_initialized()
+            return client._discovered_endpoints.token
+
         def decorator(func: Callable) -> Callable:
             _is_async_func = inspect.iscoroutinefunction(func)
             if _get_param_info_by_type(func, Context) is None:
@@ -603,14 +608,16 @@ class AuthProvider:
                 for resource in _resource_list:
                     if self.enable_private_key_identity:
                         try:
+                            _audience = await _get_token_exchange_audience(_client)
                             _token_response = await _client.exchange_token(
                                 subject_token=_keycardai_auth_info["access_token"],
                                 resource=resource,
                                 subject_token_type="urn:ietf:params:oauth:token-type:access_token",
                                 client_assertion_type=GrantType.JWT_BEARER_CLIENT_ASSERTION,
                                 client_assertion=self._identity_manager.create_client_assertion(
-                                    _keycardai_auth_info["resource_client_id"]),
-                                )
+                                    _keycardai_auth_info["resource_client_id"],
+                                    audience=_audience,
+                                ))
                             _access_tokens[resource] = _token_response
                         except Exception as e:
                             _set_error({
