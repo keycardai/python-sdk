@@ -1,3 +1,8 @@
+## 0.7.1-keycardai-mcp (2025-09-29)
+
+
+- fix(keycardai-mcp): set audience for client assertions
+
 ## 0.7.0-keycardai-mcp (2025-09-27)
 
 
