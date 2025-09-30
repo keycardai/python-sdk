@@ -319,6 +319,49 @@ Each package includes practical examples in their respective `examples/` directo
 
 For detailed examples and usage patterns, see our [documentation](https://docs.keycard.ai).
 
+## FAQ
+
+### How to test the MCP server with modelcontexprotocol/inspector?
+
+When testing your MCP server with the [modelcontexprotocol/inspector](https://github.com/modelcontextprotocol/inspector), you may need to configure CORS (Cross-Origin Resource Sharing) to allow the inspector's web interface to access your protected endpoints from localhost.
+
+**Note:** This applies specifically to the `keycardai-mcp` package. When using `keycardai-mcp-fastmcp`, no middleware is currently required as FastMCP permits access to metadata endpoints by default.
+
+You can use Starlette's built-in `CORSMiddleware` to configure CORS settings:
+
+```python
+from starlette.middleware import Middleware
+from starlette.middleware.cors import CORSMiddleware
+
+middleware = [
+    Middleware(
+        CORSMiddleware,
+        allow_origins=["*"],  # Allow all origins for testing
+        allow_credentials=True,
+        allow_methods=["*"],  # Allow all HTTP methods
+        allow_headers=["*"],  # Allow all headers
+    )
+]
+
+app = access.app(mcp, middleware=middleware)
+```
+
+**Important Security Note:** The configuration above uses permissive CORS settings (`allow_origins=["*"]`) which should **only be used for local development and testing**. In production environments, you should restrict `allow_origins` to specific domains that need access to your MCP server.
+
+For production use, consider more restrictive settings:
+
+```python
+middleware = [
+    Middleware(
+        CORSMiddleware,
+        allow_origins=["https://yourdomain.com"],  # Specific allowed origins
+        allow_credentials=True,
+        allow_methods=["GET", "POST"],  # Only required methods
+        allow_headers=["Authorization", "Content-Type"],  # Only required headers
+    )
+]
+```
+
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
