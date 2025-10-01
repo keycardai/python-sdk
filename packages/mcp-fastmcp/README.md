@@ -267,6 +267,167 @@ auth_provider = AuthProvider(
 )
 ```
 
+## Testing
+
+This section provides comprehensive guidance on testing your FastMCP servers that use Keycard authentication. The examples show how to use the `mock_access_context` utility to easily mock authentication without needing to understand the internal SDK implementation.
+
+### Overview
+
+When testing FastMCP servers with Keycard authentication, you need to mock the authentication system. The `mock_access_context` utility provides four main testing scenarios:
+
+1. **Default token** - Always returns a default access token for any resource
+2. **Custom token** - Returns a specific access token for any resource  
+3. **Resource-specific tokens** - Returns different tokens for different resources
+4. **Error scenarios** - Simulates authentication failures
+
+### Basic Test Setup
+
+### Testing Tools With Grant Decorators
+
+For tools that use the `@grant` decorator, use the `mock_access_context` utility to mock the authentication system:
+
+#### 1. Default Token (Simple Case)
+
+```python
+@pytest.mark.asyncio
+async def test_tool_with_default_token(auth_provider):
+    """Test a tool with default access token."""
+    
+    # Create FastMCP server
+    mcp = FastMCP("Test Server", auth=auth_provider.get_remote_auth_provider())
+    
+    @mcp.tool()
+    @auth_provider.grant("https://api.example.com")
+    def call_external_api(ctx: Context, query: str) -> str:
+        access_context = ctx.get_state("keycardai")
+        
+        if access_context.has_errors():
+            return f"Error: {access_context.get_errors()}"
+        
+        token = access_context.access("https://api.example.com").access_token
+        return f"API result for {query} with token {token}"
+    
+    # Test with default token
+    with mock_access_context():  # Uses "test_access_token" by default
+        async with Client(mcp) as client:
+            result = await client.call_tool("call_external_api", {"query": "test"})
+    
+    assert result is not None
+    assert "test_access_token" in result.data
+    assert "API result for test" in result.data
+```
+
+#### 2. Custom Token
+
+```python
+@pytest.mark.asyncio
+async def test_tool_with_custom_token(auth_provider):
+    """Test a tool with a specific access token."""
+    
+    mcp = FastMCP("Test Server", auth=auth_provider.get_remote_auth_provider())
+    
+    @mcp.tool()
+    @auth_provider.grant("https://api.example.com")
+    def call_external_api(ctx: Context, query: str) -> str:
+        access_context = ctx.get_state("keycardai")
+        token = access_context.access("https://api.example.com").access_token
+        return f"API result for {query} with token {token}"
+    
+    # Test with custom token
+    with mock_access_context(access_token="my_custom_token_123"):
+        async with Client(mcp) as client:
+            result = await client.call_tool("call_external_api", {"query": "test"})
+    
+    assert "my_custom_token_123" in result.data
+```
+
+#### 3. Resource-Specific Tokens
+
+```python
+@pytest.mark.asyncio
+async def test_tool_with_resource_specific_tokens(auth_provider):
+    """Test a tool with different tokens for different resources."""
+    
+    mcp = FastMCP("Test Server", auth=auth_provider.get_remote_auth_provider())
+    
+    @mcp.tool()
+    @auth_provider.grant(["https://api.example.com", "https://calendar-api.com"])
+    def sync_data(ctx: Context) -> str:
+        access_context = ctx.get_state("keycardai")
+        
+        api_token = access_context.access("https://api.example.com").access_token
+        calendar_token = access_context.access("https://calendar-api.com").access_token
+        
+        return f"API: {api_token}, Calendar: {calendar_token}"
+    
+    # Test with resource-specific tokens
+    with mock_access_context(resource_tokens={
+        "https://api.example.com": "api_token_123",
+        "https://calendar-api.com": "calendar_token_456"
+    }):
+        async with Client(mcp) as client:
+            result = await client.call_tool("sync_data", {})
+    
+    assert "api_token_123" in result.data
+    assert "calendar_token_456" in result.data
+```
+
+### Testing Error Scenarios
+
+Test how your tools handle authentication errors using the `has_errors` parameter:
+
+```python
+@pytest.mark.asyncio
+async def test_tool_with_authentication_error(auth_provider):
+    """Test tool behavior when authentication fails."""
+    
+    mcp = FastMCP("Test Server", auth=auth_provider.get_remote_auth_provider())
+    
+    @mcp.tool()
+    @auth_provider.grant("https://api.example.com")
+    def failing_tool(ctx: Context, query: str) -> str:
+        access_context = ctx.get_state("keycardai")
+        
+        # Always check for errors first
+        if access_context.has_errors():
+            return f"Authentication failed: {access_context.get_errors()}"
+        
+        token = access_context.access("https://api.example.com").access_token
+        return f"Success: {query}"
+    
+    # Test with authentication error
+    with mock_access_context(has_errors=True, error_message="Token exchange failed"):
+        async with Client(mcp) as client:
+            result = await client.call_tool("failing_tool", {"query": "test"})
+    
+    assert result is not None
+    assert "Authentication failed" in result.data
+    assert "Token exchange failed" in result.data
+
+@pytest.mark.asyncio
+async def test_tool_with_custom_error_message(auth_provider):
+    """Test tool with custom error message."""
+    
+    mcp = FastMCP("Test Server", auth=auth_provider.get_remote_auth_provider())
+    
+    @mcp.tool()
+    @auth_provider.grant("https://api.example.com")
+    def error_handling_tool(ctx: Context) -> str:
+        access_context = ctx.get_state("keycardai")
+        
+        if access_context.has_errors():
+            return f"Error occurred: {access_context.get_errors()}"
+        
+        return "Success"
+    
+    # Test with custom error message
+    with mock_access_context(has_errors=True, error_message="Custom auth error"):
+        async with Client(mcp) as client:
+            result = await client.call_tool("error_handling_tool", {})
+    
+    assert "Custom auth error" in result.data
+```
+
 ## Examples
 
 For complete examples and advanced usage patterns, see our [documentation](https://docs.keycard.ai).

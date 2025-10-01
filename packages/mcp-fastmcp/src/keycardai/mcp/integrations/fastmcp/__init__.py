@@ -66,7 +66,6 @@ Advanced Configuration:
     )
 """
 
-# Re-export commonly used auth strategies for convenience
 from keycardai.mcp.server.auth.client_factory import ClientFactory, DefaultClientFactory
 from keycardai.mcp.server.exceptions import (
     # Specific exceptions
@@ -88,6 +87,7 @@ from keycardai.oauth.http.auth import (
 )
 
 from .provider import AccessContext, AuthProvider
+from .testing import mock_access_context
 
 __all__ = [
     # Core classes
@@ -115,4 +115,7 @@ __all__ = [
     "ResourceAccessError",
     "TokenExchangeError",
     "MetadataDiscoveryError",
+
+    # Testing utilities
+    "mock_access_context",
 ]
