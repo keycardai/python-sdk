@@ -404,81 +404,81 @@ class AuthProvider:
         - Preserves original function signature and behavior
         - Provides detailed error messages for debugging
         """
+        def _has_context(func: Callable) -> bool:
+            sig = inspect.signature(func)
+            for value in sig.parameters.values():
+                if value.annotation == Context:
+                    return True
+            return False
+
+        def _get_context(*args, **kwargs) -> Context | None:
+            for value in args:
+                if isinstance(value, Context):
+                    return value
+            for value in kwargs.values():
+                if isinstance(value, Context):
+                    return value
+            return None
+
+        def _set_error(error: dict[str, str], resource: str | None, access_context: AccessContext, ctx: Context):
+            """Helper to set error context and call function."""
+            if resource:
+                access_context.set_resource_error(resource, error)
+            else:
+                access_context.set_error(error)
+            ctx.set_state("keycardai", access_context)
+
+        async def _call_func(is_async_func: bool, func: Callable, *args, **kwargs):
+            if is_async_func:
+                return await func(*args, **kwargs)
+            else:
+                return func(*args, **kwargs)
+
         def decorator(func: Callable) -> Callable:
             is_async_func = inspect.iscoroutinefunction(func)
-            def _has_context(func: Callable) -> bool:
-                sig = inspect.signature(func)
-                for value in sig.parameters.values():
-                    if value.annotation == Context:
-                        return True
-                return False
-
             if not _has_context(func):
                 raise MissingContextError()
 
-            def _get_context(*args, **kwargs) -> Context | None:
-                for value in args:
-                    if isinstance(value, Context):
-                        return value
-                for value in kwargs.values():
-                    if isinstance(value, Context):
-                        return value
-                return None
-
-            def _set_error(error: dict[str, str], resource: str | None, access_context: AccessContext, ctx: Context):
-                """Helper to set error context and call function."""
-                if resource:
-                    access_context.set_resource_error(resource, error)
-                else:
-                    access_context.set_error(error)
-                ctx.set_state("keycardai", access_context)
-
-            async def _call_func(func: Callable, *args, **kwargs):
-                if is_async_func:
-                    return await func(*args, **kwargs)
-                else:
-                    return func(*args, **kwargs)
-
             @wraps(func)
             async def wrapper(*args, **kwargs) -> Any:
-                ctx = _get_context(*args, **kwargs)
-                if ctx is None:
+                _ctx = _get_context(*args, **kwargs)
+                if _ctx is None:
                     raise MissingContextError()
 
-                access_context = AccessContext()
+                _access_context = AccessContext()
                 try:
-                    user_token = get_access_token()
-                    if not user_token:
+                    _user_token = get_access_token()
+                    if not _user_token:
                         _set_error({
                             "error": "No authentication token available. Please ensure you're properly authenticated.",
-                        }, None, access_context, ctx)
-                        return await _call_func(func, *args, **kwargs)
+                        }, None, _access_context, _ctx)
+                        return await _call_func(is_async_func, func, *args, **kwargs)
                 except Exception as e:
                     _set_error({
                         "error": "Failed to get access token from context. Ensure the Context parameter is properly annotated.",
                         "raw_error": str(e),
-                    }, None, access_context, ctx)
-                    return await _call_func(func, *args, **kwargs)
-                resource_list = [resources] if isinstance(resources, str) else resources
-                access_tokens = {}
-                for resource in resource_list:
+                    }, None, _access_context, _ctx)
+                    return await _call_func(is_async_func, func, *args, **kwargs)
+                _resource_list = [resources] if isinstance(resources, str) else resources
+                _access_tokens = {}
+                for resource in _resource_list:
                     try:
-                        token_response = await self.client.exchange_token(
-                            subject_token=user_token.token,
+                        _token_response = await self.client.exchange_token(
+                            subject_token=_user_token.token,
                             resource=resource,
                             subject_token_type="urn:ietf:params:oauth:token-type:access_token"
                         )
-                        access_tokens[resource] = token_response
+                        _access_tokens[resource] = _token_response
                     except Exception as e:
                         _set_error({
                             "error": f"Token exchange failed for {resource}: {e}",
                             "raw_error": str(e),
-                        }, resource, access_context, ctx)
-                        return await _call_func(func, *args, **kwargs)
+                        }, resource, _access_context, _ctx)
+                        return await _call_func(is_async_func, func, *args, **kwargs)
 
                 # Set successful tokens on the existing access_context (preserves any resource errors)
-                access_context.set_bulk_tokens(access_tokens)
-                ctx.set_state("keycardai", access_context)
-                return await _call_func(func, *args, **kwargs)
+                _access_context.set_bulk_tokens(_access_tokens)
+                _ctx.set_state("keycardai", _access_context)
+                return await _call_func(is_async_func, func, *args, **kwargs)
             return wrapper
         return decorator
