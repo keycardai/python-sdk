@@ -1,3 +1,8 @@
+## 0.8.0-keycardai-mcp-fastmcp (2025-10-01)
+
+
+- feat(keycardai-mcp-fastmcp): ability to mock internal access context for testing
+
 ## 0.7.0-keycardai-mcp-fastmcp (2025-09-27)
 
 
