@@ -22,9 +22,9 @@ from fastmcp.server.dependencies import get_access_token
 from keycardai.mcp.server.auth.client_factory import ClientFactory, DefaultClientFactory
 from keycardai.mcp.server.exceptions import (
     AuthProviderConfigurationError,
-    MetadataDiscoveryError,
+    AuthProviderInternalError,
+    AuthProviderRemoteError,
     MissingContextError,
-    OAuthClientConfigurationError,
     ResourceAccessError,
 )
 from keycardai.oauth import AsyncClient, Client
@@ -124,15 +124,27 @@ class AccessContext:
         """
         # Check for global error first
         if self.has_error():
-            raise ResourceAccessError()
+            raise ResourceAccessError(
+                resource=resource,
+                error_type="global_error",
+                error_details=self.get_error()
+            )
 
         # Check for resource-specific error
         if self.has_resource_error(resource):
-            raise ResourceAccessError()
+            raise ResourceAccessError(
+                resource=resource,
+                error_type="resource_error",
+                error_details=self.get_resource_errors(resource)
+            )
 
         # Check if token exists
         if resource not in self._access_tokens:
-            raise ResourceAccessError()
+            raise ResourceAccessError(
+                resource=resource,
+                error_type="missing_token",
+                available_resources=list(self._access_tokens.keys())
+            )
 
         return self._access_tokens[resource]
 
@@ -144,13 +156,6 @@ class AuthProvider:
     authentication system. It provides a clean interface for configuring Keycard
     authentication and returns a RemoteAuthProvider instance for FastMCP integration.
 
-    Features:
-    - Automatic Keycard zone metadata discovery
-    - JWT token verification with JWKS endpoint discovery
-    - Configurable OAuth scope requirements
-    - RemoteAuthProvider creation for FastMCP integration
-    - Support for both zone_id and zone_url configuration
-    - Token exchange with grant decorator for delegated access
 
     Example:
         ```python
@@ -232,9 +237,14 @@ class AuthProvider:
             auth: Authentication strategy for OAuth operations. Defaults to NoneAuth() for
                  automatic client registration. For client credentials, use BasicAuth
             client_factory: Client factory for creating OAuth clients. Defaults to DefaultClientFactory
+
+        Raises:
+            AuthProviderConfigurationError: If neither zone_url nor zone_id is provided, or if custom client factory fails
+            AuthProviderInternalError: If default OAuth client creation fails (internal SDK issue - contact support)
+            AuthProviderRemoteError: If cannot connect to Keycard zone (check zone configuration or contact support)
         """
         if zone_url is None and zone_id is None:
-            raise AuthProviderConfigurationError()
+            raise AuthProviderConfigurationError(zone_url=zone_url, zone_id=zone_id)
 
         self.zone_url = self._build_zone_url(zone_url, zone_id, base_url)
         self.mcp_server_name = mcp_server_name or "Authenticated FastMCP Server"
@@ -244,19 +254,54 @@ class AuthProvider:
         self.client_name = self.mcp_server_name or "Keycard Auth Client"
 
         self.client_factory = client_factory or DefaultClientFactory()
+        self._is_custom_factory = client_factory is not None
 
-        # OAuth client for token exchange operations
-        # FastMCP operates in the async context, so we need to use an async client
-        self.client: AsyncClient | None = self.client_factory.create_async_client(self.zone_url, auth=auth)
+        try:
+            self.client: AsyncClient | None = self.client_factory.create_async_client(self.zone_url, auth=auth)
+        except Exception as e:
+            self._handle_client_creation_error(auth, e)
+
         if self.client is None:
-            raise OAuthClientConfigurationError()
+            self._handle_client_creation_error(auth)
 
         try:
             self.jwks_uri = self._discover_jwks_uri(self.client_factory.create_client(self.zone_url))
         except Exception as e:
-            raise MetadataDiscoveryError() from e
+            raise AuthProviderRemoteError(
+                zone_url=self.zone_url,
+            ) from e
 
         self.auth = auth if auth is not None else NoneAuth()
+
+    def _handle_client_creation_error(self, auth: AuthStrategy | None, exception: Exception | None = None) -> None:
+        """Handle client creation errors with appropriate exception type.
+
+        Args:
+            auth: Authentication strategy being used
+            exception: Original exception if client creation threw an exception
+        """
+        if self._is_custom_factory:
+            # Custom factory failure - this is a configuration issue
+            error_kwargs = {
+                "zone_url": self.zone_url,
+                "factory_type": type(self.client_factory).__name__
+            }
+            if exception:
+                raise AuthProviderConfigurationError(**error_kwargs) from exception
+            else:
+                raise AuthProviderConfigurationError(**error_kwargs)
+        else:
+            # Default factory should never fail due to lazy initialization
+            # This would indicate a serious internal issue
+            error_kwargs = {
+                "zone_url": self.zone_url,
+                "auth_type": type(auth).__name__ if auth else "NoneAuth",
+                "component": "default_client_factory"
+            }
+            if exception:
+                raise AuthProviderInternalError(**error_kwargs) from exception
+            else:
+                raise AuthProviderInternalError(**error_kwargs)
 
     def _build_zone_url(self, zone_url: str | None, zone_id: str | None, base_url: str | None) -> str:
         """Build the zone URL from the provided parameters.
@@ -286,7 +331,7 @@ class AuthProvider:
 
         return constructed_url
 
-    def _discover_jwks_uri(self, client: Client) -> str:
+    def _discover_jwks_uri(self, client: Client) -> str | None:
         """Discover JWKS URI from the OAuth server metadata.
 
         Args:
@@ -334,7 +379,7 @@ class AuthProvider:
             RemoteAuthProvider: Configured authentication provider for use with FastMCP
 
         Raises:
-            ValueError: If zone metadata discovery fails or JWKS URI is not available
+            MetadataDiscoveryError: If zone metadata discovery fails or JWKS URI is not available
         """
 
         authorization_servers = [AnyHttpUrl(self.zone_url)]
@@ -399,6 +444,10 @@ class AuthProvider:
         - Have a Context parameter from FastMCP (e.g., `ctx: Context`)
         - Can be either async or sync (the decorator handles both cases automatically)
 
+        Raises:
+            MissingContextError: If the decorated function doesn't have a Context parameter
+                                or if Context cannot be found in function arguments at runtime
+
         Error handling:
         - Returns structured error response if token exchange fails
         - Preserves original function signature and behavior
@@ -437,13 +486,20 @@ class AuthProvider:
         def decorator(func: Callable) -> Callable:
             is_async_func = inspect.iscoroutinefunction(func)
             if not _has_context(func):
-                raise MissingContextError()
+                raise MissingContextError(
+                    function_name=func.__name__,
+                    parameters=list(inspect.signature(func).parameters.keys())
+                )
 
             @wraps(func)
             async def wrapper(*args, **kwargs) -> Any:
                 _ctx = _get_context(*args, **kwargs)
                 if _ctx is None:
-                    raise MissingContextError()
+                    raise MissingContextError(
+                        function_name=func.__name__,
+                        parameters=[type(arg).__name__ for arg in args] + list(kwargs.keys()),
+                        runtime_context=True
+                    )
 
                 _access_context = AccessContext()
                 try:

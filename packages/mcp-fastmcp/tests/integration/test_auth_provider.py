@@ -15,8 +15,8 @@ from fixtures.auth_provider import mock_custom_zone_url, mock_zone_id, mock_zone
 from keycardai.mcp.integrations.fastmcp import (
     AuthProvider,
     AuthProviderConfigurationError,
+    AuthProviderRemoteError,
     BasicAuth,
-    MetadataDiscoveryError,
     NoneAuth,
 )
 from keycardai.oauth.types.models import AuthorizationServerMetadata
@@ -139,7 +139,7 @@ class TestAuthProviderJWTVerifier:
 
     def test_get_jwt_token_verifier_discovery_failure(self, mock_client_factory):
         """Test JWT token verifier creation when discovery fails during initialization."""
-        with pytest.raises(MetadataDiscoveryError):
+        with pytest.raises(AuthProviderRemoteError):
             AuthProvider(
                 zone_id="nonexistentzone",
                 mcp_base_url="http://localhost:8000",
