@@ -17,7 +17,7 @@ Basic Usage:
     auth_provider = AuthProvider(
         zone_id="abc1234",
         mcp_server_name="My Server",
-        mcp_server_url="http://localhost:8000"
+        mcp_base_url="http://localhost:8000"
     )
 
     # Get the RemoteAuthProvider for FastMCP
@@ -40,7 +40,7 @@ Advanced Configuration:
     auth_provider = AuthProvider(
         zone_id="abc1234",
         mcp_server_name="Production Server",
-        mcp_server_url="https://my-server.com",
+        mcp_base_url="https://my-server.com",
         auth=BasicAuth("client_id", "client_secret")
     )
 
@@ -58,7 +58,7 @@ Advanced Configuration:
 
     auth_provider = AuthProvider(
         zone_url="https://keycard.cloud",
-        mcp_server_url="https://my-server.com",
+        mcp_base_url="https://my-server.com",
         auth=MultiZoneBasicAuth({
             "tenant1": ("id1", "secret1"),
             "tenant2": ("id2", "secret2"),
@@ -70,12 +70,15 @@ from keycardai.mcp.server.auth.client_factory import ClientFactory, DefaultClien
 from keycardai.mcp.server.exceptions import (
     # Specific exceptions
     AuthProviderConfigurationError,
+    AuthProviderInternalError,
+    AuthProviderRemoteError,
     ClientInitializationError,
     JWKSValidationError,
     # Base exception
     MCPServerError,
     MetadataDiscoveryError,
     MissingContextError,
+    OAuthClientConfigurationError,
     ResourceAccessError,
     TokenExchangeError,
 )
@@ -109,9 +112,12 @@ __all__ = [
 
     # Exceptions - Specific
     "AuthProviderConfigurationError",
+    "AuthProviderInternalError",
+    "AuthProviderRemoteError",
     "ClientInitializationError",
     "JWKSValidationError",
     "MissingContextError",
+    "OAuthClientConfigurationError",
     "ResourceAccessError",
     "TokenExchangeError",
     "MetadataDiscoveryError",
