@@ -428,6 +428,76 @@ async def test_tool_with_custom_error_message(auth_provider):
     assert "Custom auth error" in result.data
 ```
 
+## Troubleshooting
+
+### [Cursor](https://cursor.com/home) Configuration Issues
+
+#### Common Error: HTTP 404 with "Not Found" Response
+
+**Symptoms:**
+- Cursor shows error logs like: `HTTP 404: Invalid OAuth error response: SyntaxError: Unexpected token 'N', "Not Found" is not valid JSON. Raw body: Not Found`
+- Server logs show multiple 404 errors for various OAuth discovery endpoints
+
+**Root Cause:**
+This error occurs when the `mcp_base_url` in your Keycard configuration doesn't match the actual URL where your FastMCP server is running. The FastMCP server currently only supports the OAuth authorization server discovery endpoint, but Cursor attempts to discover multiple OAuth endpoints.
+
+**Server-side logs you might see:**
+```
+INFO: 192.168.1.64:52715 - "POST /mcp HTTP/1.1" 401 Unauthorized
+INFO: 192.168.1.64:52716 - "GET /mcp/.well-known/oauth-protected-resource HTTP/1.1" 404 Not Found
+INFO: 192.168.1.64:52717 - "GET /.well-known/oauth-authorization-server/mcp HTTP/1.1" 404 Not Found
+INFO: 192.168.1.64:52718 - "GET /.well-known/oauth-authorization-server HTTP/1.1" 404 Not Found
+INFO: 192.168.1.64:52719 - "GET /.well-known/openid-configuration/mcp HTTP/1.1" 404 Not Found
+INFO: 192.168.1.64:52720 - "GET /mcp/.well-known/openid-configuration HTTP/1.1" 404 Not Found
+```
+
+**Solution:**
+
+1. **Verify your FastMCP server URL**: Ensure your FastMCP server is running on the exact URL you configured in Keycard
+2. **Check the trailing slash**: The `mcp_base_url` should match exactly what's configured in your Keycard resource settings
+3. **Test the OAuth discovery endpoint**: Verify that `http://your-server-url/.well-known/oauth-authorization-server` returns a valid JSON response.
+
+**Example Configuration:**
+
+```python
+# If your server runs on http://localhost:8000
+auth_provider = AuthProvider(
+    zone_id="your-zone-id",
+    mcp_server_name="My FastMCP Server",
+    mcp_base_url="http://localhost:8000"  # This will become "http://localhost:8000/" internally
+)
+
+# Your Keycard Resource must be configured as: http://localhost:8000/
+```
+
+**Testing the Configuration:**
+
+1. Start your FastMCP server
+2. Test the OAuth discovery endpoint:
+   ```bash
+   curl http://localhost:8000/.well-known/oauth-authorization-server
+   ```
+   This should return a JSON response with OAuth server metadata.
+
+3. If you get a 404, check that:
+   - Your server is running on the correct port
+   - The URL in your Keycard resource settings matches exactly
+   - You're using the correct protocol (http vs https)
+
+**Important URL Configuration Note:**
+
+There's a key difference in how URLs are configured between Keycard and Cursor:
+
+- **Keycard Resource Configuration**: Use the base URL without the `/mcp` suffix
+  - ✅ Correct: `http://localhost:8000/`
+  - ❌ Incorrect: `http://localhost:8000/mcp`
+
+- **Cursor MCP Server Configuration**: Include the `/mcp` suffix in the server URL
+  - ✅ Correct: `http://localhost:8000/mcp`
+  - ❌ Incorrect: `http://localhost:8000/`
+
+This is because FastMCP automatically appends the `/mcp` path to your base URL for the MCP protocol endpoints, while Cursor needs to connect directly to the MCP endpoint.
+
 ## Examples
 
 For complete examples and advanced usage patterns, see our [documentation](https://docs.keycard.ai).
