@@ -1,3 +1,8 @@
+## 0.8.1-keycardai-mcp-fastmcp (2025-10-07)
+
+
+- refactor(keycardai-mcp-fastmcp): improve error message with debug context
+
 ## 0.8.0-keycardai-mcp-fastmcp (2025-10-01)
 
 
