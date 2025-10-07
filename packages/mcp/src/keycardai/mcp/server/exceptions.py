@@ -48,7 +48,7 @@ class AuthProviderConfigurationError(MCPServerError):
     """
 
     def __init__(self, message: str | None = None, *, zone_url: str | None = None, zone_id: str | None = None,
-                 factory_type: str | None = None):
+                 factory_type: str | None = None, jwks_error: bool = False):
         """Initialize configuration error with detailed context.
 
         Args:
@@ -56,9 +56,19 @@ class AuthProviderConfigurationError(MCPServerError):
             zone_url: Provided zone_url value for context
             zone_id: Provided zone_id value for context
             factory_type: Type of custom client factory that failed (if applicable)
+            jwks_error: True if this is a JWKS initialization error
         """
         if message is None:
-            if factory_type:
+            if jwks_error:
+                # JWKS initialization failure case
+                zone_info = f" for zone: {zone_url}" if zone_url else ""
+                message = (
+                    f"Failed to initialize JWKS (JSON Web Key Set) for private key identity{zone_info}\n\n"
+                    "This usually indicates:\n"
+                    "1. Invalid or inaccessible private key storage configuration\n"
+                    "2. Insufficient permissions to create/access key storage directory\n"
+                )
+            elif factory_type:
                 # Custom factory failure case
                 zone_info = f" for zone: {zone_url}" if zone_url else ""
                 message = (
@@ -253,7 +263,7 @@ class MissingContextError(MCPServerError):
             else:
                 message = (
                     f"Function {func_info} must have a Context parameter to use @grant decorator.\n\n"
-                    "The @grant decorator requires access to FastMCP's Context to store access tokens.\n\n"
+                    "The @grant decorator requires access to Context to store access tokens.\n\n"
                     "Fix by adding Context parameter:\n"
                     "  from fastmcp import Context\n\n"
                     "  @auth_provider.grant('https://api.example.com')\n"
@@ -275,9 +285,52 @@ class MissingContextError(MCPServerError):
 class MissingAccessContextError(MCPServerError):
     """Raised when grant decorator encounters a missing AccessContext error."""
 
-    def __init__(self, message: str = "Missing AccessContext parameter. Ensure the AccessContext parameter is properly annotated, and set via named parameter (kwargs)."):
-        """Initialize missing access context error."""
-        super().__init__(message)
+    def __init__(self, message: str | None = None, *, function_name: str | None = None,
+                 parameters: list[str] | None = None, runtime_context: bool = False):
+        """Initialize missing access context error with detailed guidance.
+
+        Args:
+            message: Custom error message (optional)
+            function_name: Name of the function missing AccessContext
+            parameters: Current function parameters
+            runtime_context: True if AccessContext parameter exists but wasn't found at runtime
+        """
+        if message is None:
+            func_info = f"'{function_name}'" if function_name else "function"
+
+            if runtime_context:
+                message = (
+                    f"AccessContext parameter not found in {func_info} arguments.\n\n"
+                    "This error occurs when:\n"
+                    "1. AccessContext parameter is not properly annotated with type hint\n"
+                    "2. AccessContext is not passed when calling the function\n\n"
+                    "Ensure your function signature looks like:\n"
+                    f"  def {function_name or 'your_function'}(ctx: Context, access_context: AccessContext, ...):  # <- AccessContext must be type-hinted\n\n"
+                    "And AccessContext is passed when calling the function."
+                )
+            else:
+                message = (
+                    f"Function {func_info} must have an AccessContext parameter to use @grant decorator.\n\n"
+                    "The @grant decorator requires access to AccessContext to store and retrieve access tokens.\n\n"
+                    "Fix by adding AccessContext parameter:\n"
+                    "  from keycardai.mcp.integrations.fastmcp import AccessContext\n"
+                    "  from fastmcp import Context\n\n"
+                    "  @auth_provider.grant('https://api.example.com')\n"
+                    f"  def {function_name or 'your_function'}(ctx: Context, access_context: AccessContext, ...):  # <- Add 'access_context: AccessContext' parameter\n"
+                    "      if access_context.has_errors():\n"
+                    "          return f'Error: {access_context.get_errors()}'\n"
+                    "      token = access_context.access('https://api.example.com').access_token\n"
+                    "      # ... rest of function"
+                )
+
+        details = {
+            "function_name": function_name or "unknown",
+            "current_parameters": parameters or [],
+            "runtime_context": runtime_context,
+            "solution": "Add 'access_context: AccessContext' parameter to function signature" if not runtime_context else "Ensure AccessContext parameter is properly type-hinted and passed",
+        }
+
+        super().__init__(message, details=details)
 
 
 class ResourceAccessError(MCPServerError):
