@@ -1,3 +1,9 @@
+## 0.8.0-keycardai-mcp (2025-10-07)
+
+
+- refactor(keycardai-mcp): improve error messages
+- refactor(keycardai-mcp): improves the error messages to provide useful debug information
+
 ## 0.7.1-keycardai-mcp (2025-09-29)
 
 
