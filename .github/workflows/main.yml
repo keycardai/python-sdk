@@ -53,3 +53,4 @@ jobs:
     with:
       package_name: ${{ matrix.package.package_name }}
       package_dir: ${{ matrix.package.package_dir }}
+    secrets: inherit
