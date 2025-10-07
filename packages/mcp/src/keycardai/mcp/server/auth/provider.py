@@ -22,7 +22,6 @@ from keycardai.oauth.types.oauth import GrantType, TokenEndpointAuthMethod
 
 from ..exceptions import (
     AuthProviderConfigurationError,
-    JWKSInitializationError,
     MissingAccessContextError,
     MissingContextError,
     ResourceAccessError,
@@ -266,7 +265,11 @@ class AuthProvider:
             manager.bootstrap_identity()
             return manager
         except Exception as e:
-            raise JWKSInitializationError() from e
+            raise AuthProviderConfigurationError(
+                jwks_error=True,
+                zone_url=self.zone_url,
+                zone_id=self.zone_id
+            ) from e
 
     def _create_zone_scoped_url(self, base_url: str, zone_id: str) -> str:
         """Create zone-scoped URL by prepending zone_id to the host."""
