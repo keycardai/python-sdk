@@ -173,11 +173,13 @@ def parse_changelog_for_changes(package_dir: str) -> bool:
         raise Exception(f"Could not generate changelog for {package_dir}: {stderr}")
 
     if not stdout.strip():
-        raise Exception(f"No changelog output for {package_dir}")
+        return False  # No changelog output means no changes
 
     lines = stdout.split('\n')
+
+    # If the first line is not "## Unreleased", it means there are no unreleased changes
     if not lines[0].strip().startswith("## Unreleased"):
-        raise Exception(f"Expected '## Unreleased' at top of changelog output, got: {lines[0]}")
+        return False  # No unreleased changes
 
     changes = []
     for line in lines[1:]:
