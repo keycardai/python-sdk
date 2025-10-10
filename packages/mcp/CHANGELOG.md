@@ -1,3 +1,8 @@
+## 0.8.1-keycardai-mcp (2025-10-10)
+
+
+- fix(keycardai-mcp): wrong base url in auth metadata
+
 ## 0.8.0-keycardai-mcp (2025-10-07)
 
 
