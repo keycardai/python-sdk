@@ -3,10 +3,15 @@
 These tests focus on URL handling and slash character edge cases.
 """
 
+import json
+from unittest.mock import Mock, patch
+
+import httpx
 import pytest
 from pydantic import AnyHttpUrl
 from starlette.datastructures import URL
 from starlette.requests import Request
+from starlette.responses import Response
 
 from keycardai.mcp.server.handlers.metadata import (
     _create_resource_url,
@@ -15,6 +20,7 @@ from keycardai.mcp.server.handlers.metadata import (
     _is_authorization_server_zone_scoped,
     _remove_well_known_prefix,
     _strip_zone_id_from_path,
+    authorization_server_metadata,
 )
 from keycardai.mcp.server.shared.starlette import get_base_url
 
@@ -481,6 +487,301 @@ class TestGetBaseUrl:
         request = self._create_mock_request("http://ppxrhd2bw4.us-east-1.awsapprunner.com", headers)
         result = get_base_url(request)
         assert result == "https://ppxrhd2bw4.us-east-1.awsapprunner.com"
+
+
+class TestAuthorizationServerMetadata:
+    """Test authorization_server_metadata handler function."""
+
+    def _create_mock_request(self, path: str = "/.well-known/oauth-authorization-server") -> Request:
+        """Create a mock request with specified path."""
+        scope = {
+            "type": "http",
+            "method": "GET",
+            "scheme": "https",
+            "server": ("example.com", 443),
+            "path": path,
+            "query_string": b"",
+            "headers": [],
+        }
+        return Request(scope)
+
+    @patch("httpx.Client")
+    def test_successful_response_with_correct_authorization_endpoint(self, mock_client_class):
+        """Test that authorization_endpoint is correctly formatted without base_url corruption."""
+        # Mock the HTTP response
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            "authorization_endpoint": "https://auth.example.com/oauth/authorize",
+            "token_endpoint": "https://auth.example.com/oauth/token",
+            "issuer": "https://auth.example.com"
+        }
+        mock_response.raise_for_status.return_value = None
+
+        # Mock the client
+        mock_client = Mock()
+        mock_client.get.return_value = mock_response
+        mock_client_class.return_value.__enter__.return_value = mock_client
+
+        # Create handler and request
+        handler = authorization_server_metadata("https://auth.example.com")
+        request = self._create_mock_request()
+
+        # Execute handler
+        response = handler(request)
+
+        # Verify response
+        assert response.status_code == 200
+        response_data = json.loads(response.body)
+
+        # The authorization_endpoint should be exactly as returned by the upstream server
+        # without any base_url prepending
+        assert response_data["authorization_endpoint"] == "https://auth.example.com/oauth/authorize"
+        assert response_data["token_endpoint"] == "https://auth.example.com/oauth/token"
+        assert response_data["issuer"] == "https://auth.example.com"
+
+        # Verify the correct URL was called
+        mock_client.get.assert_called_once_with("https://auth.example.com/.well-known/oauth-authorization-server")
+
+    @patch("httpx.Client")
+    def test_multi_zone_with_zone_scoped_url(self, mock_client_class):
+        """Test multi-zone functionality with zone-scoped authorization server URL."""
+        # Mock the HTTP response
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            "authorization_endpoint": "https://zone123.keycard.cloud/oauth/authorize",
+            "token_endpoint": "https://zone123.keycard.cloud/oauth/token",
+            "issuer": "https://zone123.keycard.cloud"
+        }
+        mock_response.raise_for_status.return_value = None
+
+        # Mock the client
+        mock_client = Mock()
+        mock_client.get.return_value = mock_response
+        mock_client_class.return_value.__enter__.return_value = mock_client
+
+        # Create handler with multi-zone enabled
+        handler = authorization_server_metadata("https://keycard.cloud", enable_multi_zone=True)
+        request = self._create_mock_request("/.well-known/oauth-authorization-server/zone123")
+
+        # Execute handler
+        response = handler(request)
+
+        # Verify response
+        assert response.status_code == 200
+        response_data = json.loads(response.body)
+
+        # The authorization_endpoint should be exactly as returned by the upstream server
+        assert response_data["authorization_endpoint"] == "https://zone123.keycard.cloud/oauth/authorize"
+        assert response_data["token_endpoint"] == "https://zone123.keycard.cloud/oauth/token"
+        assert response_data["issuer"] == "https://zone123.keycard.cloud"
+
+        # Verify the zone-scoped URL was called
+        mock_client.get.assert_called_once_with("https://zone123.keycard.cloud/.well-known/oauth-authorization-server")
+
+    @patch("httpx.Client")
+    def test_multi_zone_without_zone_id(self, mock_client_class):
+        """Test multi-zone functionality when no zone ID is present in path."""
+        # Mock the HTTP response
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            "authorization_endpoint": "https://keycard.cloud/oauth/authorize",
+            "token_endpoint": "https://keycard.cloud/oauth/token",
+            "issuer": "https://keycard.cloud"
+        }
+        mock_response.raise_for_status.return_value = None
+
+        # Mock the client
+        mock_client = Mock()
+        mock_client.get.return_value = mock_response
+        mock_client_class.return_value.__enter__.return_value = mock_client
+
+        # Create handler with multi-zone enabled but no zone in path
+        handler = authorization_server_metadata("https://keycard.cloud", enable_multi_zone=True)
+        request = self._create_mock_request("/.well-known/oauth-authorization-server")
+
+        # Execute handler
+        response = handler(request)
+
+        # Verify response
+        assert response.status_code == 200
+        response_data = json.loads(response.body)
+
+        # Should use original issuer since no zone ID
+        assert response_data["authorization_endpoint"] == "https://keycard.cloud/oauth/authorize"
+
+        # Verify the original URL was called
+        mock_client.get.assert_called_once_with("https://keycard.cloud/.well-known/oauth-authorization-server")
+
+    @patch("httpx.Client")
+    def test_http_error_handling(self, mock_client_class):
+        """Test handling of HTTP errors from upstream server."""
+        # Mock HTTP error
+        mock_response = Mock()
+        mock_response.status_code = 404
+        mock_response.text = "Not Found"
+        mock_request = Mock()
+        mock_request.url = "https://auth.example.com/.well-known/oauth-authorization-server"
+
+        http_error = httpx.HTTPStatusError("Not Found", request=mock_request, response=mock_response)
+        mock_client = Mock()
+        mock_client.get.side_effect = http_error
+        mock_client_class.return_value.__enter__.return_value = mock_client
+
+        # Create handler and request
+        handler = authorization_server_metadata("https://auth.example.com")
+        request = self._create_mock_request()
+
+        # Execute handler
+        response = handler(request)
+
+        # Verify error response
+        assert response.status_code == 404
+        response_data = json.loads(response.body)
+        assert response_data["error"] == "Upstream authorization server returned 404: Not Found"
+        assert response_data["type"] == "upstream_error"
+        assert response_data["url"] == "https://auth.example.com/.well-known/oauth-authorization-server"
+
+    @patch("httpx.Client")
+    def test_connectivity_error_handling(self, mock_client_class):
+        """Test handling of connectivity errors."""
+        # Mock connectivity error
+        mock_client = Mock()
+        mock_client.get.side_effect = httpx.ConnectError("Connection failed")
+        mock_client_class.return_value.__enter__.return_value = mock_client
+
+        # Create handler and request
+        handler = authorization_server_metadata("https://auth.example.com")
+        request = self._create_mock_request()
+
+        # Execute handler
+        response = handler(request)
+
+        # Verify error response
+        assert response.status_code == 503
+        response_data = json.loads(response.body)
+        assert "Unable to connect to authorization server" in response_data["error"]
+        assert response_data["type"] == "connectivity_error"
+        assert response_data["url"] == "https://auth.example.com/.well-known/oauth-authorization-server"
+
+    @patch("httpx.Client")
+    def test_timeout_error_handling(self, mock_client_class):
+        """Test handling of timeout errors."""
+        # Mock timeout error
+        mock_client = Mock()
+        mock_client.get.side_effect = httpx.TimeoutException("Request timeout")
+        mock_client_class.return_value.__enter__.return_value = mock_client
+
+        # Create handler and request
+        handler = authorization_server_metadata("https://auth.example.com")
+        request = self._create_mock_request()
+
+        # Execute handler
+        response = handler(request)
+
+        # Verify error response
+        assert response.status_code == 503
+        response_data = json.loads(response.body)
+        assert "Unable to connect to authorization server" in response_data["error"]
+        assert response_data["type"] == "connectivity_error"
+
+    @patch("httpx.Client")
+    def test_general_exception_handling(self, mock_client_class):
+        """Test handling of general exceptions."""
+        # Mock general exception
+        mock_client = Mock()
+        mock_client.get.side_effect = ValueError("Invalid configuration")
+        mock_client_class.return_value.__enter__.return_value = mock_client
+
+        # Create handler and request
+        handler = authorization_server_metadata("https://auth.example.com")
+        request = self._create_mock_request()
+
+        # Execute handler
+        response = handler(request)
+
+        # Verify error response
+        assert response.status_code == 500
+        response_data = json.loads(response.body)
+        assert response_data["error"] == "Invalid configuration"
+        assert response_data["type"] == "ValueError"
+
+    @patch("httpx.Client")
+    def test_authorization_endpoint_preservation(self, mock_client_class):
+        """Test that authorization_endpoint is preserved exactly as returned by upstream."""
+        # Mock response with various URL formats
+        test_cases = [
+            "https://auth.example.com/oauth/authorize",
+            "http://localhost:8080/authorize",
+            "https://zone123.keycard.cloud/oauth/authorize",
+            "https://auth.example.com:8443/oauth/authorize"
+        ]
+
+        for auth_endpoint in test_cases:
+            mock_response = Mock()
+            mock_response.json.return_value = {
+                "authorization_endpoint": auth_endpoint,
+                "token_endpoint": "https://auth.example.com/oauth/token"
+            }
+            mock_response.raise_for_status.return_value = None
+
+            mock_client = Mock()
+            mock_client.get.return_value = mock_response
+            mock_client_class.return_value.__enter__.return_value = mock_client
+
+            # Create handler and request
+            handler = authorization_server_metadata("https://auth.example.com")
+            request = self._create_mock_request()
+
+            # Execute handler
+            response = handler(request)
+
+            # Verify the authorization_endpoint is preserved exactly
+            assert response.status_code == 200
+            response_data = json.loads(response.body)
+            assert response_data["authorization_endpoint"] == auth_endpoint
+
+    @patch("httpx.Client")
+    def test_response_json_format(self, mock_client_class):
+        """Test that the response is properly formatted JSON."""
+        # Mock the HTTP response
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            "authorization_endpoint": "https://auth.example.com/oauth/authorize",
+            "token_endpoint": "https://auth.example.com/oauth/token",
+            "issuer": "https://auth.example.com",
+            "jwks_uri": "https://auth.example.com/.well-known/jwks.json",
+            "response_types_supported": ["code"],
+            "grant_types_supported": ["authorization_code", "client_credentials"]
+        }
+        mock_response.raise_for_status.return_value = None
+
+        # Mock the client
+        mock_client = Mock()
+        mock_client.get.return_value = mock_response
+        mock_client_class.return_value.__enter__.return_value = mock_client
+
+        # Create handler and request
+        handler = authorization_server_metadata("https://auth.example.com")
+        request = self._create_mock_request()
+
+        # Execute handler
+        response = handler(request)
+
+        # Verify response format
+        assert response.status_code == 200
+        assert isinstance(response, Response)
+
+        # Verify JSON is valid
+        response_data = json.loads(response.body)
+        assert isinstance(response_data, dict)
+
+        # Verify all expected fields are present
+        expected_fields = [
+            "authorization_endpoint", "token_endpoint", "issuer",
+            "jwks_uri", "response_types_supported", "grant_types_supported"
+        ]
+        for field in expected_fields:
+            assert field in response_data
 
 
 if __name__ == "__main__":

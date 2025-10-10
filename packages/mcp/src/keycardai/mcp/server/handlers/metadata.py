@@ -118,12 +118,14 @@ def authorization_server_metadata(issuer: str, enable_multi_zone: bool = False) 
                 if zone_id:
                     actual_issuer = str(_create_zone_scoped_authorization_server_url(zone_id, AnyHttpUrl(issuer)))
 
+            # fetch the authorization server for the zone
             with httpx.Client() as client:
-                resp = client.get(f"{actual_issuer}/.well-known/oauth-authorization-server")
+                # Ensure no double slashes by removing trailing slash from actual_issuer
+                issuer_url = str(actual_issuer).rstrip('/')
+                resp = client.get(f"{issuer_url}/.well-known/oauth-authorization-server")
                 resp.raise_for_status()
                 authorization_server_metadata = resp.json()
-                base_url = get_base_url(request)
-                authorization_server_metadata["authorization_endpoint"] = f"{base_url}{authorization_server_metadata['authorization_endpoint']}"
+                authorization_server_metadata["authorization_endpoint"] = f"{authorization_server_metadata['authorization_endpoint']}"
                 return Response(content=json.dumps(authorization_server_metadata), status_code=200)
         except httpx.HTTPStatusError as e:
             # Return the same status code as the upstream server
