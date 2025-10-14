@@ -12,6 +12,7 @@ from keycardai.mcp.server.auth import (
     AuthProvider,
     AuthProviderConfigurationError,
     BasicAuth,
+    KeycardZone,
     NoneAuth,
 )
 
@@ -59,16 +60,18 @@ class TestAuthProviderInitialization:
         assert auth_provider.zone_url == f"{mock_custom_zone_url.scheme}://{mock_zone_id}.{mock_custom_zone_url.host}"
 
     def test_auth_provider_init_with_basic_auth(self, mock_client_factory):
-        """Test AuthProvider initialization with BasicAuth."""
+        """Test AuthProvider initialization with KeycardZoneIdentity."""
         basic_auth = BasicAuth("client_id", "client_secret")
+        app_identity = KeycardZone(auth=basic_auth)
         auth_provider = AuthProvider(
             zone_id=mock_zone_id,
             mcp_server_url="http://localhost:8000",
-            auth=basic_auth,
+            application_credential=app_identity,
             client_factory=mock_client_factory
         )
 
         assert auth_provider.auth == basic_auth
+        assert isinstance(auth_provider.application_credential, KeycardZone)
 
     def test_auth_provider_init_with_required_scopes(self, mock_client_factory):
         """Test AuthProvider initialization with required scopes."""

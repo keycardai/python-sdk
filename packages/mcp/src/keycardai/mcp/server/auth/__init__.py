@@ -15,6 +15,12 @@ from ..exceptions import (
     ResourceAccessError,
     TokenExchangeError,
 )
+from .application_credentials import (
+    ApplicationCredential,
+    KeycardZone,
+    NoneIdentity,
+    WebIdentity,
+)
 from .provider import AccessContext, AuthProvider
 from .verifier import TokenVerifier
 
@@ -22,6 +28,10 @@ __all__ = [
     "AuthProvider",
     "AccessContext",
     "TokenVerifier",
+    "ApplicationCredential",
+    "KeycardZone",
+    "NoneIdentity",
+    "WebIdentity",
     "AuthStrategy",
     "BasicAuth",
     "BearerAuth",
