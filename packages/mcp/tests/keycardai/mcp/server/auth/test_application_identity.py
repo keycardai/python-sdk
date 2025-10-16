@@ -1,7 +1,7 @@
 """Unit tests for ApplicationCredential providers.
 
 This module tests the ApplicationCredential protocol implementations including
-NoneIdentity, KeycardZone, WebIdentity, and EKSWorkloadIdentity.
+NoneIdentity, ClientSecret, WebIdentity, and EKSWorkloadIdentity.
 """
 
 import os
@@ -12,8 +12,8 @@ from unittest.mock import AsyncMock
 import pytest
 
 from keycardai.mcp.server.auth.application_credentials import (
+    ClientSecret,
     EKSWorkloadIdentity,
-    KeycardZone,
     NoneIdentity,
     WebIdentity,
 )
@@ -95,34 +95,34 @@ class TestNoneIdentity:
         assert request.client_assertion is None
 
 
-class TestKeycardZone:
-    """Test KeycardZone for Keycard Zone credential-based authentication."""
+class TestClientSecret:
+    """Test ClientSecret for client secret credential-based authentication."""
 
     @pytest.mark.asyncio
     async def test_initialization_with_basic_auth(self):
-        """Test KeycardZone initialization with BasicAuth."""
+        """Test ClientSecret initialization with BasicAuth."""
         auth = BasicAuth(client_id="test_client_id", client_secret="test_client_secret")
-        provider = KeycardZone(auth=auth)
+        provider = ClientSecret(auth=auth)
 
         assert provider.auth == auth
 
     @pytest.mark.asyncio
     async def test_initialization_with_multi_zone_auth(self):
-        """Test KeycardZone initialization with MultiZoneBasicAuth."""
+        """Test ClientSecret initialization with MultiZoneBasicAuth."""
         multi_auth = MultiZoneBasicAuth({
             "zone1": ("client_id_1", "client_secret_1"),
             "zone2": ("client_id_2", "client_secret_2"),
         })
 
-        provider = KeycardZone(auth=multi_auth)
+        provider = ClientSecret(auth=multi_auth)
 
         assert provider.auth == multi_auth
 
     @pytest.mark.asyncio
     async def test_prepare_token_exchange_request(self, mock_client):
-        """Test token exchange request preparation with Keycard Zone credentials."""
+        """Test token exchange request preparation with client secret credentials."""
         auth = BasicAuth(client_id="test_client_id", client_secret="test_client_secret")
-        provider = KeycardZone(auth=auth)
+        provider = ClientSecret(auth=auth)
 
         request = await provider.prepare_token_exchange_request(
             client=mock_client,
@@ -142,7 +142,7 @@ class TestKeycardZone:
     async def test_prepare_token_exchange_request_with_auth_info(self, mock_client):
         """Test that auth_info is passed but unused (authentication is via AuthStrategy)."""
         auth = BasicAuth(client_id="test_client_id", client_secret="test_client_secret")
-        provider = KeycardZone(auth=auth)
+        provider = ClientSecret(auth=auth)
 
         request = await provider.prepare_token_exchange_request(
             client=mock_client,

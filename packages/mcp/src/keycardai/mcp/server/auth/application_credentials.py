@@ -12,7 +12,7 @@ Key Features:
 
 Credential Providers:
 - NoneIdentity: Basic token exchange without client assertion
-- KeycardZone: Uses Keycard Zone credentials (BasicAuth) for token exchange
+- ClientSecret: Uses client credentials (BasicAuth) for token exchange
 - WebIdentity: Private key JWT client assertion (RFC 7523)
 - EKSWorkloadIdentity: EKS workload identity with mounted tokens
 """
@@ -162,15 +162,15 @@ class NoneIdentity:
         )
 
 
-class KeycardZone:
-    """Keycard Zone credential-based provider.
+class ClientSecret:
+    """Client secret credential-based provider.
 
     This provider represents MCP servers that have been issued client credentials
-    by Keycard Zone. It uses client_secret_basic or client_secret_post authentication
+    by Keycard. It uses client_secret_basic or client_secret_post authentication
     via the AuthStrategy, which is handled at the HTTP client level.
 
     The AuthStrategy typically contains client_id and client_secret that authenticate
-    the MCP server to Keycard Zone during token exchange operations.
+    the MCP server to Keycard during token exchange operations.
 
     Example:
         # Single zone with BasicAuth
@@ -180,7 +180,7 @@ class KeycardZone:
             client_id="client_id_from_keycard",
             client_secret="client_secret_from_keycard"
         )
-        provider = KeycardZone(auth=auth)
+        provider = ClientSecret(auth=auth)
 
         # Multi-zone with different credentials per zone
         from keycardai.oauth import MultiZoneBasicAuth
@@ -189,14 +189,14 @@ class KeycardZone:
             "zone1": ("client_id_1", "client_secret_1"),
             "zone2": ("client_id_2", "client_secret_2"),
         })
-        provider = KeycardZone(auth=multi_auth)
+        provider = ClientSecret(auth=multi_auth)
     """
 
     def __init__(self, auth: AuthStrategy):
-        """Initialize with Keycard Zone authentication strategy.
+        """Initialize with client secret authentication strategy.
 
         Args:
-            auth: Authentication strategy containing Keycard Zone credentials.
+            auth: Authentication strategy containing client credentials.
                   Typically BasicAuth with client_id/client_secret, or
                   MultiZoneBasicAuth for multi-zone deployments.
         """
@@ -207,7 +207,7 @@ class KeycardZone:
         config: ClientConfig,
         auth_info: dict[str, str],
     ) -> ClientConfig:
-        """No additional configuration needed for Keycard Zone credentials.
+        """No additional configuration needed for client secret credentials.
 
         Authentication is handled via AuthStrategy at the HTTP client level.
 
@@ -227,7 +227,7 @@ class KeycardZone:
         resource: str,
         auth_info: dict[str, str] | None = None,
     ) -> TokenExchangeRequest:
-        """Prepare token exchange request with Keycard Zone credentials.
+        """Prepare token exchange request with client secret credentials.
 
         The client authentication is handled via the AuthStrategy at the HTTP level,
         not in the token exchange request itself. This method prepares a standard

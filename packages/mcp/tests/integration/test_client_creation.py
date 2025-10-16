@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 from mcp.server.fastmcp import Context
 
-from keycardai.mcp.server.auth import AccessContext, AuthProvider, KeycardZone
+from keycardai.mcp.server.auth import AccessContext, AuthProvider, ClientSecret
 from keycardai.oauth import BasicAuth
 from keycardai.oauth.types.models import AuthorizationServerMetadata, TokenResponse
 
@@ -174,8 +174,8 @@ class TestClientCreation:
         )
 
     @pytest.mark.asyncio
-    async def test_single_zone_with_keycard_zone_identity(self):
-        """Test single-zone with KeycardZone creates client with correct URL."""
+    async def test_single_zone_with_client_secret_identity(self):
+        """Test single-zone with ClientSecret creates client with correct URL."""
         zone_id = "prod"
         expected_zone_url = f"https://{zone_id}.keycard.cloud"
 
@@ -207,7 +207,7 @@ class TestClientCreation:
         mock_factory.create_async_client.return_value = mock_async_client
 
         # Create identity with credentials
-        app_identity = KeycardZone(
+        app_identity = ClientSecret(
             auth=BasicAuth("client_id", "client_secret")
         )
 
@@ -236,7 +236,7 @@ class TestClientCreation:
         actual_base_url = call_args.kwargs['base_url']
 
         assert actual_base_url == expected_zone_url, (
-            f"Single-zone with KeycardZone should use zone-scoped URL. "
+            f"Single-zone with ClientSecret should use zone-scoped URL. "
             f"Expected: {expected_zone_url}, Got: {actual_base_url}"
         )
 

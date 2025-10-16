@@ -19,8 +19,8 @@ from ..exceptions import (
 )
 from .application_credentials import (
     ApplicationCredential,
+    ClientSecret,
     EKSWorkloadIdentity,
-    KeycardZone,
     NoneIdentity,
     WebIdentity,
 )
@@ -32,8 +32,8 @@ __all__ = [
     "AccessContext",
     "TokenVerifier",
     "ApplicationCredential",
+    "ClientSecret",
     "EKSWorkloadIdentity",
-    "KeycardZone",
     "NoneIdentity",
     "WebIdentity",
     "AuthStrategy",

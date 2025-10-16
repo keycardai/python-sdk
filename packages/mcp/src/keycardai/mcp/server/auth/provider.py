@@ -27,7 +27,7 @@ from ..exceptions import (
 from ..routers.metadata import protected_mcp_router
 from .application_credentials import (
     ApplicationCredential,
-    KeycardZone,
+    ClientSecret,
     NoneIdentity,
     WebIdentity,
 )
@@ -210,7 +210,7 @@ class AuthProvider:
             client_factory: Client factory for creating OAuth clients. Defaults to DefaultClientFactory
             enable_dynamic_client_registration: Override automatic client registration behavior
             application_credential: Workload credential provider for token exchange. Defaults to
-                                NoneIdentity. Use KeycardZone for Keycard-issued
+                                NoneIdentity. Use ClientSecret for Keycard-issued
                                 credentials or WebIdentity for private key JWT.
         """
         self.base_url = base_url or "https://keycard.cloud"
@@ -243,8 +243,8 @@ class AuthProvider:
             self.application_credential = application_credential
 
         # Extract auth strategy from application credential
-        # KeycardZone provides credentials for OAuth client authentication
-        if isinstance(self.application_credential, KeycardZone):
+        # ClientSecret provides credentials for OAuth client authentication
+        if isinstance(self.application_credential, ClientSecret):
             self.auth = self.application_credential.auth
         else:
             # WebIdentity and NoneIdentity don't need client auth
@@ -326,7 +326,7 @@ class AuthProvider:
                     client_config.auto_register_client = self.enable_dynamic_client_registration
                 elif isinstance(self.application_credential, NoneIdentity) and isinstance(auth_strategy, NoneAuth):
                     # For basic token exchange with no authentication, enable registration by default
-                    # Other credential providers (WebIdentity, KeycardZone) handle their own defaults
+                    # Other credential providers (WebIdentity, ClientSecret) handle their own defaults
                     client_config.auto_register_client = True
 
                 client = self.client_factory.create_async_client(
