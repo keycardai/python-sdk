@@ -9,6 +9,8 @@ from keycardai.oauth import (
 
 from ..exceptions import (
     AuthProviderConfigurationError,
+    EKSWorkloadIdentityConfigurationError,
+    EKSWorkloadIdentityRuntimeError,
     MetadataDiscoveryError,
     MissingAccessContextError,
     MissingContextError,
@@ -17,6 +19,7 @@ from ..exceptions import (
 )
 from .application_credentials import (
     ApplicationCredential,
+    EKSWorkloadIdentity,
     KeycardZone,
     NoneIdentity,
     WebIdentity,
@@ -29,6 +32,7 @@ __all__ = [
     "AccessContext",
     "TokenVerifier",
     "ApplicationCredential",
+    "EKSWorkloadIdentity",
     "KeycardZone",
     "NoneIdentity",
     "WebIdentity",
@@ -38,6 +42,8 @@ __all__ = [
     "MultiZoneBasicAuth",
     "NoneAuth",
     "AuthProviderConfigurationError",
+    "EKSWorkloadIdentityConfigurationError",
+    "EKSWorkloadIdentityRuntimeError",
     "MissingAccessContextError",
     "MissingContextError",
     "ResourceAccessError",

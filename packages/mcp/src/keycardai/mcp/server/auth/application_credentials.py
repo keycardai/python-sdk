@@ -14,9 +14,10 @@ Credential Providers:
 - NoneIdentity: Basic token exchange without client assertion
 - KeycardZone: Uses Keycard Zone credentials (BasicAuth) for token exchange
 - WebIdentity: Private key JWT client assertion (RFC 7523)
-- EksWorkloadIdentity: (Future) EKS workload identity with mounted tokens
+- EKSWorkloadIdentity: EKS workload identity with mounted tokens
 """
 
+import os
 import uuid
 from typing import Protocol
 
@@ -24,6 +25,10 @@ from keycardai.oauth import AsyncClient, AuthStrategy, ClientConfig
 from keycardai.oauth.types.models import JsonWebKeySet, TokenExchangeRequest
 from keycardai.oauth.types.oauth import GrantType, TokenEndpointAuthMethod
 
+from ..exceptions import (
+    EKSWorkloadIdentityConfigurationError,
+    EKSWorkloadIdentityRuntimeError,
+)
 from .private_key import (
     FilePrivateKeyStorage,
     PrivateKeyManager,
@@ -382,7 +387,7 @@ class WebIdentity:
             KeyError: If auth_info doesn't contain "resource_client_id"
         """
         if not auth_info or "resource_client_id" not in auth_info:
-            raise ValueError("auth_info with 'resource_client_id' is required for WebIdentityProvider")
+            raise ValueError("auth_info with 'resource_client_id' is required for WebIdentity")
 
         audience = await _get_token_exchange_audience(client)
         client_assertion = self.identity_manager.create_client_assertion(
@@ -396,5 +401,191 @@ class WebIdentity:
             subject_token_type="urn:ietf:params:oauth:token-type:access_token",
             client_assertion_type=GrantType.JWT_BEARER_CLIENT_ASSERTION,
             client_assertion=client_assertion,
+        )
+
+
+class EKSWorkloadIdentity:
+    """EKS workload identity provider using mounted tokens.
+
+    This provider implements token exchange using EKS Pod Identity tokens that are
+    mounted into the pod's filesystem. The token file location is configured either
+    via initialization parameters or environment variables.
+
+    The token is read fresh on each token exchange request, allowing for token rotation
+    without requiring application restart.
+
+    Example:
+        # Default configuration (uses AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE env var)
+        provider = EKSWorkloadIdentity()
+
+        # Explicit token file path
+        provider = EKSWorkloadIdentity(
+            token_file_path="/var/run/secrets/eks.amazonaws.com/serviceaccount/token"
+        )
+
+        # Custom environment variable
+        provider = EKSWorkloadIdentity(
+            env_var_name="MY_CUSTOM_TOKEN_FILE_ENV_VAR"
+        )
+    """
+
+    def __init__(
+        self,
+        token_file_path: str | None = None,
+        env_var_name: str = "AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE",
+    ):
+        """Initialize EKS workload identity provider.
+
+        Args:
+            token_file_path: Explicit path to the token file. If not provided,
+                           reads from the environment variable specified by env_var_name.
+            env_var_name: Name of the environment variable containing the token file path.
+                         Defaults to AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE.
+
+        Raises:
+            EKSWorkloadIdentityConfigurationError: If token file cannot be read or is empty.
+        """
+        self.env_var_name = env_var_name
+
+        if token_file_path is not None:
+            self.token_file_path = token_file_path
+        else:
+            self.token_file_path = os.environ.get(env_var_name)
+            if not self.token_file_path:
+                raise EKSWorkloadIdentityConfigurationError(
+                    token_file_path=None,
+                    env_var_name=env_var_name,
+                    error_details=f"Environment variable {env_var_name} is not set",
+                )
+
+        self._validate_token_file()
+
+    def _validate_token_file(self) -> None:
+        """Validate that the token file exists and can be read.
+
+        Raises:
+            EKSWorkloadIdentityConfigurationError: If token file is not accessible or empty.
+        """
+        try:
+            with open(self.token_file_path) as f:
+                token = f.read().strip()
+                if not token:
+                    raise EKSWorkloadIdentityConfigurationError(
+                        token_file_path=self.token_file_path,
+                        env_var_name=self.env_var_name,
+                        error_details="Token file is empty",
+                    )
+        except FileNotFoundError as err:
+            raise EKSWorkloadIdentityConfigurationError(
+                token_file_path=self.token_file_path,
+                env_var_name=self.env_var_name,
+                error_details=f"Token file not found: {self.token_file_path}",
+            ) from err
+        except PermissionError as err:
+            raise EKSWorkloadIdentityConfigurationError(
+                token_file_path=self.token_file_path,
+                env_var_name=self.env_var_name,
+                error_details=f"Permission denied reading token file: {self.token_file_path}",
+            ) from err
+        except Exception as e:
+            raise EKSWorkloadIdentityConfigurationError(
+                token_file_path=self.token_file_path,
+                env_var_name=self.env_var_name,
+                error_details=f"Error reading token file: {str(e)}",
+            ) from e
+
+    def _read_token(self) -> str:
+        """Read the token from the file system.
+
+        The token is read fresh on each call to support token rotation.
+
+        Returns:
+            The token string with whitespace stripped.
+
+        Raises:
+            EKSWorkloadIdentityRuntimeError: If token cannot be read at runtime.
+        """
+        try:
+            with open(self.token_file_path) as f:
+                token = f.read().strip()
+                if not token:
+                    raise EKSWorkloadIdentityRuntimeError(
+                        token_file_path=self.token_file_path,
+                        env_var_name=self.env_var_name,
+                        error_details="Token file is empty",
+                    )
+                return token
+        except FileNotFoundError as err:
+            raise EKSWorkloadIdentityRuntimeError(
+                token_file_path=self.token_file_path,
+                env_var_name=self.env_var_name,
+                error_details=f"Token file not found: {self.token_file_path}",
+            ) from err
+        except PermissionError as err:
+            raise EKSWorkloadIdentityRuntimeError(
+                token_file_path=self.token_file_path,
+                env_var_name=self.env_var_name,
+                error_details=f"Permission denied reading token file: {self.token_file_path}",
+            ) from err
+        except Exception as e:
+            raise EKSWorkloadIdentityRuntimeError(
+                token_file_path=self.token_file_path,
+                env_var_name=self.env_var_name,
+                error_details=f"Error reading token file: {str(e)}",
+            ) from e
+
+    def set_client_config(
+        self,
+        config: ClientConfig,
+        auth_info: dict[str, str],
+    ) -> ClientConfig:
+        """Configure OAuth client settings for EKS workload identity.
+
+        No additional configuration is needed for EKS workload identity as the
+        token is provided in the token exchange request itself.
+
+        Args:
+            config: Base client configuration
+            auth_info: Authentication context (unused for this provider)
+
+        Returns:
+            Unmodified ClientConfig
+        """
+        return config
+
+    async def prepare_token_exchange_request(
+        self,
+        client: AsyncClient,
+        subject_token: str,
+        resource: str,
+        auth_info: dict[str, str] | None = None,
+    ) -> TokenExchangeRequest:
+        """Prepare token exchange request with EKS workload identity token.
+
+        Reads the EKS token from the filesystem and includes it as the client_assertion
+        in the token exchange request. The token is read fresh on each request to support
+        token rotation.
+
+        Args:
+            client: OAuth client for token exchange
+            subject_token: Access token to exchange
+            resource: Target resource URL
+            auth_info: Optional authentication context (unused for this provider)
+
+        Returns:
+            TokenExchangeRequest with EKS token as client assertion
+
+        Raises:
+            EKSWorkloadIdentityRuntimeError: If token cannot be read at runtime
+        """
+        # Read the token from the filesystem
+        eks_token = self._read_token()
+
+        return TokenExchangeRequest(
+            subject_token=subject_token,
+            resource=resource,
+            subject_token_type="urn:ietf:params:oauth:token-type:access_token",
+            client_assertion_type=GrantType.JWT_BEARER_CLIENT_ASSERTION,
+            client_assertion=eks_token,
         )
 

@@ -116,16 +116,18 @@ Keycard allows MCP servers to access other resources on behalf of users with aut
 
 ```python
 from mcp.server.fastmcp import FastMCP, Context
-from keycardai.mcp.server.auth import AuthProvider, AccessContext, BasicAuth
+from keycardai.mcp.server.auth import AuthProvider, AccessContext, BasicAuth, KeycardZone
 import os
 
-# Configure your provider
+# Configure your provider with Keycard Zone credentials
 access = AuthProvider(
     zone_id="your_zone_id",
     mcp_server_name="My MCP Server",
-    auth=BasicAuth(
-        os.getenv("KEYCARD_CLIENT_ID"),
-        os.getenv("KEYCARD_CLIENT_SECRET")
+    application_credential=KeycardZone(
+        auth=BasicAuth(
+            os.getenv("KEYCARD_CLIENT_ID"),
+            os.getenv("KEYCARD_CLIENT_SECRET")
+        )
     )
 )
 

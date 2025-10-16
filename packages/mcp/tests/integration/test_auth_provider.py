@@ -60,7 +60,7 @@ class TestAuthProviderInitialization:
         assert auth_provider.zone_url == f"{mock_custom_zone_url.scheme}://{mock_zone_id}.{mock_custom_zone_url.host}"
 
     def test_auth_provider_init_with_basic_auth(self, mock_client_factory):
-        """Test AuthProvider initialization with KeycardZoneIdentity."""
+        """Test AuthProvider initialization with KeycardZone."""
         basic_auth = BasicAuth("client_id", "client_secret")
         app_identity = KeycardZone(auth=basic_auth)
         auth_provider = AuthProvider(
