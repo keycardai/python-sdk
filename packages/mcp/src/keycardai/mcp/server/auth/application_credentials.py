@@ -7,11 +7,10 @@ authentication method.
 
 Key Features:
 - Protocol-based abstraction for multiple credential types
-- Support for none (basic), private key JWT, and workload identities
+- Support for client secrets, private key JWT, and workload identities
 - Extensible design for adding new credential providers (EKS, GKE, Azure, etc.)
 
 Credential Providers:
-- NoneIdentity: Basic token exchange without client assertion
 - ClientSecret: Uses client credentials (BasicAuth) for token exchange
 - WebIdentity: Private key JWT client assertion (RFC 7523)
 - EKSWorkloadIdentity: EKS workload identity with mounted tokens
@@ -103,63 +102,6 @@ class ApplicationCredential(Protocol):
             TokenExchangeRequest configured for this identity type
         """
         ...
-
-
-class NoneIdentity:
-    """Basic token exchange without client assertion.
-
-    This provider implements standard OAuth 2.0 token exchange without any
-    client authentication. Suitable for public clients or when the authorization
-    server doesn't require client authentication for token exchange.
-
-    Example:
-        provider = NoneIdentity()
-        request = await provider.prepare_token_exchange_request(
-            client=oauth_client,
-            subject_token="access_token",
-            resource="https://api.example.com"
-        )
-    """
-
-    def set_client_config(
-        self,
-        config: ClientConfig,
-        auth_info: dict[str, str],
-    ) -> ClientConfig:
-        """No additional configuration needed for basic token exchange.
-
-        Args:
-            config: Base client configuration
-            auth_info: Authentication context (unused for this provider)
-
-        Returns:
-            Unmodified ClientConfig
-        """
-        return config
-
-    async def prepare_token_exchange_request(
-        self,
-        client: AsyncClient,
-        subject_token: str,
-        resource: str,
-        auth_info: dict[str, str] | None = None,
-    ) -> TokenExchangeRequest:
-        """Prepare basic token exchange request without client assertion.
-
-        Args:
-            client: OAuth client for token exchange
-            subject_token: Access token to exchange
-            resource: Target resource URL
-            auth_info: Unused for this provider
-
-        Returns:
-            TokenExchangeRequest with basic parameters
-        """
-        return TokenExchangeRequest(
-            subject_token=subject_token,
-            resource=resource,
-            subject_token_type="urn:ietf:params:oauth:token-type:access_token",
-        )
 
 
 class ClientSecret:

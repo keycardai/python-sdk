@@ -21,7 +21,6 @@ from .application_credentials import (
     ApplicationCredential,
     ClientSecret,
     EKSWorkloadIdentity,
-    NoneIdentity,
     WebIdentity,
 )
 from .provider import AccessContext, AuthProvider
@@ -34,7 +33,6 @@ __all__ = [
     "ApplicationCredential",
     "ClientSecret",
     "EKSWorkloadIdentity",
-    "NoneIdentity",
     "WebIdentity",
     "AuthStrategy",
     "BasicAuth",

@@ -1,7 +1,7 @@
 """Unit tests for ApplicationCredential providers.
 
 This module tests the ApplicationCredential protocol implementations including
-NoneIdentity, ClientSecret, WebIdentity, and EKSWorkloadIdentity.
+ClientSecret, WebIdentity, and EKSWorkloadIdentity.
 """
 
 import os
@@ -14,7 +14,6 @@ import pytest
 from keycardai.mcp.server.auth.application_credentials import (
     ClientSecret,
     EKSWorkloadIdentity,
-    NoneIdentity,
     WebIdentity,
 )
 from keycardai.mcp.server.exceptions import (
@@ -55,44 +54,6 @@ def mock_client(mock_metadata):
     client._discovered_endpoints.token = mock_metadata.token_endpoint
 
     return client
-
-
-class TestNoneIdentity:
-    """Test NoneIdentity for basic token exchange."""
-
-    @pytest.mark.asyncio
-    async def test_prepare_token_exchange_request(self, mock_client):
-        """Test basic token exchange request preparation."""
-        provider = NoneIdentity()
-
-        request = await provider.prepare_token_exchange_request(
-            client=mock_client,
-            subject_token="test_access_token",
-            resource="https://api.example.com",
-        )
-
-        assert isinstance(request, TokenExchangeRequest)
-        assert request.subject_token == "test_access_token"
-        assert request.resource == "https://api.example.com"
-        assert request.subject_token_type == "urn:ietf:params:oauth:token-type:access_token"
-        assert request.client_assertion is None
-        assert request.client_assertion_type is None
-
-    @pytest.mark.asyncio
-    async def test_prepare_token_exchange_request_with_auth_info(self, mock_client):
-        """Test that auth_info is ignored for NoneIdentity."""
-        provider = NoneIdentity()
-
-        request = await provider.prepare_token_exchange_request(
-            client=mock_client,
-            subject_token="test_access_token",
-            resource="https://api.example.com",
-            auth_info={"resource_client_id": "https://mcp.example.com"}
-        )
-
-        # Should work fine even with auth_info provided
-        assert request.subject_token == "test_access_token"
-        assert request.client_assertion is None
 
 
 class TestClientSecret:

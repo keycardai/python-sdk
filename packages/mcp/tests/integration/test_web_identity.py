@@ -377,10 +377,10 @@ class TestWebIdentity:
             assert client_config.client_jwks_url is not None
 
     @pytest.mark.asyncio
-    async def test_none_identity_provider_does_enable_registration(self):
-        """Test that NoneIdentity (without WebIdentity) DOES enable registration.
+    async def test_no_application_credential_does_enable_registration(self):
+        """Test that None application_credential (without WebIdentity) DOES enable registration.
 
-        This verifies that the NoneAuth check is correct for actual NoneIdentity,
+        This verifies that the NoneAuth check is correct when no application credential is provided,
         just not for WebIdentity which also uses NoneAuth.
         """
         zone_id = "test123"
@@ -420,14 +420,14 @@ class TestWebIdentity:
         mock_factory = Mock()
         mock_factory.create_async_client.side_effect = track_config
 
-        # Create AuthProvider with NoneIdentity (default)
+        # Create AuthProvider without application_credential (defaults to None)
         auth_provider = AuthProvider(
             zone_id=zone_id,
             mcp_server_name="Test Server",
             mcp_server_url="https://mcp.example.com",
             base_url="https://keycard.cloud",
             enable_multi_zone=False,
-            # application_credential NOT specified - uses NoneIdentity by default
+            # application_credential NOT specified - defaults to None
             client_factory=mock_factory
         )
 
@@ -443,8 +443,8 @@ class TestWebIdentity:
         assert len(actual_configs) == 1
         client_config = actual_configs[0]
 
-        # NoneIdentity SHOULD enable registration
+        # None application_credential SHOULD enable registration
         assert client_config.auto_register_client is True, (
-            "NoneIdentity should enable auto_register_client by default"
+            "None application_credential should enable auto_register_client by default"
         )
 

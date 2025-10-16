@@ -16,7 +16,11 @@ from starlette.types import ASGIApp
 
 from keycardai.oauth import AsyncClient, ClientConfig
 from keycardai.oauth.http.auth import MultiZoneBasicAuth, NoneAuth
-from keycardai.oauth.types.models import JsonWebKeySet, TokenResponse
+from keycardai.oauth.types.models import (
+    JsonWebKeySet,
+    TokenExchangeRequest,
+    TokenResponse,
+)
 
 from ..exceptions import (
     AuthProviderConfigurationError,
@@ -28,7 +32,6 @@ from ..routers.metadata import protected_mcp_router
 from .application_credentials import (
     ApplicationCredential,
     ClientSecret,
-    NoneIdentity,
     WebIdentity,
 )
 from .client_factory import ClientFactory, DefaultClientFactory
@@ -209,9 +212,9 @@ class AuthProvider:
             base_url: Base URL for Keycard (default: https://keycard.cloud)
             client_factory: Client factory for creating OAuth clients. Defaults to DefaultClientFactory
             enable_dynamic_client_registration: Override automatic client registration behavior
-            application_credential: Workload credential provider for token exchange. Defaults to
-                                NoneIdentity. Use ClientSecret for Keycard-issued
-                                credentials or WebIdentity for private key JWT.
+            application_credential: Workload credential provider for token exchange. Use ClientSecret
+                                for Keycard-issued credentials, WebIdentity for private key JWT,
+                                or None for basic token exchange without client authentication.
         """
         self.base_url = base_url or "https://keycard.cloud"
 
@@ -237,22 +240,19 @@ class AuthProvider:
         self.audience = audience
 
         # Initialize application credential provider
-        if application_credential is None:
-            self.application_credential = NoneIdentity()
-        else:
-            self.application_credential = application_credential
+        self.application_credential = application_credential
 
         # Extract auth strategy from application credential
         # ClientSecret provides credentials for OAuth client authentication
         if isinstance(self.application_credential, ClientSecret):
             self.auth = self.application_credential.auth
         else:
-            # WebIdentity and NoneIdentity don't need client auth
+            # WebIdentity and None don't need client auth
             self.auth = NoneAuth()
 
         # Extract JWKS if provider supports it (for WebIdentity)
         self.jwks: JsonWebKeySet | None = None
-        if hasattr(self.application_credential, 'get_jwks'):
+        if self.application_credential and hasattr(self.application_credential, 'get_jwks'):
             self.jwks = self.application_credential.get_jwks()
 
         # Backward compatibility: detect if using WebIdentity
@@ -303,7 +303,8 @@ class AuthProvider:
 
                 # Let the credential provider configure client settings
                 # This keeps credential-specific configuration encapsulated
-                client_config = self.application_credential.set_client_config(client_config, auth_info)
+                if self.application_credential:
+                    client_config = self.application_credential.set_client_config(client_config, auth_info)
 
                 # Determine the correct base URL for the OAuth client
                 # Single-zone: use self.zone_url (already includes zone_id in hostname)
@@ -324,7 +325,7 @@ class AuthProvider:
                 if self.enable_dynamic_client_registration is not None:
                     # Explicit configuration always takes precedence
                     client_config.auto_register_client = self.enable_dynamic_client_registration
-                elif isinstance(self.application_credential, NoneIdentity) and isinstance(auth_strategy, NoneAuth):
+                elif self.application_credential is None and isinstance(auth_strategy, NoneAuth):
                     # For basic token exchange with no authentication, enable registration by default
                     # Other credential providers (WebIdentity, ClientSecret) handle their own defaults
                     client_config.auto_register_client = True
@@ -592,12 +593,20 @@ class AuthProvider:
                 for resource in _resource_list:
                     try:
                         # Prepare token exchange request using application identity provider
-                        _token_exchange_request = await self.application_credential.prepare_token_exchange_request(
-                            client=_client,
-                            subject_token=_keycardai_auth_info["access_token"],
-                            resource=resource,
-                            auth_info=_keycardai_auth_info,
-                        )
+                        if self.application_credential:
+                            _token_exchange_request = await self.application_credential.prepare_token_exchange_request(
+                                client=_client,
+                                subject_token=_keycardai_auth_info["access_token"],
+                                resource=resource,
+                                auth_info=_keycardai_auth_info,
+                            )
+                        else:
+                            # Basic token exchange without client authentication
+                            _token_exchange_request = TokenExchangeRequest(
+                                subject_token=_keycardai_auth_info["access_token"],
+                                resource=resource,
+                                subject_token_type="urn:ietf:params:oauth:token-type:access_token",
+                            )
 
                         # Execute token exchange
                         _token_response = await _client.exchange_token(_token_exchange_request)
