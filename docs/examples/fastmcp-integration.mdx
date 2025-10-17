@@ -15,94 +15,125 @@ uv add keycardai-mcp-fastmcp keycardai-oauth fastmcp
 
 ## Core Components
 
-### 1. Keycard Auth Provider
+### 1. Auth Provider
 
-Handles JWT authentication and user verification:
+Handles JWT authentication, user verification, and provides the grant decorator for token exchange:
 
 ```python
-from keycardai.mcp.integrations.fastmcp import KeycardAuthProvider
+from keycardai.mcp.integrations.fastmcp import AuthProvider
 
-auth_provider = KeycardAuthProvider(
-    zone_url="https://your-zone.keycard.cloud",
+# Basic setup
+auth_provider = AuthProvider(
+    zone_id="your-zone-id",
     mcp_server_name="My Server",
-    mcp_server_url="https://your-server.com/mcp"
+    mcp_base_url="http://localhost:8000/"
 )
+
+# Get RemoteAuthProvider for FastMCP
+auth = auth_provider.get_remote_auth_provider()
 ```
 
-### 2. Access Middleware
-
-Manages OAuth client registration and provides grant decorator for token exchange:
-
-```python
-from keycardai.mcp.integrations.fastmcp import AccessMiddleware
-
-access = AccessMiddleware(
-    zone_url="https://your-zone.keycard.cloud"
-)
-```
-
-### 3. Grant Decorator
+### 2. Grant Decorator
 
 Automatically exchanges user tokens for resource-specific tokens:
 
 ```python
-from keycardai.oauth.utils.bearer import create_auth_header
-# Access middleware provides grant decorator
-access = AccessMiddleware(zone_url="https://your-zone.keycard.cloud")
+from fastmcp import Context
 
-@access.grant("https://api.example.com")
+@auth_provider.grant("https://api.example.com")
 async def my_tool(ctx: Context):
-    # ctx.get_state("keycardai").access() provides token responses
-    token = ctx.get_state("keycardai").access("https://api.example.com").access_token
-    headers = {"Authorization": create_auth_header(token)}
-    return {"headers": headers}
+    # Access tokens through context namespace
+    access_context = ctx.get_state("keycardai")
+    
+    # Check for errors
+    if access_context.has_errors():
+        return {"error": "Failed to obtain access token"}
+    
+    # Get the token
+    token = access_context.access("https://api.example.com").access_token
+    return {"token": token}
+```
 
+### 3. Delegated Access with Client Credentials
+
+For production use with delegated access to external APIs:
+
+```python
+from keycardai.mcp.integrations.fastmcp import AuthProvider, ClientSecret, BasicAuth
+import os
+
+auth_provider = AuthProvider(
+    zone_id="your-zone-id",
+    mcp_server_name="My Server",
+    mcp_base_url="http://localhost:8000/",
+    application_credential=ClientSecret(
+        BasicAuth(
+            os.getenv("KEYCARD_CLIENT_ID"),
+            os.getenv("KEYCARD_CLIENT_SECRET")
+        )
+    )
+)
 ```
 
 **Why this approach is best:**
 
-- ✅ **Clean decorator usage**: No namespace objects cluttering the decorator
-- ✅ **Flexible aliasing**: Use `import as` to handle conflicts when needed
-- ✅ **Pythonic**: Follows standard Python import patterns
-- ✅ **IDE-friendly**: Better autocomplete and type hints
+- ✅ **Unified interface**: Single AuthProvider for both authentication and authorization
+- ✅ **Protocol-based**: Supports multiple credential types (ClientSecret, WebIdentity, EKSWorkloadIdentity)
+- ✅ **Type-safe**: Better autocomplete and type hints
+- ✅ **Error handling**: Built-in error tracking per resource
 
 ## Basic Server Setup
 
 ```python
+import os
 from fastmcp import FastMCP, Context
 from keycardai.mcp.integrations.fastmcp import (
-    KeycardAuthProvider,
-    AccessMiddleware,
+    AuthProvider,
+    AccessContext,
+    ClientSecret,
+    BasicAuth,
 )
-from keycardai.oauth.utils.bearer import create_auth_header
 import httpx
 
-# Create MCP server
-mcp = FastMCP("My Server")
-
-# Add authentication
-auth_provider = KeycardAuthProvider(
-    zone_url="https://your-zone.keycard.cloud",
+# Configure auth provider with client credentials for delegated access
+auth_provider = AuthProvider(
+    zone_id="your-zone-id",
     mcp_server_name="My Server",
-    mcp_server_url="https://your-server.com/mcp"
+    mcp_base_url="http://localhost:8000/",
+    application_credential=ClientSecret(
+        BasicAuth(
+            os.getenv("KEYCARD_CLIENT_ID"),
+            os.getenv("KEYCARD_CLIENT_SECRET")
+        )
+    )
 )
-mcp.add_auth_provider(auth_provider)
 
-# Add OAuth middleware
-access = AccessMiddleware(
-    zone_url="https://your-zone.keycard.cloud"
-)
-mcp.add_middleware(access)
+# Get RemoteAuthProvider for FastMCP
+auth = auth_provider.get_remote_auth_provider()
+
+# Create authenticated FastMCP server
+mcp = FastMCP("My Server", auth=auth)
 
 # Define tool with automatic token exchange
 @mcp.tool()
-@access.grant("https://www.googleapis.com/calendar/v3")
+@auth_provider.grant("https://www.googleapis.com/calendar/v3")
 async def get_calendar_events(ctx: Context, maxResults: int = 10) -> dict:
     """Get user's calendar events."""
+    # Get access context
+    access_context: AccessContext = ctx.get_state("keycardai")
+    
+    # Check for errors
+    if access_context.has_errors():
+        return {"error": f"Token exchange failed: {access_context.get_errors()}"}
+    
+    # Get the token
+    token = access_context.access("https://www.googleapis.com/calendar/v3").access_token
+    
+    # Make API call
     async with httpx.AsyncClient() as client:
         response = await client.get(
             "https://www.googleapis.com/calendar/v3/calendars/primary/events",
-            headers={"Authorization": create_auth_header(ctx.get_state("keycardai").access("https://www.googleapis.com/calendar/v3").access_token)},
+            headers={"Authorization": f"Bearer {token}"},
             params={"maxResults": maxResults}
         )
         response.raise_for_status()
@@ -110,7 +141,7 @@ async def get_calendar_events(ctx: Context, maxResults: int = 10) -> dict:
 
 # Run server
 if __name__ == "__main__":
-    mcp.run(transport="http", port=8000, path="/mcp")
+    mcp.run(transport="streamable-http")
 ```
 
 ## Configuration
@@ -129,48 +160,72 @@ Access multiple APIs with a single decorator:
 
 ```python
 @mcp.tool()
-@access.grant(["https://www.googleapis.com/calendar/v3", "https://www.googleapis.com/drive/v3"])
+@auth_provider.grant(["https://www.googleapis.com/calendar/v3", "https://www.googleapis.com/drive/v3"])
 async def get_calendar_and_drive(ctx: Context):
-    from keycardai.oauth.utils.bearer import create_auth_header
-    calendar_token = ctx.get_state("keycardai").access("https://www.googleapis.com/calendar/v3").access_token
-    drive_token = ctx.get_state("keycardai").access("https://www.googleapis.com/drive/v3").access_token
-    calendar_headers = {"Authorization": create_auth_header(calendar_token)}
-    drive_headers = {"Authorization": create_auth_header(drive_token)}
+    access_context: AccessContext = ctx.get_state("keycardai")
+    
+    # Check for errors
+    if access_context.has_errors():
+        return {"error": f"Token exchange failed: {access_context.get_errors()}"}
+    
+    # Get tokens for both resources
+    calendar_token = access_context.access("https://www.googleapis.com/calendar/v3").access_token
+    drive_token = access_context.access("https://www.googleapis.com/drive/v3").access_token
+    
     return {
-        "calendar_headers": calendar_headers,
-        "drive_headers": drive_headers
+        "calendar_headers": {"Authorization": f"Bearer {calendar_token}"},
+        "drive_headers": {"Authorization": f"Bearer {drive_token}"}
     }
 
 # Or access them separately with single resource grants
 @mcp.tool()
-@access.grant("https://www.googleapis.com/calendar/v3")
+@auth_provider.grant("https://www.googleapis.com/calendar/v3")
 async def get_calendar(ctx: Context):
-    from keycardai.oauth.utils.bearer import create_auth_header
-    token = ctx.get_state("keycardai").access("https://www.googleapis.com/calendar/v3").access_token
-    headers = {"Authorization": create_auth_header(token)}
-    return {"calendar_headers": headers}
+    access_context: AccessContext = ctx.get_state("keycardai")
+    
+    if access_context.has_errors():
+        return {"error": "Token exchange failed"}
+    
+    token = access_context.access("https://www.googleapis.com/calendar/v3").access_token
+    return {"calendar_headers": {"Authorization": f"Bearer {token}"}}
 ```
 
 ## Error Handling
 
 ```python
-from keycardai.oauth import OAuthError
+import httpx
+from keycardai.mcp.server.exceptions import ResourceAccessError
 
 @mcp.tool()
-@access.grant("https://api.example.com")
+@auth_provider.grant("https://api.example.com")
 async def api_call(ctx: Context):
+    # Get access context
+    access_context: AccessContext = ctx.get_state("keycardai")
+    
+    # Check for token exchange errors
+    if access_context.has_errors():
+        errors = access_context.get_errors()
+        return {
+            "error": "Failed to obtain access token",
+            "details": errors
+        }
+    
     try:
-        # Your API call here
+        # Get token and make API call
+        token = access_context.access("https://api.example.com").access_token
+        
         async with httpx.AsyncClient() as client:
             response = await client.get(
                 "https://api.example.com/data",
-                headers={"Authorization": create_auth_header(ctx.get_state("keycardai").access("https://api.example.com").access_token)}
+                headers={"Authorization": f"Bearer {token}"}
             )
             response.raise_for_status()
             return response.json()
-    except OAuthError as e:
-        return {"error": f"OAuth error: {e}"}
-    except Exception as e:
+    except ResourceAccessError as e:
+        return {"error": f"Resource access error: {e}"}
+    except httpx.HTTPError as e:
         return {"error": f"API error: {e}"}
+    except Exception as e:
+        return {"error": f"Unexpected error: {e}"}
 ```
 

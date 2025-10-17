@@ -8,42 +8,245 @@ sidebarTitle: provider
 
 Keycard authentication provider for FastMCP.
 
-This module provides KeycardAuthProvider, which integrates Keycard's OAuth
-token verification with FastMCP's authentication system using the RemoteAuthProvider
-pattern for clean separation of concerns.
+This module provides AuthProvider, which integrates Keycard's OAuth
+token verification with FastMCP's authentication system. The AuthProvider
+creates a RemoteAuthProvider instance with automatic Keycard zone discovery
+and JWT token verification.
 
 
 ## Classes
 
-### `KeycardTokenVerifier` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/integrations/fastmcp/provider.py#L21" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `AccessContext` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/integrations/fastmcp/provider.py#L39" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
-Token verifier for Keycard zone-issued tokens.
+Context object that provides access to exchanged tokens for specific resources.
 
-This verifier automatically discovers Keycard zone endpoints using the Keycard client,
-extracts the JWKS URI, and uses FastMCP's JWTVerifier for actual token verification.
-This provides the best of both worlds: automatic endpoint discovery and robust JWT validation.
-
-
-### `KeycardAuthProviderSettings` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/integrations/fastmcp/provider.py#L77" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+Supports both successful token storage and per-resource error tracking,
+allowing partial success scenarios where some resources succeed while others fail.
 
 
-Settings for Keycard authentication provider.
+**Methods:**
+
+#### `set_bulk_tokens` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/integrations/fastmcp/provider.py#L56" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+set_bulk_tokens(self, access_tokens: dict[str, TokenResponse])
+```
+
+Set access tokens for resources.
 
 
-### `KeycardAuthProvider` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/integrations/fastmcp/provider.py#L93" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `set_token` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/integrations/fastmcp/provider.py#L60" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+set_token(self, resource: str, token: TokenResponse)
+```
+
+Set token for the specified resource.
 
 
-Complete Keycard authentication provider for FastMCP.
+#### `set_resource_error` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/integrations/fastmcp/provider.py#L66" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+set_resource_error(self, resource: str, error: dict[str, str])
+```
+
+Set error for a specific resource.
+
+
+#### `set_error` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/integrations/fastmcp/provider.py#L72" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+set_error(self, error: dict[str, str])
+```
+
+Set error that affects all resources.
+
+
+#### `has_resource_error` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/integrations/fastmcp/provider.py#L76" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+has_resource_error(self, resource: str) -> bool
+```
+
+Check if a specific resource has an error.
+
+
+#### `has_error` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/integrations/fastmcp/provider.py#L80" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+has_error(self) -> bool
+```
+
+Check if there's a global error.
+
+
+#### `has_errors` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/integrations/fastmcp/provider.py#L84" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+has_errors(self) -> bool
+```
+
+Check if there are any errors (global or resource-specific).
+
+
+#### `get_errors` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/integrations/fastmcp/provider.py#L88" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_errors(self) -> dict[str, Any] | None
+```
+
+Get global errors if any.
+
+
+#### `get_error` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/integrations/fastmcp/provider.py#L92" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_error(self) -> dict[str, str] | None
+```
+
+Get global error if any.
+
+
+#### `get_resource_errors` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/integrations/fastmcp/provider.py#L96" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_resource_errors(self, resource: str) -> dict[str, str] | None
+```
+
+Get error for a specific resource.
+
+
+#### `get_status` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/integrations/fastmcp/provider.py#L100" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_status(self) -> str
+```
+
+Get overall status of the access context.
+
+
+#### `get_successful_resources` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/integrations/fastmcp/provider.py#L109" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_successful_resources(self) -> list[str]
+```
+
+Get list of resources that have successful tokens.
+
+
+#### `get_failed_resources` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/integrations/fastmcp/provider.py#L113" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_failed_resources(self) -> list[str]
+```
+
+Get list of resources that have errors.
+
+
+#### `access` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/integrations/fastmcp/provider.py#L117" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+access(self, resource: str) -> TokenResponse
+```
+
+Get token response for the specified resource.
+
+**Args:**
+- `resource`: The resource URL to get token response for
+
+**Returns:**
+- TokenResponse object with access_token attribute
+
+**Raises:**
+- `ResourceAccessError`: If resource was not granted or has an error
+
+
+### `AuthProvider` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/integrations/fastmcp/provider.py#L156" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Keycard authentication provider for FastMCP.
 
 This provider integrates Keycard's zone-based authentication with FastMCP's
-authentication system. It uses Keycard's token introspection endpoint to
-verify tokens and provides RFC 9728 compliant protected resource metadata.
+authentication system. It provides a clean interface for configuring Keycard
+authentication and returns a RemoteAuthProvider instance for FastMCP integration.
 
-Features:
-- Token verification via Keycard zone introspection (RFC 7662)
-- Automatic authorization server discovery from zone
-- RFC 9728 protected resource metadata endpoints
-- Configurable scope requirements
-- Production-ready error handling and logging
+Advanced use cases:
+- If you want to customize the HTTP clients used in the discovery or token exchange, you can provide a custom client factory.
+
+
+**Methods:**
+
+#### `get_jwt_token_verifier` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/integrations/fastmcp/provider.py#L369" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_jwt_token_verifier(self) -> JWTVerifier
+```
+
+Create a JWT token verifier for Keycard zone tokens.
+
+Discovers Keycard zone metadata and creates a JWTVerifier configured
+with the zone's JWKS URI and issuer information.
+
+This method uses eager discovery of the zone metadata, and performs HTTP calls using the initialized client.
+
+**Returns:**
+- Configured JWT token verifier for the Keycard zone
+
+**Raises:**
+- `MetadataDiscoveryError`: If zone metadata discovery fails
+- `JWKSValidationError`: If JWKS URI is not available
+
+
+#### `get_remote_auth_provider` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/integrations/fastmcp/provider.py#L391" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_remote_auth_provider(self) -> RemoteAuthProvider
+```
+
+Get a RemoteAuthProvider instance configured for Keycard authentication.
+
+This method uses eager discovery of the zone metadata, and performs HTTP calls using the initialized client.
+
+**Returns:**
+- Configured authentication provider for use with FastMCP
+
+**Raises:**
+- `MetadataDiscoveryError`: If zone metadata discovery fails or JWKS URI is not available
+
+
+#### `grant` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/integrations/fastmcp/provider.py#L412" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+grant(self, resources: str | list[str])
+```
+
+Decorator for automatic delegated token exchange.
+
+This decorator automates the OAuth token exchange process for accessing
+external resources on behalf of authenticated users. It follows the FastMCP
+Context namespace pattern, making tokens available through ctx.get_state("keycardai").
+
+The returned value is an instance of AccessContext, which can be used to check the status of the token exchange
+
+The decorator avoids raising exceptions, and instead sets the error state in the AccessContext.
+
+**Args:**
+- `resources`: Target resource URL(s) for token exchange.
+      Can be a single string or list of strings.
+      (e.g., "https\://api.example.com" or
+       ["https\://api.example.com", "https\://other-api.com"])
+
+The decorated function must:
+- Have a Context parameter from FastMCP (e.g., `ctx: Context`)
+- Can be either async or sync (the decorator handles both cases automatically)
+
+**Raises:**
+- `MissingContextError`: If the decorated function doesn't have a Context parameter
+                or if Context cannot be found in function arguments at runtime
+
+Error handling:
+- Returns structured error response if token exchange fails
+- Preserves original function signature and behavior
+- Provides detailed error messages for debugging
 

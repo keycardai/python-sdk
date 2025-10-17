@@ -1,0 +1,326 @@
+---
+title: private_key
+sidebarTitle: private_key
+---
+
+# `keycardai.mcp.server.auth.private_key`
+
+
+Private Key Identity Management for MCP Servers.
+
+This module provides a protocol-based approach for managing private key identities
+across different storage backends (file, memory, key-value stores). It supports
+JWT client assertion generation and JWKS endpoint provisioning for OAuth 2.0
+private_key_jwt authentication.
+
+Key Features:
+- Protocol-based storage abstraction for multiple backends
+- Idempotent key pair bootstrap and loading
+- JWT client assertion generation for OAuth 2.0
+- JWKS format public key export
+- Configurable audience mapping for multi-zone scenarios
+
+Storage Providers:
+- FilePrivateKeyStorage: Persistent file-based storage
+
+
+## Classes
+
+### `PrivateKeyStorageProtocol` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/private_key.py#L34" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Protocol for private key storage backends.
+
+This protocol defines the interface that all private key storage providers
+must implement. Storage providers can be file-based, memory-based, or
+external key-value stores.
+
+
+**Methods:**
+
+#### `exists` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/private_key.py#L42" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+exists(self, key_id: str) -> bool
+```
+
+Check if a private key exists for the given key ID.
+
+**Args:**
+- `key_id`: Unique identifier for the key pair
+
+**Returns:**
+- True if key exists, False otherwise
+
+
+#### `store_key_pair` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/private_key.py#L53" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+store_key_pair(self, key_id: str, private_key_pem: str, public_key_jwk: dict[str, Any]) -> None
+```
+
+Store a private key and its associated public key.
+
+**Args:**
+- `key_id`: Unique identifier for the key pair
+- `private_key_pem`: Private key in PEM format
+- `public_key_jwk`: Public key in JWK format
+
+
+#### `load_key_pair` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/private_key.py#L68" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+load_key_pair(self, key_id: str) -> tuple[str, dict[str, Any]]
+```
+
+Load a private key and its associated public key.
+
+**Args:**
+- `key_id`: Unique identifier for the key pair
+
+**Returns:**
+- Tuple of (private_key_pem, public_key_jwk)
+
+**Raises:**
+- `KeyError`: If key does not exist
+
+
+#### `delete_key_pair` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/private_key.py#L82" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+delete_key_pair(self, key_id: str) -> bool
+```
+
+Delete a key pair.
+
+**Args:**
+- `key_id`: Unique identifier for the key pair
+
+**Returns:**
+- True if key was deleted, False if it didn't exist
+
+
+#### `list_key_ids` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/private_key.py#L93" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+list_key_ids(self) -> list[str]
+```
+
+List all stored key IDs.
+
+**Returns:**
+- List of key IDs
+
+
+### `KeyPairInfo` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/private_key.py#L102" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Information about a stored key pair.
+
+
+### `FilePrivateKeyStorage` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/private_key.py#L112" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+File-based private key storage implementation.
+
+Stores private keys as PEM files and metadata as JSON files in a specified
+directory. Provides atomic operations and proper file permissions.
+
+
+**Methods:**
+
+#### `exists` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/private_key.py#L136" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+exists(self, key_id: str) -> bool
+```
+
+Check if key files exist.
+
+
+#### `store_key_pair` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/private_key.py#L143" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+store_key_pair(self, key_id: str, private_key_pem: str, public_key_jwk: dict[str, Any]) -> None
+```
+
+Store private key and metadata to files.
+
+
+#### `load_key_pair` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/private_key.py#L166" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+load_key_pair(self, key_id: str) -> tuple[str, dict[str, Any]]
+```
+
+Load private key and metadata from files.
+
+
+#### `delete_key_pair` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/private_key.py#L181" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+delete_key_pair(self, key_id: str) -> bool
+```
+
+Delete key files.
+
+
+#### `list_key_ids` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/private_key.py#L196" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+list_key_ids(self) -> list[str]
+```
+
+List all key IDs by scanning metadata files.
+
+
+### `PrivateKeyManager` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/private_key.py#L206" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Manages private key identity for MCP servers.
+
+Provides high-level interface for private key management including:
+- Idempotent key pair creation and loading
+- JWT client assertion generation for OAuth 2.0
+- JWKS format public key export
+- Configurable audience mapping for multi-zone scenarios
+
+
+**Methods:**
+
+#### `bootstrap_identity` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/private_key.py#L260" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+bootstrap_identity(self) -> None
+```
+
+Idempotent key pair creation and loading.
+
+If a key pair already exists, loads it into memory.
+If no key pair exists, generates a new RSA key pair and stores it.
+
+
+#### `get_private_key_pem` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/private_key.py#L303" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_private_key_pem(self) -> str
+```
+
+Get private key in PEM format.
+
+**Returns:**
+- Private key in PEM format
+
+**Raises:**
+- `RuntimeError`: If identity not bootstrapped
+
+
+#### `get_public_jwks` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/private_key.py#L316" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_public_jwks(self) -> dict[str, Any]
+```
+
+Get public keys in JWKS format.
+
+**Returns:**
+- JWKS dictionary with the public key
+
+**Raises:**
+- `RuntimeError`: If identity not bootstrapped
+
+
+#### `create_client_assertion` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/private_key.py#L359" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+create_client_assertion(self, issuer: str, subject: str | None = None, audience: str | None = None, expiry_seconds: int = 300) -> str
+```
+
+Create JWT assertion for the given audience.
+
+Creates a JWT client assertion suitable for OAuth 2.0 private_key_jwt
+authentication as defined in RFC 7523.
+
+**Args:**
+- `audience`: JWT audience (typically the authorization server URL)
+- `zone_id`: Zone ID for multi-zone audience resolution
+- `expiry_seconds`: Token expiry time in seconds (default 5 minutes)
+
+**Returns:**
+- Signed JWT assertion string
+
+**Raises:**
+- `RuntimeError`: If identity not bootstrapped
+- `ValueError`: If zone_id required but not provided
+
+
+#### `get_client_id` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/private_key.py#L415" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_client_id(self) -> str
+```
+
+Get the client ID (same as key ID).
+
+**Returns:**
+- Client identifier for OAuth 2.0 registration
+
+
+#### `rotate_key` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/private_key.py#L423" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+rotate_key(self) -> str
+```
+
+Rotate to a new key pair.
+
+Generates a new key pair and stores it, returning the new key ID.
+The old key is not automatically deleted to allow for transition periods.
+
+**Returns:**
+- New key ID
+
+
+#### `cleanup_old_keys` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/private_key.py#L438" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+cleanup_old_keys(self, keep_latest: int = 1) -> list[str]
+```
+
+Clean up old key pairs, keeping only the latest ones.
+
+**Args:**
+- `keep_latest`: Number of latest keys to keep
+
+**Returns:**
+- List of deleted key IDs
+
+
+#### `get_client_jwks_url` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/private_key.py#L463" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_client_jwks_url(self, resource_server_url: str) -> str
+```
+
+Get the JWKS URL for client registration.
+
+Constructs the JWKS endpoint URL based on the resource server URL.
+
+**Args:**
+- `resource_server_url`: The resource server URL
+
+**Returns:**
+- JWKS URL for the client's public keys
+
+
+#### `get_jwks` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/private_key.py#L480" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_jwks(self) -> JsonWebKeySet
+```
+
+Get JWKS for the identity.
+
+**Returns:**
+- JWKS dictionary with the public key
+

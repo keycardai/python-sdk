@@ -1,0 +1,30 @@
+---
+title: metadata
+sidebarTitle: metadata
+---
+
+# `keycardai.mcp.server.handlers.metadata`
+
+## Functions
+
+### `protected_resource_metadata` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/handlers/metadata.py#L81" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+protected_resource_metadata(metadata: InferredProtectedResourceMetadata, enable_multi_zone: bool = False) -> Callable
+```
+
+### `authorization_server_metadata` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/handlers/metadata.py#L110" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+authorization_server_metadata(issuer: str, enable_multi_zone: bool = False) -> Callable
+```
+
+## Classes
+
+### `InferredProtectedResourceMetadata` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/handlers/metadata.py#L16" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Extended ProtectedResourceMetadata that allows resource to be inferred from request.
+
+
+### `AuthorizationServerMetadata` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/handlers/metadata.py#L27" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
