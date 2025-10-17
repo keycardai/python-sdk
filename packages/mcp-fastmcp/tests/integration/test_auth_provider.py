@@ -63,12 +63,14 @@ class TestAuthProviderInitialization:
         assert auth_provider.zone_url == f"{mock_custom_zone_url.scheme}://{mock_zone_id}.{mock_custom_zone_url.host}"
 
     def test_auth_provider_init_with_basic_auth(self, mock_client_factory):
-        """Test AuthProvider initialization with BasicAuth."""
+        """Test AuthProvider initialization with BasicAuth via ClientSecret."""
+        from keycardai.mcp.integrations.fastmcp import ClientSecret
+
         basic_auth = BasicAuth("client_id", "client_secret")
         auth_provider = AuthProvider(
             zone_id=mock_zone_id,
             mcp_base_url="http://localhost:8000",
-            auth=basic_auth,
+            application_credential=ClientSecret(basic_auth),
             client_factory=mock_client_factory
         )
 

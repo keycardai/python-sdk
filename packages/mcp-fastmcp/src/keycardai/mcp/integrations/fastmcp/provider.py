@@ -19,6 +19,10 @@ from fastmcp import Context
 from fastmcp.server.auth import RemoteAuthProvider
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.server.dependencies import get_access_token
+from keycardai.mcp.server.auth import (
+    ApplicationCredential,
+    ClientSecret,
+)
 from keycardai.mcp.server.auth.client_factory import ClientFactory, DefaultClientFactory
 from keycardai.mcp.server.exceptions import (
     AuthProviderConfigurationError,
@@ -28,8 +32,8 @@ from keycardai.mcp.server.exceptions import (
     ResourceAccessError,
 )
 from keycardai.oauth import AsyncClient, Client
-from keycardai.oauth.http.auth import AuthStrategy, NoneAuth
-from keycardai.oauth.types.models import TokenResponse
+from keycardai.oauth.http.auth import NoneAuth
+from keycardai.oauth.types.models import TokenExchangeRequest, TokenResponse
 
 
 class AccessContext:
@@ -180,11 +184,14 @@ class AuthProvider:
         )
 
         # To configure access delegation, provide client credentials
+        from keycardai.mcp.server.auth import ClientSecret
+        from keycardai.oauth import BasicAuth
+
         auth_provider = AuthProvider(
             zone_id="abc1234",
             mcp_server_name="My FastMCP Service",
             mcp_base_url="http://localhost:8000/",
-            auth=BasicAuth("client_id", "client_secret")
+            application_credential=ClientSecret(BasicAuth("client_id", "client_secret"))
         )
 
         # Get the RemoteAuthProvider for FastMCP
@@ -221,7 +228,7 @@ class AuthProvider:
         required_scopes: list[str] | None = None,
         mcp_base_url: str,
         base_url: str | None = None,
-        auth: AuthStrategy | None = None,
+        application_credential: ApplicationCredential | None = None,
         client_factory: ClientFactory | None = None,
     ):
         """Initialize Keycard authentication provider.
@@ -234,8 +241,10 @@ class AuthProvider:
             required_scopes: Required Keycard scopes for access
             mcp_base_url: Resource server URL for the FastMCP server
             base_url: Base URL for Keycard tenant
-            auth: Authentication strategy for OAuth operations. Defaults to NoneAuth() for
-                 automatic client registration. For client credentials, use BasicAuth
+            application_credential: Workload credential provider for token exchange. Use ClientSecret
+                 for Keycard-issued credentials, WebIdentity for private key JWT,
+                 EKSWorkloadIdentity for EKS workload identity, or None for basic token
+                 exchange without client authentication.
             client_factory: Client factory for creating OAuth clients. Defaults to DefaultClientFactory
 
         Raises:
@@ -256,13 +265,24 @@ class AuthProvider:
         self.client_factory = client_factory or DefaultClientFactory()
         self._is_custom_factory = client_factory is not None
 
+        # Initialize application credential provider
+        self.application_credential = application_credential
+
+        # Extract auth strategy from application credential
+        # ClientSecret provides credentials for OAuth client authentication
+        if isinstance(self.application_credential, ClientSecret):
+            self.auth = self.application_credential.auth
+        else:
+            # WebIdentity, EKSWorkloadIdentity, and None don't need client auth
+            self.auth = NoneAuth()
+
         try:
-            self.client: AsyncClient | None = self.client_factory.create_async_client(self.zone_url, auth=auth)
+            self.client: AsyncClient | None = self.client_factory.create_async_client(self.zone_url, auth=self.auth)
         except Exception as e:
-            self._handle_client_creation_error(auth, e)
+            self._handle_client_creation_error(self.auth, e)
 
         if self.client is None:
-            self._handle_client_creation_error(auth)
+            self._handle_client_creation_error(self.auth)
 
         try:
             self.jwks_uri = self._discover_jwks_uri(self.client_factory.create_client(self.zone_url))
@@ -271,9 +291,7 @@ class AuthProvider:
                 zone_url=self.zone_url,
             ) from e
 
-        self.auth = auth if auth is not None else NoneAuth()
-
-    def _handle_client_creation_error(self, auth: AuthStrategy | None, exception: Exception | None = None) -> None:
+    def _handle_client_creation_error(self, auth, exception: Exception | None = None) -> None:
         """Handle client creation errors with appropriate exception type.
 
         Args:
@@ -519,11 +537,29 @@ class AuthProvider:
                 _access_tokens = {}
                 for resource in _resource_list:
                     try:
-                        _token_response = await self.client.exchange_token(
-                            subject_token=_user_token.token,
-                            resource=resource,
-                            subject_token_type="urn:ietf:params:oauth:token-type:access_token"
-                        )
+                        # Prepare token exchange request using application credential provider
+                        if self.application_credential:
+                            # Create auth_info dict for the credential provider
+                            _auth_info = {
+                                "resource_client_id": self.client.config.client_id or "",
+                                "resource_server_url": self.mcp_base_url,
+                                "zone_id": "",  # Single zone for FastMCP
+                            }
+                            _token_exchange_request = await self.application_credential.prepare_token_exchange_request(
+                                client=self.client,
+                                subject_token=_user_token.token,
+                                resource=resource,
+                                auth_info=_auth_info,
+                            )
+                        else:
+                            # Basic token exchange without client authentication
+                            _token_exchange_request = TokenExchangeRequest(
+                                subject_token=_user_token.token,
+                                resource=resource,
+                                subject_token_type="urn:ietf:params:oauth:token-type:access_token",
+                            )
+                        # Execute token exchange
+                        _token_response = await self.client.exchange_token(_token_exchange_request)
                         _access_tokens[resource] = _token_response
                     except Exception as e:
                         _set_error({
