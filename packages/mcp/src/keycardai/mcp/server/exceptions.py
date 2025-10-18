@@ -474,6 +474,156 @@ class ClientInitializationError(MCPServerError):
         super().__init__(message)
 
 
+class EKSWorkloadIdentityConfigurationError(MCPServerError):
+    """Raised when EKS Workload Identity is misconfigured at initialization.
+
+    This exception is raised during EKSWorkloadIdentity initialization when
+    the token file is not accessible or the configuration is invalid. This indicates
+    a configuration problem that prevents the provider from starting.
+    """
+
+    def __init__(self, message: str | None = None, *, token_file_path: str | None = None,
+                 env_var_name: str | None = None, error_details: str | None = None):
+        """Initialize EKS Workload Identity configuration error with detailed context.
+
+        Args:
+            message: Custom error message (optional)
+            token_file_path: Path to the token file that failed
+            env_var_name: Environment variable name used for token file path
+            error_details: Additional error details (e.g., file not found, permission denied)
+        """
+        if message is None:
+            file_info = f": {token_file_path}" if token_file_path else ""
+            env_info = f" (from {env_var_name})" if env_var_name else ""
+
+            message = (
+                f"Failed to initialize EKS workload identity{file_info}{env_info}\n\n"
+                "This usually indicates:\n"
+                "1. Token file does not exist or is not accessible at initialization\n"
+                "2. Insufficient permissions to read the token file\n"
+                "3. Environment variable is not set or points to wrong location\n\n"
+            )
+
+            if error_details:
+                message += f"Error details: {error_details}\n\n"
+
+            message += (
+                "Troubleshooting:\n"
+                f"- Verify the token file exists at: {token_file_path or 'unknown'}\n"
+            )
+
+            if env_var_name:
+                message += f"- Check that {env_var_name} environment variable is correctly set\n"
+
+            message += (
+                "- Ensure the process has read permissions for the token file\n"
+                "- Verify EKS workload identity is properly configured for the pod\n"
+            )
+
+        details = {
+            "token_file_path": str(token_file_path) if token_file_path else "unknown",
+            "env_var_name": env_var_name or "unknown",
+            "error_details": error_details or "unknown",
+            "solution": "Verify EKS workload identity configuration and token file accessibility",
+        }
+
+        super().__init__(message, details=details)
+
+
+class EKSWorkloadIdentityRuntimeError(MCPServerError):
+    """Raised when EKS Workload Identity token cannot be read at runtime.
+
+    This exception is raised during token exchange operations when the token file
+    cannot be read. This indicates a runtime problem (e.g., token file was deleted,
+    permissions changed, or token rotation failed) rather than a configuration issue.
+    """
+
+    def __init__(self, message: str | None = None, *, token_file_path: str | None = None,
+                 env_var_name: str | None = None, error_details: str | None = None):
+        """Initialize EKS Workload Identity runtime error with detailed context.
+
+        Args:
+            message: Custom error message (optional)
+            token_file_path: Path to the token file that failed
+            env_var_name: Environment variable name used for token file path
+            error_details: Additional error details (e.g., file not found, permission denied)
+        """
+        if message is None:
+            file_info = f": {token_file_path}" if token_file_path else ""
+            env_info = f" (from {env_var_name})" if env_var_name else ""
+
+            message = (
+                f"Failed to read EKS workload identity token at runtime{file_info}{env_info}\n\n"
+                "This usually indicates:\n"
+                "1. Token file was deleted or moved after initialization\n"
+                "2. Permissions changed on the token file\n"
+                "3. Token file became empty or corrupted\n"
+                "4. Token rotation failed or is incomplete\n\n"
+            )
+
+            if error_details:
+                message += f"Error details: {error_details}\n\n"
+
+            message += (
+                "Troubleshooting:\n"
+                f"- Verify the token file still exists at: {token_file_path or 'unknown'}\n"
+                "- Check that the token file has not been deleted or moved\n"
+                "- Ensure the token file is not empty\n"
+                "- Verify token rotation is working correctly\n"
+                "- Check file system mount status if using projected volumes\n"
+            )
+
+        details = {
+            "token_file_path": str(token_file_path) if token_file_path else "unknown",
+            "env_var_name": env_var_name or "unknown",
+            "error_details": error_details or "unknown",
+            "solution": "Verify token file is accessible and not corrupted. Check token rotation if applicable.",
+        }
+
+        super().__init__(message, details=details)
+
+
+class ClientSecretConfigurationError(MCPServerError):
+    """Raised when ClientSecret credential provider is misconfigured.
+
+    This exception is raised during ClientSecret initialization when the credentials
+    parameter is invalid or has an unsupported type.
+    """
+
+    def __init__(self, message: str | None = None, *, credentials_type: str | None = None):
+        """Initialize ClientSecret configuration error with detailed context.
+
+        Args:
+            message: Custom error message (optional)
+            credentials_type: Type of credentials that was provided
+        """
+        if message is None:
+            type_info = f": {credentials_type}" if credentials_type else ""
+
+            message = (
+                f"Invalid credentials type provided to ClientSecret{type_info}\n\n"
+                "ClientSecret requires one of the following credential formats:\n"
+                "1. Tuple: (client_id, client_secret) for single-zone deployments\n"
+                "2. Dict: {zone_id: (client_id, client_secret)} for multi-zone deployments\n\n"
+                "Examples:\n"
+                "  # Single zone\n"
+                "  provider = ClientSecret(('my_client_id', 'my_client_secret'))\n\n"
+                "  # Multi-zone\n"
+                "  provider = ClientSecret({\n"
+                "      'zone1': ('client_id_1', 'client_secret_1'),\n"
+                "      'zone2': ('client_id_2', 'client_secret_2'),\n"
+                "  })\n"
+            )
+
+        details = {
+            "provided_type": credentials_type or "unknown",
+            "expected_types": "tuple[str, str] or dict[str, tuple[str, str]]",
+            "solution": "Provide credentials as either a (client_id, client_secret) tuple or a dict of zone credentials",
+        }
+
+        super().__init__(message, details=details)
+
+
 
 # Export all exception classes
 __all__ = [
@@ -498,4 +648,7 @@ __all__ = [
     "MissingAccessContextError",
     "ResourceAccessError",
     "ClientInitializationError",
+    "ClientSecretConfigurationError",
+    "EKSWorkloadIdentityConfigurationError",
+    "EKSWorkloadIdentityRuntimeError",
 ]

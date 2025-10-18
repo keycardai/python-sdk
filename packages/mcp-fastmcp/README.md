@@ -254,16 +254,16 @@ auth_provider = AuthProvider(
 
 ### Client Credentials for Token Exchange
 
-To enable token exchange (required for the `@grant` decorator), provide client credentials:
+To enable token exchange (required for the `@grant` decorator), provide application credentials:
 
 ```python
-from keycardai.oauth.http.auth import BasicAuth
+from keycardai.mcp.integrations.fastmcp import ClientSecret
 
 auth_provider = AuthProvider(
     zone_id="your-zone-id",
     mcp_server_name="My FastMCP Service",
     mcp_base_url="http://localhost:8000/",
-    auth=BasicAuth("your_client_id", "your_client_secret")
+    application_credential=ClientSecret(("your_client_id", "your_client_secret"))
 )
 ```
 

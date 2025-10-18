@@ -1,0 +1,36 @@
+---
+title: metadata
+sidebarTitle: metadata
+---
+
+# `keycardai.mcp.server.routers.metadata`
+
+## Functions
+
+### `auth_metadata_mount` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/routers/metadata.py#L19" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+auth_metadata_mount(issuer: str, enable_multi_zone: bool = False, jwks: JsonWebKeySet | None = None) -> Mount
+```
+
+### `protected_mcp_router` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/routers/metadata.py#L57" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+protected_mcp_router(issuer: str, mcp_app: ASGIApp, verifier: TokenVerifier, enable_multi_zone: bool = False, jwks: JsonWebKeySet | None = None) -> Sequence[Route]
+```
+
+
+Create a protected MCP router with authentication middleware.
+
+This function creates the routing structure needed for a protected MCP server,
+including OAuth metadata endpoints and the main MCP application with authentication.
+
+**Args:**
+- `issuer`: The OAuth issuer URL (zone URL)
+- `mcp_app`: The MCP FastMCP streamable HTTP application
+- `verifier`: Token verifier for authentication middleware
+- `enable_multi_zone`: Whether to enable multi-zone support
+
+**Returns:**
+- Sequence of routes including metadata mount and protected MCP mount
+

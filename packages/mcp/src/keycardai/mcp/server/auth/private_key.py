@@ -203,7 +203,7 @@ class FilePrivateKeyStorage:
         return sorted(key_ids)
 
 
-class PrivateKeyIdentityManager:
+class PrivateKeyManager:
     """Manages private key identity for MCP servers.
 
     Provides high-level interface for private key management including:
@@ -215,7 +215,7 @@ class PrivateKeyIdentityManager:
     Example:
         # File-based storage
         storage = FilePrivateKeyStorage("/etc/mcp/keys")
-        manager = PrivateKeyIdentityManager(
+        manager = PrivateKeyManager(
             storage=storage,
             audience_config="https://api.example.com"
         )
@@ -226,7 +226,7 @@ class PrivateKeyIdentityManager:
         jwks = manager.get_public_jwks()
 
         # Multi-zone configuration
-        manager = PrivateKeyIdentityManager(
+        manager = PrivateKeyManager(
             storage=storage,
             audience_config={
                 "zone1": "https://zone1.api.example.com",
@@ -460,8 +460,18 @@ class PrivateKeyIdentityManager:
 
         return deleted
 
-    def get_client_jwks_url(self, auth_info: dict[str, str]) -> str:
-        resource_url = AnyHttpUrl(auth_info["resource_server_url"])
+    def get_client_jwks_url(self, resource_server_url: str) -> str:
+        """Get the JWKS URL for client registration.
+
+        Constructs the JWKS endpoint URL based on the resource server URL.
+
+        Args:
+            resource_server_url: The resource server URL
+
+        Returns:
+            JWKS URL for the client's public keys
+        """
+        resource_url = AnyHttpUrl(resource_server_url)
         base_url = f"{resource_url.scheme}://{resource_url.host.rstrip('/')}"
         if resource_url.port not in [443, 80]:
             base_url += ":" + str(resource_url.port)

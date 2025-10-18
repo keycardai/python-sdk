@@ -1,0 +1,72 @@
+---
+title: verifier
+sidebarTitle: verifier
+---
+
+# `keycardai.mcp.server.auth.verifier`
+
+## Classes
+
+### `TokenVerifier` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/verifier.py#L23" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Token verifier for Keycard zone-issued tokens.
+
+
+**Methods:**
+
+#### `clear_cache` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/verifier.py#L160" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+clear_cache(self) -> None
+```
+
+Clear the JWKS key cache.
+
+
+#### `get_cache_stats` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/verifier.py#L164" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_cache_stats(self) -> dict[str, Any]
+```
+
+Get cache statistics for debugging.
+
+**Returns:**
+- Dictionary with cache statistics
+
+
+#### `verify_token_for_zone` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/verifier.py#L172" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+verify_token_for_zone(self, token: str, zone_id: str) -> AccessToken | None
+```
+
+Verify a JWT token for a specific zone and return AccessToken if valid.
+
+
+#### `verify_token` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/verifier.py#L212" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+verify_token(self, token: str) -> AccessToken | None
+```
+
+Verify a JWT token and return AccessToken if valid.
+
+Performs JWT verification including:
+- Parse token into structured JWTAccessToken model internally
+- Validate token expiration
+- Validate issuer if configured
+- Validate required scopes if configured
+- Convert to AccessToken format for return
+
+Note: This is a simplified implementation that does not perform
+cryptographic signature verification. For production use, proper
+signature verification should be implemented.
+
+**Args:**
+- `token`: JWT token string to verify
+
+**Returns:**
+- AccessToken object if valid, None if invalid
+

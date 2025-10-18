@@ -1,0 +1,67 @@
+---
+title: client_factory
+sidebarTitle: client_factory
+---
+
+# `keycardai.mcp.server.auth.client_factory`
+
+
+Client factory for OAuth client creation.
+
+This module provides the ClientFactory protocol and DefaultClientFactory implementation
+to enable dependency injection and customization of OAuth client creation.
+
+
+## Classes
+
+### `ClientFactory` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/client_factory.py#L13" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Protocol for creating OAuth clients.
+
+
+**Methods:**
+
+#### `create_client` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/client_factory.py#L15" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+create_client(self, base_url: str, auth: AuthStrategy | None = None, config: ClientConfig | None = None) -> Client
+```
+
+Create an OAuth client.
+
+
+#### `create_async_client` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/client_factory.py#L19" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+create_async_client(self, base_url: str, auth: AuthStrategy | None = None, config: ClientConfig | None = None) -> AsyncClient
+```
+
+Create an asynchronous OAuth client.
+
+
+### `DefaultClientFactory` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/client_factory.py#L24" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Default client factory.
+
+
+**Methods:**
+
+#### `create_client` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/client_factory.py#L27" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+create_client(self, base_url: str, auth: AuthStrategy | None = None, config: ClientConfig | None = None) -> Client
+```
+
+Create discovery client.
+
+
+#### `create_async_client` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/client_factory.py#L32" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+create_async_client(self, base_url: str, auth: AuthStrategy | None = None, config: ClientConfig | None = None) -> AsyncClient
+```
+
+Create an asynchronous OAuth client.
+

@@ -12,7 +12,11 @@ import requests
 from pydantic import AnyHttpUrl
 
 from keycardai.mcp.server.auth.client_factory import ClientFactory
-from keycardai.oauth.types.models import AuthorizationServerMetadata, TokenResponse
+from keycardai.oauth.types.models import (
+    AuthorizationServerMetadata,
+    TokenExchangeRequest,
+    TokenResponse,
+)
 
 # Test constants
 mock_zone_id = "test123"
@@ -50,26 +54,38 @@ def mock_client(mock_metadata: AuthorizationServerMetadata) -> Mock:
 
 
 @pytest.fixture
-def mock_async_client():
+def mock_async_client(mock_metadata: AuthorizationServerMetadata):
     """Fixture providing a mock asynchronous OAuth client."""
     client = AsyncMock()
 
+    # Mock get_metadata for application identity providers
+    async def mock_get_metadata():
+        return mock_metadata
+
+    client.get_metadata.side_effect = mock_get_metadata
+
     # Default successful token exchange behavior
-    def mock_exchange_token(subject_token: str, resource: str, subject_token_type: str):
+    def mock_exchange_token(request: TokenExchangeRequest | None = None, **kwargs):
+        # Handle both TokenExchangeRequest object and kwargs
+        if isinstance(request, TokenExchangeRequest):
+            resource = request.resource
+        else:
+            resource = kwargs.get("resource")
+
         # Create different tokens based on resource for testing
-        if "api1.example.com" in resource:
+        if resource and "api1.example.com" in resource:
             return TokenResponse(
                 access_token="token_api1_123",
                 token_type="Bearer",
                 expires_in=3600
             )
-        elif "api2.example.com" in resource:
+        elif resource and "api2.example.com" in resource:
             return TokenResponse(
                 access_token="token_api2_456",
                 token_type="Bearer",
                 expires_in=3600
             )
-        elif "integration.com" in resource:
+        elif resource and "integration.com" in resource:
             return TokenResponse(
                 access_token="delegated_access_token",
                 token_type="Bearer",

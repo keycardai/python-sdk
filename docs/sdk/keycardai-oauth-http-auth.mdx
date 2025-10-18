@@ -94,3 +94,90 @@ apply_headers(self) -> dict[str, str]
 
 Apply Bearer token authentication header.
 
+
+### `MultiZoneBasicAuth` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/http/auth.py#L89" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Multi-zone HTTP Basic authentication strategy.
+
+Implements HTTP Basic authentication for multi-zone scenarios where different
+zones require different client credentials. This strategy maintains a mapping
+of zone IDs to their respective client credentials.
+
+
+**Methods:**
+
+#### `apply_headers` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/http/auth.py#L131" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+apply_headers(self) -> dict[str, str]
+```
+
+Apply default authentication headers.
+
+Note: For multi-zone authentication, use get_headers_for_zone() instead.
+This method returns empty headers as zone-specific credentials are required.
+
+
+#### `get_headers_for_zone` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/http/auth.py#L139" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_headers_for_zone(self, zone_id: str) -> dict[str, str]
+```
+
+Get authentication headers for a specific zone.
+
+**Args:**
+- `zone_id`: The zone ID to get credentials for
+
+**Returns:**
+- Dictionary containing Authorization header for the zone
+
+**Raises:**
+- `KeyError`: If zone_id is not configured
+
+
+#### `has_zone` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/http/auth.py#L157" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+has_zone(self, zone_id: str) -> bool
+```
+
+Check if credentials are configured for a zone.
+
+**Args:**
+- `zone_id`: The zone ID to check
+
+**Returns:**
+- True if credentials are configured for the zone, False otherwise
+
+
+#### `get_configured_zones` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/http/auth.py#L168" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_configured_zones(self) -> list[str]
+```
+
+Get list of configured zone IDs.
+
+**Returns:**
+- List of zone IDs that have credentials configured
+
+
+#### `get_auth_for_zone` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/http/auth.py#L176" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_auth_for_zone(self, zone_id: str) -> 'BasicAuth'
+```
+
+Get BasicAuth instance for a specific zone.
+
+**Args:**
+- `zone_id`: The zone ID to get authentication for
+
+**Returns:**
+- BasicAuth instance for the zone
+
+**Raises:**
+- `KeyError`: If zone_id is not configured
+

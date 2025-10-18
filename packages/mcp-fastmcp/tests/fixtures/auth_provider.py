@@ -12,7 +12,11 @@ import requests
 from pydantic import AnyHttpUrl
 
 from keycardai.mcp.integrations.fastmcp.provider import ClientFactory
-from keycardai.oauth.types.models import AuthorizationServerMetadata, TokenResponse
+from keycardai.oauth.types.models import (
+    AuthorizationServerMetadata,
+    TokenExchangeRequest,
+    TokenResponse,
+)
 
 # Test constants
 mock_zone_id = "test123"
@@ -54,8 +58,19 @@ def mock_async_client():
     """Fixture providing a mock asynchronous OAuth client."""
     client = AsyncMock()
 
+    # Add config with client_id for application credential tests
+    client.config = Mock()
+    client.config.client_id = "test_client_id"
+
     # Default successful token exchange behavior
-    def mock_exchange_token(subject_token: str, resource: str, subject_token_type: str):
+    def mock_exchange_token(request):
+        # Handle both old-style params and TokenExchangeRequest object
+        if isinstance(request, TokenExchangeRequest):
+            resource = request.resource
+        else:
+            # Fallback for old-style calls (if any)
+            resource = request
+
         # Create different tokens based on resource for testing
         if "api1.example.com" in resource:
             return TokenResponse(

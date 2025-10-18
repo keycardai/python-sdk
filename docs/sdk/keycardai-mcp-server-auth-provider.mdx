@@ -1,0 +1,241 @@
+---
+title: provider
+sidebarTitle: provider
+---
+
+# `keycardai.mcp.server.auth.provider`
+
+## Classes
+
+### `AccessContext` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/provider.py#L40" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Context object that provides access to exchanged tokens for specific resources.
+
+Supports both successful token storage and per-resource error tracking,
+allowing partial success scenarios where some resources succeed while others fail.
+
+
+**Methods:**
+
+#### `set_bulk_tokens` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/provider.py#L57" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+set_bulk_tokens(self, access_tokens: dict[str, TokenResponse])
+```
+
+Set access tokens for resources.
+
+
+#### `set_token` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/provider.py#L61" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+set_token(self, resource: str, token: TokenResponse)
+```
+
+Set token for the specified resource.
+
+
+#### `set_resource_error` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/provider.py#L67" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+set_resource_error(self, resource: str, error: dict[str, str])
+```
+
+Set error for a specific resource.
+
+
+#### `set_error` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/provider.py#L73" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+set_error(self, error: dict[str, str])
+```
+
+Set error that affects all resources.
+
+
+#### `has_resource_error` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/provider.py#L77" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+has_resource_error(self, resource: str) -> bool
+```
+
+Check if a specific resource has an error.
+
+
+#### `has_error` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/provider.py#L81" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+has_error(self) -> bool
+```
+
+Check if there's a global error.
+
+
+#### `has_errors` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/provider.py#L85" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+has_errors(self) -> bool
+```
+
+Check if there are any errors (global or resource-specific).
+
+
+#### `get_errors` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/provider.py#L89" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_errors(self) -> dict[str, Any] | None
+```
+
+Get global errors if any.
+
+
+#### `get_error` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/provider.py#L93" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_error(self) -> dict[str, str] | None
+```
+
+Get global error if any.
+
+
+#### `get_resource_errors` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/provider.py#L97" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_resource_errors(self, resource: str) -> dict[str, str] | None
+```
+
+Get error for a specific resource.
+
+
+#### `get_status` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/provider.py#L101" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_status(self) -> str
+```
+
+Get overall status of the access context.
+
+
+#### `get_successful_resources` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/provider.py#L110" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_successful_resources(self) -> list[str]
+```
+
+Get list of resources that have successful tokens.
+
+
+#### `get_failed_resources` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/provider.py#L114" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_failed_resources(self) -> list[str]
+```
+
+Get list of resources that have errors.
+
+
+#### `access` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/provider.py#L118" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+access(self, resource: str) -> TokenResponse
+```
+
+Get token response for the specified resource.
+
+**Args:**
+- `resource`: The resource URL to get token response for
+
+**Returns:**
+- TokenResponse object with access_token attribute
+
+**Raises:**
+- `ResourceAccessError`: If resource was not granted or has an error
+
+
+### `AuthProvider` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/provider.py#L145" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Keycard authentication provider with token exchange capabilities.
+
+This provider handles both authentication (token verification) and authorization
+(token exchange for resource access) in MCP servers.
+
+
+**Methods:**
+
+#### `get_auth_settings` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/provider.py#L360" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_auth_settings(self) -> AuthSettings
+```
+
+Get authentication settings for the MCP server.
+
+
+#### `get_token_verifier` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/provider.py#L370" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_token_verifier(self, enable_multi_zone: bool | None = None) -> TokenVerifier
+```
+
+Get a token verifier for the MCP server.
+
+
+#### `grant` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/provider.py#L384" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+grant(self, resources: str | list[str])
+```
+
+Decorator for automatic delegated token exchange.
+
+This decorator automates the OAuth token exchange process for accessing
+external resources on behalf of authenticated users. The decorated function
+will receive an AccessContext parameter that provides access to exchanged tokens.
+
+The decorator avoids raising exceptions, and instead sets the error state in the AccessContext.
+
+**Args:**
+- `resources`: Target resource URL(s) for token exchange.
+      Can be a single string or list of strings.
+      (e.g., "https\://api.example.com" or
+       ["https\://api.example.com", "https\://other-api.com"])
+
+The decorated function must:
+- Have a parameter annotated with `AccessContext` type (e.g., `access_ctx: AccessContext`)
+- Have a parameter annotated with `Context` type from MCP (e.g., `ctx: Context`)
+- Can be either async or sync (the decorator handles both cases automatically)
+
+Error handling:
+- Sets error state in AccessContext if token exchange fails
+- Preserves original function signature and behavior
+- Provides detailed error messages for debugging
+
+
+#### `get_mcp_router` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/provider.py#L638" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_mcp_router(self, mcp_app: ASGIApp) -> Sequence[Route]
+```
+
+Get MCP router with authentication middleware and metadata endpoints.
+
+This method creates the complete routing structure for a protected MCP server,
+including OAuth metadata endpoints and the main MCP application with authentication.
+
+**Args:**
+- `mcp_app`: The MCP FastMCP streamable HTTP application
+
+**Returns:**
+- Sequence of routes including metadata mount and protected MCP mount
+
+
+#### `app` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/auth/provider.py#L670" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+app(self, mcp_app: FastMCP, middleware: list[Middleware] | None = None) -> ASGIApp
+```
+
+Get the MCP app with authentication middleware and metadata endpoints.
+

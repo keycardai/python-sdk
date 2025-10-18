@@ -1,0 +1,159 @@
+---
+title: exceptions
+sidebarTitle: exceptions
+---
+
+# `keycardai.mcp.server.exceptions`
+
+
+Exception classes for Keycard MCP integration.
+
+This module defines all custom exceptions used throughout the mcp package,
+providing clear error types and documentation for different failure scenarios.
+
+
+## Classes
+
+### `MCPServerError` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/exceptions.py#L10" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Base exception for all Keycard MCP server errors.
+
+This is the base class for all exceptions raised by the KeyCard MCP
+server package. It provides a common interface for error handling
+and allows catching all MCP server-related errors with a single except clause.
+
+
+### `AuthProviderConfigurationError` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/exceptions.py#L43" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Raised when AuthProvider is misconfigured.
+
+This exception is raised during AuthProvider initialization when
+the provided configuration is invalid or incomplete.
+
+
+### `OAuthClientConfigurationError` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/exceptions.py#L98" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Raised when OAuth client is misconfigured.
+
+
+### `MetadataDiscoveryError` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/exceptions.py#L128" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Raised when Keycard zone metadata discovery fails.
+
+
+### `JWKSInitializationError` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/exceptions.py#L159" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Raised when JWKS initialization fails.
+
+
+### `JWKSValidationError` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/exceptions.py#L169" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Raised when JWKS URI validation fails.
+
+
+### `JWKSDiscoveryError` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/exceptions.py#L179" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+JWKS discovery failed, typically due to invalid zone_id or unreachable endpoint.
+
+
+### `TokenValidationError` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/exceptions.py#L195" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Token validation failed due to invalid token format, signature, or claims.
+
+
+### `TokenExchangeError` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/exceptions.py#L205" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Raised when OAuth token exchange fails.
+
+
+### `UnsupportedAlgorithmError` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/exceptions.py#L213" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+JWT algorithm is not supported by the verifier.
+
+
+### `VerifierConfigError` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/exceptions.py#L221" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Token verifier configuration is invalid.
+
+
+### `CacheError` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/exceptions.py#L229" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+JWKS cache operation failed.
+
+
+### `MissingContextError` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/exceptions.py#L237" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Raised when grant decorator encounters a missing context error.
+
+
+### `MissingAccessContextError` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/exceptions.py#L285" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Raised when grant decorator encounters a missing AccessContext error.
+
+
+### `ResourceAccessError` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/exceptions.py#L336" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Raised when accessing a resource token fails.
+
+
+### `AuthProviderInternalError` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/exceptions.py#L398" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Raised when an internal error occurs in AuthProvider that requires support assistance.
+
+
+### `AuthProviderRemoteError` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/exceptions.py#L437" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Raised when AuthProvider cannot connect to or validate the Keycard zone.
+
+
+### `ClientInitializationError` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/exceptions.py#L469" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Raised when OAuth client initialization fails.
+
+
+### `EKSWorkloadIdentityConfigurationError` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/exceptions.py#L477" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Raised when EKS Workload Identity is misconfigured at initialization.
+
+This exception is raised during EKSWorkloadIdentity initialization when
+the token file is not accessible or the configuration is invalid. This indicates
+a configuration problem that prevents the provider from starting.
+
+
+### `EKSWorkloadIdentityRuntimeError` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/exceptions.py#L533" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Raised when EKS Workload Identity token cannot be read at runtime.
+
+This exception is raised during token exchange operations when the token file
+cannot be read. This indicates a runtime problem (e.g., token file was deleted,
+permissions changed, or token rotation failed) rather than a configuration issue.
+
+
+### `ClientSecretConfigurationError` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/exceptions.py#L586" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Raised when ClientSecret credential provider is misconfigured.
+
+This exception is raised during ClientSecret initialization when the credentials
+parameter is invalid or has an unsupported type.
+

@@ -65,7 +65,7 @@ registration during context entry unless explicitly disabled via ClientConfig.
 
 **Methods:**
 
-#### `get_client_id` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L356" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_client_id` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L358" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_client_id(self) -> str | None
@@ -80,7 +80,7 @@ Get the client ID obtained from registration.
 - `RuntimeError`: If called outside of async context manager
 
 
-#### `get_client_secret` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L372" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_client_secret` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L374" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_client_secret(self) -> str | None
@@ -95,19 +95,19 @@ Get the client secret obtained from registration.
 - `RuntimeError`: If called outside of async context manager
 
 
-#### `register_client` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L398" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `register_client` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L400" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 register_client(self, request: ClientRegistrationRequest) -> ClientRegistrationResponse
 ```
 
-#### `register_client` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L404" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `register_client` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L406" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 register_client() -> ClientRegistrationResponse
 ```
 
-#### `register_client` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L426" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `register_client` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L428" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 register_client(**client_registration_args) -> ClientRegistrationResponse
@@ -132,19 +132,19 @@ args for common cases.
 - `OAuthProtocolError`: If registration response is invalid or contains OAuth errors
 
 
-#### `discover_server_metadata` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L490" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `discover_server_metadata` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L492" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 discover_server_metadata(self, request: ServerMetadataRequest) -> AuthorizationServerMetadata
 ```
 
-#### `discover_server_metadata` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L496" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `discover_server_metadata` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L498" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 discover_server_metadata() -> AuthorizationServerMetadata
 ```
 
-#### `discover_server_metadata` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L503" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `discover_server_metadata` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L505" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 discover_server_metadata(**metadata_discovery_args) -> AuthorizationServerMetadata
@@ -170,19 +170,19 @@ args for simple cases.
 - `NetworkError`: If network request fails
 
 
-#### `exchange_token` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L558" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `exchange_token` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L560" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 exchange_token(self, request: TokenExchangeRequest) -> TokenResponse
 ```
 
-#### `exchange_token` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L564" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `exchange_token` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L566" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 exchange_token() -> TokenResponse
 ```
 
-#### `exchange_token` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L581" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `exchange_token` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L585" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 exchange_token(**token_exchange_args) -> TokenResponse
@@ -224,7 +224,7 @@ Advanced usage (impersonation):
 - `TypeError`: If both request and token_exchange_args are provided
 
 
-#### `endpoints_summary` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L643" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `endpoints_summary` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L647" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 endpoints_summary(self) -> dict[str, dict[str, str]]
@@ -236,7 +236,7 @@ Get diagnostic summary of resolved endpoints.
 - Dictionary showing resolved URLs and their sources
 
 
-### `Client` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L656" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `Client` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L660" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Synchronous OAuth 2.0 client for traditional Python applications.
@@ -251,7 +251,7 @@ unless discovery is explicitly disabled via ClientConfig.
 
 **Methods:**
 
-#### `client_id` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L820" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `client_id` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L824" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 client_id(self) -> str | None
@@ -265,7 +265,7 @@ Accessing this property will trigger automatic initialization if needed.
 - Client ID string if registration was successful, None otherwise
 
 
-#### `client_secret` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L832" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `client_secret` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L836" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 client_secret(self) -> str | None
@@ -279,19 +279,19 @@ Accessing this property will trigger automatic initialization if needed.
 - Client secret string if registration was successful, None otherwise
 
 
-#### `register_client` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L845" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `register_client` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L849" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 register_client(self, request: ClientRegistrationRequest) -> ClientRegistrationResponse
 ```
 
-#### `register_client` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L851" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `register_client` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L855" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 register_client() -> ClientRegistrationResponse
 ```
 
-#### `register_client` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L873" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `register_client` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L877" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 register_client(**client_registration_args) -> ClientRegistrationResponse
@@ -323,19 +323,19 @@ Simple usage (S2S):
 - `OAuthProtocolError`: If registration response is invalid or contains OAuth errors
 
 
-#### `discover_server_metadata` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L938" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `discover_server_metadata` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L942" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 discover_server_metadata(self, request: ServerMetadataRequest) -> AuthorizationServerMetadata
 ```
 
-#### `discover_server_metadata` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L944" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `discover_server_metadata` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L948" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 discover_server_metadata() -> AuthorizationServerMetadata
 ```
 
-#### `discover_server_metadata` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L951" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `discover_server_metadata` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L955" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 discover_server_metadata(**metadata_discovery_args) -> AuthorizationServerMetadata
@@ -360,19 +360,19 @@ args for simple cases.
 - `NetworkError`: If network request fails
 
 
-#### `exchange_token` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L1005" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `exchange_token` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L1009" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 exchange_token(self, request: TokenExchangeRequest) -> TokenResponse
 ```
 
-#### `exchange_token` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L1011" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `exchange_token` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L1015" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 exchange_token() -> TokenResponse
 ```
 
-#### `exchange_token` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L1028" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `exchange_token` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L1032" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 exchange_token(**token_exchange_args) -> TokenResponse
@@ -414,7 +414,7 @@ Advanced usage (impersonation):
 - `TypeError`: If both request and token_exchange_args are provided
 
 
-#### `endpoints_summary` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L1090" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `endpoints_summary` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/client.py#L1094" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 endpoints_summary(self) -> dict[str, dict[str, str]]
