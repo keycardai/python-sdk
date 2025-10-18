@@ -19,10 +19,7 @@ from fastmcp import Context
 from fastmcp.server.auth import RemoteAuthProvider
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.server.dependencies import get_access_token
-from keycardai.mcp.server.auth import (
-    ApplicationCredential,
-    ClientSecret,
-)
+from keycardai.mcp.server.auth import ApplicationCredential
 from keycardai.mcp.server.auth.client_factory import ClientFactory, DefaultClientFactory
 from keycardai.mcp.server.exceptions import (
     AuthProviderConfigurationError,
@@ -268,12 +265,10 @@ class AuthProvider:
         # Initialize application credential provider
         self.application_credential = application_credential
 
-        # Extract auth strategy from application credential
-        # ClientSecret provides credentials for OAuth client authentication
-        if isinstance(self.application_credential, ClientSecret):
-            self.auth = self.application_credential.auth
+        # Get the auth strategy for the HTTP client doing the token exchange
+        if self.application_credential is not None:
+            self.auth = self.application_credential.get_http_client_auth()
         else:
-            # WebIdentity, EKSWorkloadIdentity, and None don't need client auth
             self.auth = NoneAuth()
 
         try:

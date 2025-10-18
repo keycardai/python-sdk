@@ -20,7 +20,7 @@ import os
 import uuid
 from typing import Protocol
 
-from keycardai.oauth import AsyncClient, AuthStrategy, ClientConfig
+from keycardai.oauth import AsyncClient, AuthStrategy, ClientConfig, NoneAuth
 from keycardai.oauth.types.models import JsonWebKeySet, TokenExchangeRequest
 from keycardai.oauth.types.oauth import GrantType, TokenEndpointAuthMethod
 
@@ -59,6 +59,20 @@ class ApplicationCredential(Protocol):
     This protocol enables the provider to support multiple authentication methods
     without tight coupling to specific implementations.
     """
+
+    def get_http_client_auth(self) -> AuthStrategy:
+        """Get HTTP client authentication strategy for token exchange requests.
+
+        Returns the appropriate authentication strategy for the HTTP client that
+        performs token exchange. ClientSecret credentials use the configured auth
+        strategy (e.g., BasicAuth), while assertion-based credentials (WebIdentity,
+        EKSWorkloadIdentity) use NoneAuth since authentication is handled via
+        assertions in the request body.
+
+        Returns:
+            AuthStrategy to use for HTTP client authentication
+        """
+        ...
 
     def set_client_config(
         self,
@@ -143,6 +157,17 @@ class ClientSecret:
                   MultiZoneBasicAuth for multi-zone deployments.
         """
         self.auth = auth
+
+    def get_http_client_auth(self) -> AuthStrategy:
+        """Get HTTP client authentication strategy.
+
+        Returns the configured auth strategy (typically BasicAuth or MultiZoneBasicAuth)
+        for authenticating the HTTP client during token exchange.
+
+        Returns:
+            The configured authentication strategy
+        """
+        return self.auth
 
     def set_client_config(
         self,
@@ -261,6 +286,17 @@ class WebIdentity:
 
         # Bootstrap the identity (creates or loads keys)
         self.identity_manager.bootstrap_identity()
+
+    def get_http_client_auth(self) -> AuthStrategy:
+        """Get HTTP client authentication strategy.
+
+        Returns NoneAuth since WebIdentity uses client assertions in the request body
+        (private_key_jwt) rather than HTTP client authentication.
+
+        Returns:
+            NoneAuth instance for no HTTP client authentication
+        """
+        return NoneAuth()
 
     def set_client_config(
         self,
@@ -475,6 +511,17 @@ class EKSWorkloadIdentity:
                 env_var_name=self.env_var_name,
                 error_details=f"Error reading token file: {str(e)}",
             ) from e
+
+    def get_http_client_auth(self) -> AuthStrategy:
+        """Get HTTP client authentication strategy.
+
+        Returns NoneAuth since EKSWorkloadIdentity uses client assertions in the request
+        body (EKS token) rather than HTTP client authentication.
+
+        Returns:
+            NoneAuth instance for no HTTP client authentication
+        """
+        return NoneAuth()
 
     def set_client_config(
         self,
