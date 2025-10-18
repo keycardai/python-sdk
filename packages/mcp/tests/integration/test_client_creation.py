@@ -207,9 +207,7 @@ class TestClientCreation:
         mock_factory.create_async_client.return_value = mock_async_client
 
         # Create identity with credentials
-        app_identity = ClientSecret(
-            auth=BasicAuth("client_id", "client_secret")
-        )
+        app_identity = ClientSecret(("client_id", "client_secret"))
 
         # Create AuthProvider
         auth_provider = AuthProvider(

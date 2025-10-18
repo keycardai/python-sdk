@@ -151,24 +151,33 @@ class AuthProvider:
     Example:
         ```python
         from keycardai.mcp.server import AuthProvider
-        from keycardai.oauth.http.auth import MultiZoneBasicAuth
+        from keycardai.mcp.server.auth import ClientSecret
 
-        # Single zone (default)
+        # Single zone (default) - no credentials required
         provider = AuthProvider(
             zone_url="https://abc1234.keycard.cloud",
             mcp_server_name="My MCP Server"
         )
 
+        # Single zone with client credentials
+        client_secret = ClientSecret(
+            ("client_id_from_keycard", "client_secret_from_keycard")
+        )
+        provider = AuthProvider(
+            zone_url="https://abc1234.keycard.cloud",
+            mcp_server_name="My MCP Server",
+            application_credential=client_secret
+        )
+
         # Multi-zone support with zone-specific credentials
-        multi_zone_auth = MultiZoneBasicAuth({
+        client_secret = ClientSecret({
             "zone1": ("client_id_1", "client_secret_1"),
             "zone2": ("client_id_2", "client_secret_2"),
         })
-
         provider = AuthProvider(
             zone_url="https://keycard.cloud",
             mcp_server_name="My MCP Server",
-            auth=multi_zone_auth,
+            application_credential=client_secret,
             enable_multi_zone=True
         )
 

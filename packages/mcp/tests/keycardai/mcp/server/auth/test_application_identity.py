@@ -17,6 +17,7 @@ from keycardai.mcp.server.auth.application_credentials import (
     WebIdentity,
 )
 from keycardai.mcp.server.exceptions import (
+    ClientSecretConfigurationError,
     EKSWorkloadIdentityConfigurationError,
     EKSWorkloadIdentityRuntimeError,
 )
@@ -60,30 +61,32 @@ class TestClientSecret:
     """Test ClientSecret for client secret credential-based authentication."""
 
     @pytest.mark.asyncio
-    async def test_initialization_with_basic_auth(self):
-        """Test ClientSecret initialization with BasicAuth."""
-        auth = BasicAuth(client_id="test_client_id", client_secret="test_client_secret")
-        provider = ClientSecret(auth=auth)
+    async def test_initialization_with_tuple(self):
+        """Test ClientSecret initialization with credential tuple."""
+        provider = ClientSecret(("test_client_id", "test_client_secret"))
 
-        assert provider.auth == auth
+        # Should construct BasicAuth internally
+        assert isinstance(provider.auth, BasicAuth)
+        assert provider.auth.client_id == "test_client_id"
+        assert provider.auth.client_secret == "test_client_secret"
 
     @pytest.mark.asyncio
-    async def test_initialization_with_multi_zone_auth(self):
-        """Test ClientSecret initialization with MultiZoneBasicAuth."""
-        multi_auth = MultiZoneBasicAuth({
+    async def test_initialization_with_dict(self):
+        """Test ClientSecret initialization with credential dict."""
+        provider = ClientSecret({
             "zone1": ("client_id_1", "client_secret_1"),
             "zone2": ("client_id_2", "client_secret_2"),
         })
 
-        provider = ClientSecret(auth=multi_auth)
-
-        assert provider.auth == multi_auth
+        # Should construct MultiZoneBasicAuth internally
+        assert isinstance(provider.auth, MultiZoneBasicAuth)
+        assert provider.auth.has_zone("zone1")
+        assert provider.auth.has_zone("zone2")
 
     @pytest.mark.asyncio
     async def test_prepare_token_exchange_request(self, mock_client):
         """Test token exchange request preparation with client secret credentials."""
-        auth = BasicAuth(client_id="test_client_id", client_secret="test_client_secret")
-        provider = ClientSecret(auth=auth)
+        provider = ClientSecret(("test_client_id", "test_client_secret"))
 
         request = await provider.prepare_token_exchange_request(
             client=mock_client,
@@ -102,8 +105,7 @@ class TestClientSecret:
     @pytest.mark.asyncio
     async def test_prepare_token_exchange_request_with_auth_info(self, mock_client):
         """Test that auth_info is passed but unused (authentication is via AuthStrategy)."""
-        auth = BasicAuth(client_id="test_client_id", client_secret="test_client_secret")
-        provider = ClientSecret(auth=auth)
+        provider = ClientSecret(("test_client_id", "test_client_secret"))
 
         request = await provider.prepare_token_exchange_request(
             client=mock_client,
@@ -117,6 +119,24 @@ class TestClientSecret:
         assert request.resource == "https://api.example.com"
         # Authentication happens at HTTP level, not in the request
         assert request.client_assertion is None
+
+    @pytest.mark.asyncio
+    async def test_initialization_with_invalid_type_raises_error(self):
+        """Test that ClientSecret raises ClientSecretConfigurationError for invalid types."""
+        with pytest.raises(ClientSecretConfigurationError) as exc_info:
+            ClientSecret("invalid_string_type")
+
+        assert "Invalid credentials type provided to ClientSecret" in str(exc_info.value)
+        assert "str" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_initialization_with_invalid_list_type_raises_error(self):
+        """Test that ClientSecret raises ClientSecretConfigurationError for list type."""
+        with pytest.raises(ClientSecretConfigurationError) as exc_info:
+            ClientSecret(["client_id", "client_secret"])
+
+        assert "Invalid credentials type provided to ClientSecret" in str(exc_info.value)
+        assert "list" in str(exc_info.value)
 
 
 class TestWebIdentity:

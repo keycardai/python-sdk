@@ -148,3 +148,12 @@ This exception is raised during token exchange operations when the token file
 cannot be read. This indicates a runtime problem (e.g., token file was deleted,
 permissions changed, or token rotation failed) rather than a configuration issue.
 
+
+### `ClientSecretConfigurationError` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/exceptions.py#L586" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Raised when ClientSecret credential provider is misconfigured.
+
+This exception is raised during ClientSecret initialization when the credentials
+parameter is invalid or has an unsupported type.
+

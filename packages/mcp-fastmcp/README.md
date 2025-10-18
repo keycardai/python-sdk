@@ -258,13 +258,12 @@ To enable token exchange (required for the `@grant` decorator), provide applicat
 
 ```python
 from keycardai.mcp.integrations.fastmcp import ClientSecret
-from keycardai.oauth.http.auth import BasicAuth
 
 auth_provider = AuthProvider(
     zone_id="your-zone-id",
     mcp_server_name="My FastMCP Service",
     mcp_base_url="http://localhost:8000/",
-    application_credential=ClientSecret(BasicAuth("your_client_id", "your_client_secret"))
+    application_credential=ClientSecret(("your_client_id", "your_client_secret"))
 )
 ```
 

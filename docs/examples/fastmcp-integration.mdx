@@ -66,12 +66,10 @@ auth_provider = AuthProvider(
     zone_id="your-zone-id",
     mcp_server_name="My Server",
     mcp_base_url="http://localhost:8000/",
-    application_credential=ClientSecret(
-        BasicAuth(
-            os.getenv("KEYCARD_CLIENT_ID"),
-            os.getenv("KEYCARD_CLIENT_SECRET")
-        )
-    )
+    application_credential=ClientSecret((
+        os.getenv("KEYCARD_CLIENT_ID"),
+        os.getenv("KEYCARD_CLIENT_SECRET")
+    ))
 )
 ```
 
@@ -91,7 +89,6 @@ from keycardai.mcp.integrations.fastmcp import (
     AuthProvider,
     AccessContext,
     ClientSecret,
-    BasicAuth,
 )
 import httpx
 
@@ -100,12 +97,10 @@ auth_provider = AuthProvider(
     zone_id="your-zone-id",
     mcp_server_name="My Server",
     mcp_base_url="http://localhost:8000/",
-    application_credential=ClientSecret(
-        BasicAuth(
-            os.getenv("KEYCARD_CLIENT_ID"),
-            os.getenv("KEYCARD_CLIENT_SECRET")
-        )
-    )
+    application_credential=ClientSecret((
+        os.getenv("KEYCARD_CLIENT_ID"),
+        os.getenv("KEYCARD_CLIENT_SECRET")
+    ))
 )
 
 # Get RemoteAuthProvider for FastMCP

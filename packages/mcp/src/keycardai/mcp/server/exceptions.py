@@ -583,6 +583,47 @@ class EKSWorkloadIdentityRuntimeError(MCPServerError):
         super().__init__(message, details=details)
 
 
+class ClientSecretConfigurationError(MCPServerError):
+    """Raised when ClientSecret credential provider is misconfigured.
+
+    This exception is raised during ClientSecret initialization when the credentials
+    parameter is invalid or has an unsupported type.
+    """
+
+    def __init__(self, message: str | None = None, *, credentials_type: str | None = None):
+        """Initialize ClientSecret configuration error with detailed context.
+
+        Args:
+            message: Custom error message (optional)
+            credentials_type: Type of credentials that was provided
+        """
+        if message is None:
+            type_info = f": {credentials_type}" if credentials_type else ""
+
+            message = (
+                f"Invalid credentials type provided to ClientSecret{type_info}\n\n"
+                "ClientSecret requires one of the following credential formats:\n"
+                "1. Tuple: (client_id, client_secret) for single-zone deployments\n"
+                "2. Dict: {zone_id: (client_id, client_secret)} for multi-zone deployments\n\n"
+                "Examples:\n"
+                "  # Single zone\n"
+                "  provider = ClientSecret(('my_client_id', 'my_client_secret'))\n\n"
+                "  # Multi-zone\n"
+                "  provider = ClientSecret({\n"
+                "      'zone1': ('client_id_1', 'client_secret_1'),\n"
+                "      'zone2': ('client_id_2', 'client_secret_2'),\n"
+                "  })\n"
+            )
+
+        details = {
+            "provided_type": credentials_type or "unknown",
+            "expected_types": "tuple[str, str] or dict[str, tuple[str, str]]",
+            "solution": "Provide credentials as either a (client_id, client_secret) tuple or a dict of zone credentials",
+        }
+
+        super().__init__(message, details=details)
+
+
 
 # Export all exception classes
 __all__ = [
@@ -607,6 +648,7 @@ __all__ = [
     "MissingAccessContextError",
     "ResourceAccessError",
     "ClientInitializationError",
+    "ClientSecretConfigurationError",
     "EKSWorkloadIdentityConfigurationError",
     "EKSWorkloadIdentityRuntimeError",
 ]

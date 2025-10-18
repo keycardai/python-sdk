@@ -20,11 +20,19 @@ import os
 import uuid
 from typing import Protocol
 
-from keycardai.oauth import AsyncClient, AuthStrategy, ClientConfig, NoneAuth
+from keycardai.oauth import (
+    AsyncClient,
+    AuthStrategy,
+    BasicAuth,
+    ClientConfig,
+    MultiZoneBasicAuth,
+    NoneAuth,
+)
 from keycardai.oauth.types.models import JsonWebKeySet, TokenExchangeRequest
 from keycardai.oauth.types.oauth import GrantType, TokenEndpointAuthMethod
 
 from ..exceptions import (
+    ClientSecretConfigurationError,
     EKSWorkloadIdentityConfigurationError,
     EKSWorkloadIdentityRuntimeError,
 )
@@ -125,38 +133,47 @@ class ClientSecret:
     by Keycard. It uses client_secret_basic or client_secret_post authentication
     via the AuthStrategy, which is handled at the HTTP client level.
 
-    The AuthStrategy typically contains client_id and client_secret that authenticate
-    the MCP server to Keycard during token exchange operations.
+    The AuthStrategy is constructed from either a simple (client_id, client_secret) tuple
+    for single-zone deployments, or a dict mapping zone IDs to credentials for multi-zone
+    deployments.
 
     Example:
-        # Single zone with BasicAuth
-        from keycardai.oauth import BasicAuth
-
-        auth = BasicAuth(
-            client_id="client_id_from_keycard",
-            client_secret="client_secret_from_keycard"
+        # Single zone with tuple
+        provider = ClientSecret(
+            ("client_id_from_keycard", "client_secret_from_keycard")
         )
-        provider = ClientSecret(auth=auth)
 
         # Multi-zone with different credentials per zone
-        from keycardai.oauth import MultiZoneBasicAuth
-
-        multi_auth = MultiZoneBasicAuth({
+        provider = ClientSecret({
             "zone1": ("client_id_1", "client_secret_1"),
             "zone2": ("client_id_2", "client_secret_2"),
         })
-        provider = ClientSecret(auth=multi_auth)
     """
 
-    def __init__(self, auth: AuthStrategy):
-        """Initialize with client secret authentication strategy.
+    def __init__(
+        self,
+        credentials: tuple[str, str] | dict[str, tuple[str, str]],
+    ):
+        """Initialize with client secret credentials.
 
         Args:
-            auth: Authentication strategy containing client credentials.
-                  Typically BasicAuth with client_id/client_secret, or
-                  MultiZoneBasicAuth for multi-zone deployments.
+            credentials: Either a (client_id, client_secret) tuple for single-zone
+                        deployments, or a dict mapping zone_id to (client_id, client_secret)
+                        tuples for multi-zone deployments.
+                        - tuple: Constructs BasicAuth strategy
+                        - dict: Constructs MultiZoneBasicAuth strategy
         """
-        self.auth = auth
+        if isinstance(credentials, tuple):
+            # Single zone: construct BasicAuth
+            client_id, client_secret = credentials
+            self.auth = BasicAuth(client_id=client_id, client_secret=client_secret)
+        elif isinstance(credentials, dict):
+            # Multi-zone: construct MultiZoneBasicAuth
+            self.auth = MultiZoneBasicAuth(zone_credentials=credentials)
+        else:
+            raise ClientSecretConfigurationError(
+                credentials_type=type(credentials).__name__
+            )
 
     def get_http_client_auth(self) -> AuthStrategy:
         """Get HTTP client authentication strategy.

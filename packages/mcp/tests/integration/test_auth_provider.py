@@ -61,8 +61,7 @@ class TestAuthProviderInitialization:
 
     def test_auth_provider_init_with_basic_auth(self, mock_client_factory):
         """Test AuthProvider initialization with ClientSecret."""
-        basic_auth = BasicAuth("client_id", "client_secret")
-        app_identity = ClientSecret(auth=basic_auth)
+        app_identity = ClientSecret(("client_id", "client_secret"))
         auth_provider = AuthProvider(
             zone_id=mock_zone_id,
             mcp_server_url="http://localhost:8000",
@@ -70,7 +69,7 @@ class TestAuthProviderInitialization:
             client_factory=mock_client_factory
         )
 
-        assert auth_provider.auth == basic_auth
+        assert isinstance(auth_provider.auth, BasicAuth)
         assert isinstance(auth_provider.application_credential, ClientSecret)
 
     def test_auth_provider_init_with_required_scopes(self, mock_client_factory):

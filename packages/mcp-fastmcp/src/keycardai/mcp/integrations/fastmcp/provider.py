@@ -182,13 +182,12 @@ class AuthProvider:
 
         # To configure access delegation, provide client credentials
         from keycardai.mcp.server.auth import ClientSecret
-        from keycardai.oauth import BasicAuth
 
         auth_provider = AuthProvider(
             zone_id="abc1234",
             mcp_server_name="My FastMCP Service",
             mcp_base_url="http://localhost:8000/",
-            application_credential=ClientSecret(BasicAuth("client_id", "client_secret"))
+            application_credential=ClientSecret(("client_id", "client_secret"))
         )
 
         # Get the RemoteAuthProvider for FastMCP

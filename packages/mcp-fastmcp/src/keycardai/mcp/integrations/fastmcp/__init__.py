@@ -36,13 +36,13 @@ Basic Usage:
 Advanced Configuration:
 
     # With custom authentication (production)
-    from keycardai.mcp.integrations.fastmcp import ClientSecret, BasicAuth
+    from keycardai.mcp.integrations.fastmcp import ClientSecret
 
     auth_provider = AuthProvider(
         zone_id="abc1234",
         mcp_server_name="Production Server",
         mcp_base_url="https://my-server.com",
-        application_credential=ClientSecret(BasicAuth("client_id", "client_secret"))
+        application_credential=ClientSecret(("client_id", "client_secret"))
     )
 
     # Multiple resource access
@@ -55,15 +55,15 @@ Advanced Configuration:
         return "Sync completed"
 
     # Multi-zone support
-    from keycardai.mcp.integrations.fastmcp import ClientSecret, MultiZoneBasicAuth
+    from keycardai.mcp.integrations.fastmcp import ClientSecret
 
     auth_provider = AuthProvider(
         zone_url="https://keycard.cloud",
         mcp_base_url="https://my-server.com",
-        application_credential=ClientSecret(MultiZoneBasicAuth({
+        application_credential=ClientSecret({
             "tenant1": ("id1", "secret1"),
             "tenant2": ("id2", "secret2"),
-        }))
+        })
     )
 """
 

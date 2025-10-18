@@ -66,15 +66,14 @@ class TestAuthProviderInitialization:
         """Test AuthProvider initialization with BasicAuth via ClientSecret."""
         from keycardai.mcp.integrations.fastmcp import ClientSecret
 
-        basic_auth = BasicAuth("client_id", "client_secret")
         auth_provider = AuthProvider(
             zone_id=mock_zone_id,
             mcp_base_url="http://localhost:8000",
-            application_credential=ClientSecret(basic_auth),
+            application_credential=ClientSecret(("client_id", "client_secret")),
             client_factory=mock_client_factory
         )
 
-        assert auth_provider.auth == basic_auth
+        assert isinstance(auth_provider.auth, BasicAuth)
 
     def test_auth_provider_init_with_required_scopes(self, mock_client_factory):
         """Test AuthProvider initialization with required scopes."""
