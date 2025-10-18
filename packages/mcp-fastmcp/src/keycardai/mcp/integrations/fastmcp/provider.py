@@ -236,7 +236,7 @@ class AuthProvider:
             mcp_server_name: Human-readable service name for metadata
             required_scopes: Required Keycard scopes for access
             mcp_base_url: Resource server URL for the FastMCP server
-            base_url: Base URL for Keycard tenant
+            base_url: Base URL for Keycard zone
             application_credential: Workload credential provider for token exchange. Use ClientSecret
                  for Keycard-issued credentials, WebIdentity for private key JWT,
                  EKSWorkloadIdentity for EKS workload identity, or None for basic token
