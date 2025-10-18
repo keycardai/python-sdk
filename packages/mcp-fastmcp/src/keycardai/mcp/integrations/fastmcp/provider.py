@@ -532,13 +532,13 @@ class AuthProvider:
                 _access_tokens = {}
                 for resource in _resource_list:
                     try:
-                        # Prepare token exchange request using application credential provider
                         if self.application_credential:
-                            # Create auth_info dict for the credential provider
+                            # auth_info context is used by application credential implementation
+                            # to prepare correct assertions in the token exchange request
                             _auth_info = {
                                 "resource_client_id": self.client.config.client_id or "",
                                 "resource_server_url": self.mcp_base_url,
-                                "zone_id": "",  # Single zone for FastMCP
+                                "zone_id": "",
                             }
                             _token_exchange_request = await self.application_credential.prepare_token_exchange_request(
                                 client=self.client,
@@ -547,13 +547,11 @@ class AuthProvider:
                                 auth_info=_auth_info,
                             )
                         else:
-                            # Basic token exchange without client authentication
                             _token_exchange_request = TokenExchangeRequest(
                                 subject_token=_user_token.token,
                                 resource=resource,
                                 subject_token_type="urn:ietf:params:oauth:token-type:access_token",
                             )
-                        # Execute token exchange
                         _token_response = await self.client.exchange_token(_token_exchange_request)
                         _access_tokens[resource] = _token_response
                     except Exception as e:
@@ -563,7 +561,6 @@ class AuthProvider:
                         }, resource, _access_context, _ctx)
                         return await _call_func(is_async_func, func, *args, **kwargs)
 
-                # Set successful tokens on the existing access_context (preserves any resource errors)
                 _access_context.set_bulk_tokens(_access_tokens)
                 _ctx.set_state("keycardai", _access_context)
                 return await _call_func(is_async_func, func, *args, **kwargs)
