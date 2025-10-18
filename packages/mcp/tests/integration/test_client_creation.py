@@ -10,7 +10,6 @@ import pytest
 from mcp.server.fastmcp import Context
 
 from keycardai.mcp.server.auth import AccessContext, AuthProvider, ClientSecret
-from keycardai.oauth import BasicAuth
 from keycardai.oauth.types.models import AuthorizationServerMetadata, TokenResponse
 
 
