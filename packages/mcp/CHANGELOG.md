@@ -1,3 +1,10 @@
+## 0.9.0-keycardai-mcp (2025-10-20)
+
+
+- refactor(keycardai-mcp): align credential names
+- feat(keycardai-mcp): eks workload identity support
+- feat(keycardai-mcp): add application authentication
+
 ## 0.8.1-keycardai-mcp (2025-10-10)
 
 
