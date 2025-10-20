@@ -6,7 +6,8 @@ and FastMCP servers, enabling secure authentication and authorization.
 Components:
 - AuthProvider: Keycard authentication provider with RemoteAuthProvider creation and grant decorator
 - AccessContext: Context object for accessing delegated tokens (used in FastMCP Context namespace)
-- Auth strategies: BasicAuth, MultiZoneBasicAuth, NoneAuth for different authentication scenarios
+- Application credentials: ClientSecret, WebIdentity, EKSWorkloadIdentity for different authentication scenarios
+- Auth strategies: BasicAuth, MultiZoneBasicAuth, NoneAuth for HTTP client authentication
 
 Basic Usage:
 
@@ -35,13 +36,13 @@ Basic Usage:
 Advanced Configuration:
 
     # With custom authentication (production)
-    from keycardai.mcp.integrations.fastmcp import BasicAuth
+    from keycardai.mcp.integrations.fastmcp import ClientSecret
 
     auth_provider = AuthProvider(
         zone_id="abc1234",
         mcp_server_name="Production Server",
         mcp_base_url="https://my-server.com",
-        auth=BasicAuth("client_id", "client_secret")
+        application_credential=ClientSecret(("client_id", "client_secret"))
     )
 
     # Multiple resource access
@@ -54,18 +55,24 @@ Advanced Configuration:
         return "Sync completed"
 
     # Multi-zone support
-    from keycardai.mcp.integrations.fastmcp import MultiZoneBasicAuth
+    from keycardai.mcp.integrations.fastmcp import ClientSecret
 
     auth_provider = AuthProvider(
         zone_url="https://keycard.cloud",
         mcp_base_url="https://my-server.com",
-        auth=MultiZoneBasicAuth({
-            "tenant1": ("id1", "secret1"),
-            "tenant2": ("id2", "secret2"),
+        application_credential=ClientSecret({
+            "zone1": ("id1", "secret1"),
+            "zone2": ("id2", "secret2"),
         })
     )
 """
 
+from keycardai.mcp.server.auth import (
+    ApplicationCredential,
+    ClientSecret,
+    EKSWorkloadIdentity,
+    WebIdentity,
+)
 from keycardai.mcp.server.auth.client_factory import ClientFactory, DefaultClientFactory
 from keycardai.mcp.server.exceptions import (
     # Specific exceptions
@@ -73,6 +80,8 @@ from keycardai.mcp.server.exceptions import (
     AuthProviderInternalError,
     AuthProviderRemoteError,
     ClientInitializationError,
+    EKSWorkloadIdentityConfigurationError,
+    EKSWorkloadIdentityRuntimeError,
     JWKSValidationError,
     # Base exception
     MCPServerError,
@@ -97,6 +106,12 @@ __all__ = [
     "AuthProvider",
     "AccessContext",
 
+    # Application credentials
+    "ApplicationCredential",
+    "ClientSecret",
+    "EKSWorkloadIdentity",
+    "WebIdentity",
+
     # Client factory
     "ClientFactory",
     "DefaultClientFactory",
@@ -115,6 +130,8 @@ __all__ = [
     "AuthProviderInternalError",
     "AuthProviderRemoteError",
     "ClientInitializationError",
+    "EKSWorkloadIdentityConfigurationError",
+    "EKSWorkloadIdentityRuntimeError",
     "JWKSValidationError",
     "MissingContextError",
     "OAuthClientConfigurationError",

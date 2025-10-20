@@ -1,0 +1,28 @@
+---
+title: jwks
+sidebarTitle: jwks
+---
+
+# `keycardai.mcp.server.handlers.jwks`
+
+
+JWKS endpoint handler for OAuth authentication.
+
+This module provides the JWKS (JSON Web Key Set) endpoint implementation
+that serves the public keys used for JWT token verification.
+
+
+## Functions
+
+### `jwks_endpoint` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/server/handlers/jwks.py#L15" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+jwks_endpoint(jwks: JsonWebKeySet) -> Callable
+```
+
+
+Create a JWKS endpoint that returns a dummy RSA key for testing.
+
+**Returns:**
+- Callable endpoint that serves JWKS data
+

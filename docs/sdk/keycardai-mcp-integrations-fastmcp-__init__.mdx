@@ -9,99 +9,68 @@ sidebarTitle: __init__
 FastMCP integration for Keycard OAuth client.
 
 This module provides seamless integration between Keycard's OAuth client
-and FastMCP servers, following the sync/async API design standard.
+and FastMCP servers, enabling secure authentication and authorization.
 
 Components:
-- KeycardAuthProvider: FastMCP authentication provider using Keycard zone tokens
-- AccessMiddleware: Middleware that manages OAuth client lifecycle and provides grant decorator
-- Access token management through grant decorators
+- AuthProvider: Keycard authentication provider with RemoteAuthProvider creation and grant decorator
+- AccessContext: Context object for accessing delegated tokens (used in FastMCP Context namespace)
+- Application credentials: ClientSecret, WebIdentity, EKSWorkloadIdentity for different authentication scenarios
+- Auth strategies: BasicAuth, MultiZoneBasicAuth, NoneAuth for HTTP client authentication
 
-Example Usage:
+Basic Usage:
 
-    # Basic FastMCP server setup with Keycard authentication
-    import fastmcp
-    from keycardai.mcp.integrations.fastmcp import (
-        KeycardAuthProvider,
-        AccessMiddleware,
+    from fastmcp import FastMCP, Context
+    from keycardai.mcp.integrations.fastmcp import AuthProvider
+
+    # Create authentication provider
+    auth_provider = AuthProvider(
+        zone_id="abc1234",
+        mcp_server_name="My Server",
+        mcp_base_url="http://localhost:8000"
     )
 
-    # Create MCP server with Keycard authentication
-    mcp = fastmcp.MCP("My Keycard Server")
+    # Get the RemoteAuthProvider for FastMCP
+    auth = auth_provider.get_remote_auth_provider()
+    mcp = FastMCP("My Server", auth=auth)
 
-    # Add authentication provider
-    auth_provider = KeycardAuthProvider(
-        zone_url="https://my-keycard-zone.com",
-        audience="my-mcp-server"
-    )
-    mcp.add_auth_provider(auth_provider)
-
-    # Add access middleware for automatic token management
-    access = AccessMiddleware(
-        zone_url="https://my-keycard-zone.com"
-    )
-    mcp.add_middleware(access)
-
-    # Use the grant decorator for automatic token exchange in tools
+    # Use grant decorator for token exchange
     @mcp.tool()
-    @access.grant("https://api.example.com")
-    async def call_external_api(ctx: Context, query: str) -> str:
-        '''Call an external API on behalf of the authenticated user.
-
-        The decorator automatically exchanges the user's token for one
-        that can access the specified resource.
-        '''
-        # Use the token to call the external API
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                "https://api.example.com/search",
-                params={"q": query},
-                headers={"Authorization": create_auth_header(ctx.get_state("keycardai").access("https://api.example.com").access_token)}
-            )
-            return response.json()
-
-    # Simplified setup for common scenarios
-    @mcp.tool()
-    @access.grant("https://www.googleapis.com/calendar/v3")
-    async def get_calendar_events(ctx: Context) -> list:
-        '''Get user's calendar events with automatic token delegation.'''
-        # Calendar API call with delegated token
-        from keycardai.oauth.utils.bearer import create_auth_header
-        token = ctx.get_state("keycardai").access("https://www.googleapis.com/calendar/v3").access_token
-        headers = {"Authorization": create_auth_header(token)}
-        # ... implementation details ...
-        return events
-
-    # Run the server
-    if __name__ == "__main__":
-        mcp.run()
+    @auth_provider.grant("https://api.example.com")
+    def call_external_api(ctx: Context, query: str):
+        token = ctx.get_state("keycardai").access("https://api.example.com").access_token
+        # Use token to call external API
+        return f"Results for {query}"
 
 Advanced Configuration:
 
-    # Custom access middleware configuration
-    access = AccessMiddleware(
-        zone_url="https://my-keycard-zone.com",
-        client_name="My Custom Client"
+    # With custom authentication (production)
+    from keycardai.mcp.integrations.fastmcp import ClientSecret
+
+    auth_provider = AuthProvider(
+        zone_id="abc1234",
+        mcp_server_name="Production Server",
+        mcp_base_url="https://my-server.com",
+        application_credential=ClientSecret(("client_id", "client_secret"))
     )
 
-    # Custom authentication with specific requirements
-    auth_provider = KeycardAuthProvider(
-        zone_url="https://my-keycard-zone.com",
-        audience="my-specific-audience",
-        mcp_server_name="My Custom Server",
-        resource_server_url="https://my-resource-server.com/"
-    )
-
-    # Multiple resource access with single decorator
+    # Multiple resource access
     @mcp.tool()
-    @access.grant(["https://www.googleapis.com/calendar/v3", "https://www.googleapis.com/drive/v3"])
+    @auth_provider.grant(["https://www.googleapis.com/calendar/v3", "https://www.googleapis.com/drive/v3"])
     async def sync_calendar_to_drive(ctx: Context):
-        '''Sync calendar events to Google Drive with multiple token exchanges.'''
-        from keycardai.oauth.utils.bearer import create_auth_header
         calendar_token = ctx.get_state("keycardai").access("https://www.googleapis.com/calendar/v3").access_token
         drive_token = ctx.get_state("keycardai").access("https://www.googleapis.com/drive/v3").access_token
-        calendar_headers = {"Authorization": create_auth_header(calendar_token)}
-        drive_headers = {"Authorization": create_auth_header(drive_token)}
-
         # Use both tokens for cross-service operations
-        # ... implementation ...
+        return "Sync completed"
+
+    # Multi-zone support
+    from keycardai.mcp.integrations.fastmcp import ClientSecret
+
+    auth_provider = AuthProvider(
+        zone_url="https://keycard.cloud",
+        mcp_base_url="https://my-server.com",
+        application_credential=ClientSecret({
+            "tenant1": ("id1", "secret1"),
+            "tenant2": ("id2", "secret2"),
+        })
+    )
 

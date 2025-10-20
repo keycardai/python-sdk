@@ -27,7 +27,7 @@ OAuth 2.0 Token Exchange Request as defined in RFC 8693 Section 2.1.
 Reference: https://datatracker.ietf.org/doc/html/rfc8693#section-2.1
 
 
-### `TokenResponse` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/types/models.py#L50" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `TokenResponse` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/types/models.py#L53" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 RFC 8693 Token Exchange Response + RFC 6749 Token Response.
@@ -36,7 +36,7 @@ Comprehensive token response supporting both token exchange and traditional
 OAuth 2.0 token responses with vendor extension preservation.
 
 
-### `RevocationRequest` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/types/models.py#L79" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `RevocationRequest` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/types/models.py#L82" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 OAuth 2.0 Token Revocation Request as defined in RFC 7009 Section 2.1.
@@ -44,7 +44,7 @@ OAuth 2.0 Token Revocation Request as defined in RFC 7009 Section 2.1.
 Reference: https://datatracker.ietf.org/doc/html/rfc7009#section-2.1
 
 
-### `ClientRegistrationRequest` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/types/models.py#L98" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ClientRegistrationRequest` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/types/models.py#L101" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Dynamic Client Registration Request as defined in RFC 7591 Section 2.
@@ -52,7 +52,7 @@ Dynamic Client Registration Request as defined in RFC 7591 Section 2.
 Reference: https://datatracker.ietf.org/doc/html/rfc7591#section-2
 
 
-### `ClientRegistrationResponse` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/types/models.py#L126" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ClientRegistrationResponse` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/types/models.py#L130" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 RFC 7591 Dynamic Client Registration Response.
@@ -61,7 +61,7 @@ Preserves all RFC 7591 fields plus vendor extensions and response metadata.
 Reference: https://datatracker.ietf.org/doc/html/rfc7591#section-3.2.1
 
 
-### `PushedAuthorizationRequest` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/types/models.py#L169" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `PushedAuthorizationRequest` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/types/models.py#L173" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Pushed Authorization Request as defined in RFC 9126 Section 2.
@@ -69,7 +69,7 @@ Pushed Authorization Request as defined in RFC 9126 Section 2.
 Reference: https://datatracker.ietf.org/doc/html/rfc9126#section-2
 
 
-### `ServerMetadataRequest` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/types/models.py#L194" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ServerMetadataRequest` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/types/models.py#L198" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 OAuth 2.0 Authorization Server Metadata discovery request as defined in RFC 8414.
@@ -77,7 +77,7 @@ OAuth 2.0 Authorization Server Metadata discovery request as defined in RFC 8414
 Reference: https://datatracker.ietf.org/doc/html/rfc8414#section-3
 
 
-### `AuthorizationServerMetadata` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/types/models.py#L204" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `AuthorizationServerMetadata` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/types/models.py#L208" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 OAuth 2.0 Authorization Server Metadata (RFC 8414).
@@ -88,19 +88,35 @@ with support for all standard and optional fields.
 Reference: https://datatracker.ietf.org/doc/html/rfc8414#section-2
 
 
-### `PKCE` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/types/models.py#L272" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `JsonWebKey` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/types/models.py#L275" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+JSON Web Key (JWK) as defined in RFC 7517 Section 4.
+
+Reference: https://datatracker.ietf.org/doc/html/rfc7517#section-4
+
+
+### `JsonWebKeySet` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/types/models.py#L309" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+JSON Web Key Set (JWKS) as defined in RFC 7517 Section 5.
+
+Reference: https://datatracker.ietf.org/doc/html/rfc7517#section-5
+
+
+### `PKCE` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/types/models.py#L323" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 RFC 7636 PKCE Challenge with S256 method support.
 
 
-### `Endpoints` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/types/models.py#L281" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `Endpoints` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/types/models.py#L332" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Type-safe endpoint configuration for unified client.
 
 
-### `ClientConfig` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/types/models.py#L293" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `ClientConfig` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/types/models.py#L344" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 Comprehensive client configuration with enterprise defaults.

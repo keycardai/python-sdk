@@ -100,16 +100,16 @@ uvicorn server:app
 ```python
 import os
 from mcp.server.fastmcp import FastMCP, Context
-from keycardai.mcp.server.auth import AuthProvider, AccessContext, BasicAuth
+from keycardai.mcp.server.auth import AuthProvider, AccessContext, ClientSecret
 
 # Configure your provider with client credentials
 access = AuthProvider(
     zone_id="your_zone_id",
     mcp_server_name="My MCP Server",
-    auth=BasicAuth(
+    application_credential=ClientSecret((
         os.getenv("KEYCARD_CLIENT_ID"),
         os.getenv("KEYCARD_CLIENT_SECRET")
-    )
+    ))
 )
 
 mcp = FastMCP("My MCP Server")
@@ -178,14 +178,23 @@ if __name__ == "__main__":
 ### Add Delegated Access (Optional)
 
 ```python
+import os
 from fastmcp import FastMCP, Context
-from keycardai.mcp.integrations.fastmcp import AuthProvider, AccessContext
+from keycardai.mcp.integrations.fastmcp import (
+    AuthProvider, 
+    AccessContext,
+    ClientSecret
+)
 
-# Configure Keycard authentication
+# Configure Keycard authentication with client credentials for delegated access
 auth_provider = AuthProvider(
     zone_id="your-zone-id",
     mcp_server_name="My Secure FastMCP Server",
-    mcp_base_url="http://127.0.0.1:8000/"
+    mcp_base_url="http://127.0.0.1:8000/",
+    application_credential=ClientSecret((
+        os.getenv("KEYCARD_CLIENT_ID"),
+        os.getenv("KEYCARD_CLIENT_SECRET")
+    ))
 )
 
 # Get the RemoteAuthProvider for FastMCP

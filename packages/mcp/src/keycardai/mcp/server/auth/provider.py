@@ -1,7 +1,6 @@
 import asyncio
 import contextlib
 import inspect
-import uuid
 from collections.abc import Callable, Sequence
 from functools import wraps
 from typing import Any
@@ -16,9 +15,12 @@ from starlette.routing import Route
 from starlette.types import ASGIApp
 
 from keycardai.oauth import AsyncClient, ClientConfig
-from keycardai.oauth.http.auth import AuthStrategy, MultiZoneBasicAuth, NoneAuth
-from keycardai.oauth.types.models import JsonWebKeySet, TokenResponse
-from keycardai.oauth.types.oauth import GrantType, TokenEndpointAuthMethod
+from keycardai.oauth.http.auth import MultiZoneBasicAuth, NoneAuth
+from keycardai.oauth.types.models import (
+    JsonWebKeySet,
+    TokenExchangeRequest,
+    TokenResponse,
+)
 
 from ..exceptions import (
     AuthProviderConfigurationError,
@@ -27,12 +29,11 @@ from ..exceptions import (
     ResourceAccessError,
 )
 from ..routers.metadata import protected_mcp_router
-from .client_factory import ClientFactory, DefaultClientFactory
-from .identity import (
-    FilePrivateKeyStorage,
-    PrivateKeyIdentityManager,
-    PrivateKeyStorageProtocol,
+from .application_credentials import (
+    ApplicationCredential,
+    WebIdentity,
 )
+from .client_factory import ClientFactory, DefaultClientFactory
 from .verifier import TokenVerifier
 
 
@@ -150,24 +151,33 @@ class AuthProvider:
     Example:
         ```python
         from keycardai.mcp.server import AuthProvider
-        from keycardai.oauth.http.auth import MultiZoneBasicAuth
+        from keycardai.mcp.server.auth import ClientSecret
 
-        # Single zone (default)
+        # Single zone (default) - no credentials required
         provider = AuthProvider(
             zone_url="https://abc1234.keycard.cloud",
             mcp_server_name="My MCP Server"
         )
 
+        # Single zone with client credentials
+        client_secret = ClientSecret(
+            ("client_id_from_keycard", "client_secret_from_keycard")
+        )
+        provider = AuthProvider(
+            zone_url="https://abc1234.keycard.cloud",
+            mcp_server_name="My MCP Server",
+            application_credential=client_secret
+        )
+
         # Multi-zone support with zone-specific credentials
-        multi_zone_auth = MultiZoneBasicAuth({
+        client_secret = ClientSecret({
             "zone1": ("client_id_1", "client_secret_1"),
             "zone2": ("client_id_2", "client_secret_2"),
         })
-
         provider = AuthProvider(
             zone_url="https://keycard.cloud",
             mcp_server_name="My MCP Server",
-            auth=multi_zone_auth,
+            application_credential=client_secret,
             enable_multi_zone=True
         )
 
@@ -186,14 +196,11 @@ class AuthProvider:
         required_scopes: list[str] | None = None,
         audience: str | dict[str, str] | None = None,
         mcp_server_url: AnyHttpUrl | str | None = None,
-        auth: AuthStrategy | None = None,
         enable_multi_zone: bool = False,
         base_url: str | None = None,
-        enable_private_key_identity: bool = False,
-        private_key_storage: PrivateKeyStorageProtocol | None = None,
-        private_key_storage_dir: str | None = None,
         client_factory: ClientFactory | None = None,
         enable_dynamic_client_registration: bool | None = None,
+        application_credential: ApplicationCredential | None = None,
     ):
         """Initialize the Keycard auth provider.
 
@@ -203,15 +210,19 @@ class AuthProvider:
                      this should be the top-level domain (e.g., "https://keycard.cloud")
             mcp_server_name: Human-readable name for the MCP server
             required_scopes: Required scopes for token validation
+            audience: Expected token audience for verification. Can be:
+                     - str: Single audience value for all zones
+                     - dict[str, str]: Zone-specific audience mapping (zone_id -> audience)
+                     - None: Skip audience validation (not recommended for production)
             mcp_server_url: Resource server URL (defaults to server URL)
-            auth: Authentication strategy for OAuth operations. For multi-zone scenarios,
-                 use MultiZoneBasicAuth to provide zone-specific credentials
             enable_multi_zone: Enable multi-zone support where zone_url is the top-level domain
                               and zone_id is extracted from request context
-            enable_private_key_identity: Enable private key JWT authentication
-            private_key_storage: Custom storage backend for private keys (optional)
-            private_key_storage_dir: Directory for file-based key storage (default: ./mcp_keys)
+            base_url: Base URL for Keycard (default: https://keycard.cloud)
             client_factory: Client factory for creating OAuth clients. Defaults to DefaultClientFactory
+            enable_dynamic_client_registration: Override automatic client registration behavior
+            application_credential: Workload credential provider for token exchange. Use ClientSecret
+                                for Keycard-issued credentials, WebIdentity for private key JWT,
+                                or None for basic token exchange without client authentication.
         """
         self.base_url = base_url or "https://keycard.cloud"
 
@@ -234,42 +245,24 @@ class AuthProvider:
         self._clients: dict[str, AsyncClient | None] = {}
 
         self._init_lock: asyncio.Lock | None = None
-        self.auth = auth or NoneAuth()
         self.audience = audience
-        self.enable_private_key_identity = enable_private_key_identity
 
-        # TODO(p0tr3c): Refactor this
-        self._identity_manager: PrivateKeyIdentityManager | None = None
+        # Initialize application credential provider
+        self.application_credential = application_credential
+
+        # Get the auth strategy for the HTTP client doing the token exchange
+        if self.application_credential is not None:
+            self.auth = self.application_credential.get_http_client_auth()
+        else:
+            self.auth = NoneAuth()
+
+        # Extract JWKS if provider supports it (for WebIdentity)
         self.jwks: JsonWebKeySet | None = None
-        if enable_private_key_identity:
-            self._identity_manager = self._create_and_initialize_identity_manager(private_key_storage, private_key_storage_dir, audience)
-            self.jwks = self._identity_manager.get_jwks()
+        if self.application_credential and hasattr(self.application_credential, 'get_jwks'):
+            self.jwks = self.application_credential.get_jwks()
 
-    def _create_and_initialize_identity_manager(self, private_key_storage: PrivateKeyStorageProtocol | None, private_key_storage_dir: str | None, audience: str | dict[str, str] | None) -> PrivateKeyIdentityManager:
-        try:
-            storage = None
-            if private_key_storage is not None:
-                storage = private_key_storage
-            else:
-                storage_dir = private_key_storage_dir or "./mcp_keys"
-                storage = FilePrivateKeyStorage(storage_dir)
-
-            stable_client_id = self.mcp_server_name or f"mcp-server-{uuid.uuid4()}"
-            stable_client_id = "".join(c if c.isalnum() or c in "-_" else "_" for c in stable_client_id)
-
-            manager = PrivateKeyIdentityManager(
-                storage=storage,
-                key_id=stable_client_id,
-                audience_config=audience
-            )
-            manager.bootstrap_identity()
-            return manager
-        except Exception as e:
-            raise AuthProviderConfigurationError(
-                jwks_error=True,
-                zone_url=self.zone_url,
-                zone_id=self.zone_id
-            ) from e
+        # Backward compatibility: detect if using WebIdentity
+        self.enable_private_key_identity = isinstance(self.application_credential, WebIdentity)
 
     def _create_zone_scoped_url(self, base_url: str, zone_id: str) -> str:
         """Create zone-scoped URL by prepending zone_id to the host."""
@@ -308,28 +301,24 @@ class AuthProvider:
             if client_key in self._clients and self._clients[client_key] is not None:
                 return self._clients[client_key]
 
-            # TODO(p0tr3c): Break this down into smaller failure modes. Return useful debug info/context.
             try:
-                """
-                When enable_private_key_identity is True, the client is configured to use the private key identity.
-                It uses the client registration endpoint but configures itself with JWT authorization strategy.
-                The client_id is configured as the URL of the resource.
-                """
                 client_config = ClientConfig(
                     client_name=self.client_name,
                     enable_metadata_discovery=True,
                 )
 
-                if self.enable_private_key_identity:
-                    client_config.client_id = auth_info["resource_client_id"]
-                    client_config.auto_register_client = True
-                    client_config.client_jwks_url = self._identity_manager.get_client_jwks_url(auth_info)
-                    client_config.client_token_endpoint_auth_method = TokenEndpointAuthMethod.PRIVATE_KEY_JWT
-                    client_config.client_grant_types = [GrantType.CLIENT_CREDENTIALS]
+                # Let the credential provider configure client settings
+                # This keeps credential-specific configuration encapsulated
+                if self.application_credential:
+                    client_config = self.application_credential.set_client_config(client_config, auth_info)
 
-                base_url = self.base_url
+                # Determine the correct base URL for the OAuth client
+                # Single-zone: use self.zone_url (already includes zone_id in hostname)
+                # Multi-zone: construct zone-scoped URL from base_url + zone_id from request
                 if self.enable_multi_zone and auth_info['zone_id']:
                     base_url = self._create_zone_scoped_url(self.base_url, auth_info['zone_id'])
+                else:
+                    base_url = self.zone_url
 
                 auth_strategy = self.auth
                 if isinstance(self.auth, MultiZoneBasicAuth) and auth_info['zone_id']:
@@ -337,9 +326,14 @@ class AuthProvider:
                         raise AuthProviderConfigurationError()
                     auth_strategy = self.auth.get_auth_for_zone(auth_info['zone_id'])
 
+                # Configure dynamic client registration
+                # Priority: explicit config > identity provider defaults
                 if self.enable_dynamic_client_registration is not None:
+                    # Explicit configuration always takes precedence
                     client_config.auto_register_client = self.enable_dynamic_client_registration
-                elif isinstance(auth_strategy, NoneAuth):
+                elif self.application_credential is None and isinstance(auth_strategy, NoneAuth):
+                    # For basic token exchange with no authentication, enable registration by default
+                    # Other credential providers (WebIdentity, ClientSecret) handle their own defaults
                     client_config.auto_register_client = True
 
                 client = self.client_factory.create_async_client(
@@ -347,8 +341,7 @@ class AuthProvider:
                     auth=auth_strategy,
                     config=client_config
                 )
-                self._clients[client_key] = client
-            except Exception:
+            finally:
                 self._clients[client_key] = client
             return client
 
@@ -541,11 +534,6 @@ class AuthProvider:
             _new_args = (*args[:_access_ctx_param_index], AccessContext(), *args[_access_ctx_param_index + 1:])
             return _new_args, _new_args[_access_ctx_param_index]
 
-        async def _get_token_exchange_audience(client: AsyncClient) -> str:
-            if not client._initialized:
-                await client._ensure_initialized()
-            return client._discovered_endpoints.token
-
         def decorator(func: Callable) -> Callable:
             _is_async_func = inspect.iscoroutinefunction(func)
             if _get_param_info_by_type(func, Context) is None:
@@ -609,37 +597,36 @@ class AuthProvider:
                 )
                 _access_tokens = {}
                 for resource in _resource_list:
-                    if self.enable_private_key_identity:
-                        try:
-                            _audience = await _get_token_exchange_audience(_client)
-                            _token_response = await _client.exchange_token(
+                    try:
+                        # Prepare token exchange request using application identity provider
+                        if self.application_credential:
+                            _token_exchange_request = await self.application_credential.prepare_token_exchange_request(
+                                client=_client,
                                 subject_token=_keycardai_auth_info["access_token"],
                                 resource=resource,
-                                subject_token_type="urn:ietf:params:oauth:token-type:access_token",
-                                client_assertion_type=GrantType.JWT_BEARER_CLIENT_ASSERTION,
-                                client_assertion=self._identity_manager.create_client_assertion(
-                                    _keycardai_auth_info["resource_client_id"],
-                                    audience=_audience,
-                                ))
-                            _access_tokens[resource] = _token_response
-                        except Exception as e:
-                            _set_error({
-                                "error": f"Token exchange failed for {resource} with client id: {_keycardai_auth_info['resource_client_id']}: {e}",
-                                "raw_error": str(e),
-                            }, resource, _access_ctx)
-                    else:
-                        try:
-                            _token_response = await _client.exchange_token(
+                                auth_info=_keycardai_auth_info,
+                            )
+                        else:
+                            # Basic token exchange without client authentication
+                            _token_exchange_request = TokenExchangeRequest(
                                 subject_token=_keycardai_auth_info["access_token"],
                                 resource=resource,
                                 subject_token_type="urn:ietf:params:oauth:token-type:access_token",
                             )
-                            _access_tokens[resource] = _token_response
-                        except Exception as e:
-                            _set_error({
-                                "error": f"Token exchange failed for {resource}: {e}",
-                                "raw_error": str(e),
-                            }, resource, _access_ctx)
+
+                        # Execute token exchange
+                        _token_response = await _client.exchange_token(_token_exchange_request)
+                        _access_tokens[resource] = _token_response
+                    except Exception as e:
+                        _error_message = f"Token exchange failed for {resource}"
+                        if self.enable_private_key_identity and _keycardai_auth_info.get("resource_client_id"):
+                            _error_message += f" with client id: {_keycardai_auth_info['resource_client_id']}"
+                        _error_message += f": {e}"
+
+                        _set_error({
+                            "error": _error_message,
+                            "raw_error": str(e),
+                        }, resource, _access_ctx)
 
                 # Set successful tokens on the existing access_context (preserves any resource errors)
                 _access_ctx.set_bulk_tokens(_access_tokens)

@@ -1,0 +1,46 @@
+---
+title: test_utils
+sidebarTitle: test_utils
+---
+
+# `keycardai.mcp.integrations.fastmcp.testing.test_utils`
+
+## Functions
+
+### `mock_access_context` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/integrations/fastmcp/testing/test_utils.py#L8" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+mock_access_context(access_token: str = 'test_access_token', resource_tokens: dict[str, str] | None = None, has_errors: bool = False, error_message: str = 'Mock authentication error')
+```
+
+
+Mock the authentication system for testing.
+
+**Args:**
+- `access_token`: Default access token to return for any resource (str)
+- `resource_tokens`: Dict mapping resource URLs to specific access tokens (dict\[str, str])
+- `has_errors`: Whether the access context should report errors (bool)
+- `error_message`: Error message to return when has_errors=True (str)
+
+**Examples:**
+
+# 1. Default - always returns access token
+with mock_access_context():
+    # Will return "test_access_token" for any resource
+
+# 2. Returns access token for provided resource
+with mock_access_context(access_token="my_token"):
+    # Will return "my_token" for any resource
+
+# 3. Return access token for provided dict of resources
+with mock_access_context(resource_tokens={
+    "https://api.example.com": "token_123",
+    "https://api.other.com": "token_456"
+}):
+    # Will return specific tokens for each resource
+    # Any resource not in the dict will set has_errors=True with "Resource not granted" message
+
+# 4. Returns error set to true and error message
+with mock_access_context(has_errors=True, error_message="Auth failed"):
+    # Will report errors with the specified message
+

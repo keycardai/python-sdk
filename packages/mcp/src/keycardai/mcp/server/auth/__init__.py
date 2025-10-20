@@ -9,11 +9,19 @@ from keycardai.oauth import (
 
 from ..exceptions import (
     AuthProviderConfigurationError,
+    EKSWorkloadIdentityConfigurationError,
+    EKSWorkloadIdentityRuntimeError,
     MetadataDiscoveryError,
     MissingAccessContextError,
     MissingContextError,
     ResourceAccessError,
     TokenExchangeError,
+)
+from .application_credentials import (
+    ApplicationCredential,
+    ClientSecret,
+    EKSWorkloadIdentity,
+    WebIdentity,
 )
 from .provider import AccessContext, AuthProvider
 from .verifier import TokenVerifier
@@ -22,12 +30,18 @@ __all__ = [
     "AuthProvider",
     "AccessContext",
     "TokenVerifier",
+    "ApplicationCredential",
+    "ClientSecret",
+    "EKSWorkloadIdentity",
+    "WebIdentity",
     "AuthStrategy",
     "BasicAuth",
     "BearerAuth",
     "MultiZoneBasicAuth",
     "NoneAuth",
     "AuthProviderConfigurationError",
+    "EKSWorkloadIdentityConfigurationError",
+    "EKSWorkloadIdentityRuntimeError",
     "MissingAccessContextError",
     "MissingContextError",
     "ResourceAccessError",

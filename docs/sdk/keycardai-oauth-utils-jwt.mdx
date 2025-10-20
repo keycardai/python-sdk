@@ -40,7 +40,7 @@ JWT Access Token Benefits:
 
 ## Functions
 
-### `get_claims` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/utils/jwt.py#L40" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `get_claims` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/utils/jwt.py#L94" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
 get_claims(jwt_token: str) -> dict[str, Any]
@@ -63,173 +63,234 @@ like extracting specific claims for token exchange requests.
 - `ValueError`: If token is malformed or cannot be decoded
 
 
-## Classes
-
-### `JWTClientAssertion` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/utils/jwt.py#L93" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-
-JWT Client Assertion utilities for RFC 7523.
-
-Implements JWT-based client authentication as an alternative to
-client secrets for OAuth 2.0 token requests.
-
-Reference: https://datatracker.ietf.org/doc/html/rfc7523#section-3
-
-
-**Methods:**
-
-#### `create_assertion` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/utils/jwt.py#L106" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `get_header` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/utils/jwt.py#L132" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-create_assertion(client_id: str, audience: str, issuer: str, subject: str | None = None, expiration_seconds: int = 300, additional_claims: dict[str, Any] | None = None, private_key: str | None = None, algorithm: str = 'RS256') -> str
+get_header(jwt_token: str) -> dict[str, Any]
 ```
 
-Create a JWT client assertion for authentication.
+
+Extract header information from a JWT token without verification.
+
+This utility extracts header information from a JWT token including
+algorithm, key ID, and other header claims.
 
 **Args:**
-- `client_id`: OAuth 2.0 client identifier
-- `audience`: Token endpoint URL (aud claim)
-- `issuer`: JWT issuer (iss claim)
-- `subject`: JWT subject (sub claim), defaults to client_id
-- `expiration_seconds`: Token lifetime in seconds
-- `additional_claims`: Extra claims to include in JWT
-- `private_key`: Private key for signing (PEM format)
-- `algorithm`: Signing algorithm (RS256, ES256, etc.)
+- `jwt_token`: JWT token string (without Bearer prefix)
 
 **Returns:**
-- Signed JWT assertion string
-
-Reference: https://datatracker.ietf.org/doc/html/rfc7523#section-3
-
-
-#### `verify_assertion` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/utils/jwt.py#L137" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-```python
-verify_assertion(assertion: str, expected_audience: str, public_key: str | None = None, clock_skew_seconds: int = 30) -> dict[str, Any]
-```
-
-Verify a JWT client assertion.
-
-**Args:**
-- `assertion`: JWT assertion to verify
-- `expected_audience`: Expected audience claim value
-- `public_key`: Public key for verification (PEM format)
-- `clock_skew_seconds`: Allowable clock skew for time-based claims
-
-**Returns:**
-- Verified JWT payload claims
+- Dictionary of all header claims in the JWT
 
 **Raises:**
-- `OAuthInvalidTokenError`: If JWT is invalid or verification fails
+- `ValueError`: If token is malformed or cannot be decoded
 
 
-### `JWTAccessToken` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/utils/jwt.py#L163" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+### `extract_scopes` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/utils/jwt.py#L172" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+extract_scopes(claims: dict[str, Any]) -> list[str]
+```
+
+
+Extract scopes from JWT token claims.
+
+Supports both 'scope' (space-separated string) and 'scp' (list) claims
+as commonly used in OAuth 2.0 JWT access tokens.
+
+**Args:**
+- `claims`: JWT token claims dictionary
+
+**Returns:**
+- List of scope strings
+
+
+### `decode_and_verify_jwt` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/utils/jwt.py#L364" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+decode_and_verify_jwt(jwt_token: str, verification_key: str, algorithm: str = 'RS256') -> dict
+```
+
+
+Decode and verify JWT token signature using authlib.
+
+**Args:**
+- `jwt_token`: JWT token string (without Bearer prefix)
+- `verification_key`: Public key for verification (PEM format)
+- `algorithm`: JWT algorithm (default RS256)
+
+**Returns:**
+- Verified JWT claims dictionary
+
+**Raises:**
+- `ValueError`: If token is invalid, malformed, or signature verification fails
+
+
+### `parse_jwt_access_token` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/utils/jwt.py#L388" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+parse_jwt_access_token(jwt_token: str, verification_key: str, algorithm: str = 'RS256') -> JWTAccessToken
+```
+
+
+Parse a JWT token into a JWTAccessToken model with signature verification.
+
+This function decodes and verifies the JWT token signature, then creates a
+structured JWTAccessToken model instance. Supports custom claims and
+preserves the original token.
+
+**Args:**
+- `jwt_token`: JWT token string (without Bearer prefix)
+- `verification_key`: Public key for verification (PEM format)
+- `algorithm`: JWT algorithm (default RS256)
+
+**Returns:**
+- JWTAccessToken model instance with verified claims
+
+**Raises:**
+- `ValueError`: If token is malformed, signature invalid, or missing required claims
+
+
+### `get_verification_key` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/utils/jwt.py#L460" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_verification_key(token: str, jwks_uri: str) -> str
+```
+
+
+Get the verification key for a JWT token from JWKS.
+
+**Args:**
+- `token`: JWT token string
+- `jwks_uri`: JWKS endpoint URL for key fetching
+
+**Returns:**
+- Public key for verification (PEM format)
+
+**Raises:**
+- `ValueError`: If key cannot be obtained or token is malformed
+
+
+### `get_jwks_key` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/utils/jwt.py#L483" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_jwks_key(kid: str | None, jwks_uri: str) -> str
+```
+
+
+Fetch key from JWKS endpoint.
+
+**Args:**
+- `kid`: Key ID from JWT header (optional)
+- `jwks_uri`: JWKS endpoint URL
+
+**Returns:**
+- Public key for verification (PEM format)
+
+**Raises:**
+- `ValueError`: If JWKS cannot be fetched or key not found
+
+
+## Classes
+
+### `JWTAccessToken` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/utils/jwt.py#L204" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 
 JWT Access Token profile implementing RFC 9068.
 
 Defines the standard claims and structure for JWT-formatted access tokens
-as specified in RFC 9068.
+as specified in RFC 9068. Supports custom claims and preserves the raw token.
 
 Reference: https://datatracker.ietf.org/doc/html/rfc9068#section-2
 
 
-### `JWTAccessTokenHandler` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/utils/jwt.py#L188" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-
-Handler for JWT Access Tokens implementing RFC 9068.
-
-Provides utilities for creating, parsing, and validating JWT access tokens
-according to the standardized profile defined in RFC 9068.
-
-Reference: https://datatracker.ietf.org/doc/html/rfc9068
-
-
 **Methods:**
 
-#### `create_access_token` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/utils/jwt.py#L231" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_custom_claim` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/utils/jwt.py#L234" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-create_access_token(self, subject: str, client_id: str, audience: str | list[str], scope: str | None = None, expires_in: int = 3600, additional_claims: dict[str, Any] | None = None) -> str
+get_custom_claim(self, claim_name: str, default: Any = None) -> Any
 ```
 
-Create a JWT access token.
+Get a custom claim value.
 
 **Args:**
-- `subject`: Token subject (typically user ID)
-- `client_id`: OAuth 2.0 client identifier
-- `audience`: Token audience (resource server URLs)
-- `scope`: Space-separated OAuth 2.0 scopes
-- `expires_in`: Token lifetime in seconds
-- `additional_claims`: Extra claims to include
+- `claim_name`: Name of the custom claim
+- `default`: Default value if claim not found
 
 **Returns:**
-- Signed JWT access token string
-
-Reference: https://datatracker.ietf.org/doc/html/rfc9068#section-2
+- Custom claim value or default
 
 
-#### `parse_access_token` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/utils/jwt.py#L258" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `has_custom_claim` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/utils/jwt.py#L246" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-parse_access_token(self, jwt_token: str, verify_signature: bool = True, public_key: str | None = None) -> JWTAccessToken
+has_custom_claim(self, claim_name: str) -> bool
 ```
 
-Parse and validate a JWT access token.
+Check if a custom claim exists.
 
 **Args:**
-- `jwt_token`: JWT access token string
-- `verify_signature`: Whether to verify JWT signature
-- `public_key`: Public key for verification (PEM format)
+- `claim_name`: Name of the custom claim
 
 **Returns:**
-- Parsed JWT access token claims
-
-**Raises:**
-- `OAuthInvalidTokenError`: If JWT is malformed or verification fails
-
-Reference: https://datatracker.ietf.org/doc/html/rfc9068#section-3
+- True if the custom claim exists, False otherwise
 
 
-### `JWTAccessTokenValidator` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/utils/jwt.py#L283" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
-
-
-JWT Access Token validation per RFC 9068.
-
-Validates JWT access tokens according to the structured format
-and security requirements defined in RFC 9068.
-
-Reference: https://datatracker.ietf.org/doc/html/rfc9068
-
-
-**Methods:**
-
-#### `validate_token` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/utils/jwt.py#L303" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+#### `get_all_claims` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/utils/jwt.py#L257" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
 
 ```python
-validate_token(self, jwt_token: str, required_scope: str | None = None, clock_skew_seconds: int = 30) -> dict[str, Any]
+get_all_claims(self) -> dict[str, Any]
 ```
 
-Validate a JWT access token.
-
-Performs comprehensive validation including:
-- Signature verification
-- Expiration check
-- Issuer/audience validation
-- Scope validation (if required)
-- Token structure compliance with RFC 9068
-
-**Args:**
-- `jwt_token`: JWT access token to validate
-- `required_scope`: Required OAuth 2.0 scope (optional)
-- `clock_skew_seconds`: Allowable clock skew for exp/iat claims
+Get all claims (standard + custom) as a dictionary.
 
 **Returns:**
-- Validated token claims
+- Dictionary containing all token claims
 
-**Raises:**
-- `OAuthInvalidTokenError`: If token is invalid or expired
-- `OAuthInvalidScopeError`: If required scope is not present
 
-Reference: https://datatracker.ietf.org/doc/html/rfc9068#section-3
+#### `validate_audience` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/utils/jwt.py#L285" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+validate_audience(self, expected_audience: str | dict[str, str] | None, zone_id: str | None = None) -> bool
+```
+
+Validate the token's audience claim against expected values.
+
+**Args:**
+- `expected_audience`: Expected audience configuration. Can be\:
+- str\: Single audience value for all zones
+- dict\[str, str]\: Zone-specific audience mapping (zone_id -> audience)
+- None\: Skip audience validation
+- `zone_id`: Zone ID for multi-zone scenarios (required when expected_audience is dict)
+
+**Returns:**
+- True if audience is valid, False otherwise
+
+
+#### `validate_scopes` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/utils/jwt.py#L334" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+validate_scopes(self, required_scopes: list[str] | None) -> bool
+```
+
+Validate the token's scope claim against required scopes.
+
+**Args:**
+- `required_scopes`: List of required scopes that must be present in the token.
+           If None or empty, scope validation is skipped.
+
+**Returns:**
+- True if all required scopes are present in the token, False otherwise
+
+
+#### `get_scopes` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/oauth/utils/jwt.py#L355" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_scopes(self) -> list[str]
+```
+
+Get the token's scopes as a list.
+
+**Returns:**
+- List of scopes from the token. Empty list if no scopes present.
 
