@@ -1,3 +1,8 @@
+## 0.9.0-keycardai-mcp-fastmcp (2025-10-20)
+
+
+- feat(keycardai-mcp-fastmcp): EKS workload identity
+
 ## 0.8.1-keycardai-mcp-fastmcp (2025-10-07)
 
 
