@@ -559,6 +559,31 @@ class EKSWorkloadIdentity:
         """
         return config
 
+    async def get_application_credential(self, client: AsyncClient, client_assertion: str) -> ApplicationCredential:
+        """Get the application credential for the EKS workload identity token.
+
+        Args:
+            eks_token: The EKS workload identity token
+
+        Returns:
+            The application credential
+        """
+        request = TokenExchangeRequest(
+            grant_type=GrantType.CLIENT_CREDENTIALS,
+            client_assertion_type=GrantType.JWT_BEARER_CLIENT_ASSERTION,
+            client_assertion=client_assertion
+        )
+        try:
+            response = await client.exchange_token(request)
+        except Exception as e:
+            raise EKSWorkloadIdentityRuntimeError(
+                token_file_path=self.token_file_path,
+                env_var_name=self.env_var_name,
+                error_details=f"Error getting application credential: {str(e)}",
+            ) from e
+        return response.access_token
+
+
     async def prepare_token_exchange_request(
         self,
         client: AsyncClient,
@@ -587,11 +612,13 @@ class EKSWorkloadIdentity:
         # Read the token from the filesystem
         eks_token = self._read_token()
 
+        application_credential = await self.get_application_credential(client, eks_token)
+
         return TokenExchangeRequest(
             subject_token=subject_token,
             resource=resource,
             subject_token_type="urn:ietf:params:oauth:token-type:access_token",
             client_assertion_type=GrantType.JWT_BEARER_CLIENT_ASSERTION,
-            client_assertion=eks_token,
+            client_assertion=application_credential,
         )
 

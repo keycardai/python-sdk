@@ -354,6 +354,7 @@ class TestEKSWorkloadIdentity:
             token_file.write_text(test_token)
 
             provider = EKSWorkloadIdentity(token_file_path=str(token_file))
+            provider.get_application_credential = AsyncMock(return_value="eks-test-token-12345")
 
             request = await provider.prepare_token_exchange_request(
                 client=mock_client,
@@ -377,6 +378,7 @@ class TestEKSWorkloadIdentity:
             token_file.write_text(test_token)
 
             provider = EKSWorkloadIdentity(token_file_path=str(token_file))
+            provider.get_application_credential = AsyncMock(return_value="eks-test-token-12345")
 
             request = await provider.prepare_token_exchange_request(
                 client=mock_client,
@@ -398,7 +400,7 @@ class TestEKSWorkloadIdentity:
             # Write initial token
             token_file.write_text("token-v1")
             provider = EKSWorkloadIdentity(token_file_path=str(token_file))
-
+            provider.get_application_credential = AsyncMock(return_value="token-v1")
             # First request
             request1 = await provider.prepare_token_exchange_request(
                 client=mock_client,
@@ -409,7 +411,7 @@ class TestEKSWorkloadIdentity:
 
             # Update token file
             token_file.write_text("token-v2")
-
+            provider.get_application_credential = AsyncMock(return_value="token-v2")
             # Second request should read the new token
             request2 = await provider.prepare_token_exchange_request(
                 client=mock_client,
@@ -426,6 +428,7 @@ class TestEKSWorkloadIdentity:
             token_file.write_text("  token-with-whitespace  \n")
 
             provider = EKSWorkloadIdentity(token_file_path=str(token_file))
+            provider.get_application_credential = AsyncMock(return_value="token-with-whitespace")
 
             request = await provider.prepare_token_exchange_request(
                 client=mock_client,
