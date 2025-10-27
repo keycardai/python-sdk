@@ -18,7 +18,10 @@ Credential Providers:
 
 import os
 import uuid
+from asyncio import Lock
 from typing import Protocol
+
+from jwt import decode
 
 from keycardai.oauth import (
     AsyncClient,
@@ -36,6 +39,7 @@ from ..exceptions import (
     EKSWorkloadIdentityConfigurationError,
     EKSWorkloadIdentityRuntimeError,
 )
+from ._cache import InMemoryTokenCache, TokenCache
 from .private_key import (
     FilePrivateKeyStorage,
     PrivateKeyManager,
@@ -428,6 +432,7 @@ class EKSWorkloadIdentity:
         self,
         token_file_path: str | None = None,
         env_var_name: str = "AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE",
+        cache: TokenCache | None = None
     ):
         """Initialize EKS workload identity provider.
 
@@ -436,10 +441,16 @@ class EKSWorkloadIdentity:
                            reads from the environment variable specified by env_var_name.
             env_var_name: Name of the environment variable containing the token file path.
                          Defaults to AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE.
+            cache_leeway: Number of seconds before JWT expiration to consider it expired.
+                         Defaults to 300 seconds (5 minutes) for safety margin.
 
         Raises:
             EKSWorkloadIdentityConfigurationError: If token file cannot be read or is empty.
         """
+        if cache is None:
+            cache = InMemoryTokenCache()
+        self._application_credentials: TokenCache = cache  # jti -> (access_token, exp)
+        self._lock = Lock()
         self.env_var_name = env_var_name
 
         if token_file_path is not None:
@@ -559,29 +570,105 @@ class EKSWorkloadIdentity:
         """
         return config
 
-    async def get_application_credential(self, client: AsyncClient, client_assertion: str) -> ApplicationCredential:
-        """Get the application credential for the EKS workload identity token.
+    def _get_application_credential(self, client_assertion: str) -> tuple[str, int] | None:
+        """Get cached application credential if valid and not expired.
+
+        Uses double-checked locking pattern - this is the fast path that checks
+        cache WITHOUT acquiring lock for maximum performance.
 
         Args:
-            eks_token: The EKS workload identity token
+            client_assertion: The EKS workload identity JWT token
 
         Returns:
-            The application credential
+            Tuple of (access_token, exp) if cached and valid, None if expired or not cached
         """
-        request = TokenExchangeRequest(
-            grant_type=GrantType.CLIENT_CREDENTIALS,
-            client_assertion_type=GrantType.JWT_BEARER_CLIENT_ASSERTION,
-            client_assertion=client_assertion
-        )
         try:
-            response = await client.exchange_token(request)
-        except Exception as e:
-            raise EKSWorkloadIdentityRuntimeError(
-                token_file_path=self.token_file_path,
-                env_var_name=self.env_var_name,
-                error_details=f"Error getting application credential: {str(e)}",
-            ) from e
-        return response.access_token
+            # Decode without verification - we just need the jti claim for cache lookup
+            # The Keycard backend validates the actual assertion signature
+            decoded_assertion = decode(client_assertion, options={"verify_signature": False})
+        except Exception:
+            return None
+
+        assertion_jti = decoded_assertion.get("jti")
+        if not assertion_jti:
+            return None
+
+        return self._application_credentials.get(assertion_jti)
+
+    def _set_application_credential(self, client_assertion: str, access_token: str) -> None:
+        """Cache the application credential with expiration from JWT.
+
+        Extracts the 'exp' claim from the access token JWT and stores it
+        for expiration checking. This method is called inside the lock.
+
+        Args:
+            client_assertion: The EKS workload identity JWT (used for cache key)
+            access_token: The access token JWT (contains 'exp' claim)
+        """
+        try:
+            decoded_assertion = decode(client_assertion, options={"verify_signature": False})
+        except Exception:
+            return
+
+        assertion_jti = decoded_assertion.get("jti")
+        if not assertion_jti:
+            return
+
+        try:
+            # Decode access token to get exp claim for expiration checking
+            decoded_token = decode(access_token, options={"verify_signature": False})
+        except Exception:
+            return
+
+        exp_time = decoded_token.get("exp")
+        if not exp_time:
+            return
+
+        # Cache with epoch expiration time from JWT
+        self._application_credentials.set(assertion_jti, (access_token, exp_time))
+
+    async def get_application_credential(self, client: AsyncClient, client_assertion: str) -> str:
+        """Get application credential.
+
+        Args:
+            client: OAuth client for token exchange
+            client_assertion: The EKS workload identity JWT token
+
+        Returns:
+            The access token for the application credential
+
+        Raises:
+            EKSWorkloadIdentityRuntimeError: If token exchange fails
+        """
+        cached = self._get_application_credential(client_assertion)
+        if cached:
+            access_token, _ = cached
+            return access_token
+
+        async with self._lock:
+            # DOUBLE CHECK: Another coroutine may have just populated cache while we waited
+            cached = self._get_application_credential(client_assertion)
+            if cached:
+                access_token, _ = cached
+                return access_token
+
+            request = TokenExchangeRequest(
+                grant_type=GrantType.CLIENT_CREDENTIALS,
+                client_assertion_type=GrantType.JWT_BEARER_CLIENT_ASSERTION,
+                client_assertion=client_assertion
+            )
+
+            try:
+                response = await client.exchange_token(request)
+            except Exception as e:
+                raise EKSWorkloadIdentityRuntimeError(
+                    token_file_path=self.token_file_path,
+                    env_var_name=self.env_var_name,
+                    error_details=f"Error getting application credential: {str(e)}",
+                ) from e
+
+            self._set_application_credential(client_assertion, response.access_token)
+            return response.access_token
 
 
     async def prepare_token_exchange_request(

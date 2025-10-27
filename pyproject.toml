@@ -27,6 +27,7 @@ keywords = ["keycard", "oauth", "authentication", "security", "api"]
 # All functionality is provided by workspace member packages
 dependencies = [
     "nanoid>=2.0.0",
+    "pyjwt>=2.10.1",
 ]
 
 # Optional dependencies for development
