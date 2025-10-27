@@ -1,3 +1,9 @@
+## 0.10.0-keycardai-mcp (2025-10-27)
+
+
+- feat(keycardai-mcp): cach the application credentials
+- feat(keycardai-mcp): app credential grant flow
+
 ## 0.9.0-keycardai-mcp (2025-10-20)
 
 
