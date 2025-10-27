@@ -1,3 +1,8 @@
+## 0.10.0-keycardai-mcp-fastmcp (2025-10-27)
+
+
+- feat(keycardai-mcp-fastmcp): use application cred cache
+
 ## 0.9.0-keycardai-mcp-fastmcp (2025-10-20)
 
 
