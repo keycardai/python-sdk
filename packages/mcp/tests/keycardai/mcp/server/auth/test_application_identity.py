@@ -4,13 +4,18 @@ This module tests the ApplicationCredential protocol implementations including
 ClientSecret, WebIdentity, and EKSWorkloadIdentity.
 """
 
+import asyncio
+import json
 import os
 import tempfile
+import time
+from base64 import urlsafe_b64encode
 from pathlib import Path
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from keycardai.mcp.server.auth._cache import InMemoryTokenCache
 from keycardai.mcp.server.auth.application_credentials import (
     ClientSecret,
     EKSWorkloadIdentity,
@@ -25,6 +30,7 @@ from keycardai.oauth import BasicAuth, ClientConfig, MultiZoneBasicAuth
 from keycardai.oauth.types.models import (
     AuthorizationServerMetadata,
     TokenExchangeRequest,
+    TokenResponse,
 )
 
 
@@ -354,6 +360,7 @@ class TestEKSWorkloadIdentity:
             token_file.write_text(test_token)
 
             provider = EKSWorkloadIdentity(token_file_path=str(token_file))
+            provider.get_application_credential = AsyncMock(return_value="eks-test-token-12345")
 
             request = await provider.prepare_token_exchange_request(
                 client=mock_client,
@@ -377,6 +384,7 @@ class TestEKSWorkloadIdentity:
             token_file.write_text(test_token)
 
             provider = EKSWorkloadIdentity(token_file_path=str(token_file))
+            provider.get_application_credential = AsyncMock(return_value="eks-test-token-12345")
 
             request = await provider.prepare_token_exchange_request(
                 client=mock_client,
@@ -398,7 +406,7 @@ class TestEKSWorkloadIdentity:
             # Write initial token
             token_file.write_text("token-v1")
             provider = EKSWorkloadIdentity(token_file_path=str(token_file))
-
+            provider.get_application_credential = AsyncMock(return_value="token-v1")
             # First request
             request1 = await provider.prepare_token_exchange_request(
                 client=mock_client,
@@ -409,7 +417,7 @@ class TestEKSWorkloadIdentity:
 
             # Update token file
             token_file.write_text("token-v2")
-
+            provider.get_application_credential = AsyncMock(return_value="token-v2")
             # Second request should read the new token
             request2 = await provider.prepare_token_exchange_request(
                 client=mock_client,
@@ -426,6 +434,7 @@ class TestEKSWorkloadIdentity:
             token_file.write_text("  token-with-whitespace  \n")
 
             provider = EKSWorkloadIdentity(token_file_path=str(token_file))
+            provider.get_application_credential = AsyncMock(return_value="token-with-whitespace")
 
             request = await provider.prepare_token_exchange_request(
                 client=mock_client,
@@ -499,4 +508,204 @@ class TestEKSWorkloadIdentity:
 
             assert "Failed to read EKS workload identity token at runtime" in str(exc_info.value)
             assert "Token file is empty" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_cached_token_expiration_triggers_refresh(self, mock_client):
+        """Test that expired cached tokens trigger backend refresh.
+
+        This test verifies:
+        1. A token is cached on first request
+        2. When the cached token expires (based on JWT exp claim), it's removed from cache
+        3. A new token is fetched from the backend
+        4. The new token is cached
+        """
+        with tempfile.TemporaryDirectory() as tmpdir:
+            token_file = Path(tmpdir) / "token"
+
+            # Create mock EKS token (client assertion) with jti claim
+            current_time = int(time.time())
+            eks_token_payload = {
+                "iss": "https://eks.amazonaws.com",
+                "sub": "system:serviceaccount:default:my-service",
+                "aud": "https://api.keycard.sh",
+                "iat": current_time,
+                "exp": current_time + 3600,
+                "jti": "eks-token-jti-12345"  # Used as cache key
+            }
+            eks_token = create_mock_jwt(eks_token_payload)
+            token_file.write_text(eks_token)
+
+            # Create custom cache with 5 minute leeway
+            cache = InMemoryTokenCache(exp_leeway=300)
+            provider = EKSWorkloadIdentity(
+                token_file_path=str(token_file),
+                cache=cache
+            )
+
+            # Mock the OAuth client's exchange_token response
+            # First response: token that will be valid initially but expire after time passes
+            initial_token_payload = {
+                "iss": "http://test.keycard.sh",
+                "aud": "https://api.keycard.sh",
+                "sub": "019a02b8-a7ad-79d0-86f9-d17e08a55ef5",
+                "iat": current_time,
+                "exp": current_time + 400  # Expires in 400 seconds (outside 300s leeway initially)
+            }
+            initial_access_token = create_mock_jwt(initial_token_payload)
+
+            # Second response: fresh token with long expiration
+            fresh_token_payload = {
+                "iss": "http://test.keycard.sh",
+                "aud": "https://api.keycard.sh",
+                "sub": "019a02b8-a7ad-79d0-86f9-d17e08a55ef5",
+                "iat": current_time + 200,
+                "exp": current_time + 3800  # Expires in ~1 hour (outside leeway)
+            }
+            fresh_access_token = create_mock_jwt(fresh_token_payload)
+
+            # First call: return token that's valid now
+            mock_client.exchange_token = AsyncMock(
+                return_value=TokenResponse(
+                    access_token=initial_access_token,
+                    token_type="Bearer",
+                    expires_in=400
+                )
+            )
+
+            # FIRST REQUEST: Should call backend and cache the token
+            result1 = await provider.get_application_credential(mock_client, eks_token)
+            assert result1 == initial_access_token
+            assert mock_client.exchange_token.call_count == 1
+
+            # Verify token is cached
+            cached = cache.get("eks-token-jti-12345")
+            assert cached is not None
+            assert cached[0] == initial_access_token
+
+            # SECOND REQUEST: Token is still valid (within cache), should return cached
+            result2 = await provider.get_application_credential(mock_client, eks_token)
+            assert result2 == initial_access_token
+            assert mock_client.exchange_token.call_count == 1  # No new call
+
+            # SIMULATE TIME PASSING: Move time forward by 150 seconds
+            # Token expires at current_time + 400
+            # After 150 seconds: time is current_time + 150
+            # Time until expiration: 400 - 150 = 250 seconds
+            # Since 250 < 300 (leeway), token should be considered expired
+            with patch('time.time', return_value=current_time + 150):
+                # Now the cached token should be considered expired
+                cached_after_time_pass = cache.get("eks-token-jti-12345")
+                assert cached_after_time_pass is None  # Cache should return None for expired token
+
+                # Update mock to return fresh token
+                mock_client.exchange_token = AsyncMock(
+                    return_value=TokenResponse(
+                        access_token=fresh_access_token,
+                        token_type="Bearer",
+                        expires_in=3600
+                    )
+                )
+
+                # THIRD REQUEST: Should detect expiration and fetch new token
+                result3 = await provider.get_application_credential(mock_client, eks_token)
+                assert result3 == fresh_access_token
+                assert mock_client.exchange_token.call_count == 1  # New call made
+
+                # Verify new token is cached
+                cached_fresh = cache.get("eks-token-jti-12345")
+                assert cached_fresh is not None
+                assert cached_fresh[0] == fresh_access_token
+
+    @pytest.mark.asyncio
+    async def test_concurrent_requests_only_one_backend_call(self, mock_client):
+        """Test that concurrent requests only result in one backend call (double-checked locking).
+
+        This verifies that the double-checked locking pattern prevents thundering herd:
+        - Multiple coroutines request the same credential simultaneously
+        - Only ONE makes the backend call
+        - Others wait and get the cached result
+        """
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            token_file = Path(tmpdir) / "token"
+
+            # Create mock EKS token
+            current_time = int(time.time())
+            eks_token_payload = {
+                "iss": "https://eks.amazonaws.com",
+                "sub": "system:serviceaccount:default:my-service",
+                "aud": "https://api.keycard.sh",
+                "iat": current_time,
+                "exp": current_time + 3600,
+                "jti": "concurrent-test-jti"
+            }
+            eks_token = create_mock_jwt(eks_token_payload)
+            token_file.write_text(eks_token)
+
+            cache = InMemoryTokenCache(exp_leeway=300)
+            provider = EKSWorkloadIdentity(
+                token_file_path=str(token_file),
+                cache=cache
+            )
+
+            # Create access token response
+            access_token_payload = {
+                "iss": "http://test.keycard.sh",
+                "aud": "https://api.keycard.sh",
+                "sub": "019a02b8-a7ad-79d0-86f9-d17e08a55ef5",
+                "iat": current_time,
+                "exp": current_time + 3600
+            }
+            access_token = create_mock_jwt(access_token_payload)
+
+            # Add small delay to exchange_token to simulate network latency
+            async def mock_exchange_with_delay(request):
+                await asyncio.sleep(0.1)  # 100ms delay
+                return TokenResponse(
+                    access_token=access_token,
+                    token_type="Bearer",
+                    expires_in=3600
+                )
+
+            mock_client.exchange_token = AsyncMock(side_effect=mock_exchange_with_delay)
+
+            # Launch 10 concurrent requests
+            tasks = [
+                provider.get_application_credential(mock_client, eks_token)
+                for _ in range(10)
+            ]
+            results = await asyncio.gather(*tasks)
+
+            # All should return the same token
+            assert all(r == access_token for r in results)
+
+            # But only ONE backend call should have been made (double-checked locking)
+            assert mock_client.exchange_token.call_count == 1
+
+
+def create_mock_jwt(payload: dict) -> str:
+    """Create a mock JWT token for testing.
+
+    Note: This creates an UNSIGNED JWT (algorithm: none) for testing purposes.
+    The signature verification is disabled in the code when decoding these tokens.
+
+    Args:
+        payload: JWT payload claims
+
+    Returns:
+        JWT token string in format: header.payload.signature
+    """
+    # Create header with "none" algorithm (unsigned)
+    header = {"alg": "none", "typ": "JWT"}
+
+    # Encode header and payload
+    def b64_encode(data: dict) -> str:
+        json_bytes = json.dumps(data, separators=(',', ':')).encode('utf-8')
+        return urlsafe_b64encode(json_bytes).rstrip(b'=').decode('utf-8')
+
+    encoded_header = b64_encode(header)
+    encoded_payload = b64_encode(payload)
+
+    # For "none" algorithm, signature is empty
+    return f"{encoded_header}.{encoded_payload}."
 

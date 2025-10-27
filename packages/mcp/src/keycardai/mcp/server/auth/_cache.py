@@ -3,7 +3,7 @@
 import threading
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol
 
 
 @dataclass
@@ -155,3 +155,40 @@ class JWKSCache:
                 del self._cache[cache_key]
 
             return len(expired_keys)
+
+class TokenCache(Protocol):
+    """Protocol for token cache implementations."""
+
+    def get(self, key: str) -> tuple[str, int] | None:
+        """Get a value from the cache if it exists and hasn't expired."""
+        pass
+
+    def set(self, key: str, value: tuple[str, int]) -> None:
+        """Set a value in the cache with current timestamp."""
+        pass
+
+class InMemoryTokenCache(TokenCache):
+    """In-memory token cache implementation."""
+
+    def __init__(self, exp_leeway: int = 300):
+        self.exp_leeway = exp_leeway
+        self._cache: dict[str, tuple[str, int]] = {}
+
+    def get(self, key: str) -> tuple[str, int] | None:
+        cached = self._cache.get(key)
+        if not cached:
+            return None
+
+        access_token, exp_time = cached
+        # Check if token is expired with leeway (default 5 minutes before exp)
+        # exp_time is epoch timestamp from JWT 'exp' claim
+        current_time = int(time.time())
+        if current_time >= (exp_time - self.exp_leeway):
+            # Token expired or too close to expiration - force refresh
+            self._cache.pop(key)
+            return None
+
+        return cached
+
+    def set(self, key: str, value: tuple[str, int]) -> None:
+        self._cache[key] = value
