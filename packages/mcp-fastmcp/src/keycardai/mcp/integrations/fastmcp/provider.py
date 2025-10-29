@@ -256,6 +256,9 @@ class AuthProvider:
         self.required_scopes = required_scopes or []
         # Appends `/` to any URL. Required to ensure audience is properly aligned with FastMCP JWTVerifier which appends `/` to the audience.
         self.mcp_base_url = str(AnyHttpUrl(mcp_base_url))
+        # fastmcp automatically appends `/mcp` to the base_url when presenting Protected Resource to the clients.
+        # we need to append `/mcp` to the mcp_base_url to ensure the audience is properly aligned with FastMCP JWTVerifier.
+        self.audience = f"{self.mcp_base_url}mcp"
         self.client_name = self.mcp_server_name or "Keycard Auth Client"
 
         self.client_factory = client_factory or DefaultClientFactory()
@@ -379,7 +382,7 @@ class AuthProvider:
             jwks_uri=self.jwks_uri,
             issuer=self.zone_url,
             required_scopes=self.required_scopes,
-            audience=self.mcp_base_url,
+            audience=self.audience,
         )
 
     def get_remote_auth_provider(self) -> RemoteAuthProvider:
@@ -399,7 +402,7 @@ class AuthProvider:
         return RemoteAuthProvider(
             token_verifier=self.get_jwt_token_verifier(),
             authorization_servers=authorization_servers,
-            resource_server_url=self.mcp_base_url,
+            base_url=self.mcp_base_url,
             resource_name=self.mcp_server_name,
         )
 
