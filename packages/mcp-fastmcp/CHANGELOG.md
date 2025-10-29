@@ -1,3 +1,9 @@
+## 0.11.0-keycardai-mcp-fastmcp (2025-10-29)
+
+
+- feat(keycardai-mcp-fastmcp): keycardai mcp dep update
+- Reverts the eks workload identity changes
+
 ## 0.10.0-keycardai-mcp-fastmcp (2025-10-27)
 
 
