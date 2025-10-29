@@ -1,3 +1,9 @@
+## 0.11.0-keycardai-mcp (2025-10-29)
+
+
+- feat(keycardai-mcp): release latest version
+- Release current version of workload identity implementation
+
 ## 0.10.0-keycardai-mcp (2025-10-27)
 
 
