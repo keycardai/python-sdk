@@ -1,3 +1,8 @@
+## 0.12.0-keycardai-mcp-fastmcp (2025-10-29)
+
+
+- feat(keycardai-mcp-fastmcp): support fastmcp 2.13
+
 ## 0.11.0-keycardai-mcp-fastmcp (2025-10-29)
 
 
