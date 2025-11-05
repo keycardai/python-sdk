@@ -1,3 +1,8 @@
+## 0.13.0-keycardai-mcp (2025-11-05)
+
+
+- feat(keycardai-mcp): zone settings via env
+
 ## 0.12.0-keycardai-mcp (2025-11-05)
 
 
