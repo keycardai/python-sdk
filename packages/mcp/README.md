@@ -112,6 +112,85 @@ Keycard allows MCP servers to access other resources on behalf of users with aut
 3. **Set MCP server dependencies** to allow delegated access
 4. **Create client secret identity** to provide authentication method
 
+#### Zone Configuration
+
+Keycard zones are isolated environments for authentication and authorization. You can configure zone settings explicitly in code or automatically discover them from environment variables.
+
+##### Configuration Methods
+
+**1. Explicit Configuration (Recommended for Production)**
+
+```python
+from keycardai.mcp.server.auth import AuthProvider
+
+# Using zone_id (constructs zone URL automatically)
+auth_provider = AuthProvider(
+    zone_id="your-zone-id",
+    mcp_server_name="My MCP Server"
+)
+
+# Using explicit zone_url
+auth_provider = AuthProvider(
+    zone_url="https://your-zone-id.keycard.cloud",
+    mcp_server_name="My MCP Server"
+)
+
+# Using custom base_url with zone_id
+auth_provider = AuthProvider(
+    zone_id="your-zone-id",
+    base_url="https://custom.keycard.example.com",
+    mcp_server_name="My MCP Server"
+)
+```
+
+**2. Environment Variable Discovery**
+
+The SDK automatically discovers zone configuration from environment variables:
+
+```bash
+# Option 1: Set zone_id (URL will be constructed)
+export KEYCARD_ZONE_ID="your-zone-id"
+
+# Option 2: Set explicit zone URL
+export KEYCARD_ZONE_URL="https://your-zone-id.keycard.cloud"
+
+# Option 3: Customize base URL for zone construction
+export KEYCARD_ZONE_ID="your-zone-id"
+export KEYCARD_BASE_URL="https://custom.keycard.example.com"
+```
+
+```python
+from keycardai.mcp.server.auth import AuthProvider
+
+# Automatically discovers zone configuration from environment
+auth_provider = AuthProvider(
+    mcp_server_name="My MCP Server"
+)
+```
+
+##### Configuration Precedence
+
+When multiple zone configuration methods are present, the SDK follows this precedence order (highest to lowest):
+
+1. **Explicit `zone_url` parameter** - Always takes priority
+2. **`KEYCARD_ZONE_URL` environment variable** - Direct zone URL
+3. **Explicit `zone_id` parameter** - Combined with base_url to construct zone URL
+4. **`KEYCARD_ZONE_ID` environment variable** - Combined with base_url to construct zone URL
+5. **Error** - At least one zone configuration method is required
+
+For `base_url`, the precedence is:
+1. **Explicit `base_url` parameter** - Custom base URL
+2. **`KEYCARD_BASE_URL` environment variable** - Custom base URL from environment
+3. **Default: `https://keycard.cloud`** - Standard Keycard cloud URL
+
+##### Environment Variables Reference
+
+| Environment Variable | Purpose | Default Value |
+|---------------------|---------|---------------|
+| `KEYCARD_ZONE_ID` | Zone identifier for constructing zone URL | None (required if zone_url not set) |
+| `KEYCARD_ZONE_URL` | Complete zone URL (overrides zone_id) | None |
+| `KEYCARD_BASE_URL` | Base URL for zone construction | `https://keycard.cloud` |
+
 #### Application Credentials for Token Exchange
 
 To enable token exchange (required for the `@grant` decorator), you need to configure application credentials. The SDK supports multiple credential types and provides automatic discovery via environment variables.
