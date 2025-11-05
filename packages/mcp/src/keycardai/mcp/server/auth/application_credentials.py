@@ -423,11 +423,12 @@ class EKSWorkloadIdentity:
             env_var_name="MY_CUSTOM_TOKEN_FILE_ENV_VAR"
         )
     """
+    default_env_var_name = "AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE"
 
     def __init__(
         self,
         token_file_path: str | None = None,
-        env_var_name: str = "AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE",
+        env_var_name: str = default_env_var_name,
     ):
         """Initialize EKS workload identity provider.
 
