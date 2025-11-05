@@ -4,11 +4,17 @@ This module contains unit tests for individual methods and components
 of the AuthProvider class, testing them in isolation.
 """
 
-from unittest.mock import Mock
+import os
+import shutil
+import tempfile
+from pathlib import Path
+from unittest.mock import Mock, patch
 
 import pytest
 
 from keycardai.mcp.integrations.fastmcp.provider import AuthProvider, ClientFactory
+from keycardai.mcp.server.auth import ClientSecret, EKSWorkloadIdentity, WebIdentity
+from keycardai.mcp.server.exceptions import AuthProviderConfigurationError
 
 
 @pytest.fixture
@@ -40,6 +46,19 @@ def mock_client_factory(mock_client, mock_async_client):
     factory.create_client.return_value = mock_client
     factory.create_async_client.return_value = mock_async_client
     return factory
+
+
+@pytest.fixture
+def temp_key_storage():
+    """Fixture providing a temporary directory for WebIdentity key storage.
+
+    Creates a temporary directory before tests and cleans it up after.
+    """
+    temp_dir = tempfile.mkdtemp(prefix="test_webidentity_keys_")
+    yield temp_dir
+    # Cleanup: remove the temporary directory and all its contents
+    if Path(temp_dir).exists():
+        shutil.rmtree(temp_dir)
 
 
 @pytest.fixture
@@ -120,3 +139,224 @@ class TestAuthProviderUrlBuilding:
         )
 
         assert result == "https://explicit.keycard.cloud"
+
+
+class TestAuthProviderCredentialDiscovery:
+    """Unit tests for AuthProvider application credential discovery logic."""
+
+    def test_discover_returns_provided_credential(self, mock_client_factory):
+        """Test that provided application credential is returned as-is."""
+        # Create a specific credential
+        provided_credential = ClientSecret(("test_client_id", "test_secret"))
+
+        # Create provider with the credential
+        auth_provider = AuthProvider(
+            zone_id="test123",
+            mcp_base_url="http://localhost:8000",
+            application_credential=provided_credential,
+            client_factory=mock_client_factory
+        )
+
+        # Should return the same credential
+        result = auth_provider._discover_application_credential(provided_credential)
+        assert result is provided_credential
+
+    @patch.dict(os.environ, {
+        "KEYCARD_CLIENT_ID": "test_client_id",
+        "KEYCARD_CLIENT_SECRET": "test_secret"
+    }, clear=True)
+    def test_discover_from_client_id_secret_env_vars(self, mock_client_factory):
+        """Test discovery of ClientSecret from environment variables."""
+        auth_provider = AuthProvider(
+            zone_id="test123",
+            mcp_base_url="http://localhost:8000",
+            client_factory=mock_client_factory
+        )
+
+        result = auth_provider._discover_application_credential(None)
+
+        # Should return ClientSecret with correct credentials
+        assert isinstance(result, ClientSecret)
+
+    @patch.dict(os.environ, {"KEYCARD_CLIENT_ID": "test_id"}, clear=True)
+    def test_discover_ignores_partial_client_credentials(self, mock_client_factory):
+        """Test that only KEYCARD_CLIENT_ID without SECRET is ignored."""
+        auth_provider = AuthProvider(
+            zone_id="test123",
+            mcp_base_url="http://localhost:8000",
+            client_factory=mock_client_factory
+        )
+
+        result = auth_provider._discover_application_credential(None)
+
+        # Should return None when only client_id is present
+        assert result is None
+
+    @patch.dict(os.environ, {"KEYCARD_CLIENT_SECRET": "test_secret"}, clear=True)
+    def test_discover_ignores_secret_without_client_id(self, mock_client_factory):
+        """Test that only KEYCARD_CLIENT_SECRET without ID is ignored."""
+        auth_provider = AuthProvider(
+            zone_id="test123",
+            mcp_base_url="http://localhost:8000",
+            client_factory=mock_client_factory
+        )
+
+        result = auth_provider._discover_application_credential(None)
+
+        # Should return None when only client_secret is present
+        assert result is None
+
+    @patch.dict(os.environ, {
+        "KEYCARD_APPLICATION_CREDENTIAL_TYPE": "eks_workload_identity",
+        "AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE": "/tmp/test_token"
+    }, clear=True)
+    @patch("builtins.open", create=True)
+    def test_discover_eks_workload_identity_from_type_env(self, mock_open, mock_client_factory):
+        """Test discovery of EKSWorkloadIdentity from credential type env var."""
+        # Mock the token file read
+        mock_open.return_value.__enter__.return_value.read.return_value = "test_token"
+
+        auth_provider = AuthProvider(
+            zone_id="test123",
+            mcp_base_url="http://localhost:8000",
+            client_factory=mock_client_factory
+        )
+
+        result = auth_provider._discover_application_credential(None)
+
+        # Should return EKSWorkloadIdentity instance
+        assert isinstance(result, EKSWorkloadIdentity)
+
+    def test_discover_web_identity_from_type_env(self, mock_client_factory, temp_key_storage):
+        """Test discovery of WebIdentity from credential type env var."""
+        with patch.dict(os.environ, {
+            "KEYCARD_APPLICATION_CREDENTIAL_TYPE": "web_identity",
+            "KEYCARD_WEB_IDENTITY_KEY_STORAGE_DIR": temp_key_storage
+        }, clear=True):
+            auth_provider = AuthProvider(
+                zone_id="test123",
+                mcp_base_url="http://localhost:8000",
+                mcp_server_name="test_mcp_server",
+                client_factory=mock_client_factory
+            )
+
+            result = auth_provider._discover_application_credential(None)
+
+            # Should return WebIdentity instance
+            assert isinstance(result, WebIdentity)
+
+            # Verify key storage directory was used
+            assert Path(temp_key_storage).exists()
+
+    @patch.dict(os.environ, {"KEYCARD_APPLICATION_CREDENTIAL_TYPE": "unknown_type"}, clear=True)
+    def test_discover_raises_error_for_unknown_credential_type(self, mock_client_factory):
+        """Test that unknown credential type raises AuthProviderConfigurationError."""
+        # Should raise error with helpful message during initialization
+        with pytest.raises(AuthProviderConfigurationError) as exc_info:
+            AuthProvider(
+                zone_id="test123",
+                mcp_base_url="http://localhost:8000",
+                client_factory=mock_client_factory
+            )
+
+        # Check error message contains useful information
+        assert "Unknown application credential type: unknown_type" in str(exc_info.value)
+        assert "eks_workload_identity" in str(exc_info.value)
+        assert "web_identity" in str(exc_info.value)
+
+    @patch.dict(os.environ, {"AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE": "/tmp/test_token"}, clear=True)
+    @patch("builtins.open", create=True)
+    def test_discover_eks_workload_identity_from_token_file_env(self, mock_open, mock_client_factory):
+        """Test discovery of EKSWorkloadIdentity from AWS token file env var."""
+        # Mock the token file read
+        mock_open.return_value.__enter__.return_value.read.return_value = "test_token"
+
+        auth_provider = AuthProvider(
+            zone_id="test123",
+            mcp_base_url="http://localhost:8000",
+            client_factory=mock_client_factory
+        )
+
+        result = auth_provider._discover_application_credential(None)
+
+        # Should detect and return EKSWorkloadIdentity
+        assert isinstance(result, EKSWorkloadIdentity)
+
+    @patch.dict(os.environ, {}, clear=True)
+    def test_discover_returns_none_when_no_credentials_found(self, mock_client_factory):
+        """Test that None is returned when no credentials are discoverable."""
+        auth_provider = AuthProvider(
+            zone_id="test123",
+            mcp_base_url="http://localhost:8000",
+            client_factory=mock_client_factory
+        )
+
+        result = auth_provider._discover_application_credential(None)
+
+        # Should return None when nothing is configured
+        assert result is None
+
+    @patch.dict(os.environ, {
+        "KEYCARD_CLIENT_ID": "env_client_id",
+        "KEYCARD_CLIENT_SECRET": "env_secret",
+        "KEYCARD_APPLICATION_CREDENTIAL_TYPE": "web_identity"
+    }, clear=True)
+    def test_discover_priority_client_credentials_over_type(self, mock_client_factory):
+        """Test that KEYCARD_CLIENT_ID/SECRET take priority over credential type."""
+        auth_provider = AuthProvider(
+            zone_id="test123",
+            mcp_base_url="http://localhost:8000",
+            client_factory=mock_client_factory
+        )
+
+        result = auth_provider._discover_application_credential(None)
+
+        # Should return ClientSecret, not WebIdentity
+        assert isinstance(result, ClientSecret)
+
+    @patch.dict(os.environ, {
+        "KEYCARD_APPLICATION_CREDENTIAL_TYPE": "eks_workload_identity",
+        "AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE": "/tmp/test_token"
+    }, clear=True)
+    @patch("builtins.open", create=True)
+    def test_discover_priority_explicit_type_over_detected(self, mock_open, mock_client_factory):
+        """Test that explicit credential type takes priority over auto-detected."""
+        # Mock the token file read
+        mock_open.return_value.__enter__.return_value.read.return_value = "test_token"
+
+        auth_provider = AuthProvider(
+            zone_id="test123",
+            mcp_base_url="http://localhost:8000",
+            client_factory=mock_client_factory
+        )
+
+        result = auth_provider._discover_application_credential(None)
+
+        # Should return EKSWorkloadIdentity (though both paths lead to same result)
+        assert isinstance(result, EKSWorkloadIdentity)
+
+    def test_discover_provided_credential_ignores_env_vars(self, mock_client_factory, temp_key_storage):
+        """Test that provided credential takes absolute priority over env vars."""
+        provided_credential = WebIdentity(
+            mcp_server_name="provided_server",
+            storage_dir=temp_key_storage
+        )
+
+        with patch.dict(os.environ, {
+            "KEYCARD_CLIENT_ID": "env_client_id",
+            "KEYCARD_CLIENT_SECRET": "env_secret",
+            "KEYCARD_APPLICATION_CREDENTIAL_TYPE": "eks_workload_identity",
+            "AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE": "/tmp/test_token"
+        }, clear=True):
+            auth_provider = AuthProvider(
+                zone_id="test123",
+                mcp_base_url="http://localhost:8000",
+                application_credential=provided_credential,
+                client_factory=mock_client_factory
+            )
+
+            result = auth_provider._discover_application_credential(provided_credential)
+
+            # Should return the provided credential, not anything from env
+            assert result is provided_credential
+            assert isinstance(result, WebIdentity)

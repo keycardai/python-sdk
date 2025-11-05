@@ -9,6 +9,7 @@ and JWT token verification.
 from __future__ import annotations
 
 import inspect
+import os
 from collections.abc import Callable
 from functools import wraps
 from typing import Any
@@ -19,7 +20,12 @@ from fastmcp import Context
 from fastmcp.server.auth import RemoteAuthProvider
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.server.dependencies import get_access_token
-from keycardai.mcp.server.auth import ApplicationCredential
+from keycardai.mcp.server.auth import (
+    ApplicationCredential,
+    ClientSecret,
+    EKSWorkloadIdentity,
+    WebIdentity,
+)
 from keycardai.mcp.server.auth.client_factory import ClientFactory, DefaultClientFactory
 from keycardai.mcp.server.exceptions import (
     AuthProviderConfigurationError,
@@ -265,7 +271,7 @@ class AuthProvider:
         self._is_custom_factory = client_factory is not None
 
         # Initialize application credential provider
-        self.application_credential = application_credential
+        self.application_credential = self._discover_application_credential(application_credential)
 
         # Get the auth strategy for the HTTP client doing the token exchange
         if self.application_credential is not None:
@@ -287,6 +293,45 @@ class AuthProvider:
             raise AuthProviderRemoteError(
                 zone_url=self.zone_url,
             ) from e
+
+    def _discover_application_credential(self, application_credential: ApplicationCredential | None) -> ApplicationCredential | None:
+        """Discover the application credential from the provided parameters.
+
+        Args:
+            application_credential: Application credential to discover
+
+        Returns:
+            ApplicationCredential: The discovered application credential
+        """
+        if application_credential is not None:
+            return application_credential
+
+        # discover environment variables
+        client_id = os.getenv("KEYCARD_CLIENT_ID")
+        client_secret = os.getenv("KEYCARD_CLIENT_SECRET")
+        if client_id and client_secret:
+            return ClientSecret((client_id, client_secret))
+
+        application_credential_type = os.getenv("KEYCARD_APPLICATION_CREDENTIAL_TYPE")
+        if application_credential_type == "eks_workload_identity":
+            return EKSWorkloadIdentity()
+        elif application_credential_type == "web_identity":
+            key_storage_dir = os.getenv("KEYCARD_WEB_IDENTITY_KEY_STORAGE_DIR")
+            return WebIdentity(
+                mcp_server_name=self.mcp_server_name,
+                storage_dir=key_storage_dir,
+            )
+        elif application_credential_type is not None:
+            raise AuthProviderConfigurationError(
+                message=f"Unknown application credential type: {application_credential_type}. Supported types: eks_workload_identity, web_identity"
+            )
+
+        # detect workload identity from environment variables
+        workload_identity_token = os.getenv(EKSWorkloadIdentity.default_env_var_name)
+        if workload_identity_token:
+            return EKSWorkloadIdentity()
+
+        return None
 
     def _handle_client_creation_error(self, auth, exception: Exception | None = None) -> None:
         """Handle client creation errors with appropriate exception type.
