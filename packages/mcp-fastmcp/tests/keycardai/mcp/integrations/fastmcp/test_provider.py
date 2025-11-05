@@ -360,3 +360,157 @@ class TestAuthProviderCredentialDiscovery:
             # Should return the provided credential, not anything from env
             assert result is provided_credential
             assert isinstance(result, WebIdentity)
+
+
+class TestAuthProviderZoneConfigurationDiscovery:
+    """Unit tests for AuthProvider zone configuration discovery logic."""
+
+    @patch.dict(os.environ, {}, clear=True)
+    def test_zone_id_from_explicit_parameter(self, mock_client_factory):
+        """Test that explicit zone_id parameter takes priority."""
+        auth_provider = AuthProvider(
+            zone_id="explicit_zone",
+            mcp_base_url="http://localhost:8000",
+            client_factory=mock_client_factory
+        )
+
+        # Should use the explicit zone_id to construct zone_url
+        assert "explicit_zone" in auth_provider.zone_url
+        assert auth_provider.zone_url == "https://explicit_zone.keycard.cloud"
+
+    @patch.dict(os.environ, {"KEYCARD_ZONE_ID": "env_zone"}, clear=True)
+    def test_zone_id_from_environment_variable(self, mock_client_factory):
+        """Test discovery of zone_id from KEYCARD_ZONE_ID env var."""
+        auth_provider = AuthProvider(
+            mcp_base_url="http://localhost:8000",
+            client_factory=mock_client_factory
+        )
+
+        # Should discover zone_id from environment
+        assert "env_zone" in auth_provider.zone_url
+        assert auth_provider.zone_url == "https://env_zone.keycard.cloud"
+
+    @patch.dict(os.environ, {"KEYCARD_ZONE_ID": "env_zone"}, clear=True)
+    def test_explicit_zone_id_takes_priority_over_env(self, mock_client_factory):
+        """Test that explicit zone_id parameter takes priority over env var."""
+        auth_provider = AuthProvider(
+            zone_id="explicit_zone",
+            mcp_base_url="http://localhost:8000",
+            client_factory=mock_client_factory
+        )
+
+        # Should use explicit zone_id, not env var
+        assert "explicit_zone" in auth_provider.zone_url
+        assert "env_zone" not in auth_provider.zone_url
+
+    @patch.dict(os.environ, {}, clear=True)
+    def test_zone_url_from_explicit_parameter(self, mock_client_factory):
+        """Test that explicit zone_url parameter is used directly."""
+        auth_provider = AuthProvider(
+            zone_url="https://custom.zone.example.com",
+            mcp_base_url="http://localhost:8000",
+            client_factory=mock_client_factory
+        )
+
+        # Should use the explicit zone_url
+        assert auth_provider.zone_url == "https://custom.zone.example.com"
+
+    @patch.dict(os.environ, {"KEYCARD_ZONE_URL": "https://env.zone.example.com"}, clear=True)
+    def test_zone_url_from_environment_variable(self, mock_client_factory):
+        """Test discovery of zone_url from KEYCARD_ZONE_URL env var."""
+        auth_provider = AuthProvider(
+            mcp_base_url="http://localhost:8000",
+            client_factory=mock_client_factory
+        )
+
+        # Should discover zone_url from environment
+        assert auth_provider.zone_url == "https://env.zone.example.com"
+
+    @patch.dict(os.environ, {"KEYCARD_ZONE_URL": "https://env.zone.example.com"}, clear=True)
+    def test_explicit_zone_url_takes_priority_over_env(self, mock_client_factory):
+        """Test that explicit zone_url parameter takes priority over env var."""
+        auth_provider = AuthProvider(
+            zone_url="https://explicit.zone.example.com",
+            mcp_base_url="http://localhost:8000",
+            client_factory=mock_client_factory
+        )
+
+        # Should use explicit zone_url, not env var
+        assert auth_provider.zone_url == "https://explicit.zone.example.com"
+
+    @patch.dict(os.environ, {}, clear=True)
+    def test_base_url_from_explicit_parameter(self, mock_client_factory):
+        """Test that explicit base_url parameter is used for zone construction."""
+        auth_provider = AuthProvider(
+            zone_id="test_zone",
+            mcp_base_url="http://localhost:8000",
+            base_url="https://custom.keycard.example.com",
+            client_factory=mock_client_factory
+        )
+
+        # Should use custom base_url to construct zone_url
+        assert auth_provider.zone_url == "https://test_zone.custom.keycard.example.com"
+
+    @patch.dict(os.environ, {"KEYCARD_BASE_URL": "https://env.keycard.example.com"}, clear=True)
+    def test_base_url_from_environment_variable(self, mock_client_factory):
+        """Test discovery of base_url from KEYCARD_BASE_URL env var."""
+        auth_provider = AuthProvider(
+            zone_id="test_zone",
+            mcp_base_url="http://localhost:8000",
+            client_factory=mock_client_factory
+        )
+
+        # Should discover base_url from environment and use it for zone construction
+        assert auth_provider.zone_url == "https://test_zone.env.keycard.example.com"
+
+    @patch.dict(os.environ, {"KEYCARD_BASE_URL": "https://env.keycard.example.com"}, clear=True)
+    def test_explicit_base_url_takes_priority_over_env(self, mock_client_factory):
+        """Test that explicit base_url parameter takes priority over env var."""
+        auth_provider = AuthProvider(
+            zone_id="test_zone",
+            mcp_base_url="http://localhost:8000",
+            base_url="https://explicit.keycard.example.com",
+            client_factory=mock_client_factory
+        )
+
+        # Should use explicit base_url, not env var
+        assert auth_provider.zone_url == "https://test_zone.explicit.keycard.example.com"
+
+    @patch.dict(os.environ, {
+        "KEYCARD_ZONE_ID": "env_zone",
+        "KEYCARD_ZONE_URL": "https://env.zone.example.com",
+        "KEYCARD_BASE_URL": "https://env.keycard.example.com"
+    }, clear=True)
+    def test_zone_url_takes_priority_over_zone_id(self, mock_client_factory):
+        """Test that zone_url (explicit or env) takes priority over zone_id in construction."""
+        auth_provider = AuthProvider(
+            mcp_base_url="http://localhost:8000",
+            client_factory=mock_client_factory
+        )
+
+        # Should use zone_url from env, ignoring zone_id and base_url
+        assert auth_provider.zone_url == "https://env.zone.example.com"
+
+    @patch.dict(os.environ, {
+        "KEYCARD_ZONE_ID": "env_zone",
+        "KEYCARD_ZONE_URL": "https://env.zone.example.com"
+    }, clear=True)
+    def test_explicit_zone_url_takes_priority_over_all(self, mock_client_factory):
+        """Test that explicit zone_url takes priority over all env vars."""
+        auth_provider = AuthProvider(
+            zone_url="https://explicit.zone.example.com",
+            mcp_base_url="http://localhost:8000",
+            client_factory=mock_client_factory
+        )
+
+        # Should use explicit zone_url, ignoring all env vars
+        assert auth_provider.zone_url == "https://explicit.zone.example.com"
+
+    @patch.dict(os.environ, {}, clear=True)
+    def test_raises_error_when_no_zone_configuration(self, mock_client_factory):
+        """Test that AuthProviderConfigurationError is raised when no zone configuration is provided."""
+        with pytest.raises(AuthProviderConfigurationError):
+            AuthProvider(
+                mcp_base_url="http://localhost:8000",
+                client_factory=mock_client_factory
+            )

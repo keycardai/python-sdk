@@ -227,6 +227,11 @@ class AuthProvider:
                                 for Keycard-issued credentials, WebIdentity for private key JWT,
                                 or None for basic token exchange without client authentication.
         """
+        # Discover configuration from environment variables with explicit parameters taking priority
+        zone_id = zone_id or os.getenv("KEYCARD_ZONE_ID")
+        zone_url = zone_url or os.getenv("KEYCARD_ZONE_URL")
+        base_url = base_url or os.getenv("KEYCARD_BASE_URL")
+
         self.base_url = base_url or "https://keycard.cloud"
 
         if zone_url is None and not enable_multi_zone:
