@@ -1,3 +1,8 @@
+## 0.14.0-keycardai-mcp-fastmcp (2025-11-05)
+
+
+- feat(keycardai-mcp-fastmcp): configure zone setting via env
+
 ## 0.13.0-keycardai-mcp-fastmcp (2025-11-05)
 
 
