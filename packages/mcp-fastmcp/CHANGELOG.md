@@ -1,3 +1,8 @@
+## 0.13.0-keycardai-mcp-fastmcp (2025-11-05)
+
+
+- feat(keycardai-mcp-fastmcp): automatic app cred discovery
+
 ## 0.12.0-keycardai-mcp-fastmcp (2025-10-29)
 
 
