@@ -112,6 +112,114 @@ Keycard allows MCP servers to access other resources on behalf of users with aut
 3. **Set MCP server dependencies** to allow delegated access
 4. **Create client secret identity** to provide authentication method
 
+#### Application Credentials for Token Exchange
+
+To enable token exchange (required for the `@grant` decorator), you need to configure application credentials. The SDK supports multiple credential types and provides automatic discovery via environment variables.
+
+##### Credential Types
+
+The SDK supports three types of application credentials:
+
+1. **ClientSecret** - OAuth client credentials (client_id/client_secret) issued by Keycard
+2. **WebIdentity** - Private key JWT authentication for MCP servers
+3. **EKSWorkloadIdentity** - AWS EKS Pod Identity for Kubernetes deployments
+
+##### Configuration Methods
+
+**1. Explicit Configuration (Recommended for Production)**
+
+Explicitly provide credentials when creating the `AuthProvider`:
+
+```python
+from keycardai.mcp.server.auth import AuthProvider, ClientSecret
+
+# Client Secret credentials
+auth_provider = AuthProvider(
+    zone_id="your-zone-id",
+    mcp_server_name="My MCP Server",
+    application_credential=ClientSecret(("your_client_id", "your_client_secret"))
+)
+```
+
+```python
+from keycardai.mcp.server.auth import AuthProvider, WebIdentity
+
+# Web Identity (Private Key JWT)
+auth_provider = AuthProvider(
+    zone_id="your-zone-id",
+    mcp_server_name="My MCP Server",
+    application_credential=WebIdentity(
+        mcp_server_name="My MCP Server",
+        storage_dir="./mcp_keys"  # Directory for key storage
+    )
+)
+```
+
+```python
+from keycardai.mcp.server.auth import AuthProvider, EKSWorkloadIdentity
+
+# EKS Workload Identity
+auth_provider = AuthProvider(
+    zone_id="your-zone-id",
+    mcp_server_name="My MCP Server",
+    application_credential=EKSWorkloadIdentity()
+)
+```
+
+**2. Environment Variable Discovery (Convenient for Development)**
+
+The SDK automatically discovers credentials from environment variables:
+
+```bash
+# Option A: Client Credentials
+export KEYCARD_CLIENT_ID="your_client_id"
+export KEYCARD_CLIENT_SECRET="your_client_secret"
+
+# Option B: Explicit Credential Type
+export KEYCARD_APPLICATION_CREDENTIAL_TYPE="web_identity"
+export KEYCARD_WEB_IDENTITY_KEY_STORAGE_DIR="./mcp_keys"  # Optional
+
+# Option C: EKS Workload Identity
+export KEYCARD_APPLICATION_CREDENTIAL_TYPE="eks_workload_identity"
+export AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE="/var/run/secrets/token"
+```
+
+With environment variables configured, create the `AuthProvider` without explicit credentials:
+
+```python
+from keycardai.mcp.server.auth import AuthProvider
+
+# Credentials automatically discovered from environment variables
+auth_provider = AuthProvider(
+    zone_id="your-zone-id",
+    mcp_server_name="My MCP Server"
+)
+```
+
+##### Configuration Precedence
+
+When multiple configuration methods are present, the SDK follows this precedence order (highest to lowest):
+
+1. **Explicit `application_credential` parameter** - Always takes priority
+2. **`KEYCARD_CLIENT_ID` + `KEYCARD_CLIENT_SECRET`** - Client credentials via environment
+3. **`KEYCARD_APPLICATION_CREDENTIAL_TYPE`** - Explicit credential type selection
+4. **`AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE`** - Automatic EKS detection
+5. **None** - No credentials configured (token exchange disabled)
+
+##### Environment Variables Reference
+
+| Environment Variable | Purpose | Used By | Default Value |
+|---------------------|---------|---------|---------------|
+| `KEYCARD_CLIENT_ID` | OAuth client identifier | `ClientSecret` | None |
+| `KEYCARD_CLIENT_SECRET` | OAuth client secret | `ClientSecret` | None |
+| `KEYCARD_APPLICATION_CREDENTIAL_TYPE` | Explicit credential type selection | All | None |
+| `KEYCARD_WEB_IDENTITY_KEY_STORAGE_DIR` | Directory for private key storage | `WebIdentity` | `"./mcp_keys"` |
+| `AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE` | Path to EKS token file | `EKSWorkloadIdentity` | None |
+
+##### Running Without Application Credentials
+
+If no application credentials are configured, the `AuthProvider` will work for basic authentication but the `@grant` decorator will be unable to perform token exchange. This is useful for MCP servers that only need user authentication without delegated access to external resources.
+
 #### Add Delegation to Your Tools
 
 ```python

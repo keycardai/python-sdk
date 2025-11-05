@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import inspect
+import os
 from collections.abc import Callable, Sequence
 from functools import wraps
 from typing import Any
@@ -31,6 +32,8 @@ from ..exceptions import (
 from ..routers.metadata import protected_mcp_router
 from .application_credentials import (
     ApplicationCredential,
+    ClientSecret,
+    EKSWorkloadIdentity,
     WebIdentity,
 )
 from .client_factory import ClientFactory, DefaultClientFactory
@@ -247,8 +250,8 @@ class AuthProvider:
         self._init_lock: asyncio.Lock | None = None
         self.audience = audience
 
-        # Initialize application credential provider
-        self.application_credential = application_credential
+        # Initialize application credential provider with automatic discovery
+        self.application_credential = self._discover_application_credential(application_credential)
 
         # Get the auth strategy for the HTTP client doing the token exchange
         if self.application_credential is not None:
@@ -263,6 +266,45 @@ class AuthProvider:
 
         # Backward compatibility: detect if using WebIdentity
         self.enable_private_key_identity = isinstance(self.application_credential, WebIdentity)
+
+    def _discover_application_credential(self, application_credential: ApplicationCredential | None) -> ApplicationCredential | None:
+        """Discover the application credential from the provided parameters.
+
+        Args:
+            application_credential: Application credential to discover
+
+        Returns:
+            ApplicationCredential: The discovered application credential
+        """
+        if application_credential is not None:
+            return application_credential
+
+        # discover environment variables
+        client_id = os.getenv("KEYCARD_CLIENT_ID")
+        client_secret = os.getenv("KEYCARD_CLIENT_SECRET")
+        if client_id and client_secret:
+            return ClientSecret((client_id, client_secret))
+
+        application_credential_type = os.getenv("KEYCARD_APPLICATION_CREDENTIAL_TYPE")
+        if application_credential_type == "eks_workload_identity":
+            return EKSWorkloadIdentity()
+        elif application_credential_type == "web_identity":
+            key_storage_dir = os.getenv("KEYCARD_WEB_IDENTITY_KEY_STORAGE_DIR")
+            return WebIdentity(
+                mcp_server_name=self.mcp_server_name,
+                storage_dir=key_storage_dir,
+            )
+        elif application_credential_type is not None:
+            raise AuthProviderConfigurationError(
+                message=f"Unknown application credential type: {application_credential_type}. Supported types: eks_workload_identity, web_identity"
+            )
+
+        # detect workload identity from environment variables
+        workload_identity_token = os.getenv(EKSWorkloadIdentity.default_env_var_name)
+        if workload_identity_token:
+            return EKSWorkloadIdentity()
+
+        return None
 
     def _create_zone_scoped_url(self, base_url: str, zone_id: str) -> str:
         """Create zone-scoped URL by prepending zone_id to the host."""

@@ -252,13 +252,28 @@ auth_provider = AuthProvider(
 # So your Keycard Resource must be configured as: http://localhost:8000/
 ```
 
-### Client Credentials for Token Exchange
+### Application Credentials for Token Exchange
 
-To enable token exchange (required for the `@grant` decorator), provide application credentials:
+To enable token exchange (required for the `@grant` decorator), you need to configure application credentials. The SDK supports multiple credential types and provides automatic discovery via environment variables.
+
+#### Credential Types
+
+The SDK supports three types of application credentials:
+
+1. **ClientSecret** - OAuth client credentials (client_id/client_secret) issued by Keycard
+2. **WebIdentity** - Private key JWT authentication for MCP servers
+3. **EKSWorkloadIdentity** - AWS EKS Pod Identity for Kubernetes deployments
+
+#### Configuration Methods
+
+##### 1. Explicit Configuration (Recommended for Production)
+
+Explicitly provide credentials when creating the `AuthProvider`:
 
 ```python
-from keycardai.mcp.integrations.fastmcp import ClientSecret
+from keycardai.mcp.integrations.fastmcp import AuthProvider, ClientSecret
 
+# Client Secret credentials
 auth_provider = AuthProvider(
     zone_id="your-zone-id",
     mcp_server_name="My FastMCP Service",
@@ -266,6 +281,121 @@ auth_provider = AuthProvider(
     application_credential=ClientSecret(("your_client_id", "your_client_secret"))
 )
 ```
+
+```python
+from keycardai.mcp.integrations.fastmcp import AuthProvider, WebIdentity
+
+# Web Identity (Private Key JWT)
+auth_provider = AuthProvider(
+    zone_id="your-zone-id",
+    mcp_server_name="My FastMCP Service",
+    mcp_base_url="http://localhost:8000/",
+    application_credential=WebIdentity(
+        mcp_server_name="My FastMCP Service",
+        storage_dir="./mcp_keys"  # Directory for key storage
+    )
+)
+```
+
+```python
+from keycardai.mcp.integrations.fastmcp import AuthProvider, EKSWorkloadIdentity
+
+# EKS Workload Identity
+auth_provider = AuthProvider(
+    zone_id="your-zone-id",
+    mcp_server_name="My FastMCP Service",
+    mcp_base_url="http://localhost:8000/",
+    application_credential=EKSWorkloadIdentity()
+)
+```
+
+##### 2. Environment Variable Discovery (Convenient for Development)
+
+The SDK automatically discovers credentials from environment variables, making it easy to configure without code changes:
+
+**Option A: Client Credentials**
+```bash
+export KEYCARD_CLIENT_ID="your_client_id"
+export KEYCARD_CLIENT_SECRET="your_client_secret"
+```
+
+**Option B: Explicit Credential Type**
+```bash
+# For EKS Workload Identity
+export KEYCARD_APPLICATION_CREDENTIAL_TYPE="eks_workload_identity"
+export AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE="/var/run/secrets/eks.amazonaws.com/serviceaccount/token"
+
+# For Web Identity
+export KEYCARD_APPLICATION_CREDENTIAL_TYPE="web_identity"
+export KEYCARD_WEB_IDENTITY_KEY_STORAGE_DIR="./mcp_keys"  # Optional: defaults to "./mcp_keys"
+```
+
+**Option C: Automatic EKS Detection**
+```bash
+# SDK automatically detects EKS when this environment variable is present
+export AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE="/var/run/secrets/eks.amazonaws.com/serviceaccount/token"
+```
+
+With environment variables configured, you can create the `AuthProvider` without explicit credentials:
+
+```python
+from keycardai.mcp.integrations.fastmcp import AuthProvider
+
+# Credentials automatically discovered from environment variables
+auth_provider = AuthProvider(
+    zone_id="your-zone-id",
+    mcp_server_name="My FastMCP Service",
+    mcp_base_url="http://localhost:8000/"
+)
+```
+
+#### Configuration Precedence
+
+When multiple configuration methods are present, the SDK follows this precedence order (highest to lowest):
+
+1. **Explicit `application_credential` parameter** - Always takes priority
+2. **`KEYCARD_CLIENT_ID` + `KEYCARD_CLIENT_SECRET`** - Client credentials via environment
+3. **`KEYCARD_APPLICATION_CREDENTIAL_TYPE`** - Explicit credential type selection
+4. **`AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE`** - Automatic EKS detection
+5. **None** - No credentials configured (token exchange disabled)
+
+**Example:**
+```python
+# Even with environment variables set, explicit parameter takes priority
+import os
+os.environ["KEYCARD_CLIENT_ID"] = "env_client_id"
+os.environ["KEYCARD_CLIENT_SECRET"] = "env_secret"
+
+auth_provider = AuthProvider(
+    zone_id="your-zone-id",
+    mcp_server_name="My FastMCP Service",
+    mcp_base_url="http://localhost:8000/",
+    # This takes priority over environment variables
+    application_credential=WebIdentity(mcp_server_name="My FastMCP Service")
+)
+```
+
+#### Supported Credential Types via Environment Variables
+
+| Environment Variable | Value | Resulting Credential Type |
+|---------------------|-------|---------------------------|
+| `KEYCARD_APPLICATION_CREDENTIAL_TYPE` | `"eks_workload_identity"` | `EKSWorkloadIdentity` |
+| `KEYCARD_APPLICATION_CREDENTIAL_TYPE` | `"web_identity"` | `WebIdentity` |
+| `KEYCARD_APPLICATION_CREDENTIAL_TYPE` | `"unknown_type"` | ❌ Raises `AuthProviderConfigurationError` |
+
+#### Additional Environment Variables
+
+| Environment Variable | Purpose | Used By | Default Value |
+|---------------------|---------|---------|---------------|
+| `KEYCARD_CLIENT_ID` | OAuth client identifier | `ClientSecret` | None |
+| `KEYCARD_CLIENT_SECRET` | OAuth client secret | `ClientSecret` | None |
+| `KEYCARD_APPLICATION_CREDENTIAL_TYPE` | Explicit credential type selection | All | None |
+| `KEYCARD_WEB_IDENTITY_KEY_STORAGE_DIR` | Directory for private key storage | `WebIdentity` | `"./mcp_keys"` |
+| `AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE` | Path to EKS token file | `EKSWorkloadIdentity` | None |
+
+#### Running Without Application Credentials
+
+If no application credentials are configured, the `AuthProvider` will work for basic authentication but the `@grant` decorator will be unable to perform token exchange. This is useful for MCP servers that only need user authentication without delegated access to external resources.
 
 ## Testing
 
