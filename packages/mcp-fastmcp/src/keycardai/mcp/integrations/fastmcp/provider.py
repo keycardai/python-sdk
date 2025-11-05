@@ -254,6 +254,11 @@ class AuthProvider:
             AuthProviderInternalError: If default OAuth client creation fails (internal SDK issue - contact support)
             AuthProviderRemoteError: If cannot connect to Keycard zone (check zone configuration or contact support)
         """
+        # Discover configuration from environment variables with explicit parameters taking priority
+        zone_id = zone_id or os.getenv("KEYCARD_ZONE_ID")
+        zone_url = zone_url or os.getenv("KEYCARD_ZONE_URL")
+        base_url = base_url or os.getenv("KEYCARD_BASE_URL")
+
         if zone_url is None and zone_id is None:
             raise AuthProviderConfigurationError(zone_url=zone_url, zone_id=zone_id)
 
