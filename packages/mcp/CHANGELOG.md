@@ -1,3 +1,9 @@
+## 0.12.0-keycardai-mcp (2025-11-05)
+
+
+- feat(keycardai-mcp): automatic app cred discovery
+- feat(keycardai-mcp): default eks env
+
 ## 0.11.0-keycardai-mcp (2025-10-29)
 
 
