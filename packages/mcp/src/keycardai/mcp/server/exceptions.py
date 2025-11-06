@@ -48,7 +48,8 @@ class AuthProviderConfigurationError(MCPServerError):
     """
 
     def __init__(self, message: str | None = None, *, zone_url: str | None = None, zone_id: str | None = None,
-                 factory_type: str | None = None, jwks_error: bool = False):
+                 factory_type: str | None = None, jwks_error: bool = False,
+                 mcp_server_url: str | None = None, missing_mcp_server_url: bool = False):
         """Initialize configuration error with detailed context.
 
         Args:
@@ -57,9 +58,21 @@ class AuthProviderConfigurationError(MCPServerError):
             zone_id: Provided zone_id value for context
             factory_type: Type of custom client factory that failed (if applicable)
             jwks_error: True if this is a JWKS initialization error
+            mcp_server_url: Provided mcp_server_url value for context
+            missing_mcp_server_url: True if this is a missing mcp_server_url error
         """
         if message is None:
-            if jwks_error:
+            if missing_mcp_server_url:
+                # Missing MCP server URL case
+                message = (
+                    "'mcp_server_url' must be provided to configure the MCP server.\n\n"
+                    "The MCP server URL is required for the authorization callback and token exchange flow.\n\n"
+                    "Examples:\n"
+                    "  - mcp_server_url='http://localhost:8000'  # Local development\n"
+                    "  - mcp_server_url='https://mcp.example.com'  # Production server\n\n"
+                    "This URL will be used as the redirect_uri for OAuth callbacks.\n"
+                )
+            elif jwks_error:
                 # JWKS initialization failure case
                 zone_info = f" for zone: {zone_url}" if zone_url else ""
                 message = (
@@ -87,8 +100,10 @@ class AuthProviderConfigurationError(MCPServerError):
         details = {
             "provided_zone_url": str(zone_url) if zone_url else "unknown",
             "provided_zone_id": str(zone_id) if zone_id else "unknown",
+            "provided_mcp_server_url": str(mcp_server_url) if mcp_server_url else "unknown",
             "factory_type": factory_type or "default",
-            "solution": "Debug custom ClientFactory implementation" if factory_type
+            "solution": "Provide mcp_server_url parameter" if missing_mcp_server_url
+                       else "Debug custom ClientFactory implementation" if factory_type
                        else "Provide either zone_id or zone_url parameter",
         }
 

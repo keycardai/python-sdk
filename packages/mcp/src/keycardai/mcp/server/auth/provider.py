@@ -231,6 +231,7 @@ class AuthProvider:
         zone_id = zone_id or os.getenv("KEYCARD_ZONE_ID")
         zone_url = zone_url or os.getenv("KEYCARD_ZONE_URL")
         base_url = base_url or os.getenv("KEYCARD_BASE_URL")
+        mcp_server_url = mcp_server_url or os.getenv("MCP_SERVER_URL")
 
         self.base_url = base_url or "https://keycard.cloud"
 
