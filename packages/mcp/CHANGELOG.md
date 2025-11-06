@@ -1,3 +1,8 @@
+## 0.14.0-keycardai-mcp (2025-11-06)
+
+
+- feat(keycardai-mcp): configure mcp url via env
+
 ## 0.13.0-keycardai-mcp (2025-11-05)
 
 
