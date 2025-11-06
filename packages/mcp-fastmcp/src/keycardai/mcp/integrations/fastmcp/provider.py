@@ -13,6 +13,7 @@ import os
 from collections.abc import Callable
 from functools import wraps
 from typing import Any
+from urllib.parse import urlparse
 
 from pydantic import AnyHttpUrl
 
@@ -228,10 +229,12 @@ class AuthProvider:
         zone_url: str | None = None,
         mcp_server_name: str | None = None,
         required_scopes: list[str] | None = None,
-        mcp_base_url: str,
+        mcp_server_url: str | None = None,
         base_url: str | None = None,
         application_credential: ApplicationCredential | None = None,
         client_factory: ClientFactory | None = None,
+        # deprecated
+        mcp_base_url: str | None = None,
     ):
         """Initialize Keycard authentication provider.
 
@@ -258,6 +261,7 @@ class AuthProvider:
         zone_id = zone_id or os.getenv("KEYCARD_ZONE_ID")
         zone_url = zone_url or os.getenv("KEYCARD_ZONE_URL")
         base_url = base_url or os.getenv("KEYCARD_BASE_URL")
+        mcp_server_url = mcp_server_url or os.getenv("MCP_SERVER_URL")
 
         if zone_url is None and zone_id is None:
             raise AuthProviderConfigurationError(zone_url=zone_url, zone_id=zone_id)
@@ -265,8 +269,15 @@ class AuthProvider:
         self.zone_url = self._build_zone_url(zone_url, zone_id, base_url)
         self.mcp_server_name = mcp_server_name or "Authenticated FastMCP Server"
         self.required_scopes = required_scopes or []
+
+        if mcp_server_url is None:
+            if mcp_base_url is None:
+                raise AuthProviderConfigurationError(mcp_server_url=mcp_server_url, missing_mcp_server_url=True)
+            mcp_server_url = mcp_base_url
+        self.mcp_server_url = mcp_server_url
+        parsed_url = urlparse(self.mcp_server_url)
         # Appends `/` to any URL. Required to ensure audience is properly aligned with FastMCP JWTVerifier which appends `/` to the audience.
-        self.mcp_base_url = str(AnyHttpUrl(mcp_base_url))
+        self.mcp_base_url = f"{parsed_url.scheme}://{parsed_url.netloc}/"
         # fastmcp automatically appends `/mcp` to the base_url when presenting Protected Resource to the clients.
         # we need to append `/mcp` to the mcp_base_url to ensure the audience is properly aligned with FastMCP JWTVerifier.
         self.audience = f"{self.mcp_base_url}mcp"
