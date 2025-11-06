@@ -1,3 +1,8 @@
+## 0.15.0-keycardai-mcp-fastmcp (2025-11-06)
+
+
+- feat(keycardai-mcp-fastmcp): configure mcp url via env
+
 ## 0.14.0-keycardai-mcp-fastmcp (2025-11-05)
 
 
