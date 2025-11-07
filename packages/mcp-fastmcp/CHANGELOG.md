@@ -1,3 +1,8 @@
+## 0.16.0-keycardai-mcp-fastmcp (2025-11-07)
+
+
+- feat(keycardai-mcp-fastmcp): enable web token eks env
+
 ## 0.15.0-keycardai-mcp-fastmcp (2025-11-06)
 
 
