@@ -406,7 +406,8 @@ export KEYCARD_CLIENT_SECRET="your_client_secret"
 ```bash
 # For EKS Workload Identity
 export KEYCARD_APPLICATION_CREDENTIAL_TYPE="eks_workload_identity"
-export AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE="/var/run/secrets/eks.amazonaws.com/serviceaccount/token"
+# Optional: Custom token file path (defaults to AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE or AWS_WEB_IDENTITY_TOKEN_FILE)
+export KEYCARD_EKS_WORKLOAD_IDENTITY_TOKEN_FILE="/var/run/secrets/eks.amazonaws.com/serviceaccount/token"
 
 # For Web Identity
 export KEYCARD_APPLICATION_CREDENTIAL_TYPE="web_identity"
