@@ -293,7 +293,8 @@ class AuthProvider:
 
         application_credential_type = os.getenv("KEYCARD_APPLICATION_CREDENTIAL_TYPE")
         if application_credential_type == "eks_workload_identity":
-            return EKSWorkloadIdentity()
+            custom_token_file_path = os.getenv("KEYCARD_EKS_WORKLOAD_IDENTITY_TOKEN_FILE")
+            return EKSWorkloadIdentity(token_file_path=custom_token_file_path)
         elif application_credential_type == "web_identity":
             key_storage_dir = os.getenv("KEYCARD_WEB_IDENTITY_KEY_STORAGE_DIR")
             return WebIdentity(
@@ -306,8 +307,7 @@ class AuthProvider:
             )
 
         # detect workload identity from environment variables
-        workload_identity_token = os.getenv(EKSWorkloadIdentity.default_env_var_name)
-        if workload_identity_token:
+        if any(os.getenv(env_name) for env_name in EKSWorkloadIdentity.default_env_var_names):
             return EKSWorkloadIdentity()
 
         return None

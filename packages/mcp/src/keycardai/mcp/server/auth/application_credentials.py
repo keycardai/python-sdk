@@ -409,8 +409,13 @@ class EKSWorkloadIdentity:
     The token is read fresh on each token exchange request, allowing for token rotation
     without requiring application restart.
 
+    Environment Variable Discovery (when token_file_path is not provided):
+        1. KEYCARD_EKS_WORKLOAD_IDENTITY_TOKEN_FILE - Custom token file path (highest priority)
+        2. AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE - AWS EKS default location
+        3. AWS_WEB_IDENTITY_TOKEN_FILE - AWS fallback location
+
     Example:
-        # Default configuration (uses AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE env var)
+        # Default configuration (discovers from environment variables)
         provider = EKSWorkloadIdentity()
 
         # Explicit token file path
@@ -423,12 +428,12 @@ class EKSWorkloadIdentity:
             env_var_name="MY_CUSTOM_TOKEN_FILE_ENV_VAR"
         )
     """
-    default_env_var_name = "AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE"
+    default_env_var_names = ["AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE", "AWS_WEB_IDENTITY_TOKEN_FILE"]
 
     def __init__(
         self,
         token_file_path: str | None = None,
-        env_var_name: str = default_env_var_name,
+        env_var_name: str | None = None,
     ):
         """Initialize EKS workload identity provider.
 
@@ -436,25 +441,36 @@ class EKSWorkloadIdentity:
             token_file_path: Explicit path to the token file. If not provided,
                            reads from the environment variable specified by env_var_name.
             env_var_name: Name of the environment variable containing the token file path.
-                         Defaults to AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE.
 
         Raises:
             EKSWorkloadIdentityConfigurationError: If token file cannot be read or is empty.
         """
-        self.env_var_name = env_var_name
-
         if token_file_path is not None:
             self.token_file_path = token_file_path
+            self.env_var_name = env_var_name  # Store the env_var_name even when token_file_path is provided
         else:
-            self.token_file_path = os.environ.get(env_var_name)
+            self.token_file_path, self.env_var_name = self._get_token_file_path(env_var_name)
             if not self.token_file_path:
                 raise EKSWorkloadIdentityConfigurationError(
                     token_file_path=None,
                     env_var_name=env_var_name,
-                    error_details=f"Environment variable {env_var_name} is not set",
+                    error_details="Could not find token file path in environment variables",
                 )
 
         self._validate_token_file()
+
+    def _get_token_file_path(self, env_var_name: str | None) -> tuple[str, str]:
+        """Get the token file path from the environment variables.
+
+        Returns:
+            Tuple containing the token file path and the environment variable name.
+        """
+        env_names = self.default_env_var_names if env_var_name is None else [env_var_name, *self.default_env_var_names]
+        return next((
+            (os.environ.get(env_name), env_name)
+            for env_name in env_names
+            if os.environ.get(env_name)
+        ), (None, None))
 
     def _validate_token_file(self) -> None:
         """Validate that the token file exists and can be read.
