@@ -1,3 +1,8 @@
+## 0.15.0-keycardai-mcp (2025-11-07)
+
+
+- feat(keycardai-mcp): enable web token eks env
+
 ## 0.14.0-keycardai-mcp (2025-11-06)
 
 
