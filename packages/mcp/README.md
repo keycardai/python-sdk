@@ -260,7 +260,8 @@ export KEYCARD_WEB_IDENTITY_KEY_STORAGE_DIR="./mcp_keys"  # Optional
 
 # Option C: EKS Workload Identity
 export KEYCARD_APPLICATION_CREDENTIAL_TYPE="eks_workload_identity"
-export AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE="/var/run/secrets/token"
+# Optional: Custom token file path (defaults to AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE or AWS_WEB_IDENTITY_TOKEN_FILE)
+export KEYCARD_EKS_WORKLOAD_IDENTITY_TOKEN_FILE="/var/run/secrets/token"
 ```
 
 With environment variables configured, create the `AuthProvider` without explicit credentials:
@@ -293,7 +294,9 @@ When multiple configuration methods are present, the SDK follows this precedence
 | `KEYCARD_CLIENT_SECRET` | OAuth client secret | `ClientSecret` | None |
 | `KEYCARD_APPLICATION_CREDENTIAL_TYPE` | Explicit credential type selection | All | None |
 | `KEYCARD_WEB_IDENTITY_KEY_STORAGE_DIR` | Directory for private key storage | `WebIdentity` | `"./mcp_keys"` |
-| `AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE` | Path to EKS token file | `EKSWorkloadIdentity` | None |
+| `KEYCARD_EKS_WORKLOAD_IDENTITY_TOKEN_FILE` | Custom path to EKS token file | `EKSWorkloadIdentity` | None |
+| `AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE` | Path to EKS token file (AWS default) | `EKSWorkloadIdentity` | None |
+| `AWS_WEB_IDENTITY_TOKEN_FILE` | Path to EKS token file (AWS fallback) | `EKSWorkloadIdentity` | None |
 
 ##### Running Without Application Credentials
 

@@ -330,7 +330,7 @@ class TestEKSWorkloadIdentity:
             EKSWorkloadIdentity()
 
         assert "Failed to initialize EKS workload identity" in str(exc_info.value)
-        assert "AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE" in str(exc_info.value)
+        assert "Could not find token file path in environment variables" in str(exc_info.value)
 
     @pytest.mark.asyncio
     async def test_initialization_fails_when_token_file_empty(self):
