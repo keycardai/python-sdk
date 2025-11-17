@@ -7,8 +7,8 @@ test modules for AuthProvider and related functionality.
 from typing import Any
 from unittest.mock import AsyncMock, Mock
 
+import httpx
 import pytest
-import requests
 from pydantic import AnyHttpUrl
 
 from keycardai.mcp.server.auth.client_factory import ClientFactory
@@ -110,7 +110,7 @@ def _create_mock_client_with_validation(mock_client: Mock, mock_metadata: Author
         if base_url in valid_mock_zone_urls:
             mock_client.discover_server_metadata.return_value = mock_metadata
         else:
-            mock_client.discover_server_metadata.side_effect = requests.exceptions.ConnectionError(
+            mock_client.discover_server_metadata.side_effect = httpx.ConnectError(
                 f"Failed to establish a new connection {base_url}: [Errno 61] Connection refused"
             )
 

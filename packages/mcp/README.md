@@ -101,6 +101,45 @@ uvicorn server:app
 - ✅ **Token Exchange**: Automatic delegated token exchange for accessing external APIs
 - ✅ **Production Ready**: Battle-tested security patterns and error handling
 
+## MCP Client
+
+The Keycard MCP SDK also includes **MCP Client** for connecting to MCP servers with built-in authentication support.
+
+### Key Features
+
+- ✅ **OAuth 2.0 Support**: Automatic OAuth flow handling for protected MCP servers
+- ✅ **AI Agent Integrations**: Pre-built integrations with LangChain and OpenAI Agents SDK
+
+### Quick Start
+
+```python
+import asyncio
+from keycardai.mcp.client import Client
+
+servers = {
+    "my-server": {
+        "url": "http://localhost:7878/mcp",
+        "transport": "http",
+        "auth": {"type": "oauth"}  # OAuth configured via server config
+    }
+}
+
+async def main():
+    async with Client(servers) as client:
+        # List available tools
+        tools = await client.list_tools()
+        
+        # Call a tool
+        result = await client.call_tool("my-tool", {"arg": "value"})
+        print(result)
+
+asyncio.run(main())
+```
+
+### Learn More
+
+For comprehensive documentation including use cases, configuration examples, and advanced patterns, see the [MCP Client README](src/keycardai/mcp/client/README.md).
+
 ### Delegated Access
 
 Keycard allows MCP servers to access other resources on behalf of users with automatic consent and secure token exchange.
