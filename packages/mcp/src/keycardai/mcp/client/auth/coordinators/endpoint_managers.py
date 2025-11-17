@@ -255,7 +255,7 @@ class LocalEndpointManager(EndpointManager):
                 self._pending_flows.pop(state, None)
 
             return web.Response(
-                text=f"❌ Authentication callback failed. Please try again.",
+                text="❌ Authentication callback failed. Please try again.",
                 status=400
             )
 
