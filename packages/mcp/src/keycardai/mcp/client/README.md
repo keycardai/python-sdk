@@ -554,6 +554,91 @@ Follow the authorization link, and then refresh the page. It should show the too
 
 ## AI Agent Integrations
 
+### How Authentication Works with AI Agents
+
+The MCP client provides AI framework integrations that automatically handle authentication flows. Here's how it works:
+
+**1. Auth Detection**
+
+When you wrap the MCP client with `LangChainClient` or `OpenAIAgentsClient`, it:
+- Connects to all configured MCP servers
+- Detects which servers require authentication (via `get_auth_challenges()`)
+- Identifies which servers are already authenticated
+
+**2. Dynamic System Prompt**
+
+The integration's `get_system_prompt()` method augments your base instructions with authentication awareness:
+
+```python
+system_prompt = client.get_system_prompt("You are a helpful assistant")
+```
+
+If services need auth, the prompt automatically includes instructions like:
+
+```
+**AUTHENTICATION STATUS:**
+The following services require user authorization: slack-server, google-server
+
+**IMPORTANT:** When the user requests an action that requires one of these services:
+1. Call the `request_authentication` tool with:
+   - service: The service name (e.g., "slack-server")
+   - reason: Brief explanation (e.g., "To send messages to Slack channels")
+2. The tool will initiate the authorization flow and send the auth link to the user
+3. Inform the user that you've initiated authorization and they should check for the link
+4. After the user authorizes, you will automatically gain access to use that service
+
+**Note:** You already have access to: calendar-server
+```
+
+This prompting strategy guides the agent to:
+- Recognize when authentication is needed
+- Call the authentication tool proactively
+- Provide clear explanations to users about why auth is required
+
+**3. Auth Request Tool**
+
+The integration provides a `request_authentication` tool via `get_auth_tools()`:
+
+```python
+tools = await client.get_auth_tools()  # Returns [request_authentication] if auth needed
+```
+
+When the agent calls this tool:
+1. It passes the service name and a user-friendly reason
+2. The `AuthToolHandler` receives the auth challenge details
+3. The handler sends the authorization link to the user (via Slack DM, console, email, etc.)
+4. User completes OAuth flow
+5. Agent automatically gains access to the newly authenticated service's tools
+
+**4. Customizable Auth Handlers**
+
+Different environments require different auth delivery methods:
+
+- **`DefaultAuthToolHandler`**: Returns formatted message for agent to display (fallback)
+- **`ConsoleAuthToolHandler`**: Prints auth links to terminal (CLI apps)
+- **`SlackAuthToolHandler`**: Sends auth links as Slack messages (Slack bots)
+- **Custom**: Subclass `AuthToolHandler` for email, webhooks, web UI, etc.
+
+Example with Slack:
+
+```python
+from keycardai.mcp.client.integrations.auth_tools import SlackAuthToolHandler
+
+handler = SlackAuthToolHandler(
+    slack_client=client,
+    channel_id=channel_id,
+    thread_ts=thread_ts
+)
+
+async with LangChainClient(mcp_client, auth_tool_handler=handler) as client:
+    # Auth links sent directly to Slack thread, bypassing agent message flow
+    ...
+```
+
+**Result**: Users get a seamless experience where the agent intelligently requests authentication only when needed, with authorization links delivered through the appropriate channel for their environment.
+
+---
+
 ### LangChain
 
 ```bash
