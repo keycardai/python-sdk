@@ -372,7 +372,6 @@ servers = {
 # Create coordinator (shared across all users)
 coordinator = StarletteAuthCoordinator(
     redirect_uri="http://localhost:8000/oauth/callback",
-    base_url="http://localhost:8000",
     backend=InMemoryBackend()
 )
 
@@ -491,7 +490,6 @@ class LoggingSubscriber:
 # Setup coordinator and subscribe to events
 coordinator = StarletteAuthCoordinator(
     redirect_uri="http://localhost:8000/oauth/callback",
-    base_url="http://localhost:8000",
     backend=InMemoryBackend()
 )
 coordinator.subscribe(LoggingSubscriber())

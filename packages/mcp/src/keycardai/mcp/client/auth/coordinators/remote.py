@@ -29,8 +29,7 @@ class StarletteAuthCoordinator(AuthCoordinator):
     def __init__(
         self,
         backend: StorageBackend,
-        redirect_uri: str,
-        base_url: str
+        redirect_uri: str
     ):
         """
         Initialize remote coordinator with RemoteEndpointManager.
@@ -38,13 +37,10 @@ class StarletteAuthCoordinator(AuthCoordinator):
         Args:
             backend: Storage backend (required - use Redis/DynamoDB in production!)
             redirect_uri: Callback URL (e.g., "https://myapp.com/oauth/callback")
-            base_url: App base URL (e.g., "https://myapp.com")
         """
         endpoint_manager = RemoteEndpointManager(redirect_uri)
 
         super().__init__(backend, endpoint_manager)
-
-        self.base_url = base_url
 
     @property
     def endpoint_type(self) -> str:

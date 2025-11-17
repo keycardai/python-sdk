@@ -271,7 +271,6 @@ async def callback_server(storage_backend, callback_port):
     """
     coordinator = StarletteAuthCoordinator(
         redirect_uri=f"http://localhost:{callback_port}/callback",
-        base_url=f"http://localhost:{callback_port}",
         backend=storage_backend
     )
 
@@ -302,7 +301,6 @@ async def callback_server_sqlite(temp_db_path, callback_port):
     storage_backend = SQLiteBackend(temp_db_path)
     coordinator = StarletteAuthCoordinator(
         redirect_uri=f"http://localhost:{callback_port}/callback",
-        base_url=f"http://localhost:{callback_port}",
         backend=storage_backend
     )
 

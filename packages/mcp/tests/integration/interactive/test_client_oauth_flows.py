@@ -149,7 +149,6 @@ async def simulate_serverless_request(
     # Create NEW coordinator (like a fresh Lambda execution)
     coordinator = StarletteAuthCoordinator(
         redirect_uri=f"http://localhost:{callback_port}/callback",
-        base_url=f"http://localhost:{callback_port}",
         backend=storage_backend
     )
 
@@ -506,7 +505,6 @@ class TestStarletteAuthCoordinatorStateless:
                 # by creating a NEW coordinator with the SAME storage
                 coordinator2 = StarletteAuthCoordinator(
                     redirect_uri="http://localhost:8080/callback",
-                    base_url="http://localhost:8080",
                     backend=storage_backend  # Same storage!
                 )
 
