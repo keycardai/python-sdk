@@ -1,3 +1,8 @@
+## 0.6.0-keycardai-oauth (2025-11-17)
+
+
+- feat(keycardai-oauth): client metadata updates
+
 ## 0.5.0-keycardai-oauth (2025-09-22)
 
 
