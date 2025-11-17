@@ -98,15 +98,58 @@ class RevocationRequest(BaseModel):
 # Dynamic Client Registration (RFC 7591)
 # =============================================================================
 
-class ClientRegistrationRequest(BaseModel):
+class OAuthClientMetadata(BaseModel):
+    """Base OAuth 2.0 Client Metadata fields (RFC 7591 Section 2).
+
+    Common metadata fields shared across client registration requests,
+    responses, and client information representations.
+
+    Reference: https://datatracker.ietf.org/doc/html/rfc7591#section-2
+    """
+    # Core client identification
+    client_name: str | None = None
+    client_uri: str | None = None
+    logo_uri: str | None = None
+
+    # Policy and legal URIs
+    tos_uri: str | None = None
+    policy_uri: str | None = None
+
+    # Software identification
+    software_id: str | None = None
+    software_version: str | None = None
+
+    # Authentication configuration
+    jwks_uri: str | None = None
+    jwks: dict | None = None
+    token_endpoint_auth_method: TokenEndpointAuthMethod | None = None
+
+    # OAuth flow configuration
+    redirect_uris: list[str] | None = None
+    grant_types: list[GrantType] | None = None
+    response_types: list[ResponseType] | None = None
+    scope: str | None = None
+
+class OAuthClientMetadataFull(OAuthClientMetadata):
+    """OAuth 2.0 Client Metadata fields (RFC 7591 Section 2).
+
+    Reference: https://datatracker.ietf.org/doc/html/rfc7591#section-2
+    """
+    client_id: str
+    client_secret: str | None = None
+    client_id_issued_at: int | None = None
+    client_secret_expires_at: int | None = None
+
+
+class ClientRegistrationRequest(OAuthClientMetadata):
     """Dynamic Client Registration Request as defined in RFC 7591 Section 2.
 
     Reference: https://datatracker.ietf.org/doc/html/rfc7591#section-2
     """
-    client_id: str | None = None
+    # Override with required field
     client_name: str = Field(..., min_length=1, description="Human-readable name of the client application.")
-    jwks_uri: str | None = None
-    jwks: dict | None = None
+
+    # Override with defaults for registration
     token_endpoint_auth_method: TokenEndpointAuthMethod = (
         TokenEndpointAuthMethod.CLIENT_SECRET_BASIC
     )
@@ -114,53 +157,26 @@ class ClientRegistrationRequest(BaseModel):
     grant_types: list[GrantType] | None = Field(default_factory=lambda: [GrantType.TOKEN_EXCHANGE, GrantType.CLIENT_CREDENTIALS])
     response_types: list[ResponseType] | None = Field(default_factory=lambda: [ResponseType.CODE])
     scope: str | None = "read write"
+
+    # Request-specific fields
+    client_id: str | None = None
     timeout: float | None = None
     additional_metadata: dict[str, Any] | None = None
 
-    # Direct client metadata fields (alternatives to additional_metadata)
-    client_uri: str | None = None
-    logo_uri: str | None = None
-    tos_uri: str | None = None
-    policy_uri: str | None = None
-    software_id: str | None = None
-    software_version: str | None = None
 
-
-@dataclass
-class ClientRegistrationResponse:
+class ClientRegistrationResponse(OAuthClientMetadataFull):
     """RFC 7591 Dynamic Client Registration Response.
 
     Preserves all RFC 7591 fields plus vendor extensions and response metadata.
     Reference: https://datatracker.ietf.org/doc/html/rfc7591#section-3.2.1
     """
 
-    # Server-generated required fields
-    client_id: str
-    client_secret: str | None = None
-    client_id_issued_at: int | None = None
-    client_secret_expires_at: int | None = None
-
-    # Echoed request fields
-    client_name: str | None = None
-    jwks_uri: str | None = None
-    jwks: dict | None = None
-    token_endpoint_auth_method: TokenEndpointAuthMethod | None = None
-    redirect_uris: list[str] | None = None
-    grant_types: list[GrantType] | None = None
-    response_types: list[ResponseType] | None = None
+    # Override scope type from str to list[str] for responses
     scope: list[str] | None = None
 
     # Additional server-provided metadata
     registration_access_token: str | None = None
     registration_client_uri: str | None = None
-
-    # Additional client metadata (vendor extensions)
-    client_uri: str | None = None
-    logo_uri: str | None = None
-    tos_uri: str | None = None
-    policy_uri: str | None = None
-    software_id: str | None = None
-    software_version: str | None = None
 
     # Vendor extensions and debugging
     raw: dict[str, Any] | None = None
