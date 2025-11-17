@@ -19,15 +19,15 @@ __all__ = [
 
 # Try to import LangChain integration
 try:
-    from . import langchain_agents
+    from . import langchain_agents  # noqa: F401
     __all__.extend(["langchain_agents"])
 except ImportError:
     pass
 
 # Try to import OpenAI Agents integration
 try:
-    from . import openai_agents
-    from .openai_agents import OpenAIMCPServer
+    from . import openai_agents  # noqa: F401
+    from .openai_agents import OpenAIMCPServer  # noqa: F401
     __all__.extend(["openai_agents", "OpenAIMCPServer"])
 except ImportError:
     pass

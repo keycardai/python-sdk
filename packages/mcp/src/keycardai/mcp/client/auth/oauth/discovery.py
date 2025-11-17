@@ -135,7 +135,7 @@ class OAuthDiscoveryService:
 
                     if "registration_endpoint" not in data:
                         # Don't expose full metadata - may contain internal configuration
-                        raise ValueError(f"No registration endpoint in authorization server metadata")
+                        raise ValueError("No registration endpoint in authorization server metadata")
 
                     await self.storage.save_auth_server_metadata(data)
                     logger.info(f"Discovered and cached authorization server: {auth_server_url}")

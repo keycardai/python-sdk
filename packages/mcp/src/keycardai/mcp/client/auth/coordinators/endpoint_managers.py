@@ -181,7 +181,7 @@ class LocalEndpointManager(EndpointManager):
     def _find_free_port(self) -> int:
         """Find an available port on localhost."""
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.bind(('', 0))
+            s.bind((self._host, 0))
             s.listen(1)
             return s.getsockname()[1]
 
@@ -255,7 +255,7 @@ class LocalEndpointManager(EndpointManager):
                 self._pending_flows.pop(state, None)
 
             return web.Response(
-                text=f"❌ Error: {str(e)}",
+                text=f"❌ Authentication callback failed. Please try again.",
                 status=400
             )
 

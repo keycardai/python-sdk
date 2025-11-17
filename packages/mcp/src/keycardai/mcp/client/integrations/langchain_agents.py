@@ -87,7 +87,7 @@ class LangChainClient:
         try:
             tool_infos = await self._mcp_client.list_tools()
             # Group tools by server to determine which servers are authenticated
-            servers_with_tools = set(info.server for info in tool_infos)
+            servers_with_tools = {info.server for info in tool_infos}
             self._authenticated_servers = list(servers_with_tools)
         except (AttributeError, Exception) as e:
             # Session not fully connected (likely pending auth)
