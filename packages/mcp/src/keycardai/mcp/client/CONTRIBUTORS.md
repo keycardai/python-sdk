@@ -1182,9 +1182,12 @@ Clear boundaries help maintain clean architecture.
 
 **LocalAuthCoordinator** (CLI/Desktop):
 - Runs embedded HTTP callback server on localhost
-- Blocks on redirects using asyncio.Event (waits for callback)
-- Opens browser automatically (`webbrowser.open()`)
+- Blocks on redirects using asyncio.Event (waits for callback) - **configurable**
+- Opens browser automatically (`webbrowser.open()`) - **configurable**
 - Suitable for single-process applications
+- Parameters:
+  - `auto_open_browser` (default: `True`): Whether to automatically open browser
+  - `block_until_callback` (default: `True`): Whether to block until callback received
 
 **StarletteAuthCoordinator** (Web/Serverless):
 - Delegates to remote callback endpoint (Starlette/FastAPI)

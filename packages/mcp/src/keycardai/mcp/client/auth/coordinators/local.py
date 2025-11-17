@@ -19,9 +19,9 @@ class LocalAuthCoordinator(AuthCoordinator):
     Use for: CLI apps, desktop apps, local development.
 
     Key behaviors:
-    - Opens browser to authorization URL
-    - Blocks in handle_redirect() until completion arrives
-    - Requires synchronous cleanup to avoid race conditions
+    - Opens browser to authorization URL (configurable)
+    - Blocks in handle_redirect() until completion arrives (configurable)
+    - Requires synchronous cleanup to avoid race conditions (when blocking)
     """
 
     def __init__(
@@ -29,7 +29,9 @@ class LocalAuthCoordinator(AuthCoordinator):
         backend: StorageBackend | None = None,
         host: str = "localhost",
         port: int = 0,
-        callback_path: str = "/callback"
+        callback_path: str = "/callback",
+        auto_open_browser: bool = True,
+        block_until_callback: bool = True
     ):
         """
         Initialize local coordinator with LocalEndpointManager.
@@ -39,9 +41,17 @@ class LocalAuthCoordinator(AuthCoordinator):
             host: Host for local server (default: localhost)
             port: Port (0 = auto-assign)
             callback_path: HTTP callback path for OAuth redirects (default: /callback)
+            auto_open_browser: Whether to automatically open browser (default: True)
+            block_until_callback: Whether to block until callback received (default: True)
         """
-        # Create endpoint manager
-        endpoint_manager = LocalEndpointManager(host, port, callback_path)
+        # Create endpoint manager with configurable behavior
+        endpoint_manager = LocalEndpointManager(
+            host,
+            port,
+            callback_path,
+            auto_open_browser=auto_open_browser,
+            block_until_callback=block_until_callback
+        )
 
         # Initialize base coordinator with endpoint manager
         super().__init__(backend, endpoint_manager)

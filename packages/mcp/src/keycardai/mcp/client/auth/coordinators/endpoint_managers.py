@@ -52,8 +52,8 @@ class LocalEndpointManager(EndpointManager):
 
     Key behaviors:
     - Starts local HTTP server on demand (lazy initialization)
-    - Opens user's browser to authorization URL
-    - BLOCKS in initiate_redirect() until callback is received
+    - Opens user's browser to authorization URL (configurable)
+    - BLOCKS in initiate_redirect() until callback is received (configurable)
     - Tracks pending flows by OAuth state parameter
 
     Use for: CLI apps, desktop apps, local development.
@@ -63,7 +63,9 @@ class LocalEndpointManager(EndpointManager):
         self,
         host: str = "localhost",
         port: int = 0,
-        callback_path: str = "/callback"
+        callback_path: str = "/callback",
+        auto_open_browser: bool = True,
+        block_until_callback: bool = True
     ):
         """
         Initialize local endpoint manager.
@@ -72,11 +74,15 @@ class LocalEndpointManager(EndpointManager):
             host: Host for local server (default: localhost)
             port: Port for local server (0 = auto-assign)
             callback_path: Path for callback endpoint (default: /callback)
+            auto_open_browser: Whether to automatically open browser (default: True)
+            block_until_callback: Whether to block until callback received (default: True)
         """
         self._host = host
         self._desired_port = port
         self._actual_port: int | None = None
         self._callback_path = callback_path
+        self._auto_open_browser = auto_open_browser
+        self._block_until_callback = block_until_callback
 
         self._server_task: asyncio.Task | None = None
         self._ready_event = asyncio.Event()
@@ -125,21 +131,22 @@ class LocalEndpointManager(EndpointManager):
 
     async def initiate_redirect(self, url: str, metadata: dict[str, Any]) -> None:
         """
-        Open browser and BLOCK until callback is received.
+        Initiate OAuth redirect (configurable browser opening and blocking).
 
-        This is the key behavior for CLI apps: the function blocks until
-        the user completes authorization in their browser.
+        Behavior depends on configuration:
+        - auto_open_browser=True: Opens browser automatically
+        - auto_open_browser=False: Logs URL for manual opening
+        - block_until_callback=True: Blocks until callback received
+        - block_until_callback=False: Returns immediately
 
         Args:
             url: Authorization URL to open in browser
             metadata: Flow metadata including server_name
 
         Raises:
-            TimeoutError: If authorization not completed within 300 seconds
+            TimeoutError: If authorization not completed within 300 seconds (when blocking)
         """
         server_name = metadata.get("server_name", "unknown")
-        logger.info(f"Opening browser for auth flow (server: {server_name})")
-        logger.info("Please authorize in your browser...")
 
         state = self._extract_state_from_url(url)
         if not state:
@@ -149,16 +156,25 @@ class LocalEndpointManager(EndpointManager):
         if state not in self._pending_flows:
             self._pending_flows[state] = asyncio.Event()
 
-        webbrowser.open(url)
+        if self._auto_open_browser:
+            logger.info(f"Opening browser for auth flow (server: {server_name})")
+            logger.info("Please authorize in your browser...")
+            webbrowser.open(url)
+        else:
+            logger.info(f"Authorization required for {server_name}")
+            logger.info(f"Please visit: {url}")
 
-        logger.info("Waiting for authorization to complete...")
-        try:
-            await asyncio.wait_for(self._pending_flows[state].wait(), timeout=300)
-            logger.info(f"Authorization completed for {server_name}")
-        except asyncio.TimeoutError as e:
-            logger.error("Authorization timed out after 300s")
-            self._pending_flows.pop(state, None)
-            raise TimeoutError(f"Authorization timed out for {server_name}") from e
+        if self._block_until_callback:
+            logger.info("Waiting for authorization to complete...")
+            try:
+                await asyncio.wait_for(self._pending_flows[state].wait(), timeout=300)
+                logger.info(f"Authorization completed for {server_name}")
+            except asyncio.TimeoutError as e:
+                logger.error("Authorization timed out after 300s")
+                self._pending_flows.pop(state, None)
+                raise TimeoutError(f"Authorization timed out for {server_name}") from e
+        else:
+            logger.debug(f"Non-blocking mode: returning immediately for {server_name}")
 
     async def shutdown(self) -> None:
         """

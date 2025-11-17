@@ -269,6 +269,70 @@ def main():
     asyncio.run(run())
 ```
 
+#### Manual Browser Control (Non-Blocking)
+
+If you prefer to control when the browser opens or want a non-blocking flow:
+
+```python
+import asyncio
+from keycardai.mcp.client import Client, LocalAuthCoordinator, InMemoryBackend
+
+servers = {
+    "my-server": {
+        "url": "http://localhost:7878/mcp",
+        "transport": "http",
+        "auth": {"type": "oauth"}
+    }
+}
+
+async def run():
+    # Disable auto-open browser and blocking behavior
+    coordinator = LocalAuthCoordinator(
+        backend=InMemoryBackend(),
+        host="localhost",
+        port=8888,
+        callback_path="/oauth/callback",
+        auto_open_browser=False,      # Don't auto-open browser
+        block_until_callback=False    # Return immediately instead of blocking
+    )
+    
+    async with Client(servers, auth_coordinator=coordinator) as client:
+        # Try to connect (non-blocking if auth needed)
+        await client.connect()
+        
+        # Check if authentication is required
+        auth_status = await coordinator.get_auth_pending(
+            context_id=client.context.id,
+            server_name="my-server"
+        )
+        
+        if auth_status:
+            # Auth URL is logged but not auto-opened
+            auth_url = auth_status.get("authorization_url")
+            print(f"\n🔐 Authentication required!")
+            print(f"Please visit: {auth_url}\n")
+            
+            # Wait for user to complete auth in browser
+            # (callback server still runs in background)
+            import time
+            while auth_status:
+                await asyncio.sleep(1)
+                auth_status = await coordinator.get_auth_pending(
+                    context_id=client.context.id,
+                    server_name="my-server"
+                )
+            
+            # Reconnect now that auth is complete
+            await client.connect()
+        
+        # Now authenticated - use the tools
+        tools = await client.list_tools("my-server")
+        print(f"Available tools: {len(tools)}")
+
+def main():
+    asyncio.run(run())
+```
+
 ---
 
 ### 2. Web Applications
