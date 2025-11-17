@@ -1,3 +1,10 @@
+## 0.16.0-keycardai-mcp (2025-11-17)
+
+
+- feat(keycardai-mcp): headless clients
+- feat(keycardai-mcp): update oauth deps
+- feat(keycardai-mcp): client implementation
+
 ## 0.15.0-keycardai-mcp (2025-11-07)
 
 
