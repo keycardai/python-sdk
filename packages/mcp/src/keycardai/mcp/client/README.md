@@ -14,6 +14,8 @@ The Keycard MCP Client provides a simple, type-safe way to connect to MCP server
 - 💾 **Flexible storage** (in-memory, SQLite, custom backends)
 - 🔒 **Type-safe** with full protocol support
 
+> **⚠️ Transport Support:** Currently, only the **`streamable_http`** transport is implemented. Other MCP transports (`stdio`, `sse`) are not yet supported. All examples in this README use HTTP transport.
+
 ---
 
 ## Quick Start
@@ -40,7 +42,7 @@ from keycardai.mcp.client import Client
 servers = {
     "my-server": {
         "url": "http://localhost:7878/mcp",
-        "transport": "http",
+        "transport": "http",  # Uses streamable_http transport
         "auth": {"type": "oauth"}
     }
 }
@@ -345,6 +347,11 @@ def main():
 - `InMemoryBackend` (fast access for stateful apps)
 - `get_auth_challenges()` (check for pending auth)
 
+```bash
+uv init --package mcp-web && cd mcp-web
+uv add keycardai-mcp starlette uvicorn
+```
+
 ```python
 from starlette.applications import Starlette
 from starlette.responses import JSONResponse, HTMLResponse
@@ -440,6 +447,11 @@ Follow the authorization link, and then refresh the page. It should show the too
 - Context metadata (attach custom data to auth flows)
 - Event notifications (`on_completion_handled` callback)
 - Metadata propagation through OAuth lifecycle
+
+```bash
+uv init --package mcp-bot && cd mcp-bot
+uv add keycardai-mcp starlette uvicorn
+```
 
 Create `src/mcp_bot/__init__.py`:
 
@@ -546,9 +558,8 @@ Follow the authorization link, and then refresh the page. It should show the too
 
 ### LangChain
 
-Install dependencies:
-
 ```bash
+uv init --package mcp-langchain && cd mcp-langchain
 uv add keycardai-mcp langchain langchain-openai
 ```
 
