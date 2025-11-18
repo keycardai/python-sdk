@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, Any
 
 from mcp import ClientSession
 
+from .auth.events import CompletionEvent
 from .connection import Connection, create_connection
 from .context import Context
 from .logging_config import get_logger
@@ -112,6 +113,30 @@ class Session:
 
     Each session has its own connection with isolated auth and storage.
 
+    **Connection Status Lifecycle:**
+
+    Sessions track their connection state through a comprehensive status lifecycle.
+    The `connect()` method does NOT raise exceptions for connection failures. Instead,
+    it sets the appropriate session status. Callers should check `session.status` or
+    `session.is_operational` after calling `connect()` to determine the outcome.
+
+    Status states include:
+    - INITIALIZING, CONNECTING, AUTHENTICATING, AUTH_PENDING, CONNECTED
+    - DISCONNECTING, DISCONNECTED
+    - AUTH_FAILED, CONNECTION_FAILED, SERVER_UNREACHABLE, FAILED
+
+    Use properties like `is_operational`, `is_failed`, `requires_user_action`, and
+    `can_retry` to check the session state.
+
+    **Auto-Reconnection on Auth Completion:**
+
+    When a session enters AUTH_PENDING state (e.g., waiting for OAuth), it subscribes
+    to the coordinator's completion events. When authentication completes, the session
+    automatically reconnects without requiring manual intervention. This enables the
+    non-blocking auth pattern where users can poll `session.requires_user_action`.
+
+    **Forwarding to ClientSession:**
+
     This class automatically forwards all methods from mcp.ClientSession via __getattr__,
     allowing it to stay in sync with upstream MCP SDK changes.
 
@@ -142,6 +167,7 @@ class Session:
         self._connection: Connection | None = None
         self._connected = False
         self.status = SessionStatus.INITIALIZING
+        self._subscribed_to_coordinator = False
 
         self.server_storage = context.storage.get_namespace(f"server:{server_name}")
 
@@ -178,6 +204,44 @@ class Session:
     def is_failed(self) -> bool:
         """In a failure state."""
         return self.status in SessionStatusCategory.FAILURE_STATES
+
+    async def on_completion_handled(self, event: CompletionEvent) -> None:
+        """
+        Handle auth completion notification from coordinator (CompletionSubscriber protocol).
+
+        When OAuth completes for this session, automatically reconnect.
+        This enables the non-blocking auth pattern where callers can poll
+        `session.requires_user_action` and the session will automatically
+        become operational when auth completes.
+
+        Args:
+            event: Completion event from coordinator
+        """
+        if not event.success:
+            logger.debug(f"Session {self.server_name}: Ignoring failed completion event")
+            return
+
+        # Check if this completion is for this session
+        event_context_id = event.result.get("context_id")
+        event_server_name = event.result.get("server_name")
+
+        if event_context_id != self.context.id or event_server_name != self.server_name:
+            # Not for this session
+            return
+
+        # Auth completed for this session!
+        if self.status == SessionStatus.AUTH_PENDING:
+            logger.info(
+                f"Session {self.server_name}: Auth completion detected, "
+                f"auto-reconnecting..."
+            )
+            try:
+                await self.connect(_retry_after_auth=False)
+            except Exception as e:
+                logger.error(
+                    f"Session {self.server_name}: Auto-reconnect after auth failed: {e}",
+                    exc_info=True
+                )
 
     def _set_status(self, new_status: SessionStatus, reason: str = "") -> None:
         """
@@ -356,6 +420,16 @@ class Session:
             auth_challenge = await self.get_auth_challenge()
             if auth_challenge:
                 await self.disconnect()
+
+                # Subscribe to coordinator for auto-reconnect when auth completes
+                if not self._subscribed_to_coordinator:
+                    self.coordinator.subscribe(self)
+                    self._subscribed_to_coordinator = True
+                    logger.debug(
+                        f"Session {self.server_name}: Subscribed to coordinator "
+                        f"for auth completion notifications"
+                    )
+
                 self._set_status(SessionStatus.AUTH_PENDING, "authentication required")
                 logger.debug(f"Session {self.server_name} requires authentication")
                 return
@@ -395,6 +469,12 @@ class Session:
                 logger.debug("Error stopping connection (suppressed)")
             finally:
                 self._connection = None
+
+        # Unsubscribe from coordinator
+        if self._subscribed_to_coordinator:
+            self.coordinator.unsubscribe(self)
+            self._subscribed_to_coordinator = False
+            logger.debug(f"Session {self.server_name}: Unsubscribed from coordinator")
 
         self._set_status(SessionStatus.DISCONNECTED, "disconnect complete")
 

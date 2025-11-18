@@ -99,6 +99,8 @@ The SDK provides multi-server connection management through a two-layer design:
 - Each MCP server gets its own `Session` instance (created and managed by `Client`)
 - Wraps the upstream [`mcp.ClientSession`](https://github.com/modelcontextprotocol/python-sdk) from the Model Context Protocol library
 - Adds authentication layer and storage scoping on top of the base protocol implementation
+- **Tracks connection status lifecycle:** Use `session.status`, `session.is_operational`, `session.is_failed` to check connection state
+- **Non-throwing connection behavior:** `connect()` sets status instead of raising exceptions for connection failures
 - **Access directly for full protocol features:** Use `client.sessions[server_name]` to access all `ClientSession` methods
 
 **Accessing the full protocol:**
@@ -111,6 +113,11 @@ result = await client.call_tool("my_tool", {})
 session = client.sessions["my-server"]
 resources = await session.list_resources()  # Full ClientSession API
 prompts = await session.list_prompts()      # Access any ClientSession method
+
+# Check session status
+print(f"Status: {session.status}")          # SessionStatus enum
+print(f"Operational: {session.is_operational}")  # Ready to use?
+print(f"Failed: {session.is_failed}")       # In error state?
 ```
 
 This design lets you use convenient abstractions while staying current with the latest MCP protocol features.
@@ -139,6 +146,36 @@ The SDK provides **two built-in coordinators** that cover common use cases. You 
 - Building a web app or API? → [`StarletteAuthCoordinator`](auth/coordinators/remote.py)
 - Running in Lambda/serverless? → [`StarletteAuthCoordinator`](auth/coordinators/remote.py) + [`SQLiteBackend`](storage/backends/sqlite.py)
 - Need custom behavior? → Implement [`AuthCoordinator`](auth/coordinators/base.py) interface
+
+### Connection Status & Error Handling
+
+**Non-Throwing Behavior:** The `connect()` method does **not** raise exceptions for connection failures. Instead, sessions track their state through a status lifecycle. After calling `connect()`, check the session status to determine the outcome:
+
+```python
+await client.connect()
+
+session = client.sessions["my-server"]
+
+if session.is_operational:
+    # Ready to use
+    result = await client.call_tool("my_tool", {})
+elif session.is_failed:
+    # Handle connection failure
+    print(f"Connection failed: {session.status}")
+    if session.can_retry:
+        await client.connect(server="my-server", force_reconnect=True)
+elif session.requires_user_action:
+    # Handle OAuth flow
+    challenges = await client.get_auth_challenges()
+```
+
+**Key Properties:**
+- `session.is_operational` - Ready to call tools
+- `session.is_failed` - Connection failed
+- `session.can_retry` - Failure is recoverable
+- `session.requires_user_action` - Needs OAuth completion
+
+See [`CONTRIBUTORS.md`](CONTRIBUTORS.md#session-status-lifecycle) for detailed status states and transitions.
 
 ### What is a Storage Backend?
 
@@ -252,6 +289,12 @@ async def run():
         # OAuth happens automatically when connecting
         # Browser opens, you approve, then script continues
         
+        # Check connection status (connection failures don't raise exceptions)
+        session = client.sessions["my-server"]
+        if not session.is_operational:
+            print(f"Server not available: {session.status}")
+            return
+        
         # List available tools with server information
         tools = await client.list_tools("my-server")
         print(f"Available tools: {len(tools)}")
@@ -299,33 +342,28 @@ async def run():
     )
     
     async with Client(servers, auth_coordinator=coordinator) as client:
-        # Try to connect (non-blocking if auth needed)
-        await client.connect()
+        # Context manager automatically connects to all servers
+        # Connection failures are communicated via status, not exceptions
+        
+        session = client.sessions["my-server"]
         
         # Check if authentication is required
-        auth_status = await coordinator.get_auth_pending(
-            context_id=client.context.id,
-            server_name="my-server"
-        )
+        if session.requires_user_action:  # status == AUTH_PENDING
+            auth_challenges = await client.get_auth_challenges()
+            if auth_challenges:
+                auth_url = auth_challenges[0].get("authorization_url")
+                print(f"\n🔐 Authentication required!")
+                print(f"Please visit: {auth_url}\n")
+                
+                # Wait for user to complete auth in browser
+                # Session automatically reconnects when OAuth completes (no manual reconnect needed!)
+                while session.requires_user_action:
+                    await asyncio.sleep(1)
         
-        if auth_status:
-            # Auth URL is logged but not auto-opened
-            auth_url = auth_status.get("authorization_url")
-            print(f"\n🔐 Authentication required!")
-            print(f"Please visit: {auth_url}\n")
-            
-            # Wait for user to complete auth in browser
-            # (callback server still runs in background)
-            import time
-            while auth_status:
-                await asyncio.sleep(1)
-                auth_status = await coordinator.get_auth_pending(
-                    context_id=client.context.id,
-                    server_name="my-server"
-                )
-            
-            # Reconnect now that auth is complete
-            await client.connect()
+        # Session is now connected automatically after auth completion
+        if not session.is_operational:
+            print(f"Failed to connect: {session.status}")
+            return
         
         # Now authenticated - use the tools
         tools = await client.list_tools("my-server")
@@ -388,13 +426,25 @@ async def call_tool(request):
     
     # Get or create client for this user
     client = await client_manager.get_client(user_id)
+    # Note: connect() does not raise exceptions - check status instead
     await client.connect()
     
-    # Check if user needs to authorize
-    pending_auth = await client.get_auth_challenges()
-    if pending_auth:
-        auth_url = pending_auth[0]["authorization_url"]
-        return HTMLResponse(f'<a href="{auth_url}" target="_blank">Click to authorize</a>')
+    session = client.sessions["my-server"]
+    
+    # Check connection status
+    if not session.is_operational:
+        # Check if user needs to authorize
+        if session.requires_user_action:
+            pending_auth = await client.get_auth_challenges()
+            if pending_auth:
+                auth_url = pending_auth[0]["authorization_url"]
+                return HTMLResponse(f'<a href="{auth_url}" target="_blank">Click to authorize</a>')
+        
+        # Connection failed
+        return JSONResponse({
+            "status": "error",
+            "message": f"Server unavailable: {session.status.value}"
+        })
     
     # User is authorized - list and call first tool
     tools = await client.list_tools("my-server")
@@ -423,6 +473,9 @@ app = Starlette(routes=[
 
 def main():
     """Entry point for the web server."""
+    print("\n🌐 MCP Web Server starting...")
+    print("📋 Test the tool at: http://localhost:8000/users/alice/tool")
+    print("🔗 OAuth callback: http://localhost:8000/oauth/callback\n")
     uvicorn.run(app, host="0.0.0.0", port=8000)
 ```
 
@@ -537,6 +590,9 @@ app = Starlette(routes=[
 
 def main():
     """Entry point for the bot server."""
+    print("\n🤖 MCP Bot Server starting...")
+    print("📋 Test the bot at: http://localhost:8000/tool?user=demo_user&request_id=req_001")
+    print("🔗 OAuth callback: http://localhost:8000/oauth/callback\n")
     uvicorn.run(app, host="0.0.0.0", port=8000)
 ```
 

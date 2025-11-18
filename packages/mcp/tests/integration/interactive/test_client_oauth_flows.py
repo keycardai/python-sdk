@@ -1653,3 +1653,193 @@ class TestSubscriberNotifyPattern:
         print("  - Metadata properly isolated")
         print("  - No cross-contamination between users")
         print(f"{'='*70}\n")
+
+
+@skip_manual
+class TestNonBlockingAuthPattern:
+    """
+    Integration test for non-blocking authentication pattern from README.
+
+    **THIS TEST CURRENTLY FAILS** - Documents a bug in session status management.
+
+    Expected behavior (from README example):
+    ```python
+    while session.requires_user_action:
+        await asyncio.sleep(1)
+    # Status should automatically update when OAuth completes
+    ```
+
+    Current bug:
+    - OAuth callback completes successfully (token is saved)
+    - session.requires_user_action remains True
+    - session.status remains AUTH_PENDING
+    - Status never auto-updates
+
+    This is a proper TDD test that:
+    - ❌ FAILS until the bug is fixed
+    - ✅ Will PASS when session status auto-updates correctly
+
+    Test configuration:
+    - auto_open_browser=False (don't auto-open browser)
+    - block_until_callback=False (return immediately, don't block)
+
+    To run this test:
+    1. Set KEYCARD_ZONE_URL environment variable
+    2. Run: uv run pytest packages/mcp/tests/integration/interactive/test_client_oauth_flows.py::TestNonBlockingAuthPattern -v -s
+    3. Open the printed authorization URL in your browser
+    4. Complete OAuth within 10 seconds
+    5. Test will FAIL with clear bug description
+    """
+
+    @pytest.mark.asyncio
+    @pytest.mark.timeout(60)  # 1 minute timeout
+    async def test_non_blocking_auth_with_polling(
+        self,
+        mcp_server: MCPServerFixture,
+        storage_backend: InMemoryBackend
+    ):
+        """
+        Test that session status auto-updates when OAuth completes (TDD - currently FAILS).
+
+        Expected: session.requires_user_action changes to False when OAuth completes
+        Actual: Status remains AUTH_PENDING even though token is saved
+
+        This test will PASS when the bug is fixed.
+        """
+        print(f"\n{'='*70}")
+        print("Testing Non-Blocking Auth Pattern (README Example)")
+        print(f"{'='*70}\n")
+
+        # Configure server
+        servers = {
+            "my-server": {
+                "url": mcp_server.url,
+                "transport": "http",
+                "auth": {
+                    "type": "oauth"
+                }
+            }
+        }
+
+        # Disable auto-open browser and blocking behavior
+        coordinator = LocalAuthCoordinator(
+            backend=storage_backend,
+            host="localhost",
+            port=8888,
+            callback_path="/oauth/callback",
+            auto_open_browser=False,      # Don't auto-open browser
+            block_until_callback=False    # Return immediately instead of blocking
+        )
+
+        async with Client(servers, auth_coordinator=coordinator) as client:
+            print("--- Phase 1: Initial Connection ---")
+            # Context manager automatically connects to all servers
+            # Connection failures are communicated via status, not exceptions
+
+            session = client.sessions["my-server"]
+            print(f"  Session status: {session.status.value}")
+            print(f"  is_operational: {session.is_operational}")
+            print(f"  requires_user_action: {session.requires_user_action}")
+
+            # Check if authentication is required
+            if session.requires_user_action:  # status == AUTH_PENDING
+                print("\n--- Phase 2: Authentication Required ---")
+                auth_challenges = await client.get_auth_challenges()
+                if auth_challenges:
+                    auth_url = auth_challenges[0].get("authorization_url")
+                    print("\n🔐 Authentication required!")
+                    print(f"Please visit: {auth_url}\n")
+
+                    # Open browser manually (since auto_open_browser=False)
+                    print("Opening browser...")
+                    webbrowser.open(auth_url)
+
+                    await asyncio.sleep(5)
+
+                    # Wait for user to complete auth in browser
+                    # (callback server still runs in background)
+                    print("\n--- Phase 3: Polling for Authentication (max 10 seconds) ---")
+                    print("  Waiting for session.requires_user_action to change...")
+                    start_time = asyncio.get_event_loop().time()
+                    timeout = 10.0
+                    poll_interval = 0.5
+
+                    # EXPECTED BEHAVIOR (from README):
+                    # The session status should automatically update when OAuth completes
+                    while session.requires_user_action:
+                        elapsed = asyncio.get_event_loop().time() - start_time
+                        if elapsed >= timeout:
+                            # Test FAILS here if status doesn't auto-update
+                            print(f"\n❌ Timeout reached after {elapsed:.1f}s")
+                            print(f"  Session status: {session.status.value}")
+                            print(f"  requires_user_action: {session.requires_user_action}")
+
+                            # Check if auth actually completed
+                            oauth_storage = session.context.storage_path() \
+                                .for_server("my-server") \
+                                .for_connection() \
+                                .for_oauth() \
+                                .build()
+                            token = await oauth_storage.get("tokens")
+
+                            if token:
+                                print("\n❌ BUG DETECTED:")
+                                print("  - OAuth callback completed (token exists)")
+                                print("  - BUT session.requires_user_action is still True")
+                                print("  - AND session.status is still auth_pending")
+                                print("\nExpected: session status should auto-update when auth completes")
+                                print("Actual: status remains auth_pending, requires manual reconnect")
+
+                            raise AssertionError(
+                                "session.requires_user_action should become False after OAuth completion. "
+                                f"Status remained: {session.status.value}"
+                            )
+
+                        await asyncio.sleep(poll_interval)
+                        print(f"  ⏳ Polling... ({elapsed:.1f}s elapsed, status: {session.status.value})")
+
+                    # If we get here, status updated correctly!
+                    elapsed = asyncio.get_event_loop().time() - start_time
+                    print(f"\n✓ requires_user_action changed after {elapsed:.1f}s")
+                    print(f"  Session status: {session.status.value}")
+                    print(f"  requires_user_action: {session.requires_user_action}")
+
+            # Check if connection succeeded
+            print("\n--- Phase 4: Verify Connection ---")
+            print(f"  Session status: {session.status.value}")
+            print(f"  is_operational: {session.is_operational}")
+            print(f"  is_failed: {session.is_failed}")
+
+            if not session.is_operational:
+                print(f"❌ Failed to connect: {session.status}")
+                raise AssertionError(
+                    f"Session should be operational after auth completion. "
+                    f"Status: {session.status.value}"
+                )
+
+            print("✓ Session is operational after status auto-update")
+
+            # Now authenticated - use the tools
+            print("\n--- Phase 5: Test Operations ---")
+            tools = await client.list_tools("my-server")
+            print(f"✓ Available tools: {len(tools)}")
+
+            # Try calling a tool
+            result = await client.call_tool(
+                server_name="my-server",
+                tool_name="echo",
+                arguments={"message": "Hello from non-blocking test!"}
+            )
+            print("✓ Tool call successful")
+
+            # Verify result
+            assert result is not None
+            assert hasattr(result, 'content')
+            text_content = result.content[0].text if hasattr(result.content[0], 'text') else str(result.content[0])
+            assert "Hello from non-blocking test!" in text_content
+            print(f"✓ Tool returned expected content: {text_content}")
+
+            print(f"\n{'='*70}")
+            print("✅ TEST PASSED - Non-blocking auth pattern works correctly!")
+            print("   Status auto-updated after OAuth completion as expected")
+            print(f"{'='*70}\n")

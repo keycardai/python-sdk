@@ -6,6 +6,7 @@ Welcome to the MCP Client implementation! This document provides a comprehensive
 
 - [Overview](#overview)
 - [Core Architecture](#core-architecture)
+- [Session Status Lifecycle](#session-status-lifecycle)
 - [Storage Architecture](#storage-architecture)
 - [Key Use Cases & Flows](#key-use-cases--flows)
 - [Architectural Decisions](#architectural-decisions)
@@ -338,6 +339,196 @@ Each primitive solves a specific architectural challenge. You can mix and match 
 
 ---
 
+## Session Status Lifecycle
+
+Sessions track their connection state through a comprehensive status lifecycle. This allows applications to handle connection failures gracefully without exceptions.
+
+**Design Philosophy:**
+
+The `connect()` method **does not raise exceptions** for connection failures. Instead, it sets the appropriate session status. This design enables:
+- Connecting to multiple servers where some may be unavailable
+- Graceful failure handling without try/catch blocks
+- Clear status inspection to determine appropriate actions
+
+### Status States
+
+Sessions can be in one of the following states:
+
+| State | Category | Description |
+|-------|----------|-------------|
+| `INITIALIZING` | Initial | Session created but not yet connected |
+| `CONNECTING` | Active | Establishing connection to server |
+| `AUTHENTICATING` | Active | Connection established, authentication in progress |
+| `AUTH_PENDING` | Pending | Waiting for external auth (e.g., OAuth callback) |
+| `CONNECTED` | Active | Fully connected and operational |
+| `RECONNECTING` | Recovery | Attempting to reconnect after failure |
+| `DISCONNECTING` | Disconnection | Gracefully closing connection |
+| `DISCONNECTED` | Terminal | Clean disconnect, can reconnect |
+| `CONNECTION_FAILED` | Failure | Failed to establish connection |
+| `SERVER_UNREACHABLE` | Failure | Server not responding/not available |
+| `AUTH_FAILED` | Failure | Authentication failed |
+| `FAILED` | Failure | General failure state |
+
+### Status Categories
+
+Status states are organized into logical groups:
+
+**Active States:** Session is attempting or maintaining a connection
+- `CONNECTING`, `AUTHENTICATING`, `CONNECTED`, `RECONNECTING`
+
+**Failure States:** Session encountered an error
+- `AUTH_FAILED`, `CONNECTION_FAILED`, `SERVER_UNREACHABLE`, `FAILED`
+
+**Recoverable States:** Failure states that can be retried
+- `CONNECTION_FAILED`, `SERVER_UNREACHABLE`, `AUTH_FAILED`
+
+**Terminal States:** Session is not connected and requires action
+- `DISCONNECTED`, `FAILED`
+
+**Pending States:** Session is waiting for external action
+- `AUTH_PENDING`
+
+### Status Properties
+
+Sessions provide convenient properties for checking status:
+
+```python
+session = client.sessions["my-server"]
+
+# Check if ready to use
+if session.is_operational:  # Only true when CONNECTED
+    result = await client.call_tool("my_tool", {})
+
+# Check for failures
+if session.is_failed:  # Any failure state
+    print(f"Connection failed: {session.status}")
+    if session.can_retry:  # Recoverable failure
+        await client.connect(server="my-server", force_reconnect=True)
+
+# Check if waiting for user action
+if session.requires_user_action:  # AUTH_PENDING
+    challenges = await client.get_auth_challenges()
+    # Handle OAuth flow
+
+# Check if currently connecting
+if session.is_connecting:  # CONNECTING, AUTHENTICATING, or RECONNECTING
+    print("Connection in progress...")
+
+# Check connection health
+is_healthy = await session.check_connection_health()
+if not is_healthy:
+    print(f"Connection unhealthy: {session.status}")
+```
+
+### Auto-Reconnection on Auth Completion
+
+**Important:** Sessions automatically reconnect when authentication completes. You **do not** need to manually call `connect()` after OAuth finishes.
+
+**How it works:**
+1. Session enters `AUTH_PENDING` state when authentication is required
+2. Session subscribes to the coordinator's completion events
+3. When OAuth callback completes, the coordinator notifies all subscribers
+4. Session receives notification and automatically reconnects
+5. Status updates from `AUTH_PENDING` → `CONNECTING` → `AUTHENTICATING` → `CONNECTED`
+
+### Usage Patterns
+
+**Pattern 1: Check Status After Connection**
+
+```python
+await client.connect()
+
+for server_name, session in client.sessions.items():
+    if session.is_operational:
+        print(f"{server_name}: Ready")
+    elif session.is_failed:
+        print(f"{server_name}: Failed - {session.status}")
+    elif session.requires_user_action:
+        print(f"{server_name}: Requires authentication")
+```
+
+**Pattern 2: Handle Mixed Server Availability**
+
+```python
+# Connect to all servers (some may fail)
+await client.connect()
+
+# Use only operational servers
+operational_servers = [
+    name for name, session in client.sessions.items()
+    if session.is_operational
+]
+
+if operational_servers:
+    tools = await client.list_tools()
+    # Work with available servers
+else:
+    print("No servers available")
+```
+
+**Pattern 3: Retry Failed Connections**
+
+```python
+await client.connect()
+
+for server_name, session in client.sessions.items():
+    if session.is_failed and session.can_retry:
+        print(f"Retrying {server_name}...")
+        await client.connect(server=server_name, force_reconnect=True)
+```
+
+**Pattern 4: Health Check for Long-Running Sessions**
+
+```python
+# Periodically check connection health
+async def monitor_connections(client):
+    while True:
+        await asyncio.sleep(60)  # Check every minute
+        
+        for server_name, session in client.sessions.items():
+            if session.is_operational:
+                is_healthy = await session.check_connection_health()
+                if not is_healthy:
+                    print(f"{server_name} unhealthy, reconnecting...")
+                    await client.connect(server=server_name, force_reconnect=True)
+```
+
+### State Transition Examples
+
+**Successful Connection (No Auth):**
+```
+INITIALIZING → CONNECTING → AUTHENTICATING → CONNECTED
+```
+
+**Connection with OAuth:**
+```
+INITIALIZING → CONNECTING → AUTHENTICATING → AUTH_PENDING
+(user completes OAuth)
+→ CONNECTING → AUTHENTICATING → CONNECTED
+```
+
+**Server Unreachable:**
+```
+INITIALIZING → CONNECTING → SERVER_UNREACHABLE
+(retry)
+→ CONNECTING → AUTHENTICATING → CONNECTED
+```
+
+**Graceful Disconnect:**
+```
+CONNECTED → DISCONNECTING → DISCONNECTED
+```
+
+**Connection Lost During Operation:**
+```
+CONNECTED → CONNECTION_FAILED
+(health check detects failure)
+```
+
+See [`SESSION_STATUS_DESIGN.md`](SESSION_STATUS_DESIGN.md) and [`SESSION_LIFECYCLE.md`](SESSION_LIFECYCLE.md) for detailed state transitions and sequence diagrams.
+
+---
+
 ## Storage Architecture
 
 Storage is **fully pluggable** via the `StorageBackend` protocol. The client works with any storage implementation - InMemory for development, SQLite for local persistence, or Redis/DynamoDB for production deployments.
@@ -635,11 +826,13 @@ sequenceDiagram
     
     CallbackProcess-->>Browser: "Authorization successful"
     
-    Note over Session,CallbackProcess: Process C - Reconnection
+    Note over Session,CallbackProcess: Process C - Auto-Reconnection (Event-Driven)
     
-    Session->>Session: await connect()
+    Coordinator->>Session: on_completion_handled(event)
+    Note over Session: Session was subscribed when AUTH_PENDING
+    Session->>Session: Automatically await connect()
     Session->>Storage: get("tokens")
-    Storage-->>Session: Tokens available, connect with auth
+    Storage-->>Session: Tokens available, CONNECTED!
 ```
 
 **Key Points:**
@@ -649,6 +842,7 @@ sequenceDiagram
 - Different process can handle callback
 - StarletteAuthCoordinator **doesn't block** on redirect (returns HTTP response)
 - Same strategy code as LocalAuthCoordinator, different coordinator behavior
+- **Auto-reconnection**: Session subscribes to completion events and reconnects automatically (no manual `connect()` needed)
 
 ---
 
@@ -1120,6 +1314,7 @@ Clear boundaries help maintain clean architecture.
   - Manage lifecycle (connect/disconnect)
   - Create server-specific namespace
   - Detect and expose auth challenges
+  - Subscribe to auth completion events (auto-reconnect)
   - Delegate to upstream MCP ClientSession
 - **Does NOT**:
   - Implement transport (delegates to Connection)
