@@ -1,3 +1,9 @@
+## 0.17.0-keycardai-mcp (2025-11-18)
+
+
+- feat(keycardai-mcp): session callback notification
+- feat(keycardai-mcp): session lifecycle management
+
 ## 0.16.0-keycardai-mcp (2025-11-17)
 
 
