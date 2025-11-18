@@ -15,7 +15,7 @@ from keycardai.mcp.client.exceptions import (
     ClientConfigurationError,
     ToolNotFoundException,
 )
-from keycardai.mcp.client.session import Session
+from keycardai.mcp.client.session import Session, SessionStatus
 from keycardai.mcp.client.storage import InMemoryBackend
 from keycardai.mcp.client.types import ToolInfo
 
@@ -47,6 +47,26 @@ class MockAuthCoordinator(AuthCoordinator):
     async def handle_redirect(self, authorization_url: str, metadata: dict):
         pass
 
+class MockUnavailableSession(Session):
+    """Mock session that is not available."""
+
+    def __init__(self, server_name: str, server_config, context, coordinator):
+        super().__init__(server_name, server_config, context, coordinator)
+        self._connected = False
+        self.connect_called = False
+
+    async def connect(self, _retry_after_auth: bool = True):
+        self.connect_called = True
+        self.status = SessionStatus.CONNECTED
+
+    async def disconnect(self):
+        self.disconnect_called = True
+
+    async def list_tools(self, params=None):
+        raise Exception("Session is not available")
+
+    async def call_tool(self, tool_name: str, arguments):
+        raise Exception("Session is not available")
 
 # Mock Session for testing
 class MockSession(Session):
@@ -229,6 +249,21 @@ class TestClientContextManager:
         async with client:
             assert mock_session1.connect_called is True
             assert mock_session2.connect_called is True
+
+    @pytest.mark.asyncio
+    async def test_context_manager_handles_unavailable_sessions(self):
+        """Test that context manager handles unavailable sessions."""
+        servers = {"test_server": {"url": "http://localhost:3000"}}
+        mock_coordinator = MockAuthCoordinator()
+
+        client = Client(servers=servers, auth_coordinator=mock_coordinator)
+
+        mock_session = MockUnavailableSession("test_server", servers["test_server"], client.context, mock_coordinator)
+        client.sessions["test_server"] = mock_session
+
+        async with client:
+            assert mock_session.connect_called is True
+            assert client.sessions["test_server"].status == SessionStatus.CONNECTED
 
     @pytest.mark.asyncio
     async def test_context_manager_returns_client(self):
