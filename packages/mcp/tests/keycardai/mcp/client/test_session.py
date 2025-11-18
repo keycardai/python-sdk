@@ -1,18 +1,20 @@
 """Unit tests for the Session class.
 
 This module tests the Session class initialization, connection lifecycle,
-disconnection, tool calling, and authentication challenge handling.
+disconnection, tool calling, authentication challenge handling, and status
+lifecycle transitions.
 """
 
 from typing import Any
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 from mcp.types import ListToolsResult, PaginatedRequestParams, Tool
 
+from keycardai.mcp.client.auth.coordinators import LocalAuthCoordinator
 from keycardai.mcp.client.auth.coordinators.base import AuthCoordinator
 from keycardai.mcp.client.connection.base import Connection
-from keycardai.mcp.client.session import Session
+from keycardai.mcp.client.session import Session, SessionStatus, SessionStatusCategory
 from keycardai.mcp.client.storage import InMemoryBackend
 
 
@@ -119,6 +121,11 @@ class MockClientSession:
 
         # Default: return empty list with no next cursor
         return ListToolsResult(tools=[], nextCursor=None)
+
+    async def send_ping(self):
+        """Mock ping for health checks."""
+        # Return empty result (MCP ping returns EmptyResult)
+        return {}
 
 
 class TestSessionInitialization:
@@ -367,14 +374,16 @@ class TestSessionConnect:
 
         with patch("keycardai.mcp.client.session.create_connection", return_value=mock_connection):
             with patch("keycardai.mcp.client.session.ClientSession", return_value=mock_client_session):
-                with pytest.raises(RuntimeError, match="Connection closed"):
-                    # First call will retry, but second attempt should also fail
-                    # We need to prevent infinite retry
-                    await session.connect()
+                # Should not raise - sets failure status instead
+                await session.connect()
+
+                # Should have failed after retry
+                assert session.status == SessionStatus.CONNECTION_FAILED
+                assert not session.is_operational
 
     @pytest.mark.asyncio
-    async def test_connect_raises_on_non_connection_error(self):
-        """Test that connect raises errors that are not connection-related."""
+    async def test_connect_handles_initialization_error(self):
+        """Test that connect handles initialization errors gracefully."""
         storage = InMemoryBackend()
         coordinator = MockAuthCoordinator(storage)
         context = coordinator.create_context("user:alice")
@@ -388,11 +397,13 @@ class TestSessionConnect:
 
         with patch("keycardai.mcp.client.session.create_connection", return_value=mock_connection):
             with patch("keycardai.mcp.client.session.ClientSession", return_value=mock_client_session):
-                with pytest.raises(ValueError, match="Invalid config"):
-                    await session.connect()
+                # Should not raise - sets failure status instead
+                await session.connect()
 
-        # Should have cleaned up
+        # Should have cleaned up and set failure status
         assert session._connected is False
+        assert session.status == SessionStatus.FAILED
+        assert session.is_failed
 
     @pytest.mark.asyncio
     async def test_connect_cleans_up_on_error(self):
@@ -410,13 +421,15 @@ class TestSessionConnect:
 
         with patch("keycardai.mcp.client.session.create_connection", return_value=mock_connection):
             with patch("keycardai.mcp.client.session.ClientSession", return_value=mock_client_session):
-                with pytest.raises(RuntimeError, match="Initialization failed"):
-                    await session.connect()
+                # Should not raise - sets failure status instead
+                await session.connect()
 
-        # Should have cleaned up
+        # Should have cleaned up and set failure status
         assert session._connected is False
         assert mock_connection.stop_called is True
         assert mock_client_session.exited is True
+        assert session.status == SessionStatus.FAILED
+        assert session.is_failed
 
     @pytest.mark.asyncio
     async def test_connect_disconnects_existing_session_if_connected_but_no_session(self):
@@ -927,12 +940,13 @@ class TestSessionEdgeCases:
 
         with patch("keycardai.mcp.client.session.create_connection", return_value=mock_connection):
             with patch("keycardai.mcp.client.session.ClientSession", return_value=mock_client_session):
-                with pytest.raises(RuntimeError):
-                    # Call with _retry_after_auth=False should not retry
-                    await session.connect(_retry_after_auth=False)
+                # Call with _retry_after_auth=False should not retry
+                await session.connect(_retry_after_auth=False)
 
-        # Should have failed and cleaned up
+        # Should have failed and cleaned up, with failure status set
         assert session._connected is False
+        assert session.status == SessionStatus.CONNECTION_FAILED
+        assert session.is_failed
 
     @pytest.mark.asyncio
     async def test_session_with_complex_server_config(self):
@@ -981,4 +995,489 @@ class TestSessionEdgeCases:
             assert session._connected is False
             assert session._session is None
             assert session._connection is None
+
+
+# ============================================================================
+# Session Status Lifecycle Tests
+# ============================================================================
+
+
+class TestSessionStatusEnum:
+    """Test SessionStatus enum definition and categories."""
+
+    def test_all_statuses_defined(self):
+        """Ensure all expected statuses are defined."""
+        expected_statuses = {
+            "INITIALIZING",
+            "CONNECTING",
+            "AUTHENTICATING",
+            "AUTH_PENDING",
+            "CONNECTED",
+            "DISCONNECTING",
+            "DISCONNECTED",
+            "AUTH_FAILED",
+            "CONNECTION_FAILED",
+            "SERVER_UNREACHABLE",
+            "FAILED",
+            "RECONNECTING"
+        }
+
+        actual_statuses = {status.name for status in SessionStatus}
+        assert expected_statuses == actual_statuses
+
+    def test_status_categories_defined(self):
+        """Ensure all status categories are defined."""
+        assert hasattr(SessionStatusCategory, "ACTIVE_STATES")
+        assert hasattr(SessionStatusCategory, "DISCONNECTED_STATES")
+        assert hasattr(SessionStatusCategory, "FAILURE_STATES")
+        assert hasattr(SessionStatusCategory, "PENDING_STATES")
+        assert hasattr(SessionStatusCategory, "TERMINAL_STATES")
+        assert hasattr(SessionStatusCategory, "RECOVERABLE_STATES")
+
+    def test_active_states_category(self):
+        """Validate ACTIVE_STATES category."""
+        expected = {
+            SessionStatus.CONNECTING,
+            SessionStatus.AUTHENTICATING,
+            SessionStatus.CONNECTED,
+            SessionStatus.RECONNECTING
+        }
+        assert SessionStatusCategory.ACTIVE_STATES == expected
+
+    def test_failure_states_category(self):
+        """Validate FAILURE_STATES category."""
+        expected = {
+            SessionStatus.AUTH_FAILED,
+            SessionStatus.CONNECTION_FAILED,
+            SessionStatus.SERVER_UNREACHABLE,
+            SessionStatus.FAILED
+        }
+        assert SessionStatusCategory.FAILURE_STATES == expected
+
+    def test_recoverable_states_category(self):
+        """Validate RECOVERABLE_STATES category."""
+        expected = {
+            SessionStatus.CONNECTION_FAILED,
+            SessionStatus.SERVER_UNREACHABLE,
+            SessionStatus.AUTH_FAILED
+        }
+        assert SessionStatusCategory.RECOVERABLE_STATES == expected
+
+
+class TestSessionInitialStatus:
+    """Test session initialization and initial status."""
+
+    def test_initial_status(self):
+        """Session should start in INITIALIZING state."""
+        storage = InMemoryBackend()
+        coordinator = LocalAuthCoordinator(backend=storage)
+        context = coordinator.create_context("test-context")
+
+        server_config = {"url": "http://localhost:3000", "transport": "http"}
+        session = Session("test_server", server_config, context, coordinator)
+
+        assert session.status == SessionStatus.INITIALIZING
+
+    def test_not_connected_initially(self):
+        """Session should not be connected initially."""
+        storage = InMemoryBackend()
+        coordinator = LocalAuthCoordinator(backend=storage)
+        context = coordinator.create_context("test-context")
+
+        server_config = {"url": "http://localhost:3000", "transport": "http"}
+        session = Session("test_server", server_config, context, coordinator)
+
+        assert not session.connected
+        assert not session.is_operational
+
+
+class TestSessionStatusProperties:
+    """Test session status properties."""
+
+    def test_is_operational_only_when_connected(self):
+        """is_operational should only be True when CONNECTED."""
+        storage = InMemoryBackend()
+        coordinator = LocalAuthCoordinator(backend=storage)
+        context = coordinator.create_context("test-context")
+
+        server_config = {"url": "http://localhost:3000", "transport": "http"}
+        session = Session("test_server", server_config, context, coordinator)
+
+        session.status = SessionStatus.INITIALIZING
+        assert not session.is_operational
+
+        session.status = SessionStatus.CONNECTING
+        assert not session.is_operational
+
+        session.status = SessionStatus.AUTHENTICATING
+        assert not session.is_operational
+
+        session.status = SessionStatus.CONNECTED
+        assert session.is_operational
+
+        session.status = SessionStatus.DISCONNECTED
+        assert not session.is_operational
+
+    def test_is_connecting(self):
+        """is_connecting should be True for connection states."""
+        storage = InMemoryBackend()
+        coordinator = LocalAuthCoordinator(backend=storage)
+        context = coordinator.create_context("test-context")
+
+        server_config = {"url": "http://localhost:3000", "transport": "http"}
+        session = Session("test_server", server_config, context, coordinator)
+
+        connecting_states = [
+            SessionStatus.CONNECTING,
+            SessionStatus.AUTHENTICATING,
+            SessionStatus.RECONNECTING
+        ]
+
+        for status in SessionStatus:
+            session.status = status
+            if status in connecting_states:
+                assert session.is_connecting, f"{status} should be connecting"
+            else:
+                assert not session.is_connecting, f"{status} should not be connecting"
+
+    def test_requires_user_action(self):
+        """requires_user_action should be True only for AUTH_PENDING."""
+        storage = InMemoryBackend()
+        coordinator = LocalAuthCoordinator(backend=storage)
+        context = coordinator.create_context("test-context")
+
+        server_config = {"url": "http://localhost:3000", "transport": "http"}
+        session = Session("test_server", server_config, context, coordinator)
+
+        for status in SessionStatus:
+            session.status = status
+            if status == SessionStatus.AUTH_PENDING:
+                assert session.requires_user_action
+            else:
+                assert not session.requires_user_action
+
+    def test_can_retry(self):
+        """can_retry should be True for recoverable states."""
+        storage = InMemoryBackend()
+        coordinator = LocalAuthCoordinator(backend=storage)
+        context = coordinator.create_context("test-context")
+
+        server_config = {"url": "http://localhost:3000", "transport": "http"}
+        session = Session("test_server", server_config, context, coordinator)
+
+        recoverable = SessionStatusCategory.RECOVERABLE_STATES
+
+        for status in SessionStatus:
+            session.status = status
+            if status in recoverable:
+                assert session.can_retry, f"{status} should be retryable"
+            else:
+                assert not session.can_retry, f"{status} should not be retryable"
+
+    def test_is_failed(self):
+        """is_failed should be True for failure states."""
+        storage = InMemoryBackend()
+        coordinator = LocalAuthCoordinator(backend=storage)
+        context = coordinator.create_context("test-context")
+
+        server_config = {"url": "http://localhost:3000", "transport": "http"}
+        session = Session("test_server", server_config, context, coordinator)
+
+        failure_states = SessionStatusCategory.FAILURE_STATES
+
+        for status in SessionStatus:
+            session.status = status
+            if status in failure_states:
+                assert session.is_failed, f"{status} should be failed"
+            else:
+                assert not session.is_failed, f"{status} should not be failed"
+
+
+class TestConnectionErrorClassification:
+    """Test error classification into appropriate status."""
+
+    def test_classify_network_errors(self):
+        """Network errors should map to SERVER_UNREACHABLE."""
+        storage = InMemoryBackend()
+        coordinator = LocalAuthCoordinator(backend=storage)
+        context = coordinator.create_context("test-context")
+
+        server_config = {"url": "http://localhost:3000", "transport": "http"}
+        session = Session("test_server", server_config, context, coordinator)
+
+        network_errors = [
+            Exception("connection refused"),
+            Exception("connection timed out"),
+            Exception("name or service not known"),
+            Exception("no route to host"),
+            Exception("network unreachable"),
+            Exception("getaddrinfo failed"),
+        ]
+
+        for error in network_errors:
+            status = session._classify_connection_error(error)
+            assert status == SessionStatus.SERVER_UNREACHABLE, \
+                f"{error} should map to SERVER_UNREACHABLE"
+
+    def test_classify_auth_errors(self):
+        """Auth errors should map to AUTH_FAILED."""
+        storage = InMemoryBackend()
+        coordinator = LocalAuthCoordinator(backend=storage)
+        context = coordinator.create_context("test-context")
+
+        server_config = {"url": "http://localhost:3000", "transport": "http"}
+        session = Session("test_server", server_config, context, coordinator)
+
+        auth_errors = [
+            Exception("unauthorized"),
+            Exception("authentication failed"),
+            Exception("invalid credentials"),
+            Exception("forbidden"),
+        ]
+
+        for error in auth_errors:
+            status = session._classify_connection_error(error)
+            assert status == SessionStatus.AUTH_FAILED, \
+                f"{error} should map to AUTH_FAILED"
+
+    def test_classify_connection_lost_errors(self):
+        """Connection lost errors should map to CONNECTION_FAILED."""
+        storage = InMemoryBackend()
+        coordinator = LocalAuthCoordinator(backend=storage)
+        context = coordinator.create_context("test-context")
+
+        server_config = {"url": "http://localhost:3000", "transport": "http"}
+        session = Session("test_server", server_config, context, coordinator)
+
+        connection_lost_errors = [
+            Exception("connection closed"),
+            Exception("connection lost"),
+            Exception("broken pipe"),
+            Exception("EOF"),
+        ]
+
+        for error in connection_lost_errors:
+            status = session._classify_connection_error(error)
+            assert status == SessionStatus.CONNECTION_FAILED, \
+                f"{error} should map to CONNECTION_FAILED"
+
+    def test_classify_generic_error(self):
+        """Generic errors should map to FAILED."""
+        storage = InMemoryBackend()
+        coordinator = LocalAuthCoordinator(backend=storage)
+        context = coordinator.create_context("test-context")
+
+        server_config = {"url": "http://localhost:3000", "transport": "http"}
+        session = Session("test_server", server_config, context, coordinator)
+
+        generic_error = Exception("something went wrong")
+        status = session._classify_connection_error(generic_error)
+        assert status == SessionStatus.FAILED
+
+
+class TestSessionStatusTransitions:
+    """Test status transitions during session lifecycle."""
+
+    @pytest.mark.asyncio
+    async def test_successful_connection_no_auth(self):
+        """Test status transitions for successful connection without auth."""
+        storage = InMemoryBackend()
+        coordinator = LocalAuthCoordinator(backend=storage)
+        context = coordinator.create_context("test-context")
+
+        server_config = {"url": "http://localhost:3000", "transport": "http"}
+        session = Session("test_server", server_config, context, coordinator)
+
+        # Mock successful connection
+        mock_connection = MagicMock()
+        mock_connection.start = AsyncMock(return_value=(MagicMock(), MagicMock()))
+        mock_connection.stop = AsyncMock()
+
+        mock_client_session = MagicMock()
+        mock_client_session.__aenter__ = AsyncMock(return_value=mock_client_session)
+        mock_client_session.__aexit__ = AsyncMock()
+        mock_client_session.initialize = AsyncMock()
+
+        with patch('keycardai.mcp.client.session.create_connection', return_value=mock_connection), \
+             patch('keycardai.mcp.client.session.ClientSession', return_value=mock_client_session):
+
+            # Initial state
+            assert session.status == SessionStatus.INITIALIZING
+
+            # Connect
+            await session.connect()
+
+            # Should end in CONNECTED state
+            assert session.status == SessionStatus.CONNECTED
+            assert session.is_operational
+
+    @pytest.mark.asyncio
+    async def test_connection_with_auth_pending(self):
+        """Test status transitions when auth is pending."""
+        storage = InMemoryBackend()
+        coordinator = LocalAuthCoordinator(backend=storage)
+        context = coordinator.create_context("test-context")
+
+        server_config = {"url": "http://localhost:3000", "transport": "http"}
+        session = Session("test_server", server_config, context, coordinator)
+
+        # Mock connection that triggers auth
+        mock_connection = MagicMock()
+        mock_connection.start = AsyncMock(return_value=(MagicMock(), MagicMock()))
+        mock_connection.stop = AsyncMock()
+
+        mock_client_session = MagicMock()
+        mock_client_session.__aenter__ = AsyncMock(return_value=mock_client_session)
+        mock_client_session.__aexit__ = AsyncMock()
+        mock_client_session.initialize = AsyncMock(side_effect=Exception("auth required"))
+
+        # Mock get_auth_challenge to return a challenge
+        session.get_auth_challenge = AsyncMock(return_value={
+            "authorization_url": "https://example.com/auth",
+            "state": "abc123"
+        })
+
+        with patch('keycardai.mcp.client.session.create_connection', return_value=mock_connection), \
+             patch('keycardai.mcp.client.session.ClientSession', return_value=mock_client_session):
+
+            # Connect
+            await session.connect()
+
+            # Should end in AUTH_PENDING state
+            assert session.status == SessionStatus.AUTH_PENDING
+            assert session.requires_user_action
+
+    @pytest.mark.asyncio
+    async def test_connection_failure_server_unreachable(self):
+        """Test status transitions for server unreachable."""
+        storage = InMemoryBackend()
+        coordinator = LocalAuthCoordinator(backend=storage)
+        context = coordinator.create_context("test-context")
+
+        server_config = {"url": "http://localhost:3000", "transport": "http"}
+        session = Session("test_server", server_config, context, coordinator)
+
+        # Mock connection that fails with network error
+        mock_connection = MagicMock()
+        mock_connection.start = AsyncMock(
+            side_effect=Exception("connection refused")
+        )
+        mock_connection.stop = AsyncMock()
+
+        with patch('keycardai.mcp.client.session.create_connection', return_value=mock_connection):
+            session.get_auth_challenge = AsyncMock(return_value=None)
+
+            # Attempt to connect - should not raise, sets status instead
+            await session.connect()
+
+            # Should end in SERVER_UNREACHABLE state
+            assert session.status == SessionStatus.SERVER_UNREACHABLE
+            assert session.is_failed
+            assert session.can_retry
+
+    @pytest.mark.asyncio
+    async def test_graceful_disconnect_status_transitions(self):
+        """Test status transitions for graceful disconnect."""
+        storage = InMemoryBackend()
+        coordinator = LocalAuthCoordinator(backend=storage)
+        context = coordinator.create_context("test-context")
+
+        server_config = {"url": "http://localhost:3000", "transport": "http"}
+        session = Session("test_server", server_config, context, coordinator)
+
+        # Set up connected session
+        session._connected = True
+        session.status = SessionStatus.CONNECTED
+
+        mock_client_session = MagicMock()
+        mock_client_session.__aexit__ = AsyncMock()
+        session._session = mock_client_session
+
+        mock_connection = MagicMock()
+        mock_connection.stop = AsyncMock()
+        session._connection = mock_connection
+
+        # Disconnect
+        await session.disconnect()
+
+        # Should end in DISCONNECTED state
+        assert session.status == SessionStatus.DISCONNECTED
+        assert not session.connected
+
+    @pytest.mark.asyncio
+    async def test_disconnect_from_disconnected_is_safe(self):
+        """Test that disconnect from DISCONNECTED is safe."""
+        storage = InMemoryBackend()
+        coordinator = LocalAuthCoordinator(backend=storage)
+        context = coordinator.create_context("test-context")
+
+        server_config = {"url": "http://localhost:3000", "transport": "http"}
+        session = Session("test_server", server_config, context, coordinator)
+
+        session.status = SessionStatus.DISCONNECTED
+        session._connected = False
+
+        # Should be no-op
+        await session.disconnect()
+        assert session.status == SessionStatus.DISCONNECTED
+
+
+class TestSessionStatusLogging:
+    """Test status change logging."""
+
+    def test_status_change_logs(self):
+        """Test that status changes are logged."""
+        storage = InMemoryBackend()
+        coordinator = LocalAuthCoordinator(backend=storage)
+        context = coordinator.create_context("test-context")
+
+        server_config = {"url": "http://localhost:3000", "transport": "http"}
+        session = Session("test_server", server_config, context, coordinator)
+
+        with patch('keycardai.mcp.client.session.logger') as mock_logger:
+            session._set_status(SessionStatus.CONNECTING, "test reason")
+
+            # Should log the transition
+            mock_logger.info.assert_called_once()
+            call_args = mock_logger.info.call_args[0][0]
+
+            assert "test_server" in call_args
+            assert "initializing" in call_args  # old status
+            assert "connecting" in call_args  # new status
+            assert "test reason" in call_args
+
+
+class TestSessionStatusBackwardCompatibility:
+    """Test backward compatibility with existing code."""
+
+    def test_connected_property_still_works(self):
+        """The 'connected' property should still work."""
+        storage = InMemoryBackend()
+        coordinator = LocalAuthCoordinator(backend=storage)
+        context = coordinator.create_context("test-context")
+
+        server_config = {"url": "http://localhost:3000", "transport": "http"}
+        session = Session("test_server", server_config, context, coordinator)
+
+        session._connected = False
+        assert not session.connected
+
+        session._connected = True
+        assert session.connected
+
+    @pytest.mark.asyncio
+    async def test_requires_auth_method_still_works(self):
+        """The requires_auth() method should still work."""
+        storage = InMemoryBackend()
+        coordinator = LocalAuthCoordinator(backend=storage)
+        context = coordinator.create_context("test-context")
+
+        server_config = {"url": "http://localhost:3000", "transport": "http"}
+        session = Session("test_server", server_config, context, coordinator)
+
+        session.get_auth_challenge = AsyncMock(return_value=None)
+        assert not await session.requires_auth()
+
+        session.get_auth_challenge = AsyncMock(return_value={"state": "test"})
+        assert await session.requires_auth()
 

@@ -15,7 +15,7 @@ from .context import Context
 from .exceptions import ClientConfigurationError, MCPClientError
 from .logging_config import configure_logging, get_logger
 from .manager import ClientManager
-from .session import Session
+from .session import Session, SessionStatus, SessionStatusCategory
 from .storage import InMemoryBackend, NamespacedStorage, SQLiteBackend, StorageBackend
 from .types import AuthChallenge, ToolInfo
 
@@ -50,4 +50,6 @@ __all__ = [
     "get_logger",
     # Lower-level primitives (advanced usage)
     "Session",
+    "SessionStatus",
+    "SessionStatusCategory",
 ]

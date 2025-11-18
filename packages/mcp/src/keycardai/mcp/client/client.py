@@ -108,15 +108,24 @@ class Client:
         """
         Connect to servers.
 
+        This method attempts to connect to the specified server(s). Connection failures
+        are communicated via session status, not exceptions. Check session.status or
+        session.is_operational after calling to determine outcome.
+
         Args:
             server: Optional server name. If None, connects to all servers.
             force_reconnect: If True, disconnect and reconnect even if already connected.
         """
         sessions = [server] if server is not None else list(self.sessions.keys())
         for session_name in sessions:
-            if force_reconnect:
-                await self.sessions[session_name].disconnect()
-            await self.sessions[session_name].connect()
+            try:
+                if force_reconnect:
+                    await self.sessions[session_name].disconnect()
+                await self.sessions[session_name].connect()
+            except Exception:
+                # Session.connect() should not raise for normal failures - this catches
+                # only truly unexpected programmer errors
+                logger.error(f"Unexpected error connecting to server {session_name}", exc_info=True)
 
     async def requires_auth(self, server_name: str | None = None) -> bool:
         sessions = [server_name] if server_name is not None else list(self.sessions.keys())

@@ -108,6 +108,8 @@ The Keycard MCP SDK also includes **MCP Client** for connecting to MCP servers w
 ### Key Features
 
 - ✅ **OAuth 2.0 Support**: Automatic OAuth flow handling for protected MCP servers
+- ✅ **Graceful Connection Handling**: Non-throwing connection behavior with comprehensive status tracking
+- ✅ **Multi-Server Support**: Connect to multiple servers with independent status tracking
 - ✅ **AI Agent Integrations**: Pre-built integrations with LangChain and OpenAI Agents SDK
 
 ### Quick Start
@@ -126,6 +128,12 @@ servers = {
 
 async def main():
     async with Client(servers) as client:
+        # Connection failures are communicated via session status, not exceptions
+        session = client.sessions["my-server"]
+        if not session.is_operational:
+            print(f"Server not available: {session.status}")
+            return
+        
         # List available tools
         tools = await client.list_tools()
         
