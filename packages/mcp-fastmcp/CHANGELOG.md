@@ -1,3 +1,8 @@
+## 0.18.0-keycardai-mcp-fastmcp (2025-11-20)
+
+
+- feat(keycardai-mcp-fastmcp): debug information for exchange
+
 ## 0.17.0-keycardai-mcp-fastmcp (2025-11-17)
 
 
