@@ -126,6 +126,9 @@ def get_token_debug_info(access_token: str) -> dict[str, Any]:
         if "aud" in claims:
             debug_info["audience"] = claims["aud"]
 
+        if "sub" in claims:
+            debug_info["subject"] = claims["sub"]
+
         if "exp" in claims:
             debug_info["expires_at"] = claims["exp"]
 
