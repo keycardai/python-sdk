@@ -1,3 +1,8 @@
+## 0.18.1-keycardai-mcp-fastmcp (2025-11-23)
+
+
+- fix(keycardai-mcp-fastmcp): include subject in debug
+
 ## 0.18.0-keycardai-mcp-fastmcp (2025-11-20)
 
 
