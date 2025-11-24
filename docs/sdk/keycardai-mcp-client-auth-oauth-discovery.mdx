@@ -1,0 +1,72 @@
+---
+title: discovery
+sidebarTitle: discovery
+---
+
+# `keycardai.mcp.client.auth.oauth.discovery`
+
+
+OAuth discovery service for resource and authorization server metadata.
+
+## Classes
+
+### `OAuthDiscoveryService` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/oauth/discovery.py#L15" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Handles OAuth 2.0 discovery protocol.
+
+Responsibilities:
+- Discover protected resource metadata
+- Discover authorization server metadata
+- Cache authorization server metadata
+
+
+**Methods:**
+
+#### `discover_resource` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/oauth/discovery.py#L41" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+discover_resource(self, challenge_response: Response) -> dict[str, Any]
+```
+
+Discover protected resource metadata from 401 challenge.
+
+Fetches the OAuth protected resource metadata from the well-known endpoint
+based on the challenge response URL.
+
+**Args:**
+- `challenge_response`: HTTP Response with 401 status code
+
+**Returns:**
+- Resource metadata including authorization_servers list
+
+**Raises:**
+- `ValueError`: If no authorization servers found in discovery response
+- `httpx.HTTPStatusError`: If discovery request fails
+
+
+#### `discover_auth_server` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/oauth/discovery.py#L86" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+discover_auth_server(self, resource_metadata: dict[str, Any]) -> dict[str, Any]
+```
+
+Discover authorization server metadata.
+
+Uses cached metadata if available, otherwise fetches from the
+authorization server's well-known endpoint and caches it.
+
+**Args:**
+- `resource_metadata`: Resource metadata with authorization_servers list
+
+**Returns:**
+- Authorization server metadata including:
+- - authorization_endpoint
+- - token_endpoint
+- - registration_endpoint
+- - etc.
+
+**Raises:**
+- `ValueError`: If no authorization servers found, required fields missing,
+       or all discovery attempts fail
+

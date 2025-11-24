@@ -1,0 +1,112 @@
+---
+title: path_builder
+sidebarTitle: path_builder
+---
+
+# `keycardai.mcp.client.storage.path_builder`
+
+
+Storage path builder for type-safe namespace navigation.
+
+## Classes
+
+### `StoragePathBuilder` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/storage/path_builder.py#L6" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Builder for type-safe storage namespace navigation.
+
+Provides a fluent interface for navigating through storage namespaces
+with named methods instead of magic strings.
+
+
+**Methods:**
+
+#### `for_server` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/storage/path_builder.py#L32" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+for_server(self, server_name: str) -> 'StoragePathBuilder'
+```
+
+Navigate to server namespace.
+
+**Args:**
+- `server_name`: Server identifier (e.g., "slack", "github")
+
+**Returns:**
+- Self for method chaining
+
+
+#### `for_connection` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/storage/path_builder.py#L46" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+for_connection(self) -> 'StoragePathBuilder'
+```
+
+Navigate to connection namespace.
+
+**Returns:**
+- Self for method chaining
+
+
+#### `for_oauth` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/storage/path_builder.py#L57" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+for_oauth(self) -> 'StoragePathBuilder'
+```
+
+Navigate to OAuth strategy namespace.
+
+**Returns:**
+- Self for method chaining
+
+
+#### `for_api_key` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/storage/path_builder.py#L68" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+for_api_key(self) -> 'StoragePathBuilder'
+```
+
+Navigate to API key strategy namespace.
+
+**Returns:**
+- Self for method chaining
+
+
+#### `for_namespace` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/storage/path_builder.py#L79" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+for_namespace(self, namespace: str) -> 'StoragePathBuilder'
+```
+
+Navigate to a custom namespace.
+
+**Args:**
+- `namespace`: Custom namespace identifier
+
+**Returns:**
+- Self for method chaining
+
+
+#### `build` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/storage/path_builder.py#L93" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+build(self) -> NamespacedStorage
+```
+
+Get the final storage namespace.
+
+**Returns:**
+- NamespacedStorage at the built path
+
+
+#### `get_full_path` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/storage/path_builder.py#L102" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_full_path(self) -> str
+```
+
+Get the full namespace path (for logging/debugging).
+
+**Returns:**
+- Colon-separated namespace path
+

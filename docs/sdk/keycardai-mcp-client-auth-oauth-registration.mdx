@@ -1,0 +1,51 @@
+---
+title: registration
+sidebarTitle: registration
+---
+
+# `keycardai.mcp.client.auth.oauth.registration`
+
+
+OAuth dynamic client registration service.
+
+## Classes
+
+### `OAuthClientRegistrationService` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/oauth/registration.py#L17" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Handles OAuth 2.0 dynamic client registration.
+
+Responsibilities:
+- Register new OAuth clients with authorization servers
+- Cache client registration information
+- Reuse existing client registrations when possible
+
+
+**Methods:**
+
+#### `get_or_register_client` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/oauth/registration.py#L46" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_or_register_client(self, auth_server_metadata: dict[str, Any], redirect_uris: list[str]) -> dict[str, Any]
+```
+
+Get existing client registration or register a new one.
+
+Checks storage for an existing registration first. If found and redirect URIs
+match, returns the cached registration. Otherwise, registers a new client.
+
+**Args:**
+- `auth_server_metadata`: Authorization server metadata with registration_endpoint
+- `redirect_uris`: Redirect URIs to register for the client
+
+**Returns:**
+- Client registration information including:
+- - client_id: The OAuth client identifier
+- - redirect_uris: Registered redirect URIs
+- - grant_types: Supported grant types
+- - etc.
+
+**Raises:**
+- `ValueError`: If registration endpoint not found
+- `httpx.HTTPStatusError`: If registration request fails
+

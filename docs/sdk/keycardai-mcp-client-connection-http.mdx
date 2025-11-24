@@ -1,0 +1,44 @@
+---
+title: http
+sidebarTitle: http
+---
+
+# `keycardai.mcp.client.connection.http`
+
+
+
+HTTP connection implementation for MCP client.
+
+Provides StreamableHttpConnection which uses httpx for HTTP-based MCP connections.
+
+
+## Classes
+
+### `StreamableHttpConnection` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/connection/http.py#L23" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+HTTP-based MCP connection with per-server authentication.
+
+Each connection instance represents a connection to a single server
+with its own isolated auth strategy and storage.
+
+
+**Methods:**
+
+#### `connect` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/connection/http.py#L77" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+connect(self) -> tuple[Any, Any]
+```
+
+Establish HTTP connection with auth adapter.
+
+
+#### `disconnect` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/connection/http.py#L90" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+disconnect(self) -> None
+```
+
+Disconnect from HTTP server.
+

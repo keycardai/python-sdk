@@ -1,0 +1,119 @@
+---
+title: auth_tools
+sidebarTitle: auth_tools
+---
+
+# `keycardai.mcp.client.integrations.auth_tools`
+
+
+
+Auth tool handlers for customizable authentication flow.
+
+Provides base classes and implementations for handling authentication
+challenges in different environments (Slack, CLI, web apps, etc.).
+
+
+## Classes
+
+### `AuthToolHandler` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/integrations/auth_tools.py#L15" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Base class for custom authentication tool handlers.
+
+Subclass this to implement custom authentication flows for your
+application (e.g., sending Slack messages, showing web UI, etc.).
+
+The handler receives auth challenges and is responsible for
+presenting them to the user in the appropriate way.
+
+
+**Methods:**
+
+#### `handle_auth_request` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/integrations/auth_tools.py#L27" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+handle_auth_request(self, service: str, reason: str, challenge: dict[str, Any]) -> str
+```
+
+Handle an authentication request.
+
+This method is called when the agent determines that a service
+needs authentication. Implement this to send auth links to users
+via your preferred channel (Slack DM, email, web notification, etc.).
+
+**Args:**
+- `service`: Service name requesting auth (e.g., "google-mcp")
+- `reason`: User-friendly explanation from the agent
+   (e.g., "To send messages to Slack channels")
+- `challenge`: Full challenge dict containing\:
+- authorization_url\: URL for user to authorize
+- server\: Server name
+- Other challenge-specific fields
+
+**Returns:**
+- Simple status message for the agent (e.g., "Auth flow initiated").
+- This is NOT shown to the end user - it's just for the agent
+- to know the auth process started.
+
+
+### `DefaultAuthToolHandler` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/integrations/auth_tools.py#L63" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Default handler that returns auth info for the agent to display.
+
+This is the fallback when no custom handler is provided. It returns
+a formatted message that the agent can show to the user.
+
+Note: This is less ideal than a custom handler because it requires
+the agent to relay the message, which may not work well in all UIs.
+
+
+**Methods:**
+
+#### `handle_auth_request` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/integrations/auth_tools.py#L74" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+handle_auth_request(self, service: str, reason: str, challenge: dict[str, Any]) -> str
+```
+
+Return formatted auth message for agent to display.
+
+
+### `SlackAuthToolHandler` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/integrations/auth_tools.py#L93" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Slack-specific handler that sends auth links via Slack messages.
+
+This handler sends authentication links directly to the user
+in their Slack thread, bypassing the agent message flow.
+
+
+**Methods:**
+
+#### `handle_auth_request` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/integrations/auth_tools.py#L133" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+handle_auth_request(self, service: str, reason: str, challenge: dict[str, Any]) -> str
+```
+
+Send auth link via Slack message.
+
+
+### `ConsoleAuthToolHandler` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/integrations/auth_tools.py#L182" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Console/CLI handler that prints auth links to stdout.
+
+Useful for development, testing, or CLI applications.
+
+
+**Methods:**
+
+#### `handle_auth_request` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/integrations/auth_tools.py#L192" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+handle_auth_request(self, service: str, reason: str, challenge: dict[str, Any]) -> str
+```
+
+Print auth link to console.
+

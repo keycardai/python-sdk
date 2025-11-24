@@ -1,0 +1,149 @@
+---
+title: backend
+sidebarTitle: backend
+---
+
+# `keycardai.mcp.client.storage.backend`
+
+
+Storage backend interface.
+
+## Classes
+
+### `StorageBackend` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/storage/backend.py#L8" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Low-level storage backend interface.
+
+Provides generic key-value operations with TTL support.
+All backends must implement these core operations.
+
+
+**Methods:**
+
+#### `get` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/storage/backend.py#L17" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get(self, key: str) -> Any | None
+```
+
+Get value by key.
+
+Returns None if key doesn't exist or has expired.
+
+
+#### `set` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/storage/backend.py#L26" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+set(self, key: str, value: Any, ttl: timedelta | None = None) -> None
+```
+
+Set value with optional TTL.
+
+**Args:**
+- `key`: Storage key
+- `value`: Value to store (must be JSON-serializable)
+- `ttl`: Time to live (None = no expiration)
+
+
+#### `delete` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/storage/backend.py#L43" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+delete(self, key: str) -> bool
+```
+
+Delete key.
+
+Returns True if deleted, False if key didn't exist.
+
+
+#### `exists` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/storage/backend.py#L52" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+exists(self, key: str) -> bool
+```
+
+Check if key exists and is not expired.
+
+
+#### `get_many` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/storage/backend.py#L58" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_many(self, keys: list[str]) -> dict[str, Any]
+```
+
+Get multiple values.
+
+Default implementation calls get() for each key.
+Backends can override for efficiency.
+
+
+#### `set_many` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/storage/backend.py#L72" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+set_many(self, items: dict[str, Any], ttl: timedelta | None = None) -> None
+```
+
+Set multiple values.
+
+Default implementation calls set() for each item.
+Backends can override for efficiency.
+
+
+#### `delete_many` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/storage/backend.py#L86" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+delete_many(self, keys: list[str]) -> int
+```
+
+Delete multiple keys.
+
+Returns count of deleted keys.
+
+
+#### `increment` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/storage/backend.py#L100" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+increment(self, key: str, amount: int = 1, ttl: timedelta | None = None) -> int
+```
+
+Atomically increment counter.
+
+Default implementation is not atomic.
+Backends with native atomic support should override.
+
+Returns new value.
+
+
+#### `list_keys` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/storage/backend.py#L122" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+list_keys(self, prefix: str | None = None, limit: int | None = None) -> list[str]
+```
+
+List keys, optionally filtered by prefix.
+
+**Args:**
+- `prefix`: Key prefix filter
+- `limit`: Maximum number of keys to return
+
+
+#### `delete_prefix` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/storage/backend.py#L137" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+delete_prefix(self, prefix: str) -> int
+```
+
+Delete all keys matching prefix.
+
+Returns count of deleted keys.
+
+
+#### `close` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/storage/backend.py#L147" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+close(self) -> None
+```
+
+Close backend and release resources.
+

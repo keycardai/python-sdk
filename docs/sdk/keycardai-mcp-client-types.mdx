@@ -1,0 +1,34 @@
+---
+title: types
+sidebarTitle: types
+---
+
+# `keycardai.mcp.client.types`
+
+
+Type definitions for MCP client public interfaces.
+
+## Classes
+
+### `AuthChallenge` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/types.py#L8" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Authentication challenge details for a server requiring authentication.
+
+This is returned when a server requires authentication that hasn't been completed yet.
+The exact fields present depend on the authentication strategy configured for the server.
+
+Strategy-specific fields may include (but are not limited to):
+    - authorization_url: For browser-based auth flows
+    - state: For CSRF protection in auth flows
+    - Additional fields as defined by the authentication strategy
+
+
+### `ToolInfo` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/types.py#L37" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Information about a tool and which server provides it.
+
+This type makes it explicit which server a tool belongs to,
+useful when you need to track tool provenance across multiple servers.
+

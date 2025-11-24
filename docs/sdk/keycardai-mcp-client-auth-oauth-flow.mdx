@@ -1,0 +1,59 @@
+---
+title: flow
+sidebarTitle: flow
+---
+
+# `keycardai.mcp.client.auth.oauth.flow`
+
+
+OAuth flow initiation service.
+
+## Classes
+
+### `FlowMetadata` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/oauth/flow.py#L16" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Metadata about an initiated OAuth flow.
+
+Contains the information needed to redirect the user and track the flow.
+
+
+### `OAuthFlowInitiatorService` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/oauth/flow.py#L42" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Initiates OAuth 2.0 PKCE authorization flows.
+
+Responsibilities:
+- Generate PKCE parameters (code verifier and challenge)
+- Generate secure state parameter
+- Build authorization URL with all parameters
+- Store PKCE state for callback validation
+
+
+**Methods:**
+
+#### `initiate_flow` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/oauth/flow.py#L62" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+initiate_flow(self, auth_server_metadata: dict[str, Any], client_info: dict[str, Any], resource_url: str, server_name: str, scopes: list[str] | None = None, pkce_ttl: timedelta | None = None) -> FlowMetadata
+```
+
+Initiate an OAuth 2.0 PKCE authorization flow.
+
+Generates PKCE parameters, builds the authorization URL, and stores
+the necessary state for callback validation.
+
+**Args:**
+- `auth_server_metadata`: Authorization server metadata with authorization_endpoint
+- `client_info`: Client registration info with client_id and redirect_uris
+- `resource_url`: Resource URL being accessed (included in token request)
+- `server_name`: Server name for this OAuth flow (needed for callback cleanup)
+- `scopes`: Optional list of scopes to request
+- `pkce_ttl`: Time-to-live for PKCE state (default\: 10 minutes)
+
+**Returns:**
+- FlowMetadata with authorization URL, state, and resource URL
+
+**Raises:**
+- `ValueError`: If required fields are missing
+

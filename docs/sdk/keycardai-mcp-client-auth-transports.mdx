@@ -1,0 +1,42 @@
+---
+title: transports
+sidebarTitle: transports
+---
+
+# `keycardai.mcp.client.auth.transports`
+
+
+HTTP transport adapters for authentication strategies.
+
+## Classes
+
+### `HttpxAuth` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/transports.py#L16" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Adapts AuthStrategy to httpx.Auth interface.
+
+This is a thin adapter that translates between httpx's auth flow
+and our transport-agnostic AuthStrategy protocol.
+
+All business logic (OAuth discovery, token management, etc.) is
+delegated to the AuthStrategy implementation.
+
+Note: Strategy already has storage and coordinator from its constructor.
+
+
+**Methods:**
+
+#### `async_auth_flow` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/transports.py#L39" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+async_auth_flow(self, request: Request) -> AsyncGenerator[Request, Response]
+```
+
+httpx auth flow - delegates to AuthStrategy.
+
+This method:
+1. Adds auth metadata to the request (if available)
+2. Sends the request
+3. Handles auth challenges (401/403) via the strategy
+4. Retries if the strategy handled the challenge
+

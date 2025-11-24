@@ -66,7 +66,8 @@ class OAuthClientRegistrationService:
             - etc.
 
         Raises:
-            ValueError: If registration endpoint not found or registration fails
+            ValueError: If registration endpoint not found
+            httpx.HTTPStatusError: If registration request fails
 
         Example:
             >>> service = OAuthClientRegistrationService(storage, "My App")
@@ -111,7 +112,8 @@ class OAuthClientRegistrationService:
             Client registration information
 
         Raises:
-            ValueError: If registration endpoint missing or registration fails
+            ValueError: If registration endpoint is missing
+            httpx.HTTPStatusError: If registration request fails
         """
         registration_endpoint = auth_server_metadata.get("registration_endpoint")
         if not registration_endpoint:

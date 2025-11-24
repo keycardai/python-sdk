@@ -52,7 +52,8 @@ class OAuthDiscoveryService:
             Resource metadata including authorization_servers list
 
         Raises:
-            ValueError: If discovery fails or no authorization servers found
+            ValueError: If no authorization servers found in discovery response
+            httpx.HTTPStatusError: If discovery request fails
 
         Example:
             >>> service = OAuthDiscoveryService(storage)
@@ -103,7 +104,8 @@ class OAuthDiscoveryService:
             - etc.
 
         Raises:
-            ValueError: If discovery fails or required fields missing
+            ValueError: If no authorization servers found, required fields missing,
+                       or all discovery attempts fail
 
         Example:
             >>> metadata = await service.discover_auth_server(resource_metadata)

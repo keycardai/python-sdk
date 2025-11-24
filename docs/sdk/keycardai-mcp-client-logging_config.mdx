@@ -1,0 +1,70 @@
+---
+title: logging_config
+sidebarTitle: logging_config
+---
+
+# `keycardai.mcp.client.logging_config`
+
+
+
+Logging configuration for MCP client.
+
+The library uses standard Python logging without forcing configuration.
+Users can configure logging however they prefer, or use the environment
+variables provided here for convenience.
+
+Environment Variables:
+    MCP_LOG_LEVEL: Set log level for all mcp.client loggers (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+    MCP_LOG_FORMAT: Custom format string (optional)
+
+Example usage in application code:
+    import logging
+    logging.basicConfig(level=logging.INFO)
+
+    # Or with custom configuration:
+    import logging
+    logger = logging.getLogger('keycardai.mcp.client')
+    logger.setLevel(logging.DEBUG)
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    logger.addHandler(handler)
+
+
+## Functions
+
+### `get_logger` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/logging_config.py#L28" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_logger(name: str) -> logging.Logger
+```
+
+
+Get a logger for the given module name.
+
+This function creates loggers that respect MCP_LOG_LEVEL environment variable
+if set, but doesn't force any configuration on the application.
+
+**Args:**
+- `name`: Module name (usually __name__)
+
+**Returns:**
+- Configured logger instance
+
+
+### `configure_logging` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/logging_config.py#L57" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+configure_logging(level: int | str = logging.WARNING, format_string: str | None = None, handler: logging.Handler | None = None) -> None
+```
+
+
+Configure logging for all MCP client loggers.
+
+This is a convenience function for applications that want simple logging setup.
+Advanced users should configure logging directly using the logging module.
+
+**Args:**
+- `level`: Log level (logging.DEBUG, logging.INFO, etc. or string like "DEBUG")
+- `format_string`: Custom format string for log messages
+- `handler`: Custom handler (if None, uses StreamHandler)
+

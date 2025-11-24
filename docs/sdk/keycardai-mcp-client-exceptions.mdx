@@ -1,0 +1,44 @@
+---
+title: exceptions
+sidebarTitle: exceptions
+---
+
+# `keycardai.mcp.client.exceptions`
+
+
+Exception classes for MCP client.
+
+This module defines all custom exceptions used throughout the MCP client package,
+providing clear error types and documentation for different failure scenarios.
+
+
+## Classes
+
+### `MCPClientError` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/exceptions.py#L10" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Base exception for all MCP client errors.
+
+This is the base class for all exceptions raised by the MCP client package.
+It provides a common interface for error handling and allows catching all
+MCP client-related errors with a single except clause.
+
+
+### `ClientConfigurationError` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/exceptions.py#L43" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Raised when Client is misconfigured.
+
+This exception is raised during Client initialization when
+the provided configuration is invalid or incomplete.
+
+
+### `ToolNotFoundException` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/exceptions.py#L100" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Raised when a requested tool is not found on any server.
+
+This exception is raised when attempting to call a tool that doesn't exist
+on any of the configured servers. It's typically raised during auto-discovery
+when no server provides the requested tool.
+

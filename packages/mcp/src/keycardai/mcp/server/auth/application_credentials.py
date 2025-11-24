@@ -279,9 +279,6 @@ class WebIdentity:
                 - str: Single audience for all zones
                 - dict: Zone-specific audience mapping (zone_id -> audience)
                 - None: Use issuer as audience
-
-        Raises:
-            RuntimeError: If key pair bootstrap fails
         """
         # Initialize storage
         if storage is not None:
@@ -379,7 +376,7 @@ class WebIdentity:
             TokenExchangeRequest with JWT client assertion
 
         Raises:
-            KeyError: If auth_info doesn't contain "resource_client_id"
+            ValueError: If auth_info doesn't contain "resource_client_id"
         """
         if not auth_info or "resource_client_id" not in auth_info:
             raise ValueError("auth_info with 'resource_client_id' is required for WebIdentity")

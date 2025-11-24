@@ -13,10 +13,13 @@ from keycardai.oauth.types import JsonWebKeySet
 
 
 def jwks_endpoint(jwks: JsonWebKeySet) -> Callable:
-    """Create a JWKS endpoint that returns a dummy RSA key for testing.
+    """Create a JWKS endpoint that serves the provided JSON Web Key Set.
+
+    Args:
+        jwks: JSON Web Key Set to serve at this endpoint
 
     Returns:
-        Callable endpoint that serves JWKS data
+        Callable endpoint that serves the JWKS data
     """
     def wrapper(request: Request) -> JSONResponse:
         return JSONResponse(

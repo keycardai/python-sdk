@@ -1,0 +1,138 @@
+---
+title: langchain_agents
+sidebarTitle: langchain_agents
+---
+
+# `keycardai.mcp.client.integrations.langchain_agents`
+
+
+
+LangChain agents adapter for KeycardAI MCP client.
+
+Provides a clean API for integrating MCP tools with LangChain agents:
+- Automatic auth detection and handling
+- System prompt generation with auth context
+- MCP tools converted to LangChain tools
+- Auth request tools for agent
+
+
+## Functions
+
+### `create_client` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/integrations/langchain_agents.py#L386" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+create_client(mcp_client: Client, auth_tool_handler: AuthToolHandler | None = None, auth_hook_closure: Callable[[], Awaitable[None]] | None = None) -> LangChainClient
+```
+
+
+Get LangChain agents adapter for MCP client.
+
+Use as context manager for automatic lifecycle management.
+
+**Args:**
+- `mcp_client`: KeycardAI MCP client
+- `auth_tool_handler`: Optional custom handler for auth requests.
+Subclass AuthToolHandler to customize how auth links are sent.
+Built-in options\: SlackAuthToolHandler, ConsoleAuthToolHandler
+Default\: DefaultAuthToolHandler (returns message for agent)
+- `auth_hook_closure`: Optional async function called when auth is needed
+
+**Returns:**
+- LangChain client adapter
+
+Example - Console/CLI:
+    >>> from keycardai.mcp.client.integrations.auth_tools import ConsoleAuthToolHandler
+    >>>
+    >>> handler = ConsoleAuthToolHandler()
+    >>> async with langchain_agents.get_client(mcp_client, auth_tool_handler=handler) as client:
+    ...     # Auth links will be printed to console
+
+Example - With memory/checkpointing:
+    >>> from langgraph.checkpoint.memory import InMemorySaver
+    >>> from langchain.agents import create_agent
+    >>>
+    >>> async with langchain_agents.get_client(mcp_client) as client:
+    ...     agent = create_agent(
+    ...         model="claude-sonnet-4-5-20250929",
+    ...         tools=await client.get_tools() + await client.get_auth_tools(),
+    ...         system_prompt=client.get_system_prompt("Be helpful"),
+    ...         checkpointer=InMemorySaver(),
+    ...     )
+    ...     # Use with thread_id for conversation memory
+    ...     result = agent.invoke(
+    ...         {"messages": [{"role": "user", "content": "Hi, my name is Bob"}]},
+    ...         {"configurable": {"thread_id": "123"}},
+    ...     )
+
+
+## Classes
+
+### `LangChainClient` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/integrations/langchain_agents.py#L25" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+LangChain agents adapter for MCP client.
+
+Wraps MCP client to provide:
+- get_system_prompt(): Instructions with auth awareness
+- get_tools(): MCP tools converted to LangChain tools
+- get_auth_tools(): Tools for requesting authentication
+
+
+**Methods:**
+
+#### `get_system_prompt` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/integrations/langchain_agents.py#L105" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_system_prompt(self, base_instructions: str) -> str
+```
+
+Generate system prompt with auth awareness.
+
+        If services need auth, adds instructions about using auth tool.
+        Otherwise, returns base instructions unchanged.
+
+        Args:
+            base_instructions: Your base agent instructions
+
+        Returns:
+            System prompt (possibly augmented with auth instructions)
+
+        Example:
+            >>> prompt = client.get_system_prompt("You are a helpful assistant")
+            >>> # If auth needed:
+            >>> # "You are a helpful assistant
+
+**AUTH REQUIRED**..."
+            >>> # If authenticated:
+            >>> # "You are a helpful assistant"
+
+
+#### `get_tools` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/integrations/langchain_agents.py#L145" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_tools(self) -> list[StructuredTool]
+```
+
+Get MCP tools converted to LangChain tools.
+
+Only returns tools from servers that are authenticated.
+Servers requiring auth are excluded until authorization completes.
+
+**Returns:**
+- List of LangChain StructuredTool objects
+
+
+#### `get_auth_tools` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/integrations/langchain_agents.py#L312" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_auth_tools(self) -> list[StructuredTool]
+```
+
+Get authentication request tools for the agent.
+
+Returns a tool that allows the agent to request user authentication
+when needed. If all services are authenticated, returns empty list.
+
+**Returns:**
+- List with one auth request tool (or empty if no auth needed)
+

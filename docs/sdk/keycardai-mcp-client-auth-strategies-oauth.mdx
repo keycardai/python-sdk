@@ -1,0 +1,219 @@
+---
+title: oauth
+sidebarTitle: oauth
+---
+
+# `keycardai.mcp.client.auth.strategies.oauth`
+
+
+Authentication strategies for MCP client connections.
+
+## Functions
+
+### `create_auth_strategy` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/strategies/oauth.py#L322" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+create_auth_strategy(auth_config: dict[str, Any] | None, server_name: str, connection_storage: NamespacedStorage, context: Any, coordinator: 'AuthCoordinator') -> AuthStrategy
+```
+
+
+Factory function to create auth strategy from configuration.
+
+**Args:**
+- `auth_config`: Auth configuration dict with 'type' and strategy-specific params
+- `server_name`: Name of the server (for OAuth client naming)
+- `connection_storage`: Connection's storage namespace (will create strategy sub-namespace)
+- `context`: Context for identity
+- `coordinator`: Auth coordinator for callbacks
+
+**Returns:**
+- AuthStrategy instance
+
+**Examples:**
+
+>>> create_auth_strategy(None, "server1", storage, ctx, coord)
+NoAuthStrategy(...)
+>>> create_auth_strategy({"type": "oauth"}, "slack", storage, ctx, coord)
+OAuthStrategy(server_name="slack", ...)
+>>> create_auth_strategy({"type": "api_key", "key": "secret"}, "api", storage, ctx, coord)
+ApiKeyStrategy(api_key="secret", ...)
+
+
+## Classes
+
+### `AuthStrategy` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/strategies/oauth.py#L26" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Protocol for authentication strategies.
+
+Each strategy manages its own storage namespace and implements
+the complete authentication lifecycle.
+
+
+**Methods:**
+
+#### `get_strategy_namespace` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/strategies/oauth.py#L34" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_strategy_namespace(self) -> str
+```
+
+Return the storage namespace for this strategy.
+
+**Returns:**
+- Namespace identifier (e.g., 'oauth', 'api_key', 'none')
+
+
+#### `get_auth_metadata` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/strategies/oauth.py#L43" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_auth_metadata(self) -> dict[str, Any]
+```
+
+Get authentication metadata to add to requests.
+
+**Returns:**
+- Dict with headers and other auth metadata
+
+
+#### `handle_challenge` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/strategies/oauth.py#L52" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+handle_challenge(self, challenge: Any, resource_url: str) -> bool
+```
+
+Handle authentication challenge.
+
+**Args:**
+- `challenge`: Challenge response (e.g., 401 HTTP response)
+- `resource_url`: URL of the protected resource
+
+**Returns:**
+- True if challenge was handled, False otherwise
+
+
+### `NoAuthStrategy` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/strategies/oauth.py#L70" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+No authentication required.
+
+
+**Methods:**
+
+#### `get_strategy_namespace` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/strategies/oauth.py#L86" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_strategy_namespace(self) -> str
+```
+
+Return namespace for this strategy.
+
+
+#### `get_auth_metadata` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/strategies/oauth.py#L90" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_auth_metadata(self) -> dict[str, Any]
+```
+
+No auth metadata.
+
+
+#### `handle_challenge` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/strategies/oauth.py#L94" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+handle_challenge(self, challenge: Any, resource_url: str) -> bool
+```
+
+No challenge handling.
+
+
+### `ApiKeyStrategy` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/strategies/oauth.py#L103" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+API key authentication strategy.
+
+
+**Methods:**
+
+#### `get_strategy_namespace` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/strategies/oauth.py#L130" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_strategy_namespace(self) -> str
+```
+
+Return namespace for this strategy.
+
+
+#### `get_auth_metadata` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/strategies/oauth.py#L134" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_auth_metadata(self) -> dict[str, Any]
+```
+
+Return API key header.
+
+
+#### `handle_challenge` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/strategies/oauth.py#L142" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+handle_challenge(self, challenge: Any, resource_url: str) -> bool
+```
+
+No challenge handling for API keys.
+
+
+### `OAuthStrategy` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/strategies/oauth.py#L151" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+OAuth 2.0 PKCE authentication strategy.
+
+Orchestrates OAuth flow using specialized services:
+- Discovery: Find resource and authorization server metadata
+- Registration: Register OAuth client dynamically
+- Flow: Initiate authorization flow with PKCE
+- Exchange: Exchange authorization code for tokens
+
+Each server connection gets its own instance with isolated storage.
+
+
+**Methods:**
+
+#### `get_strategy_namespace` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/strategies/oauth.py#L211" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_strategy_namespace(self) -> str
+```
+
+Return namespace for this strategy.
+
+
+#### `get_auth_metadata` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/strategies/oauth.py#L215" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_auth_metadata(self) -> dict[str, Any]
+```
+
+Get OAuth access token if available.
+
+
+#### `handle_challenge` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/strategies/oauth.py#L226" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+handle_challenge(self, challenge: Response, resource_url: str) -> bool
+```
+
+Handle 401 challenge by orchestrating OAuth flow.
+
+Coordinates all OAuth services to complete the authentication flow:
+1. Discovery: Find resource and authorization server metadata
+2. Registration: Register OAuth client (or reuse existing)
+3. Flow: Initiate PKCE authorization flow
+4. Routing: Register callback handler for token exchange
+
+**Args:**
+- `challenge`: HTTP 401 response containing OAuth challenge
+- `resource_url`: URL of the protected resource
+
+**Returns:**
+- True if challenge was handled successfully, False otherwise
+

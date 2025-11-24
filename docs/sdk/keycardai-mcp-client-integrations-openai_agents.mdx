@@ -1,0 +1,224 @@
+---
+title: openai_agents
+sidebarTitle: openai_agents
+---
+
+# `keycardai.mcp.client.integrations.openai_agents`
+
+
+
+OpenAI agents SDK adapter for KeycardAI MCP client.
+
+Provides a clean API for integrating MCP tools with OpenAI agents:
+- Automatic auth detection and handling
+- System prompt generation with auth context
+- Filtered MCP servers (only authenticated)
+- Auth request tools for agent
+
+
+## Functions
+
+### `create_client` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/integrations/openai_agents.py#L473" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+create_client(mcp_client: Client, auth_tool_handler: AuthToolHandler | None = None, auth_hook_closure: Callable[[], Awaitable[None]] | None = None, tool_result_parser: Callable[[Any], CallToolResult] | None = None) -> OpenAIAgentsClient
+```
+
+
+Get OpenAI agents adapter for MCP client.
+
+Use as context manager for automatic lifecycle management.
+
+**Args:**
+- `mcp_client`: KeycardAI MCP client
+- `auth_tool_handler`: Optional custom handler for auth requests.
+Subclass AuthToolHandler to customize how auth links are sent.
+Built-in options\: SlackAuthToolHandler, ConsoleAuthToolHandler
+Default\: DefaultAuthToolHandler (returns message for agent)
+- `auth_hook_closure`: Optional async function called when auth is needed
+
+**Returns:**
+- OpenAI agents client adapter
+
+Example - Console/CLI:
+    >>> from keycardai.mcp.client.integrations.auth_tools import ConsoleAuthToolHandler
+    >>>
+    >>> handler = ConsoleAuthToolHandler()
+    >>> async with get_client(mcp_client, auth_tool_handler=handler) as client:
+    ...     # Auth links will be printed to console
+
+
+## Classes
+
+### `OpenAIMCPServer` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/integrations/openai_agents.py#L35" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+OpenAI-compatible wrapper for an MCP server.
+
+This is what gets passed to Agent(mcp_servers=[...])
+
+Wraps a single MCP server to provide the interface expected by
+OpenAI agents SDK for MCP server integration.
+
+Implements the MCPServer protocol from agents.mcp.
+
+
+**Methods:**
+
+#### `name` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/integrations/openai_agents.py#L71" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+name(self) -> str
+```
+
+A readable name for the server.
+
+
+#### `connect` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/integrations/openai_agents.py#L75" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+connect(self)
+```
+
+Connect to the server.
+
+Note: Connection is managed by the MCP client, so this is a no-op.
+The client should already be connected before creating this adapter.
+
+
+#### `cleanup` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/integrations/openai_agents.py#L84" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+cleanup(self)
+```
+
+Cleanup the server.
+
+Note: Cleanup is managed by the MCP client, so this is a no-op.
+
+
+#### `list_tools` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/integrations/openai_agents.py#L167" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+list_tools(self, run_context: Any | None = None, agent: Any | None = None) -> list[Tool]
+```
+
+List the tools available on the server.
+
+**Args:**
+- `run_context`: Optional run context (not used in this implementation)
+- `agent`: Optional agent reference (not used in this implementation)
+
+**Returns:**
+- List of tools available on this server
+
+
+#### `call_tool` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/integrations/openai_agents.py#L187" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+call_tool(self, tool_name: str, arguments: dict[str, Any] | None = None) -> CallToolResult
+```
+
+Invoke a tool on the server.
+
+**Args:**
+- `tool_name`: Name of the tool to call
+- `arguments`: Arguments to pass to the tool (can be None)
+
+**Returns:**
+- Result from the tool call wrapped in CallToolResult
+
+
+#### `list_prompts` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/integrations/openai_agents.py#L210" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+list_prompts(self) -> ListPromptsResult
+```
+
+List the prompts available on the server.
+
+Note: Not implemented - MCP client doesn't expose prompt listing yet.
+Returns empty list.
+
+
+#### `get_prompt` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/integrations/openai_agents.py#L219" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_prompt(self, name: str, arguments: dict[str, Any] | None = None) -> GetPromptResult
+```
+
+Get a specific prompt from the server.
+
+Note: Not implemented - MCP client doesn't expose prompts yet.
+Raises UserError.
+
+
+### `OpenAIAgentsClient` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/integrations/openai_agents.py#L231" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+OpenAI agents adapter for MCP client.
+
+Wraps MCP client to provide:
+- get_system_prompt(): Instructions with auth awareness
+- get_mcp_servers(): Filtered authenticated servers
+- get_auth_tools(): Tools for requesting authentication
+
+
+**Methods:**
+
+#### `get_system_prompt` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/integrations/openai_agents.py#L316" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_system_prompt(self, base_instructions: str) -> str
+```
+
+Generate system prompt with auth awareness.
+
+        If services need auth, adds instructions about using auth tool.
+        Otherwise, returns base instructions unchanged.
+
+        Args:
+            base_instructions: Your base agent instructions
+
+        Returns:
+            System prompt (possibly augmented with auth instructions)
+
+        Example:
+            >>> prompt = client.get_system_prompt("You are a helpful Slack bot")
+            >>> # If auth needed:
+            >>> # "You are a helpful Slack bot
+
+**AUTH REQUIRED**..."
+            >>> # If authenticated:
+            >>> # "You are a helpful Slack bot"
+
+
+#### `get_mcp_servers` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/integrations/openai_agents.py#L356" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_mcp_servers(self) -> list[OpenAIMCPServer]
+```
+
+Get MCP servers for OpenAI agent.
+
+Only returns servers that are authenticated and have tools available.
+Servers requiring auth are excluded until authorization completes.
+
+**Returns:**
+- List of MCP server objects for OpenAI Agent
+
+
+#### `get_auth_tools` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/integrations/openai_agents.py#L385" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_auth_tools(self) -> list[FunctionTool]
+```
+
+Get authentication request tools for the agent.
+
+Returns a tool that allows the agent to request user authentication
+when needed. If all services are authenticated, returns empty list.
+
+**Returns:**
+- List with one auth request tool (or empty if no auth needed)
+

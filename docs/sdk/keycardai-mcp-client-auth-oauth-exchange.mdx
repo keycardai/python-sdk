@@ -1,0 +1,53 @@
+---
+title: exchange
+sidebarTitle: exchange
+---
+
+# `keycardai.mcp.client.auth.oauth.exchange`
+
+
+OAuth token exchange service.
+
+## Classes
+
+### `OAuthTokenExchangeService` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/oauth/exchange.py#L15" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Handles OAuth 2.0 token exchange.
+
+Responsibilities:
+- Exchange authorization code for access/refresh tokens
+- Store tokens securely
+- Clean up PKCE state after successful exchange
+
+
+**Methods:**
+
+#### `exchange_code_for_tokens` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/oauth/exchange.py#L41" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+exchange_code_for_tokens(self, code: str, state: str, auth_server_metadata: dict[str, Any], client_info: dict[str, Any]) -> dict[str, Any]
+```
+
+Exchange authorization code for access/refresh tokens.
+
+Retrieves PKCE state, exchanges the code for tokens, stores the tokens,
+and cleans up the PKCE state.
+
+**Args:**
+- `code`: Authorization code from OAuth callback
+- `state`: OAuth state parameter (used to retrieve PKCE state)
+- `auth_server_metadata`: Authorization server metadata with token_endpoint
+- `client_info`: Client registration info with client_id
+
+**Returns:**
+- OAuth tokens dict containing:
+- - access_token: Access token for API requests
+- - refresh_token: Optional refresh token
+- - expires_in: Token expiration time
+- - token_type: Token type (usually "Bearer")
+
+**Raises:**
+- `ValueError`: If PKCE state not found, token endpoint missing,
+       or token exchange fails
+

@@ -1,0 +1,213 @@
+---
+title: session
+sidebarTitle: session
+---
+
+# `keycardai.mcp.client.session`
+
+## Classes
+
+### `SessionStatus` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/session.py#L17" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Comprehensive status tracking for Session lifecycle.
+
+States are organized into categories:
+- Initial: INITIALIZING
+- Active Connection: CONNECTING, AUTHENTICATING, AUTH_PENDING, CONNECTED
+- Disconnection: DISCONNECTING, DISCONNECTED
+- Failure States: AUTH_FAILED, CONNECTION_FAILED, SERVER_UNREACHABLE, FAILED
+- Recovery: RECONNECTING
+
+See SESSION_STATUS_DESIGN.md for detailed state transitions and sequence diagrams.
+
+
+### `SessionStatusCategory` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/session.py#L73" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Helper for checking status categories.
+
+
+### `Session` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/session.py#L110" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Session represents a connection to a single MCP server.
+
+Each session has its own connection with isolated auth and storage.
+
+**Connection Status Lifecycle:**
+
+Sessions track their connection state through a comprehensive status lifecycle.
+The `connect()` method does NOT raise exceptions for connection failures. Instead,
+it sets the appropriate session status. Callers should check `session.status` or
+`session.is_operational` after calling `connect()` to determine the outcome.
+
+Status states include:
+- INITIALIZING, CONNECTING, AUTHENTICATING, AUTH_PENDING, CONNECTED
+- DISCONNECTING, DISCONNECTED
+- AUTH_FAILED, CONNECTION_FAILED, SERVER_UNREACHABLE, FAILED
+
+Use properties like `is_operational`, `is_failed`, `requires_user_action`, and
+`can_retry` to check the session state.
+
+**Auto-Reconnection on Auth Completion:**
+
+When a session enters AUTH_PENDING state (e.g., waiting for OAuth), it subscribes
+to the coordinator's completion events. When authentication completes, the session
+automatically reconnects without requiring manual intervention. This enables the
+non-blocking auth pattern where users can poll `session.requires_user_action`.
+
+**Forwarding to ClientSession:**
+
+This class automatically forwards all methods from mcp.ClientSession via __getattr__,
+allowing it to stay in sync with upstream MCP SDK changes.
+
+For IDE autocomplete, see session.pyi type stub which defines all available methods.
+
+
+**Methods:**
+
+#### `connected` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/session.py#L175" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+connected(self) -> bool
+```
+
+Check if session is connected (backward compatibility).
+
+
+#### `is_operational` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/session.py#L180" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+is_operational(self) -> bool
+```
+
+Can perform operations (call tools, list resources, etc.)
+
+
+#### `is_connecting` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/session.py#L185" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+is_connecting(self) -> bool
+```
+
+Currently attempting to connect.
+
+
+#### `requires_user_action` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/session.py#L194" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+requires_user_action(self) -> bool
+```
+
+Requires user action to proceed (e.g., OAuth).
+
+
+#### `can_retry` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/session.py#L199" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+can_retry(self) -> bool
+```
+
+Can attempt reconnection.
+
+
+#### `is_failed` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/session.py#L204" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+is_failed(self) -> bool
+```
+
+In a failure state.
+
+
+#### `on_completion_handled` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/session.py#L208" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+on_completion_handled(self, event: CompletionEvent) -> None
+```
+
+Handle auth completion notification from coordinator (CompletionSubscriber protocol).
+
+When OAuth completes for this session, automatically reconnect.
+This enables the non-blocking auth pattern where callers can poll
+`session.requires_user_action` and the session will automatically
+become operational when auth completes.
+
+**Args:**
+- `event`: Completion event from coordinator
+
+
+#### `connect` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/session.py#L310" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+connect(self, _retry_after_auth: bool = True) -> None
+```
+
+Connect to the server.
+
+This method does not raise exceptions for connection failures. Instead, it sets
+the appropriate session status. Callers should check session.status or
+session.is_operational after calling this method.
+
+Possible outcomes:
+- status=CONNECTED: Successfully connected and ready
+- status=AUTH_PENDING: Requires user authentication (check get_auth_challenge)
+- status=SERVER_UNREACHABLE: Server not reachable
+- status=CONNECTION_FAILED: Connection failed
+- status=AUTH_FAILED: Authentication failed
+- status=FAILED: Other failure
+
+**Args:**
+- `_retry_after_auth`: Internal flag to retry once after auth challenge completes
+
+
+#### `disconnect` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/session.py#L449" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+disconnect(self) -> None
+```
+
+Gracefully disconnect from the server.
+
+
+#### `requires_auth` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/session.py#L481" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+requires_auth(self) -> bool
+```
+
+Check if this session has a pending auth challenge.
+
+
+#### `get_auth_challenge` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/session.py#L485" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_auth_challenge(self) -> dict[str, str] | None
+```
+
+Get pending auth challenge for this session.
+
+An auth challenge is created by the auth strategy when authentication
+is required but not yet complete (e.g., waiting for OAuth callback).
+
+**Returns:**
+- Dict with challenge details (strategy-specific) or None if no pending challenge.
+- For OAuth: {'authorization_url': str, 'state': str}
+- For other strategies: may contain different fields
+
+
+#### `check_connection_health` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/session.py#L549" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+check_connection_health(self) -> bool
+```
+
+Proactively check if the connection is still alive.
+
+This method sends a ping to the server to verify the connection is operational.
+If the connection is dead, it updates the session status accordingly.
+
+**Returns:**
+- True if connection is healthy, False if connection is dead
+

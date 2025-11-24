@@ -252,7 +252,8 @@ class Client:
             The content is a list of content items (text, images, embedded resources).
 
         Raises:
-            ToolNotFoundException: If server_name is None and the tool is not found on any server
+            ToolNotFoundException: If the tool is not found on any server (when server_name is None)
+                                  or if the specified server is not connected/available
 
         Example:
             result = await client.call_tool("fetch_data", {"url": "https://api.example.com"})

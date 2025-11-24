@@ -1,0 +1,250 @@
+---
+title: handlers
+sidebarTitle: handlers
+---
+
+# `keycardai.mcp.client.auth.handlers`
+
+
+Auth completion routing and handlers.
+
+## Functions
+
+### `get_default_handler_registry` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/handlers.py#L397" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_default_handler_registry() -> CompletionHandlerRegistry
+```
+
+
+Get the default global handler registry.
+
+**Returns:**
+- The global CompletionHandlerRegistry instance
+
+
+### `register_completion_handler` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/handlers.py#L419" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+register_completion_handler(name: str) -> Callable[[CompletionHandlerFunc], CompletionHandlerFunc]
+```
+
+
+Decorator to register a completion handler in the default registry.
+
+This is the main decorator used throughout the SDK to mark functions
+as available for auth completion.
+
+**Args:**
+- `name`: Unique name for the completion handler
+
+**Returns:**
+- Decorator function
+
+
+### `oauth_completion_handler` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/handlers.py#L447" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+oauth_completion_handler(coordinator: 'AuthCoordinator', storage: 'NamespacedStorage', params: dict[str, str], client_factory: Callable[[], 'AsyncClient'] | None = None, run_cleanup_in_background: bool = True) -> dict[str, Any]
+```
+
+
+Handle OAuth authorization code completion.
+
+This unified completion handler works with any coordinator by retrieving all necessary
+state from storage.
+
+Steps:
+1. Extract code and state from params
+2. Load PKCE state from storage
+3. Exchange authorization code for tokens
+4. Store tokens in strategy storage
+5. Clear pending auth state
+6. Return success result
+
+**Args:**
+- `coordinator`: Auth coordinator (for cleanup)
+- `storage`: Strategy's namespaced storage
+- `params`: Completion parameters (e.g., {"code"\: "...", "state"\: "..."})
+- `client_factory`: Optional factory function that returns an AsyncClient instance.
+           If None, uses default factory that creates AsyncClient()
+- `run_cleanup_in_background`: If True (default), cleanup tasks run asynchronously
+                      after response. If False, cleanup runs synchronously.
+                      Use False in unit tests to ensure cleanup completes.
+
+**Returns:**
+- Result dict with success status and metadata
+
+**Raises:**
+- `ValueError`: If required parameters are missing or state is invalid
+
+
+## Classes
+
+### `CompletionRouter` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/handlers.py#L19" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Routes auth completions to registered handlers.
+
+Handles both stateful (in-memory) and stateless (storage-based) routing.
+Retrieves completion metadata from storage, invokes the appropriate handler,
+and manages cleanup.
+
+Responsibilities:
+- Retrieve completion routing metadata from storage
+- Look up and invoke registered completion handlers
+- Navigate to correct storage namespace for handler
+- Schedule cleanup of routing metadata
+
+
+**Methods:**
+
+#### `route_completion` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/handlers.py#L49" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+route_completion(self, coordinator: 'AuthCoordinator', params: dict[str, str]) -> dict[str, Any]
+```
+
+Route completion to appropriate handler.
+
+Retrieves routing metadata from storage, invokes the registered handler,
+and schedules cleanup. The coordinator is passed to handlers for context
+creation and other coordinator operations.
+
+**Args:**
+- `coordinator`: AuthCoordinator instance
+- `params`: Completion parameters (e.g., {"code"\: "...", "state"\: "..."})
+
+**Returns:**
+- Handler result dict merged with completion metadata
+
+**Raises:**
+- `ValueError`: If state is missing, invalid, or handler not found
+
+
+### `CompletionHandlerRegistry` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/handlers.py#L213" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Registry of auth completion handlers.
+
+Manages registration and discovery of completion handler functions that
+can be used to complete authentication flows.
+
+
+**Methods:**
+
+#### `register` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/handlers.py#L237" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+register(self, name: str, handler: CompletionHandlerFunc | None = None) -> CompletionHandlerFunc | Callable[[CompletionHandlerFunc], CompletionHandlerFunc]
+```
+
+Register a completion handler.
+
+Can be used as a decorator or called directly.
+
+**Args:**
+- `name`: Unique name for the completion handler
+- `handler`: Optional handler function (if not using as decorator)
+
+**Returns:**
+- The handler function (for decorator chaining) or decorator function
+
+
+#### `get` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/handlers.py#L275" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get(self, name: str) -> CompletionHandlerFunc
+```
+
+Get a registered completion handler by name.
+
+**Args:**
+- `name`: Name of the completion handler
+
+**Returns:**
+- The completion handler function
+
+**Raises:**
+- `ValueError`: If handler is not registered
+
+
+#### `has` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/handlers.py#L295" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+has(self, name: str) -> bool
+```
+
+Check if a completion handler is registered.
+
+**Args:**
+- `name`: Name of the completion handler
+
+**Returns:**
+- True if handler is registered, False otherwise
+
+
+#### `list_handlers` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/handlers.py#L307" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+list_handlers(self) -> list[str]
+```
+
+List all registered completion handler names.
+
+**Returns:**
+- List of handler names
+
+
+#### `unregister` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/handlers.py#L316" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+unregister(self, name: str) -> None
+```
+
+Unregister a completion handler.
+
+**Args:**
+- `name`: Name of the handler to unregister
+
+
+#### `set_client_factory` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/handlers.py#L327" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+set_client_factory(self, factory: ClientFactory, handler_name: str | None = None) -> None
+```
+
+Set a client factory for completion handlers.
+
+**Args:**
+- `factory`: Factory function that returns an HTTP client (e.g., AsyncClient)
+- `handler_name`: Optional handler name to set factory for specific handler.
+         If None, sets as default factory for all handlers.
+
+
+#### `get_client_factory` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/handlers.py#L361" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_client_factory(self, handler_name: str) -> ClientFactory | None
+```
+
+Get the client factory for a specific completion handler.
+
+**Args:**
+- `handler_name`: Name of the completion handler
+
+**Returns:**
+- Client factory function or None if not set.
+- Checks handler-specific factory first, then falls back to default.
+
+
+#### `clear_client_factories` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/handlers.py#L382" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+clear_client_factories(self) -> None
+```
+
+Clear all client factories (both default and handler-specific).
+
+Useful for testing or reconfiguration.
+

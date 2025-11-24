@@ -1,0 +1,33 @@
+---
+title: factory
+sidebarTitle: factory
+---
+
+# `keycardai.mcp.client.connection.factory`
+
+
+
+Connection factory for creating appropriate connection types.
+
+
+## Functions
+
+### `create_connection` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/connection/factory.py#L18" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+create_connection(server_name: str, server_config: dict[str, Any], context: Context, coordinator: 'AuthCoordinator', server_storage: 'NamespacedStorage') -> 'Connection | None'
+```
+
+
+Factory function to create appropriate connection type.
+
+**Args:**
+- `server_name`: Name of the server
+- `server_config`: Server configuration
+- `context`: Context for identity (not for storage - use server_storage)
+- `coordinator`: Auth coordinator for callbacks
+- `server_storage`: Pre-scoped storage namespace for this server
+
+**Returns:**
+- Connection instance or None if transport not supported
+

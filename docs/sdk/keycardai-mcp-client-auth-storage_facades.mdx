@@ -1,0 +1,319 @@
+---
+title: storage_facades
+sidebarTitle: storage_facades
+---
+
+# `keycardai.mcp.client.auth.storage_facades`
+
+
+Type-safe storage facades for auth strategies and coordinator state management.
+
+## Classes
+
+### `OAuthStorage` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/storage_facades.py#L9" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Type-safe facade for OAuth strategy storage.
+
+Encapsulates the storage keys and provides a clean API
+for storing/retrieving OAuth-related data.
+
+Storage hierarchy:
+```
+oauth/
+  ├─ tokens           # OAuth access/refresh tokens
+  ├─ client_info      # Dynamic client registration info
+  ├─ _pkce_state:{state}  # PKCE verifiers (TTL)
+  └─ _auth_server_metadata  # Cached AS metadata
+```
+
+
+**Methods:**
+
+#### `save_tokens` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/storage_facades.py#L35" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+save_tokens(self, tokens: dict[str, Any]) -> None
+```
+
+Save OAuth tokens.
+
+**Args:**
+- `tokens`: Token dict with access_token, refresh_token, etc.
+
+
+#### `get_tokens` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/storage_facades.py#L44" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_tokens(self) -> dict[str, Any] | None
+```
+
+Retrieve OAuth tokens.
+
+**Returns:**
+- Token dict if present, None otherwise
+
+
+#### `delete_tokens` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/storage_facades.py#L53" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+delete_tokens(self) -> None
+```
+
+Delete stored tokens.
+
+
+#### `save_client_registration` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/storage_facades.py#L57" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+save_client_registration(self, client_info: dict[str, Any]) -> None
+```
+
+Save dynamic client registration information.
+
+**Args:**
+- `client_info`: Client registration data (client_id, redirect_uris, etc.)
+
+
+#### `get_client_registration` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/storage_facades.py#L66" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_client_registration(self) -> dict[str, Any] | None
+```
+
+Retrieve client registration information.
+
+**Returns:**
+- Client info dict if registered, None otherwise
+
+
+#### `save_pkce_state` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/storage_facades.py#L75" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+save_pkce_state(self, state: str, pkce_data: dict[str, Any], ttl: timedelta) -> None
+```
+
+Save PKCE state for an OAuth flow.
+
+**Args:**
+- `state`: OAuth state parameter (routing key)
+- `pkce_data`: PKCE verifier and code challenge data
+- `ttl`: Time-to-live for the PKCE state
+
+
+#### `get_pkce_state` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/storage_facades.py#L91" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_pkce_state(self, state: str) -> dict[str, Any] | None
+```
+
+Retrieve PKCE state for an OAuth flow.
+
+**Args:**
+- `state`: OAuth state parameter
+
+**Returns:**
+- PKCE data dict if present, None if not found or expired
+
+
+#### `delete_pkce_state` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/storage_facades.py#L103" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+delete_pkce_state(self, state: str) -> None
+```
+
+Delete PKCE state after token exchange.
+
+**Args:**
+- `state`: OAuth state parameter
+
+
+#### `save_auth_server_metadata` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/storage_facades.py#L112" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+save_auth_server_metadata(self, metadata: dict[str, Any], ttl: timedelta | None = None) -> None
+```
+
+Cache authorization server metadata.
+
+**Args:**
+- `metadata`: AS metadata (authorization_endpoint, token_endpoint, etc.)
+- `ttl`: Time-to-live for the cached metadata (default\: 1 hour)
+
+
+#### `get_auth_server_metadata` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/storage_facades.py#L128" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_auth_server_metadata(self) -> dict[str, Any] | None
+```
+
+Retrieve cached authorization server metadata.
+
+**Returns:**
+- AS metadata dict if cached, None otherwise
+
+
+### `APIKeyStorage` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/storage_facades.py#L138" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Type-safe facade for API key strategy storage.
+
+Storage hierarchy:
+```
+api_key/
+  └─ key  # The API key value
+```
+
+
+**Methods:**
+
+#### `save_key` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/storage_facades.py#L158" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+save_key(self, api_key: str) -> None
+```
+
+Save API key.
+
+**Args:**
+- `api_key`: The API key value
+
+
+#### `get_key` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/storage_facades.py#L167" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_key(self) -> str | None
+```
+
+Retrieve API key.
+
+**Returns:**
+- API key string if present, None otherwise
+
+
+#### `delete_key` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/storage_facades.py#L176" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+delete_key(self) -> None
+```
+
+Delete stored API key.
+
+
+### `AuthStateStorage` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/storage_facades.py#L181" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Type-safe facade for auth coordinator state management.
+
+Encapsulates storage keys for pending auth state and completion routing,
+providing a clean API without magic strings.
+
+Storage hierarchy:
+```
+auth_coordinator/
+  ├─ pending_auth:{context_id}:{server_name}  # Pending auth metadata
+  └─ completion:{routing_key}                 # Completion routing metadata
+```
+
+
+**Methods:**
+
+#### `mark_auth_pending` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/storage_facades.py#L205" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+mark_auth_pending(self, context_id: str, server_name: str, metadata: dict[str, Any], ttl: timedelta | None = None) -> None
+```
+
+Mark authentication as pending for a context/server.
+
+Called by strategies when they initiate an auth flow that requires
+user interaction (e.g., OAuth redirect). Stores metadata so sessions
+can detect pending auth and retrieve details.
+
+**Args:**
+- `context_id`: Context identifier
+- `server_name`: Server name requiring auth
+- `metadata`: Strategy-specific metadata (e.g., authorization_url, state)
+- `ttl`: Optional expiration time
+
+
+#### `get_auth_status` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/storage_facades.py#L228" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_auth_status(self, context_id: str, server_name: str) -> dict[str, Any] | None
+```
+
+Get pending authentication metadata for a context/server.
+
+**Args:**
+- `context_id`: Context identifier
+- `server_name`: Server name to check
+
+**Returns:**
+- Auth metadata if pending, None otherwise
+
+
+#### `clear_auth_status` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/storage_facades.py#L246" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+clear_auth_status(self, context_id: str, server_name: str) -> None
+```
+
+Clear pending authentication state.
+
+Called by strategies when auth flow completes (successfully or not).
+
+**Args:**
+- `context_id`: Context identifier
+- `server_name`: Server name
+
+
+#### `register_completion_route` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/storage_facades.py#L263" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+register_completion_route(self, routing_key: str, metadata: dict[str, Any], ttl: timedelta | None = None) -> None
+```
+
+Register completion routing metadata for stateless execution.
+
+Used in stateless environments where a different process invocation
+will handle the completion. Stores metadata needed to route the completion
+to the right handler and reconstruct necessary state.
+
+**Args:**
+- `routing_key`: Key to route completion (e.g., OAuth state parameter)
+- `metadata`: Routing metadata including\:
+- handler_name\: Name of registered completion handler
+- storage_namespace\: Storage namespace path for strategy data
+- context_id\: Context identifier
+- server_name\: Server name for auth pending cleanup
+- handler_kwargs\: Optional kwargs for completion handler
+- `ttl`: Expiration time for routing metadata
+
+
+#### `get_completion_route` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/storage_facades.py#L289" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_completion_route(self, routing_key: str) -> dict[str, Any] | None
+```
+
+Get completion routing metadata.
+
+**Args:**
+- `routing_key`: Routing key (e.g., OAuth state parameter)
+
+**Returns:**
+- Routing metadata dict if registered, None if not found or expired
+
+
+#### `delete_completion_route` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/storage_facades.py#L305" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+delete_completion_route(self, routing_key: str) -> None
+```
+
+Delete completion routing metadata after completion.
+
+**Args:**
+- `routing_key`: Routing key to clean up
+

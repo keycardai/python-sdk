@@ -85,24 +85,24 @@ def get_token_debug_info(access_token: str) -> dict[str, Any]:
 
     This function safely extracts only non-sensitive claims from a JWT token
     for debugging and logging purposes. It does NOT verify the token signature
-    and only returns issuer, audience, and scope information.
+    and only returns issuer, audience, subject, and scope information.
 
     **Important:** This is a debug function that NEVER raises exceptions. If token
     parsing fails, it returns an error indicator in the result dict instead.
 
-    **Security Note:** This function is designed to be safe for logging/debugging
-    in production environments. It explicitly excludes sensitive information like:
+    **Security Note:** This function is designed for internal debugging and logging.
+    While it includes subject (user identifier), it excludes:
     - The actual token string
-    - Subject (user identifier)
     - Custom claims that might contain PII
 
     Args:
         access_token: JWT access token string (without Bearer prefix)
 
     Returns:
-        Dictionary with non-sensitive token information:
+        Dictionary with token information:
         - issuer (str): Token issuer (if present)
         - audience (str | list[str]): Token audience (if present)
+        - subject (str): Token subject/user identifier (if present)
         - expires_at (int): Token expiration time as Unix timestamp (if present)
         - issued_at (int): Token issuance time as Unix timestamp (if present)
         - scopes (list[str]): List of scopes from the token (if present)
@@ -112,7 +112,7 @@ def get_token_debug_info(access_token: str) -> dict[str, Any]:
         >>> token = "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9..."
         >>> debug_info = get_token_debug_info(token)
         >>> logger.info(f"Token info: {debug_info}")
-        # Success: {"issuer": "https://auth.example.com", "audience": "api.example.com", "expires_at": 1700000000, "issued_at": 1699996400, "scopes": ["read", "write"]}
+        # Success: {"issuer": "https://auth.example.com", "audience": "api.example.com", "subject": "user123", "expires_at": 1700000000, "issued_at": 1699996400, "scopes": ["read", "write"]}
         # Failure: {"error": "Failed to parse token"}
     """
     try:
@@ -532,17 +532,14 @@ class AuthProvider:
     def get_jwt_token_verifier(self) -> JWTVerifier:
         """Create a JWT token verifier for Keycard zone tokens.
 
-        Discovers Keycard zone metadata and creates a JWTVerifier configured
-        with the zone's JWKS URI and issuer information.
+        Creates a JWTVerifier configured with the zone's JWKS URI and issuer
+        information that was discovered during AuthProvider initialization.
 
-        This method uses eager discovery of the zone metadata, and performs HTTP calls using the initialized client.
+        Note: Zone metadata discovery happens in __init__. This method only
+        creates the verifier object with already-discovered values.
 
         Returns:
             JWTVerifier: Configured JWT token verifier for the Keycard zone
-
-        Raises:
-            MetadataDiscoveryError: If zone metadata discovery fails
-            JWKSValidationError: If JWKS URI is not available
         """
         return JWTVerifier(
             jwks_uri=self.jwks_uri,
@@ -554,13 +551,14 @@ class AuthProvider:
     def get_remote_auth_provider(self) -> RemoteAuthProvider:
         """Get a RemoteAuthProvider instance configured for Keycard authentication.
 
-        This method uses eager discovery of the zone metadata, and performs HTTP calls using the initialized client.
+        Creates a RemoteAuthProvider using the zone configuration that was
+        discovered and validated during AuthProvider initialization.
+
+        Note: Zone metadata discovery and validation happens in __init__. This method
+        only creates the RemoteAuthProvider object with already-validated configuration.
 
         Returns:
             RemoteAuthProvider: Configured authentication provider for use with FastMCP
-
-        Raises:
-            MetadataDiscoveryError: If zone metadata discovery fails or JWKS URI is not available
         """
 
         authorization_servers = [AnyHttpUrl(self.zone_url)]
