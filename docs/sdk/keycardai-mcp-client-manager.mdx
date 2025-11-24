@@ -1,0 +1,37 @@
+---
+title: manager
+sidebarTitle: manager
+---
+
+# `keycardai.mcp.client.manager`
+
+## Classes
+
+### `ClientManager` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/manager.py#L8" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Factory for creating multiple clients with shared coordinator.
+
+Use when you need multi-context/multi-user scenarios.
+All clients share the same coordinator (e.g., one local callback server for all users).
+
+
+**Methods:**
+
+#### `get_client` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/manager.py#L54" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_client(self, context_id: str, metadata: dict[str, Any] | None = None) -> Client
+```
+
+Get or create a client for a specific context.
+
+All clients share the same coordinator but have isolated storage.
+
+**Args:**
+- `context_id`: Identifier for the client context (e.g., "user\:alice", "task\:123")
+- `metadata`: Optional metadata dict to attach to context (e.g., user info, session data)
+
+**Returns:**
+- Client instance for the given context
+

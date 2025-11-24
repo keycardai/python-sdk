@@ -1,0 +1,123 @@
+---
+title: sqlite
+sidebarTitle: sqlite
+---
+
+# `keycardai.mcp.client.storage.backends.sqlite`
+
+
+SQLite file-based storage backend.
+
+## Classes
+
+### `SQLiteBackend` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/storage/backends/sqlite.py#L14" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+SQLite file-based storage with TTL support.
+
+Stores data persistently in a SQLite database file.
+Suitable for:
+- Local development with persistence
+- Single-instance applications
+- Testing with persistent state
+
+For distributed systems, use RedisBackend or DynamoDBBackend.
+
+
+**Methods:**
+
+#### `get` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/storage/backends/sqlite.py#L99" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get(self, key: str) -> Any | None
+```
+
+#### `set` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/storage/backends/sqlite.py#L123" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+set(self, key: str, value: Any, ttl: timedelta | None = None) -> None
+```
+
+#### `delete` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/storage/backends/sqlite.py#L150" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+delete(self, key: str) -> bool
+```
+
+#### `exists` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/storage/backends/sqlite.py#L161" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+exists(self, key: str) -> bool
+```
+
+#### `get_many` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/storage/backends/sqlite.py#L164" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_many(self, keys: list[str]) -> dict[str, Any]
+```
+
+Optimized batch get using SQL IN clause.
+
+
+#### `set_many` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/storage/backends/sqlite.py#L201" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+set_many(self, items: dict[str, Any], ttl: timedelta | None = None) -> None
+```
+
+Optimized batch set using transaction.
+
+
+#### `delete_many` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/storage/backends/sqlite.py#L233" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+delete_many(self, keys: list[str]) -> int
+```
+
+Optimized batch delete using SQL IN clause.
+
+
+#### `increment` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/storage/backends/sqlite.py#L249" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+increment(self, key: str, amount: int = 1, ttl: timedelta | None = None) -> int
+```
+
+Atomic increment using database transaction.
+
+
+#### `list_keys` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/storage/backends/sqlite.py#L296" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+list_keys(self, prefix: str | None = None, limit: int | None = None) -> list[str]
+```
+
+#### `delete_prefix` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/storage/backends/sqlite.py#L338" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+delete_prefix(self, prefix: str) -> int
+```
+
+Optimized prefix delete using SQL LIKE.
+
+
+#### `cleanup_expired` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/storage/backends/sqlite.py#L350" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+cleanup_expired(self) -> int
+```
+
+Remove all expired entries.
+
+This is a maintenance operation that can be called periodically.
+Returns count of deleted entries.
+
+
+#### `close` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/storage/backends/sqlite.py#L368" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+close(self) -> None
+```
+
+Close database connection.
+

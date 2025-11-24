@@ -35,8 +35,8 @@
             "group": "Examples",
             "pages": [
               "examples/fastmcp-integration",
-              "examples/dynamic-client-registration",
-              "examples/token-exchange"
+              "examples/mcp-client-usage",
+              "examples/mcp-server-auth"
             ]
           }
         ],
@@ -45,9 +45,30 @@
       {
         "groups": [
           {
+            "group": "MCP Server",
+            "pages": [
+              "sdk/keycardai-mcp-server-auth-provider",
+              "sdk/keycardai-mcp-server-auth-application_credentials",
+              "sdk/keycardai-mcp-server-exceptions"
+            ]
+          },
+          {
+            "group": "FastMCP Integration",
+            "pages": [
+              "sdk/keycardai-mcp-integrations-fastmcp-provider"
+            ]
+          },
+          {
+            "group": "MCP Client",
+            "pages": [
+              "sdk/keycardai-mcp-client-client",
+              "sdk/keycardai-mcp-client-session",
+              "sdk/keycardai-mcp-client-manager"
+            ]
+          },
+          {
             "group": "OAuth Package",
             "pages": [
-              "sdk/keycardai-oauth-__init__",
               {
                 "group": "Client",
                 "pages": [
@@ -57,7 +78,6 @@
               {
                 "group": "HTTP Transport",
                 "pages": [
-                  "sdk/keycardai-oauth-http-__init__",
                   "sdk/keycardai-oauth-http-auth",
                   "sdk/keycardai-oauth-http-transport"
                 ]
@@ -65,7 +85,6 @@
               {
                 "group": "Types & Models",
                 "pages": [
-                  "sdk/keycardai-oauth-types-__init__",
                   "sdk/keycardai-oauth-types-models",
                   "sdk/keycardai-oauth-types-oauth"
                 ]
@@ -73,7 +92,6 @@
               {
                 "group": "Utilities",
                 "pages": [
-                  "sdk/keycardai-oauth-utils-__init__",
                   "sdk/keycardai-oauth-utils-bearer",
                   "sdk/keycardai-oauth-utils-crypto",
                   "sdk/keycardai-oauth-utils-jwt",
@@ -81,20 +99,6 @@
                 ]
               },
               "sdk/keycardai-oauth-exceptions"
-            ]
-          },
-          {
-            "group": "MCP Package",
-            "pages": [
-              "sdk/keycardai-mcp"
-            ]
-          },
-          {
-            "group": "FastMCP Integration",
-            "pages": [
-              "sdk/keycardai-mcp-integrations-fastmcp-__init__",
-              "sdk/keycardai-mcp-integrations-fastmcp-middleware",
-              "sdk/keycardai-mcp-integrations-fastmcp-provider"
             ]
           }
         ],

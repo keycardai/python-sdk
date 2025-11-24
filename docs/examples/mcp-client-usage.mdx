@@ -1,0 +1,70 @@
+---
+title: "MCP Client Usage"
+description: "How to use the Keycard MCP client to connect to authenticated MCP servers"
+---
+
+# MCP Client Usage
+
+A step-by-step guide to connect to authenticated MCP servers using the Keycard MCP client.
+
+## Quick Start
+
+### Step 1: Create Project
+
+```bash
+uv init --package my-mcp-client
+cd my-mcp-client
+```
+
+### Step 2: Install Dependencies
+
+```bash
+uv add keycardai-mcp
+```
+
+### Step 3: Create Your Client
+
+Create `src/my_mcp_client/__init__.py`:
+
+```python
+import asyncio
+from keycardai.mcp.client import Client
+
+# Configure your MCP servers
+servers = {
+    "my-server": {
+        "url": "http://localhost:8000/mcp",
+        "transport": "http",
+        "auth": {"type": "oauth"}
+    }
+}
+
+async def run():
+    async with Client(servers) as client:
+        # List available tools
+        tools = await client.list_tools()
+        print(f"Available tools: {len(tools)}")
+        
+        for tool_info in tools:
+            print(f"  - {tool_info.tool.name} (from {tool_info.server})")
+        
+        # Call a tool by name
+        if tools:
+            result = await client.call_tool(tools[0].tool.name, {})
+            print(f"Result: {result}")
+
+def main():
+    """Entry point for the MCP client."""
+    asyncio.run(run())
+```
+
+### Step 4: Run Your Client
+
+```bash
+uv run my-mcp-client
+```
+
+The client will automatically open your browser for OAuth authentication, then connect and list available tools!
+
+For more advanced usage including web applications, event-driven architectures, and AI agent integrations, see the [client README](https://github.com/keycardai/python-sdk/blob/main/packages/mcp/src/keycardai/mcp/client/README.md).
+

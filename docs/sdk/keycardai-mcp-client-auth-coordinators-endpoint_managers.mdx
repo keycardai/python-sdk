@@ -1,0 +1,175 @@
+---
+title: endpoint_managers
+sidebarTitle: endpoint_managers
+---
+
+# `keycardai.mcp.client.auth.coordinators.endpoint_managers`
+
+
+Redirect endpoint management for OAuth flows.
+
+## Classes
+
+### `EndpointManager` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/coordinators/endpoint_managers.py#L17" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Abstract base for managing OAuth redirect endpoints.
+
+
+**Methods:**
+
+#### `get_redirect_uris` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/coordinators/endpoint_managers.py#L23" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_redirect_uris(self) -> list[str]
+```
+
+Get available redirect URIs for OAuth registration.
+
+May start infrastructure (e.g., local server) if needed.
+
+**Returns:**
+- List of redirect URIs
+
+
+#### `initiate_redirect` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/coordinators/endpoint_managers.py#L35" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+initiate_redirect(self, url: str, metadata: dict[str, Any]) -> None
+```
+
+Initiate user redirect to authorization URL.
+
+**Args:**
+- `url`: Authorization URL to redirect user to
+- `metadata`: Flow metadata (e.g., state, server_name)
+
+
+### `LocalEndpointManager` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/coordinators/endpoint_managers.py#L46" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Local HTTP server endpoint manager for CLI/desktop applications.
+
+Runs a local HTTP server to receive OAuth callbacks. The server is
+shared across all auth flows and routes callbacks to a handler.
+
+Key behaviors:
+- Starts local HTTP server on demand (lazy initialization)
+- Opens user's browser to authorization URL (configurable)
+- BLOCKS in initiate_redirect() until callback is received (configurable)
+- Tracks pending flows by OAuth state parameter
+
+Use for: CLI apps, desktop apps, local development.
+
+
+**Methods:**
+
+#### `set_callback_handler` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/coordinators/endpoint_managers.py#L95" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+set_callback_handler(self, handler: Any) -> None
+```
+
+Set the completion handler to invoke when OAuth callbacks are received.
+
+The handler should be an async function that takes params dict
+and returns a result dict.
+
+**Args:**
+- `handler`: Async completion handler function (e.g., coordinator.handle_completion)
+
+
+#### `get_redirect_uris` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/coordinators/endpoint_managers.py#L107" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_redirect_uris(self) -> list[str]
+```
+
+Get redirect URI for local server.
+
+Starts the local server if not already running (lazy initialization).
+
+**Returns:**
+- List with single redirect URI (e.g., ["http://localhost:8080/callback"])
+
+
+#### `initiate_redirect` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/coordinators/endpoint_managers.py#L132" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+initiate_redirect(self, url: str, metadata: dict[str, Any]) -> None
+```
+
+Initiate OAuth redirect (configurable browser opening and blocking).
+
+Behavior depends on configuration:
+- auto_open_browser=True: Opens browser automatically
+- auto_open_browser=False: Logs URL for manual opening
+- block_until_callback=True: Blocks until callback received
+- block_until_callback=False: Returns immediately
+
+**Args:**
+- `url`: Authorization URL to open in browser
+- `metadata`: Flow metadata including server_name
+
+**Raises:**
+- `TimeoutError`: If authorization not completed within 300 seconds (when blocking)
+
+
+#### `shutdown` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/coordinators/endpoint_managers.py#L179" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+shutdown(self) -> None
+```
+
+Stop local callback server.
+
+Gracefully shuts down the HTTP server and cleans up resources.
+
+
+### `RemoteEndpointManager` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/coordinators/endpoint_managers.py#L279" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Remote endpoint manager for web applications.
+
+Uses an external redirect URI (provided by the web application).
+Does not run its own server or open browsers - the web app handles
+all HTTP interactions.
+
+Key behaviors:
+- Returns configured redirect URI
+- initiate_redirect() is a no-op (web app handles redirect via HTTP)
+- No blocking behavior (suitable for async web frameworks)
+
+Use for: Web apps, APIs, microservices (FastAPI, Flask, Starlette, etc.)
+
+
+**Methods:**
+
+#### `get_redirect_uris` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/coordinators/endpoint_managers.py#L304" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_redirect_uris(self) -> list[str]
+```
+
+Get configured redirect URI.
+
+**Returns:**
+- List with single redirect URI
+
+
+#### `initiate_redirect` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/coordinators/endpoint_managers.py#L313" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+initiate_redirect(self, url: str, metadata: dict[str, Any]) -> None
+```
+
+No-op for remote redirects.
+
+Web applications handle redirects via HTTP responses, not by
+opening browsers programmatically. The authorization URL is
+stored in pending auth metadata and returned to the client.
+
+**Args:**
+- `url`: Authorization URL (not used)
+- `metadata`: Flow metadata for logging
+

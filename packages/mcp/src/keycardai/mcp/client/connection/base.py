@@ -41,7 +41,8 @@ class Connection:
             Tuple of (read_stream, write_stream)
 
         Raises:
-            ConnectionError: If connection fails
+            ConnectionError: If connection fails to establish
+            Exception: Any exception raised during connection establishment
         """
         self._ready.clear()
         self._done.clear()

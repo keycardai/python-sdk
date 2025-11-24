@@ -1,0 +1,121 @@
+---
+title: client
+sidebarTitle: client
+---
+
+# `keycardai.mcp.client.client`
+
+## Classes
+
+### `Client` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/client.py#L17" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+MCP client for connecting to servers.
+
+
+**Methods:**
+
+#### `add_server` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/client.py#L74" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+add_server(self, server_name: str, server_config: Any) -> None
+```
+
+Add a server connection to this client.
+
+**Args:**
+- `server_name`: Name of the server
+- `server_config`: Server configuration (including URL and auth config)
+
+
+#### `connect` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/client.py#L107" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+connect(self, server: str | None = None, force_reconnect: bool = False) -> None
+```
+
+Connect to servers.
+
+This method attempts to connect to the specified server(s). Connection failures
+are communicated via session status, not exceptions. Check session.status or
+session.is_operational after calling to determine outcome.
+
+**Args:**
+- `server`: Optional server name. If None, connects to all servers.
+- `force_reconnect`: If True, disconnect and reconnect even if already connected.
+
+
+#### `requires_auth` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/client.py#L130" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+requires_auth(self, server_name: str | None = None) -> bool
+```
+
+#### `get_auth_challenges` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/client.py#L137" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_auth_challenges(self, server_name: str | None = None) -> list[AuthChallenge]
+```
+
+Get all pending auth challenges across sessions.
+
+An auth challenge is created when a server requires authentication
+that hasn't been completed yet. The challenge details are strategy-specific.
+
+**Args:**
+- `server_name`: Optional server name to check. If None, checks all sessions.
+
+**Returns:**
+- List of auth challenges. Each AuthChallenge contains strategy-specific fields
+- plus a 'server' field indicating which server needs auth.
+- Empty list if no challenges pending.
+
+
+#### `disconnect` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/client.py#L176" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+disconnect(self) -> None
+```
+
+#### `list_tools` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/client.py#L180" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+list_tools(self, server_name: str | None = None) -> list[ToolInfo]
+```
+
+List all available tools with their server information.
+
+Each tool is returned with explicit information about which server provides it.
+This makes it easy to iterate over tools while knowing their provenance.
+
+Automatically handles pagination by fetching all pages.
+
+**Args:**
+- `server_name`: Optional server name. If provided, lists tools only from that server.
+        If None, lists tools from all servers.
+
+**Returns:**
+- List of ToolInfo objects, each containing a tool and its server name.
+
+
+#### `call_tool` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/client.py#L241" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+call_tool(self, tool_name: str, arguments: dict[str, Any], server_name: str | None = None) -> CallToolResult
+```
+
+Call a tool on an MCP server.
+
+**Args:**
+- `tool_name`: Name of the tool to call
+- `arguments`: Arguments to pass to the tool
+- `server_name`: Optional server name. If None, auto-discovers which server has the tool.
+
+**Returns:**
+- CallToolResult containing the tool's response with content and error status.
+- The content is a list of content items (text, images, embedded resources).
+
+**Raises:**
+- `ToolNotFoundException`: If the tool is not found on any server (when server_name is None)
+                  or if the specified server is not connected/available
+

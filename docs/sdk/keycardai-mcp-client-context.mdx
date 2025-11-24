@@ -1,0 +1,37 @@
+---
+title: context
+sidebarTitle: context
+---
+
+# `keycardai.mcp.client.context`
+
+
+Core context primitives for MCP client.
+
+## Classes
+
+### `Context` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/context.py#L11" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Represents an isolated execution context.
+
+Provides:
+- Unique identifier (e.g., "user:alice")
+- Namespaced storage (isolated from other contexts)
+- Reference to auth coordinator
+- Type-safe storage path builder
+
+
+**Methods:**
+
+#### `storage_path` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/context.py#L43" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+storage_path(self) -> StoragePathBuilder
+```
+
+Create a storage path builder starting from this context's storage.
+
+**Returns:**
+- StoragePathBuilder for fluent namespace navigation
+

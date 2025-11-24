@@ -23,50 +23,61 @@ Choose the package that best fits your needs:
 - For MCP server functionality: `keycardai-mcp`
 - For FastMCP integration: `keycardai-mcp-fastmcp`
 
-## Installation
+## Quick Start
 
-Install the packages you need using `pip` or `uv`:
+Create your first authenticated MCP server in 4 simple steps:
 
-### Using pip
-
-```bash
-# OAuth package only
-pip install keycardai-oauth
-
-# MCP package only  
-pip install keycardai-mcp
-
-# FastMCP integration
-pip install keycardai-mcp-fastmcp
-```
-
-### Using uv
+### Step 1: Create Project
 
 ```bash
-# OAuth package only
-uv add keycardai-oauth
-
-# MCP package only  
-uv add keycardai-mcp
-
-# FastMCP integration
-uv add keycardai-mcp-fastmcp
+uv init --package my-mcp-server
+cd my-mcp-server
 ```
 
-## Quick Example
+### Step 2: Install Dependencies
+
+```bash
+uv add keycardai-mcp-fastmcp fastmcp
+```
+
+### Step 3: Create Your Server
+
+Create `src/my_mcp_server/__init__.py`:
 
 ```python
-from keycardai.oauth import AsyncClient
+from keycardai.mcp.integrations.fastmcp import AuthProvider
+from fastmcp import FastMCP
 
-async def main():
-    client = AsyncClient(
-        base_url="https://your-keycard-zone.com",
-        client_id="your-client-id"
-    )
-    
-    # Your OAuth operations here
-    pass
+# Configure Keycard authentication
+auth_provider = AuthProvider(
+    zone_id="your-zone-id",  # Get this from console.keycard.ai
+    mcp_server_name="My Server",
+    mcp_base_url="http://localhost:8000/"
+)
+
+# Create authenticated MCP server
+auth = auth_provider.get_remote_auth_provider()
+mcp = FastMCP("My Server", auth=auth)
+
+@mcp.tool()
+def hello_world(name: str) -> str:
+    """Say hello to someone."""
+    return f"Hello, {name}!"
+
+def main():
+    """Entry point for the MCP server."""
+    mcp.run(transport="streamable-http")
 ```
+
+### Step 4: Run Your Server
+
+```bash
+uv run my-mcp-server
+```
+
+🎉 Your authenticated MCP server is now running on `http://localhost:8000`!
+
+See the [FastMCP Integration example](examples/fastmcp-integration) for advanced features like delegated access to external APIs.
 
 ## Development
 

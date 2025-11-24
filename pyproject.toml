@@ -51,7 +51,7 @@ Issues = "https://github.com/keycardai/python-sdk/issues"
 [tool.uv.workspace]
 members = [
     ".",
-    "packages/*",
+    "packages/*"
 ]
 # Exclude any packages that shouldn't be part of the workspace
 exclude = []

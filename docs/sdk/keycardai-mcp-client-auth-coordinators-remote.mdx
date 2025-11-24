@@ -1,0 +1,53 @@
+---
+title: remote
+sidebarTitle: remote
+---
+
+# `keycardai.mcp.client.auth.coordinators.remote`
+
+
+Remote completion coordinator for web applications.
+
+## Classes
+
+### `StarletteAuthCoordinator` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/coordinators/remote.py#L14" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+
+Remote completion coordinator for web applications.
+
+Uses RemoteEndpointManager which provides a redirect URI but doesn't
+run its own server. You provide the HTTP endpoint in your web framework.
+
+Use for: Web apps, APIs, microservices (Starlette, FastAPI, Flask, etc.)
+
+Key behaviors:
+- Returns configured redirect URI
+- handle_redirect() is a no-op (web app handles via HTTP)
+- Asynchronous cleanup (suitable for web frameworks)
+
+
+**Methods:**
+
+#### `endpoint_type` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/coordinators/remote.py#L46" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+endpoint_type(self) -> str
+```
+
+Type of endpoint: remote web application.
+
+
+#### `get_completion_endpoint` <sup><a href="https://github.com/keycardai/python-sdk/blob/main/src/keycardai/mcp/client/auth/coordinators/remote.py#L50" target="_blank"><Icon icon="github" style="width: 14px; height: 14px;" /></a></sup>
+
+```python
+get_completion_endpoint(self)
+```
+
+Get HTTP endpoint handler for OAuth completions.
+
+This handler is protocol-agnostic and works with any auth strategy
+that uses OAuth redirect flows.
+
+**Returns:**
+- Async function that handles HTTP OAuth completion requests
+
