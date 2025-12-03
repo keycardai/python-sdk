@@ -1,0 +1,133 @@
+[project]
+name = "keycardai-agents"
+dynamic = ["version"]
+description = "Keycard integration for AI agent frameworks (CrewAI) with secure MCP tool access"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Keycard", email = "support@keycard.ai" }]
+dependencies = [
+    "keycardai-mcp>=0.17.0",
+    "pydantic>=2.11.7",
+    "nest-asyncio>=1.6.0",
+]
+keywords = ["agents", "crewai", "mcp", "authentication", "authorization", "ai", "llm"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: OS Independent",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Security",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "License :: OSI Approved :: MIT License",
+]
+
+[project.optional-dependencies]
+crewai = [
+    "crewai>=0.86.0",
+]
+all = [
+    "crewai>=0.86.0",
+]
+test = [
+    "pytest>=8.4.1",
+    "pytest-asyncio>=1.1.0",
+    "pytest-cov>=6.2.1",
+    "pytest-timeout>=2.3.1",
+    "crewai>=0.86.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/keycardai/python-sdk"
+Repository = "https://github.com/keycardai/python-sdk"
+Documentation = "https://docs.keycardai.com"
+Issues = "https://github.com/keycardai/python-sdk/issues"
+
+[build-system]
+requires = ["hatchling", "uv-dynamic-versioning"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "uv-dynamic-versioning"
+
+[tool.uv-dynamic-versioning]
+vcs = "git"
+pattern = "(?P<base>\\d+\\.\\d+\\.\\d+)-keycardai-agents"
+style = "pep440"
+
+[[tool.uv.index]]
+name = "testpypi"
+url = "https://test.pypi.org/simple/"
+publish-url = "https://test.pypi.org/legacy/"
+explicit = true
+
+[tool.uv.sources]
+keycardai-mcp = { workspace = true }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/keycardai"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "B",  # flake8-bugbear
+    "C4", # flake8-comprehensions
+    "UP", # pyupgrade
+]
+ignore = [
+    "E501",  # line too long, we'll handle case by case
+]
+isort = { combine-as-imports = true, known-first-party = ["keycardai"] }
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["T20"]
+
+[tool.mypy]
+strict = true
+disallow_incomplete_defs = false
+disallow_untyped_defs = false
+disallow_untyped_calls = false
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+
+[tool.coverage.run]
+source = ["tests", "src/keycardai"]
+
+[tool.coverage.report]
+show_missing = true
+exclude_also = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "@abc.abstractmethod",
+    "raise NotImplementedError",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra -q"
+
+[tool.commitizen]
+name = "cz_customize"
+version = "0.1.0"
+tag_format = "${version}-keycardai-agents"
+ignored_tag_formats = ["${version}-*"]
+update_changelog_on_bump = true
+bump_message = "bump: keycardai-agents $current_version → $new_version"
+major_version_zero = true
+
+[tool.commitizen.customize]
+changelog_pattern = "^(feat|fix|refactor|perf|test|build|ci|revert)\\(keycardai-agents\\)(!)?:"

@@ -61,6 +61,7 @@ exclude = []
 keycardai-oauth = { workspace = true }
 keycardai-mcp-fastmcp = { workspace = true }
 keycardai-mcp = { workspace = true }
+keycardai-agents = { workspace = true }
 
 [build-system]
 requires = ["hatchling", "uv-dynamic-versioning"]
