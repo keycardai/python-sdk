@@ -46,7 +46,7 @@ try:
 except ImportError:
     raise ImportError(
         "CrewAI is not installed. Install it with: pip install 'keycardai-agents[crewai]'"
-    )
+    ) from None
 
 from keycardai.mcp.client import Client
 
