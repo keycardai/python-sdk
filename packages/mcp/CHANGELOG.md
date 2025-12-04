@@ -1,3 +1,16 @@
+## 0.18.0-keycardai-mcp (2025-12-04)
+
+
+- feat(keycardai-mcp): add CrewAI integration for agent frameworks
+- - Add CrewAI adapter to client integrations directory
+- Support for CrewAI agents with secure MCP tool access
+- No token passing - agents never receive raw API tokens
+- Fresh token fetched per API call through Keycard
+- Follows established pattern with LangChain and OpenAI integrations
+- Deleted separate packages/agents package (not needed)
+- Added optional dependencies: crewai and agents extras
+- Added tests for CrewAI integration imports
+
 ## 0.17.0-keycardai-mcp (2025-11-18)
 
 
