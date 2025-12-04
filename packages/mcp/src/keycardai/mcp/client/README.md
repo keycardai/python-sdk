@@ -10,7 +10,7 @@ The Keycard MCP Client provides a simple, type-safe way to connect to MCP server
 - 🔐 **Automatic OAuth 2.0 flows** (PKCE with dynamic client registration)
 - 🏢 **Multi-user support** with isolated contexts
 - ☁️ **Serverless-ready** with stateless execution support
-- 🤖 **AI agent integrations** (OpenAI Agents, LangChain)
+- 🤖 **AI agent integrations** (OpenAI Agents, LangChain, CrewAI)
 - 💾 **Flexible storage** (in-memory, SQLite, custom backends)
 - 🔒 **Type-safe** with full protocol support
 
@@ -22,13 +22,20 @@ The Keycard MCP Client provides a simple, type-safe way to connect to MCP server
 
 ### Installation
 
-```bash
-uv init --package mcp-cli && cd mcp-cli
-```
+**Base installation** (includes LangChain and OpenAI Agents support):
 
 ```bash
+uv init --package mcp-cli && cd mcp-cli
 uv add keycardai-mcp
 ```
+
+**With CrewAI support** (requires additional dependencies):
+
+```bash
+uv add "keycardai-mcp[crewai]"
+```
+
+> **Why the `[crewai]` extra?** CrewAI requires `nest-asyncio` to bridge CrewAI's synchronous tool interface with MCP's asynchronous client. LangChain and OpenAI Agents have native async support and work with the base installation.
 
 ### Basic Usage (CLI/Desktop Apps)
 
@@ -610,6 +617,18 @@ Follow the authorization link, and then refresh the page. It should show the too
 
 ## AI Agent Integrations
 
+The MCP client provides integrations for popular AI agent frameworks. Each framework has different async support:
+
+| Framework | Installation | Extra Required? | Why |
+|-----------|-------------|-----------------|-----|
+| **LangChain** | `uv add keycardai-mcp langchain` | No | Native async support via `coroutine=` parameter |
+| **OpenAI Agents** | `uv add keycardai-mcp openai-agents` | No | Native async support |
+| **CrewAI** | `uv add "keycardai-mcp[crewai]"` | **Yes** | Requires `nest-asyncio` for sync/async bridge |
+
+> **Technical Note:** CrewAI tools use synchronous methods (`_run()`), while MCP clients are async. The `[crewai]` extra includes `nest-asyncio` to enable nested event loops for seamless integration.
+
+---
+
 ### How Authentication Works with AI Agents
 
 The MCP client provides AI framework integrations that automatically handle authentication flows. Here's how it works:
@@ -833,6 +852,91 @@ Run the OpenAI agent:
 
 ```bash
 uv run mcp-openai
+```
+
+### CrewAI
+
+Install dependencies:
+
+```bash
+uv add "keycardai-mcp[crewai]"
+```
+
+Set your OpenAI API key:
+
+```bash
+export OPENAI_API_KEY="sk-..."
+```
+
+Create `src/mcp_crewai/__init__.py`:
+
+```python
+import asyncio
+from crewai import Agent, Task, Crew
+from langchain_openai import ChatOpenAI
+
+from keycardai.mcp.client import Client
+from keycardai.mcp.client.integrations.crewai_agents import CrewAIClient
+
+servers = {
+    "my-server": {
+        "url": "http://localhost:7878/mcp",
+        "transport": "http",
+        "auth": {"type": "oauth"}
+    }
+}
+
+async def run():
+    async with Client(servers) as mcp_client:
+        # Wrap MCP client for CrewAI
+        async with CrewAIClient(mcp_client) as crewai_client:
+            # Get tools converted to CrewAI format
+            tools = await crewai_client.get_tools()
+            print(f"Available tools: {len(tools)}")
+
+            # Get system prompt
+            system_prompt = crewai_client.get_system_prompt(
+                "You are a helpful assistant with access to MCP tools."
+            )
+
+            # Create CrewAI agent
+            llm = ChatOpenAI(model="gpt-4o-mini", temperature=0)
+            agent = Agent(
+                role="MCP Assistant",
+                goal=system_prompt,
+                backstory="An AI assistant that can use MCP tools to help users.",
+                tools=tools,
+                llm=llm,
+                verbose=True
+            )
+
+            # Create task
+            task = Task(
+                description="List the available tools and use one of them to demonstrate functionality.",
+                expected_output="A summary of the tools and the result of using one tool.",
+                agent=agent
+            )
+
+            # Create and run crew
+            crew = Crew(
+                agents=[agent],
+                tasks=[task],
+                verbose=True
+            )
+
+            print("\nStarting CrewAI crew...")
+            result = crew.kickoff()
+            print(f"\nCrew result: {result}")
+
+def main():
+    """Entry point for CrewAI agent."""
+    asyncio.run(run())
+```
+
+Run the CrewAI agent:
+
+```bash
+uv run mcp-crewai
 ```
 
 ---

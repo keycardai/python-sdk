@@ -32,3 +32,10 @@ try:
 except ImportError:
     pass
 
+# Try to import CrewAI integration
+try:
+    from . import crewai_agents  # noqa: F401
+    __all__.extend(["crewai_agents"])
+except ImportError:
+    pass
+
