@@ -10,7 +10,6 @@ resolution-markers = [
 [manifest]
 members = [
     "keycardai",
-    "keycardai-agents",
     "keycardai-mcp",
     "keycardai-mcp-fastmcp",
     "keycardai-oauth",
@@ -1749,45 +1748,6 @@ dev = [
 ]
 
 [[package]]
-name = "keycardai-agents"
-source = { editable = "packages/agents" }
-dependencies = [
-    { name = "keycardai-mcp" },
-    { name = "nest-asyncio" },
-    { name = "pydantic" },
-]
-
-[package.optional-dependencies]
-all = [
-    { name = "crewai" },
-]
-crewai = [
-    { name = "crewai" },
-]
-test = [
-    { name = "crewai" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "pytest-cov" },
-    { name = "pytest-timeout" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "crewai", marker = "extra == 'all'", specifier = ">=0.86.0" },
-    { name = "crewai", marker = "extra == 'crewai'", specifier = ">=0.86.0" },
-    { name = "crewai", marker = "extra == 'test'", specifier = ">=0.86.0" },
-    { name = "keycardai-mcp", editable = "packages/mcp" },
-    { name = "nest-asyncio", specifier = ">=1.6.0" },
-    { name = "pydantic", specifier = ">=2.11.7" },
-    { name = "pytest", marker = "extra == 'test'", specifier = ">=8.4.1" },
-    { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=1.1.0" },
-    { name = "pytest-cov", marker = "extra == 'test'", specifier = ">=6.2.1" },
-    { name = "pytest-timeout", marker = "extra == 'test'", specifier = ">=2.3.1" },
-]
-provides-extras = ["all", "crewai", "test"]
-
-[[package]]
 name = "keycardai-mcp"
 source = { editable = "packages/mcp" }
 dependencies = [
@@ -1802,7 +1762,19 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+agents = [
+    { name = "crewai" },
+    { name = "langchain" },
+    { name = "langchain-openai" },
+    { name = "nest-asyncio" },
+    { name = "openai-agents" },
+]
+crewai = [
+    { name = "crewai" },
+    { name = "nest-asyncio" },
+]
 test = [
+    { name = "crewai" },
     { name = "fastmcp" },
     { name = "keycardai-mcp-fastmcp" },
     { name = "langchain" },
@@ -1818,14 +1790,22 @@ test = [
 requires-dist = [
     { name = "aiohttp", specifier = ">=3.11.11" },
     { name = "aiosqlite", specifier = ">=0.20.0" },
+    { name = "crewai", marker = "extra == 'agents'", specifier = ">=0.86.0" },
+    { name = "crewai", marker = "extra == 'crewai'", specifier = ">=0.86.0" },
+    { name = "crewai", marker = "extra == 'test'", specifier = ">=0.86.0" },
     { name = "fastmcp", marker = "extra == 'test'", specifier = ">=2.13.0" },
     { name = "httpx", specifier = ">=0.27.2" },
     { name = "keycardai-mcp-fastmcp", marker = "extra == 'test'", editable = "packages/mcp-fastmcp" },
     { name = "keycardai-oauth", editable = "packages/oauth" },
+    { name = "langchain", marker = "extra == 'agents'", specifier = ">=1.0.5" },
     { name = "langchain", marker = "extra == 'test'", specifier = ">=1.0.5" },
+    { name = "langchain-openai", marker = "extra == 'agents'", specifier = ">=1.0.2" },
     { name = "langchain-openai", marker = "extra == 'test'", specifier = ">=1.0.2" },
     { name = "mcp", specifier = ">=1.13.1" },
     { name = "nanoid", specifier = ">=2.0.0" },
+    { name = "nest-asyncio", marker = "extra == 'agents'", specifier = ">=1.6.0" },
+    { name = "nest-asyncio", marker = "extra == 'crewai'", specifier = ">=1.6.0" },
+    { name = "openai-agents", marker = "extra == 'agents'", specifier = ">=0.5.1" },
     { name = "openai-agents", marker = "extra == 'test'", specifier = ">=0.5.1" },
     { name = "pydantic", specifier = ">=2.11.7" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=8.4.1" },
@@ -1834,7 +1814,7 @@ requires-dist = [
     { name = "pytest-timeout", marker = "extra == 'test'", specifier = ">=2.3.1" },
     { name = "starlette", specifier = ">=0.47.3" },
 ]
-provides-extras = ["test"]
+provides-extras = ["agents", "crewai", "test"]
 
 [[package]]
 name = "keycardai-mcp-fastmcp"

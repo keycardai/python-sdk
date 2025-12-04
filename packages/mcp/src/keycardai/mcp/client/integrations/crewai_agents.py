@@ -45,7 +45,7 @@ try:
     from crewai.tools import BaseTool
 except ImportError:
     raise ImportError(
-        "CrewAI is not installed. Install it with: pip install 'keycardai-agents[crewai]'"
+        "CrewAI is not installed. Install it with: pip install 'keycardai-mcp[crewai]'"
     ) from None
 
 from keycardai.mcp.client import Client
@@ -281,33 +281,24 @@ The following services require user authorization: {', '.join(pending_services)}
         tool_description = mcp_tool.description or f"Tool {tool_name} from {server_name}"
 
         input_schema = mcp_tool.inputSchema if hasattr(mcp_tool, "inputSchema") else {}
-        logger.debug(f"[{tool_name}] Converting MCP tool with input_schema: {input_schema}")
 
         # Create args schema from MCP tool schema
         tool_args_schema = None
         if input_schema and isinstance(input_schema, dict):
             tool_args_schema = self._schema_to_pydantic(input_schema, tool_name)
-            logger.debug(f"[{tool_name}] Created args_schema: {tool_args_schema}")
-        else:
-            logger.debug(f"[{tool_name}] No input_schema found or invalid format")
 
         # Define common methods as closures
         def _run_impl(self, *args, **kwargs) -> str:
             """Synchronous run - wraps async execution for CrewAI compatibility."""
-            logger.debug(f"[{tool_name}] _run called with args: {args}, kwargs: {kwargs}")
             return asyncio.run(_async_run_impl(self, *args, **kwargs))
 
         async def _async_run_impl(self, *args, **kwargs) -> str:
             """Invoke the MCP tool asynchronously."""
-            logger.debug(f"[{tool_name}] async_run called with args: {args}, kwargs: {kwargs}")
-
             # If args are passed (single dict argument from Pydantic model), convert to kwargs
             if args and len(args) == 1 and isinstance(args[0], dict):
                 kwargs = args[0]
-                logger.debug(f"[{tool_name}] Converted args[0] to kwargs: {kwargs}")
 
             try:
-                logger.debug(f"[{tool_name}] Calling MCP client.call_tool with: tool_name={tool_name}, kwargs={kwargs}, server_name={self._server_name}")
                 result = await self._mcp_client.call_tool(
                     tool_name, kwargs, server_name=self._server_name
                 )
@@ -357,13 +348,10 @@ The following services require user authorization: {', '.join(pending_services)}
 
                 def invoke(self, input: str | dict, config: dict | None = None, **kwargs) -> str:
                     """Bridge CrewAI's invoke() convention to our _run() implementation."""
-                    logger.debug(f"[{tool_name}] invoke called with input type: {type(input)}, value: {input}")
-
                     # Parse JSON string if needed
                     if isinstance(input, str):
                         try:
                             input = json.loads(input)
-                            logger.debug(f"[{tool_name}] Parsed JSON string to: {input}")
                         except json.JSONDecodeError as e:
                             error_msg = f"Error: Failed to parse arguments as JSON: {e}"
                             logger.error(f"[{tool_name}] {error_msg}")
@@ -373,14 +361,12 @@ The following services require user authorization: {', '.join(pending_services)}
                     try:
                         validated_args = self.args_schema.model_validate(input)
                         arguments = validated_args.model_dump()
-                        logger.debug(f"[{tool_name}] Validated arguments: {arguments}")
                     except Exception as e:
                         error_msg = f"Error: Arguments validation failed: {e}"
                         logger.error(f"[{tool_name}] {error_msg}")
                         return error_msg
 
                     # Call existing _run implementation
-                    logger.debug(f"[{tool_name}] Calling _run with validated arguments")
                     return self._run(**arguments)
 
                 def _run(self, *args, **kwargs) -> str:
@@ -402,13 +388,10 @@ The following services require user authorization: {', '.join(pending_services)}
 
                 def invoke(self, input: str | dict, config: dict | None = None, **kwargs) -> str:
                     """Bridge CrewAI's invoke() convention to our _run() implementation."""
-                    logger.debug(f"[{tool_name}] invoke called with input type: {type(input)}, value: {input}")
-
                     # Parse JSON string if needed
                     if isinstance(input, str):
                         try:
                             input = json.loads(input)
-                            logger.debug(f"[{tool_name}] Parsed JSON string to: {input}")
                         except json.JSONDecodeError as e:
                             error_msg = f"Error: Failed to parse arguments as JSON: {e}"
                             logger.error(f"[{tool_name}] {error_msg}")
@@ -416,7 +399,6 @@ The following services require user authorization: {', '.join(pending_services)}
 
                     # No schema validation needed - pass directly
                     if isinstance(input, dict):
-                        logger.debug(f"[{tool_name}] Calling _run with arguments: {input}")
                         return self._run(**input)
                     else:
                         error_msg = f"Error: Expected dict or JSON string, got {type(input)}"
