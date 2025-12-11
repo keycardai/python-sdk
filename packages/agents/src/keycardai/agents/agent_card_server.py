@@ -2,18 +2,27 @@
 
 import logging
 from typing import Any
+import time
+from importlib.metadata import version
 
 from fastapi import FastAPI, Request, HTTPException, Depends
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from keycardai.oauth.utils.bearer import extract_bearer_token
+from keycardai.oauth.utils.jwt import get_verification_key, decode_and_verify_jwt, get_claims
 from keycardai.oauth import AsyncClient as OAuthClient
 from keycardai.oauth.http.auth import BasicAuth
 
 from .service_config import AgentServiceConfig
 
 logger = logging.getLogger(__name__)
+
+# Get package version
+try:
+    __version__ = version("keycardai-agents")
+except Exception:
+    __version__ = "0.1.1"  # Fallback version
 
 
 class InvokeRequest(BaseModel):
@@ -74,7 +83,7 @@ def create_agent_card_server(config: AgentServiceConfig) -> FastAPI:
     app = FastAPI(
         title=config.service_name,
         description=config.description,
-        version="0.1.0",
+        version=__version__,
     )
 
     # Initialize OAuth client for token validation
@@ -111,19 +120,35 @@ def create_agent_card_server(config: AgentServiceConfig) -> FastAPI:
             )
 
         try:
-            # Validate token with Keycard introspection
-            # In production, you'd use the introspection endpoint
-            # For now, we'll decode the JWT (simplified - in production use proper validation)
-            import jwt
+            # Construct JWKS URI from zone
+            jwks_uri = f"https://{config.zone_id}.keycard.cloud/.well-known/jwks.json"
 
-            # Decode without verification (in production, verify signature)
-            # This is a simplified version - proper implementation would:
-            # 1. Fetch JWKS from Keycard
-            # 2. Verify signature
-            # 3. Validate expiration, audience, etc.
-            token_data = jwt.decode(token, options={"verify_signature": False})
+            # Fetch verification key from JWKS endpoint
+            verification_key = await get_verification_key(token, jwks_uri)
 
-            # Check if token is for this service (audience check)
+            # Decode and verify JWT signature
+            token_data = decode_and_verify_jwt(token, verification_key)
+
+            # Validate expiration
+            exp = token_data.get("exp")
+            if exp and time.time() > exp:
+                raise HTTPException(
+                    status_code=401,
+                    detail="Token has expired",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+
+            # Validate issuer
+            expected_issuer = f"https://{config.zone_id}.keycard.cloud"
+            iss = token_data.get("iss")
+            if iss != expected_issuer:
+                raise HTTPException(
+                    status_code=401,
+                    detail=f"Token issuer mismatch. Expected {expected_issuer}, got {iss}",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+
+            # Validate audience - token must be scoped to this service
             aud = token_data.get("aud")
             if aud:
                 # Handle both string and list audiences (per RFC 7519)
@@ -133,10 +158,20 @@ def create_agent_card_server(config: AgentServiceConfig) -> FastAPI:
                         status_code=403,
                         detail=f"Token audience mismatch. Expected {config.identity_url}, got {aud}",
                     )
+            else:
+                raise HTTPException(
+                    status_code=401,
+                    detail="Token missing audience claim",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
 
             return token_data
 
-        except jwt.InvalidTokenError as e:
+        except HTTPException:
+            # Re-raise HTTP exceptions as-is
+            raise
+        except ValueError as e:
+            # JWT validation errors from keycardai.oauth.utils.jwt
             logger.error(f"Token validation failed: {e}")
             raise HTTPException(
                 status_code=401,
@@ -144,7 +179,7 @@ def create_agent_card_server(config: AgentServiceConfig) -> FastAPI:
                 headers={"WWW-Authenticate": "Bearer"},
             )
         except Exception as e:
-            logger.error(f"Token validation error: {e}")
+            logger.error(f"Token validation error: {e}", exc_info=True)
             raise HTTPException(
                 status_code=500,
                 detail="Internal server error during authentication",
@@ -249,7 +284,7 @@ def create_agent_card_server(config: AgentServiceConfig) -> FastAPI:
             "status": "healthy",
             "service": config.service_name,
             "identity": config.identity_url,
-            "version": "0.1.0",
+            "version": __version__,
         }
 
     return app

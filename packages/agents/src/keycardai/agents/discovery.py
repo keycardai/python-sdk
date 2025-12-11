@@ -143,39 +143,24 @@ class ServiceDiscovery:
             List of service dictionaries with 'name', 'url', 'description', 'capabilities'
 
         Note:
-            This requires a Keycard API endpoint that returns dependencies.
-            For now, this is a placeholder that would need to be implemented
-            once the Keycard API is available.
+            This requires a Keycard API endpoint that lists application dependencies.
+            Currently returns empty list. Once Keycard API is available, it will query:
+            GET https://{zone_id}.keycard.cloud/api/v1/applications/{client_id}/dependencies
+
+            For now, use the `delegatable_services` parameter in `get_a2a_tools()`
+            to manually specify services.
 
         Example:
             >>> services = await discovery.list_delegatable_services()
             >>> for service in services:
             ...     print(f"{service['name']}: {service['capabilities']}")
         """
-        # TODO: Implement Keycard API call to list dependencies
-        # For now, return empty list
-        # In production, this would call:
-        # GET https://{zone_id}.keycard.cloud/api/v1/applications/{client_id}/dependencies
-
         logger.warning(
             "list_delegatable_services() not yet implemented - "
-            "requires Keycard API for dependency listing"
+            "requires Keycard API for dependency listing. "
+            "Use delegatable_services parameter in get_a2a_tools() instead."
         )
         return []
-
-        # Future implementation would look like:
-        # dependencies = await self._fetch_keycard_dependencies()
-        # services = []
-        # for dep in dependencies:
-        #     if dep["resource_type"] == "agent_service":
-        #         card = await self.get_service_card(dep["url"])
-        #         services.append({
-        #             "name": card["name"],
-        #             "url": dep["url"],
-        #             "description": card.get("description", ""),
-        #             "capabilities": card.get("capabilities", []),
-        #         })
-        # return services
 
     async def clear_cache(self) -> None:
         """Clear all cached agent cards."""
