@@ -26,7 +26,6 @@ Usage:
         )
 """
 
-import asyncio
 import json
 import logging
 from typing import Any
@@ -42,7 +41,7 @@ except ImportError:
 
 from ..service_config import AgentServiceConfig
 from ..discovery import ServiceDiscovery
-from ..a2a_client import A2AServiceClient
+from ..a2a_client import A2AServiceClientSync
 
 logger = logging.getLogger(__name__)
 
@@ -87,8 +86,8 @@ async def get_a2a_tools(
         logger.info("No delegatable services found - no A2A tools created")
         return []
 
-    # Create A2A client for delegation
-    a2a_client = A2AServiceClient(service_config)
+    # Create A2A client for delegation (synchronous to avoid event loop issues)
+    a2a_client = A2AServiceClientSync(service_config)
 
     # Create tools for each service
     tools = []
@@ -102,7 +101,7 @@ async def get_a2a_tools(
 
 def _create_delegation_tool(
     service_info: dict[str, Any],
-    a2a_client: A2AServiceClient,
+    a2a_client: A2AServiceClientSync,
 ) -> BaseTool:
     """Create a CrewAI tool for delegating to a specific service.
 
@@ -141,7 +140,7 @@ The service will process the task and return results."""
 
         def __init__(
             self,
-            a2a_client: A2AServiceClient,
+            a2a_client: A2AServiceClientSync,
             service_url: str,
             service_name: str,
             **kwargs,
@@ -152,14 +151,6 @@ The service will process the task and return results."""
             self._service_name = service_name
 
         def _run(self, task_description: str, task_inputs: dict[str, Any] | None = None) -> str:
-            """Synchronous delegation wrapper."""
-            return asyncio.run(self.async_run(task_description, task_inputs))
-
-        async def async_run(
-            self,
-            task_description: str,
-            task_inputs: dict[str, Any] | None = None,
-        ) -> str:
             """Delegate task to remote service.
 
             Args:
@@ -182,7 +173,7 @@ The service will process the task and return results."""
                     f"Delegating task to {self._service_name}: {task_description[:100]}"
                 )
 
-                result = await self._a2a_client.invoke_service(
+                result = self._a2a_client.invoke_service(
                     self._service_url,
                     task,
                 )
@@ -269,8 +260,8 @@ async def create_a2a_tool_for_service(
         "capabilities": card.get("capabilities", []),
     }
 
-    # Create A2A client
-    a2a_client = A2AServiceClient(service_config)
+    # Create A2A client (synchronous to avoid event loop issues)
+    a2a_client = A2AServiceClientSync(service_config)
 
     # Create and return tool
     return _create_delegation_tool(service_info, a2a_client)
