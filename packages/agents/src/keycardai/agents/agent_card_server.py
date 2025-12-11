@@ -125,11 +125,14 @@ def create_agent_card_server(config: AgentServiceConfig) -> FastAPI:
 
             # Check if token is for this service (audience check)
             aud = token_data.get("aud")
-            if aud and aud != config.identity_url:
-                raise HTTPException(
-                    status_code=403,
-                    detail=f"Token audience mismatch. Expected {config.identity_url}, got {aud}",
-                )
+            if aud:
+                # Handle both string and list audiences (per RFC 7519)
+                audiences = [aud] if isinstance(aud, str) else aud
+                if config.identity_url not in audiences:
+                    raise HTTPException(
+                        status_code=403,
+                        detail=f"Token audience mismatch. Expected {config.identity_url}, got {aud}",
+                    )
 
             return token_data
 
