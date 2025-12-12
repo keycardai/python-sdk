@@ -1,8 +1,10 @@
 """Tests for A2AServiceClient."""
 
-import pytest
 from unittest.mock import AsyncMock, Mock, patch
-from keycardai.agents import AgentServiceConfig, A2AServiceClient
+
+import pytest
+
+from keycardai.agents import A2AServiceClient, AgentServiceConfig
 
 
 @pytest.fixture

@@ -26,7 +26,6 @@ Usage:
         )
 """
 
-import json
 import logging
 from typing import Any
 
@@ -39,9 +38,9 @@ except ImportError:
         "CrewAI is not installed. Install it with: pip install 'keycardai-agents[crewai]'"
     ) from None
 
-from ..service_config import AgentServiceConfig
-from ..discovery import ServiceDiscovery
 from ..a2a_client import A2AServiceClientSync
+from ..discovery import ServiceDiscovery
+from ..service_config import AgentServiceConfig
 
 logger = logging.getLogger(__name__)
 

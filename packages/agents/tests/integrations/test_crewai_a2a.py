@@ -1,16 +1,17 @@
 """Tests for CrewAI A2A delegation integration."""
 
+from unittest.mock import AsyncMock, patch
+
 import pytest
-from unittest.mock import Mock, AsyncMock, patch
 
 pytest.importorskip("crewai")
 
-from keycardai.agents.integrations.crewai_a2a import (
-    get_a2a_tools,
-    create_a2a_tool_for_service,
-    _create_delegation_tool,
-)
 from keycardai.agents import AgentServiceConfig
+from keycardai.agents.integrations.crewai_a2a import (
+    _create_delegation_tool,
+    create_a2a_tool_for_service,
+    get_a2a_tools,
+)
 
 
 @pytest.fixture
@@ -241,7 +242,7 @@ class TestDelegationToolExecution:
                 "delegation_chain": [],
             }
 
-            result = tool._run(
+            tool._run(
                 task_description="Analyze PR", task_inputs={"pr_number": 123}
             )
 

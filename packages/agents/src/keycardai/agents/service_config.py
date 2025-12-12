@@ -1,7 +1,7 @@
 """Service configuration for agent services."""
 
 from dataclasses import dataclass, field
-from typing import Callable, Any
+from typing import Any, Callable
 
 
 @dataclass

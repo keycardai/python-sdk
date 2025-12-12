@@ -4,6 +4,7 @@ import logging
 from typing import Any
 
 import httpx
+
 from keycardai.oauth import AsyncClient as AsyncOAuthClient
 from keycardai.oauth import Client as SyncOAuthClient
 from keycardai.oauth.http.auth import BasicAuth

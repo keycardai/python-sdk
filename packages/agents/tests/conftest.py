@@ -1,10 +1,10 @@
 """Pytest configuration for agents tests."""
 
+from unittest.mock import AsyncMock, Mock
+
 import pytest
-from unittest.mock import Mock, AsyncMock
 
 from keycardai.agents import AgentServiceConfig
-
 
 # ============================================
 # Basic Configuration Fixtures

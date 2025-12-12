@@ -1,10 +1,11 @@
 """Tests for service discovery with agent card caching."""
 
-import pytest
 import time
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
-from keycardai.agents import ServiceDiscovery, AgentServiceConfig
+import pytest
+
+from keycardai.agents import AgentServiceConfig, ServiceDiscovery
 
 
 @pytest.fixture

@@ -2,8 +2,8 @@
 
 import logging
 import time
-from typing import Any
 from dataclasses import dataclass
+from typing import Any
 
 from .a2a_client import A2AServiceClient
 from .service_config import AgentServiceConfig

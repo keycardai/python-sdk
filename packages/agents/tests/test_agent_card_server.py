@@ -1,7 +1,8 @@
 """Tests for agent card server endpoints and token validation."""
 
+from unittest.mock import Mock, patch
+
 import pytest
-from unittest.mock import Mock, patch, MagicMock
 from fastapi.testclient import TestClient
 
 from keycardai.agents import AgentServiceConfig, create_agent_card_server

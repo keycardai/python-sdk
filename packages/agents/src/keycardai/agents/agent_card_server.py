@@ -1,18 +1,17 @@
 """FastAPI server for agent services with Keycard authentication."""
 
 import logging
-from typing import Any
 import time
 from importlib.metadata import version
+from typing import Any
 
-from fastapi import FastAPI, Request, HTTPException, Depends
-from fastapi.responses import JSONResponse
+from fastapi import Depends, FastAPI, HTTPException, Request
 from pydantic import BaseModel
 
-from keycardai.oauth.utils.bearer import extract_bearer_token
-from keycardai.oauth.utils.jwt import get_verification_key, decode_and_verify_jwt, get_claims
 from keycardai.oauth import AsyncClient as OAuthClient
 from keycardai.oauth.http.auth import BasicAuth
+from keycardai.oauth.utils.bearer import extract_bearer_token
+from keycardai.oauth.utils.jwt import decode_and_verify_jwt, get_verification_key
 
 from .service_config import AgentServiceConfig
 
@@ -88,7 +87,7 @@ def create_agent_card_server(config: AgentServiceConfig) -> FastAPI:
 
     # Initialize OAuth client for token validation
     oauth_base_url = f"https://{config.zone_id}.keycard.cloud"
-    oauth_client = OAuthClient(
+    OAuthClient(
         oauth_base_url,
         auth=BasicAuth(config.client_id, config.client_secret),
     )
