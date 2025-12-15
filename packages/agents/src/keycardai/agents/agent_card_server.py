@@ -120,7 +120,7 @@ def create_agent_card_server(config: AgentServiceConfig) -> FastAPI:
 
         try:
             # Construct JWKS URI from zone
-            jwks_uri = f"https://{config.zone_id}.keycard.cloud/.well-known/jwks.json"
+            jwks_uri = f"https://{config.zone_id}.keycard.cloud/openidconnect/jwks"
 
             # Fetch verification key from JWKS endpoint
             verification_key = await get_verification_key(token, jwks_uri)
