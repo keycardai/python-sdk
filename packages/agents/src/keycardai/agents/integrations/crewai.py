@@ -5,25 +5,31 @@ delegation capabilities. It provides tools that allow CrewAI agents to
 delegate tasks to other agent services.
 
 Usage:
-    from keycardai.agents.integrations.crewai_a2a import extend_crewai_client_with_a2a
-    from keycardai.mcp.client.integrations.crewai_agents import create_client
-    from keycardai.agents import AgentServiceConfig
-
-    # Create service config
-    config = AgentServiceConfig(...)
-
-    # Get MCP client with A2A tools
-    async with create_client(mcp_client) as crew_client:
-        mcp_tools = await crew_client.get_tools()
-
-        # Add A2A delegation tools
-        a2a_tools = await get_a2a_tools(crew_client, config)
-
-        # Use all tools in crew
-        agent = Agent(
-            role="Orchestrator",
-            tools=mcp_tools + a2a_tools
-        )
+    >>> from keycardai.agents import AgentServiceConfig
+    >>> from keycardai.agents.integrations.crewai import get_a2a_tools
+    >>> from crewai import Agent, Crew
+    >>> 
+    >>> # Create service config
+    >>> config = AgentServiceConfig(...)
+    >>> 
+    >>> # Define services we can delegate to
+    >>> delegatable_services = [
+    >>>     {
+    >>>         "name": "echo_service",
+    >>>         "url": "http://localhost:8002",
+    >>>         "description": "Echo service that repeats messages",
+    >>>     }
+    >>> ]
+    >>> 
+    >>> # Get A2A delegation tools
+    >>> a2a_tools = await get_a2a_tools(config, delegatable_services)
+    >>> 
+    >>> # Use tools in crew
+    >>> agent = Agent(
+    >>>     role="Orchestrator",
+    >>>     tools=a2a_tools,
+    >>>     allow_delegation=True
+    >>> )
 """
 
 import contextvars
@@ -44,9 +50,9 @@ except ImportError:
         "CrewAI is not installed. Install it with: pip install 'keycardai-agents[crewai]'"
     ) from None
 
-from ..a2a_client import A2AServiceClientSync
-from ..discovery import ServiceDiscovery
-from ..service_config import AgentServiceConfig
+from ..server.delegation import DelegationClientSync
+from ..client.discovery import ServiceDiscovery
+from ..config import AgentServiceConfig
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +66,15 @@ def set_delegation_token(access_token: str) -> None:
     
     Args:
         access_token: The user's access token from the request
+        
+    Example:
+        >>> # In your server's invoke handler
+        >>> access_token = request.state.keycardai_auth_info.get("access_token")
+        >>> set_delegation_token(access_token)
+        >>> 
+        >>> # Now crew tools can delegate with the user's context
+        >>> crew = create_my_crew()
+        >>> result = crew.kickoff()
     """
     _current_user_token.set(access_token)
 
@@ -104,13 +119,13 @@ async def get_a2a_tools(
         logger.info("No delegatable services found - no A2A tools created")
         return []
 
-    # Create A2A client for delegation (synchronous to avoid event loop issues)
-    a2a_client = A2AServiceClientSync(service_config)
+    # Create delegation client for delegation (synchronous to avoid event loop issues)
+    delegation_client = DelegationClientSync(service_config)
 
     # Create tools for each service
     tools = []
     for service_info in delegatable_services:
-        tool = _create_delegation_tool(service_info, a2a_client)
+        tool = _create_delegation_tool(service_info, delegation_client)
         tools.append(tool)
 
     logger.info(f"Created {len(tools)} A2A delegation tools")
@@ -119,13 +134,13 @@ async def get_a2a_tools(
 
 def _create_delegation_tool(
     service_info: dict[str, Any],
-    a2a_client: A2AServiceClientSync,
+    delegation_client: DelegationClientSync,
 ) -> BaseTool:
     """Create a CrewAI tool for delegating to a specific service.
 
     Args:
         service_info: Service metadata (name, url, description, capabilities)
-        a2a_client: A2A client for service invocation
+        delegation_client: Delegation client for service invocation
 
     Returns:
         CrewAI BaseTool for delegation
@@ -158,13 +173,13 @@ The service will process the task and return results."""
 
         def __init__(
             self,
-            a2a_client: A2AServiceClientSync,
+            delegation_client: DelegationClientSync,
             service_url: str,
             service_name: str,
             **kwargs,
         ):
             super().__init__(**kwargs)
-            self._a2a_client = a2a_client
+            self._delegation_client = delegation_client
             self._service_url = service_url
             self._service_name = service_name
 
@@ -199,7 +214,7 @@ The service will process the task and return results."""
                     f"Delegating task to {self._service_name}: {task_description[:100]}"
                 )
 
-                result = self._a2a_client.invoke_service(
+                result = self._delegation_client.invoke_service(
                     self._service_url,
                     task,
                     subject_token=user_token,
@@ -240,7 +255,7 @@ The service will process the task and return results."""
 
     # Instantiate and return tool
     tool = ServiceDelegationTool(
-        a2a_client=a2a_client,
+        delegation_client=delegation_client,
         service_url=service_url,
         service_name=service_name,
     )
@@ -287,8 +302,8 @@ async def create_a2a_tool_for_service(
         "capabilities": card.get("capabilities", []),
     }
 
-    # Create A2A client (synchronous to avoid event loop issues)
-    a2a_client = A2AServiceClientSync(service_config)
+    # Create delegation client (synchronous to avoid event loop issues)
+    delegation_client = DelegationClientSync(service_config)
 
     # Create and return tool
-    return _create_delegation_tool(service_info, a2a_client)
+    return _create_delegation_tool(service_info, delegation_client)

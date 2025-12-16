@@ -1,12 +1,17 @@
-"""Integrations for various agent frameworks.
+"""Integrations with agent frameworks.
 
-This module provides integrations for popular agent frameworks like CrewAI,
-enabling seamless A2A delegation and service orchestration.
-
-Available integrations:
-- crewai_a2a: CrewAI integration with automatic A2A tool generation
+This package provides integrations with various agent frameworks:
+- CrewAI: Tools for agent-to-agent delegation
 """
 
-from .crewai_a2a import create_a2a_tool_for_service, get_a2a_tools
-
-__all__ = ["get_a2a_tools", "create_a2a_tool_for_service"]
+try:
+    from .crewai import get_a2a_tools, set_delegation_token, create_a2a_tool_for_service
+    
+    __all__ = [
+        "get_a2a_tools",
+        "set_delegation_token",
+        "create_a2a_tool_for_service",
+    ]
+except ImportError:
+    # CrewAI not installed
+    __all__ = []

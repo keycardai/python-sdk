@@ -1,7 +1,7 @@
-"""A2A Service Client with OAuth Discovery and PKCE Flow.
+"""User authentication client for calling agent services.
 
-This module provides an enhanced A2A client that automatically handles OAuth
-discovery and user authentication using PKCE flow when calling protected agent services.
+This module provides a client that handles PKCE OAuth flow for user authentication
+when calling protected agent services.
 """
 
 import asyncio
@@ -18,7 +18,7 @@ from urllib.parse import parse_qs, urlencode, urlparse
 
 import httpx
 
-from .service_config import AgentServiceConfig
+from ..config import AgentServiceConfig
 
 logger = logging.getLogger(__name__)
 
@@ -128,29 +128,38 @@ class OAuthCallbackServer:
             logger.debug("OAuth callback server stopped")
 
 
-class A2AServiceClientWithOAuth:
-    """A2A client with automatic OAuth discovery and PKCE user authentication.
+class AgentClient:
+    """Client for calling agent services with automatic user authentication.
 
-    This client enhances the standard A2A client with automatic OAuth handling:
-    1. When receiving a 401 Unauthorized response
+    This client handles PKCE OAuth flow for user authentication when calling
+    protected agent services. It automatically:
+    1. Detects 401 Unauthorized responses
     2. Discovers OAuth endpoints from WWW-Authenticate header
     3. Initiates PKCE flow (opens browser for user login)
     4. Exchanges authorization code for access token
     5. Retries the original request with the new token
     6. Caches tokens for subsequent requests
 
+    This is the primary client for users and applications calling agent services.
+
     Example:
+        >>> from keycardai.agents import AgentServiceConfig
+        >>> from keycardai.agents.client import AgentClient
+        >>> 
         >>> config = AgentServiceConfig(
+        ...     service_name="My Application",
         ...     client_id="my_client",
         ...     client_secret="my_secret",  # Optional for confidential clients
+        ...     identity_url="http://localhost:9000",
         ...     zone_id="abc123",
-        ...     # ... other config ...
         ... )
-        >>> client = A2AServiceClientWithOAuth(config)
-        >>> result = await client.invoke_service(
-        ...     service_url="http://localhost:8001",
-        ...     task="Hello world",
-        ... )
+        >>> 
+        >>> async with AgentClient(config) as client:
+        ...     result = await client.invoke(
+        ...         service_url="http://localhost:8001",
+        ...         task="Hello world",
+        ...     )
+        ...     print(result)
     """
 
     def __init__(
@@ -160,10 +169,10 @@ class A2AServiceClientWithOAuth:
         callback_port: int = 8765,
         scopes: list[str] | None = None,
     ):
-        """Initialize A2A client with OAuth support.
+        """Initialize agent client with OAuth support.
 
         Args:
-            service_config: Configuration of the calling service/client
+            service_config: Configuration of the calling application
             redirect_uri: OAuth redirect URI (must be registered with auth server)
             callback_port: Port for local callback server
             scopes: Optional list of OAuth scopes to request
@@ -238,7 +247,7 @@ class A2AServiceClientWithOAuth:
         response.raise_for_status()
         return response.json()
 
-    async def get_token_with_oauth_discovery(
+    async def authenticate(
         self,
         service_url: str,
         www_authenticate_header: str,
@@ -408,7 +417,7 @@ class A2AServiceClientWithOAuth:
             # Always stop callback server
             callback_server.stop()
 
-    async def invoke_service(
+    async def invoke(
         self,
         service_url: str,
         task: str | dict[str, Any],
@@ -473,7 +482,7 @@ class A2AServiceClientWithOAuth:
 
                 # Get new token via OAuth discovery
                 try:
-                    new_token = await self.get_token_with_oauth_discovery(
+                    new_token = await self.authenticate(
                         service_url, www_authenticate
                     )
                 except Exception as oauth_error:
@@ -521,3 +530,7 @@ class A2AServiceClientWithOAuth:
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Async context manager exit."""
         await self.close()
+
+
+# Backward compatibility alias
+A2AServiceClientWithOAuth = AgentClient

@@ -5,8 +5,9 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from .a2a_client import A2AServiceClient
-from .service_config import AgentServiceConfig
+import httpx
+
+from ..config import AgentServiceConfig
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,9 @@ class ServiceDiscovery:
         cache_ttl: Cache time-to-live in seconds (default: 900 = 15 minutes)
 
     Example:
+        >>> from keycardai.agents import AgentServiceConfig
+        >>> from keycardai.agents.client import ServiceDiscovery
+        >>> 
         >>> config = AgentServiceConfig(...)
         >>> discovery = ServiceDiscovery(config)
         >>>
@@ -77,8 +81,57 @@ class ServiceDiscovery:
         # Agent card cache: service_url -> CachedAgentCard
         self._card_cache: dict[str, CachedAgentCard] = {}
 
-        # A2A client for fetching agent cards
-        self.a2a_client = A2AServiceClient(service_config)
+        # HTTP client for fetching agent cards
+        self.http_client = httpx.AsyncClient(timeout=30.0)
+
+    async def discover_service(self, service_url: str) -> dict[str, Any]:
+        """Fetch agent card from remote service.
+
+        Fetches the agent card from the well-known endpoint to discover
+        service capabilities, endpoints, and authentication requirements.
+
+        Args:
+            service_url: Base URL of the target service
+
+        Returns:
+            Agent card dictionary with service metadata
+
+        Raises:
+            httpx.HTTPStatusError: If agent card fetch fails
+            ValueError: If agent card format is invalid
+
+        Example:
+            >>> card = await discovery.discover_service("https://slack-poster.example.com")
+            >>> print(card["capabilities"])
+            ['slack_posting', 'message_formatting']
+        """
+        # Ensure URL doesn't have trailing slash
+        service_url = service_url.rstrip("/")
+
+        # Fetch agent card from well-known endpoint
+        agent_card_url = f"{service_url}/.well-known/agent-card.json"
+
+        try:
+            response = await self.http_client.get(agent_card_url)
+            response.raise_for_status()
+
+            card = response.json()
+
+            # Validate required fields
+            required_fields = ["name", "endpoints", "auth"]
+            for field in required_fields:
+                if field not in card:
+                    raise ValueError(f"Invalid agent card: missing required field '{field}'")
+
+            logger.info(f"Discovered service: {card.get('name')} at {service_url}")
+            return card
+
+        except httpx.HTTPStatusError as e:
+            logger.error(f"Failed to fetch agent card from {agent_card_url}: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Error discovering service at {service_url}: {e}")
+            raise
 
     async def get_service_card(
         self,
@@ -121,7 +174,7 @@ class ServiceDiscovery:
 
         # Fetch fresh card
         logger.info(f"Fetching agent card for {service_url}")
-        card = await self.a2a_client.discover_service(service_url)
+        card = await self.discover_service(service_url)
 
         # Cache it
         self._card_cache[service_url] = CachedAgentCard(
@@ -196,7 +249,7 @@ class ServiceDiscovery:
 
     async def close(self) -> None:
         """Close underlying clients."""
-        await self.a2a_client.close()
+        await self.http_client.aclose()
 
     async def __aenter__(self) -> "ServiceDiscovery":
         """Async context manager entry."""

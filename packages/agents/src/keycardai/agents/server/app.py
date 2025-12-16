@@ -1,4 +1,4 @@
-"""FastAPI server for agent services with Keycard authentication."""
+"""FastAPI server for agent services with OAuth middleware and delegation support."""
 
 import logging
 from importlib.metadata import version
@@ -20,7 +20,7 @@ from keycardai.mcp.server.handlers.metadata import (
     protected_resource_metadata,
 )
 
-from .service_config import AgentServiceConfig
+from ..config import AgentServiceConfig
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +67,49 @@ class AgentCardResponse(BaseModel):
     auth: dict[str, str]
 
 
+class AgentServer:
+    """Agent service server with OAuth middleware.
+    
+    This class provides a high-level interface for creating agent services
+    with built-in OAuth authentication, delegation support, and service discovery.
+    
+    Example:
+        >>> from keycardai.agents import AgentServiceConfig
+        >>> from keycardai.agents.server import AgentServer
+        >>> 
+        >>> config = AgentServiceConfig(...)
+        >>> server = AgentServer(config)
+        >>> app = server.create_app()
+        >>> 
+        >>> # Run with uvicorn
+        >>> import uvicorn
+        >>> uvicorn.run(app, host="0.0.0.0", port=8001)
+    """
+    
+    def __init__(self, config: AgentServiceConfig):
+        """Initialize agent server.
+        
+        Args:
+            config: Service configuration
+        """
+        self.config = config
+    
+    def create_app(self) -> Starlette:
+        """Create Starlette application with routes and middleware.
+        
+        Returns:
+            Configured Starlette application
+        """
+        return create_agent_card_server(self.config)
+    
+    def serve(self) -> None:
+        """Start the server (blocking).
+        
+        This is a convenience method that creates the app and runs it with uvicorn.
+        """
+        serve_agent(self.config)
+
+
 def create_agent_card_server(config: AgentServiceConfig) -> Starlette:
     """Create Starlette server for agent service with OAuth middleware.
 
@@ -84,6 +127,9 @@ def create_agent_card_server(config: AgentServiceConfig) -> Starlette:
         Starlette application instance with middleware
 
     Example:
+        >>> from keycardai.agents import AgentServiceConfig
+        >>> from keycardai.agents.server import create_agent_card_server
+        >>> 
         >>> config = AgentServiceConfig(...)
         >>> app = create_agent_card_server(config)
         >>> # Run with: uvicorn app:app --host 0.0.0.0 --port 8000
@@ -150,12 +196,12 @@ def create_agent_card_server(config: AgentServiceConfig) -> Starlette:
             )
 
         try:
-            # Set user token for delegation context (used by A2A tools)
+            # Set user token for delegation context (used by delegation tools)
             # This allows CrewAI tools to delegate with the user's token
             access_token = token_data.get("access_token")
             if access_token:
                 try:
-                    from .integrations.crewai_a2a import set_delegation_token
+                    from ..integrations.crewai import set_delegation_token
                     set_delegation_token(access_token)
                 except ImportError:
                     # CrewAI integration not available, skip token setting
@@ -313,6 +359,9 @@ def serve_agent(config: AgentServiceConfig) -> None:
         config: Service configuration
 
     Example:
+        >>> from keycardai.agents import AgentServiceConfig
+        >>> from keycardai.agents.server import serve_agent
+        >>> 
         >>> config = AgentServiceConfig(...)
         >>> serve_agent(config)  # Blocks until shutdown
     """
