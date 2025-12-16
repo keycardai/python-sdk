@@ -62,7 +62,8 @@ class A2AServiceClient:
         self.config = service_config
 
         # Initialize OAuth client for token exchange
-        oauth_base_url = f"https://{service_config.zone_id}.keycard.cloud"
+        # Use configured authorization server URL (defaults to zone URL)
+        oauth_base_url = service_config.auth_server_url
         self.oauth_client = AsyncOAuthClient(
             oauth_base_url,
             auth=BasicAuth(service_config.client_id, service_config.client_secret),
@@ -316,7 +317,8 @@ class A2AServiceClientSync:
         self.config = service_config
 
         # Initialize OAuth client for token exchange
-        oauth_base_url = f"https://{service_config.zone_id}.keycard.cloud"
+        # Use configured authorization server URL (defaults to zone URL)
+        oauth_base_url = service_config.auth_server_url
         self.oauth_client = SyncOAuthClient(
             oauth_base_url,
             auth=BasicAuth(service_config.client_id, service_config.client_secret),

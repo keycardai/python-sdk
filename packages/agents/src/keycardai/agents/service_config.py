@@ -47,6 +47,7 @@ class AgentServiceConfig:
     client_secret: str
     identity_url: str
     zone_id: str
+    authorization_server_url: str | None = None
 
     # Deployment configuration
     port: int = 8000
@@ -99,6 +100,13 @@ class AgentServiceConfig:
     def status_url(self) -> str:
         """Get the full URL to this service's status endpoint."""
         return f"{self.identity_url}/status"
+
+    @property
+    def auth_server_url(self) -> str:
+        """Get the authorization server URL (default: zone URL or custom)."""
+        if self.authorization_server_url:
+            return self.authorization_server_url
+        return f"https://{self.zone_id}.keycard.cloud"
 
     def to_agent_card(self) -> dict[str, Any]:
         """Generate agent card metadata for discovery.

@@ -26,10 +26,16 @@ Usage:
         )
 """
 
+import contextvars
 import logging
 from typing import Any
 
 from pydantic import BaseModel, Field
+
+# Context variable to store the current user's access token for delegation
+_current_user_token: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "current_user_token", default=None
+)
 
 try:
     from crewai.tools import BaseTool
@@ -43,6 +49,19 @@ from ..discovery import ServiceDiscovery
 from ..service_config import AgentServiceConfig
 
 logger = logging.getLogger(__name__)
+
+
+def set_delegation_token(access_token: str) -> None:
+    """Set the user's access token for delegation context.
+    
+    This should be called before crew execution to provide the user's
+    token for service-to-service delegation. The token will be used
+    for token exchange when delegating to other services.
+    
+    Args:
+        access_token: The user's access token from the request
+    """
+    _current_user_token.set(access_token)
 
 
 async def get_a2a_tools(
@@ -167,7 +186,15 @@ The service will process the task and return results."""
                 if task_inputs:
                     task["inputs"] = task_inputs
 
-                # Call remote service (token is obtained automatically)
+                # Get user token from context for delegation
+                user_token = _current_user_token.get()
+                if not user_token:
+                    logger.warning(
+                        "No user token available for delegation - "
+                        "ensure set_delegation_token() is called before crew execution"
+                    )
+
+                # Call remote service with user token for delegation
                 logger.info(
                     f"Delegating task to {self._service_name}: {task_description[:100]}"
                 )
@@ -175,6 +202,7 @@ The service will process the task and return results."""
                 result = self._a2a_client.invoke_service(
                     self._service_url,
                     task,
+                    subject_token=user_token,
                 )
 
                 # Format result for agent
