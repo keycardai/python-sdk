@@ -21,6 +21,7 @@ from keycardai.mcp.server.handlers.metadata import (
 )
 
 from ..config import AgentServiceConfig
+from .executor import AgentExecutor
 
 logger = logging.getLogger(__name__)
 
@@ -55,16 +56,8 @@ class InvokeResponse(BaseModel):
     delegation_chain: list[str]
 
 
-class AgentCardResponse(BaseModel):
-    """Agent card response model for service discovery."""
-
-    name: str
-    description: str
-    type: str
-    identity: str
-    capabilities: list[str]
-    endpoints: dict[str, str]
-    auth: dict[str, str]
+# Note: Using custom simple response for backward compatibility.
+# The config.to_agent_card() method will return the full A2A AgentCard type.
 
 
 class AgentServer:
@@ -154,24 +147,24 @@ def create_agent_card_server(config: AgentServiceConfig) -> Starlette:
     )
 
     @protected_app.post("/invoke", response_model=InvokeResponse)
-    async def invoke_crew(request: Request, invoke_request: InvokeRequest) -> InvokeResponse:
-        """Protected endpoint - executes crew with OAuth validation.
+    async def invoke_agent(request: Request, invoke_request: InvokeRequest) -> InvokeResponse:
+        """Protected endpoint - executes agent with OAuth validation.
 
         Requires valid OAuth bearer token in Authorization header.
         Token must be scoped to this service (audience check).
 
-        The crew is executed with the provided task/inputs, and the result
+        The agent is executed with the provided task/inputs, and the result
         is returned along with the updated delegation chain.
 
         Args:
             request: Starlette request object (contains auth info in state)
-            invoke_request: Task and inputs for crew execution
+            invoke_request: Task and inputs for agent execution
 
         Returns:
-            Crew execution result and delegation chain
+            Agent execution result and delegation chain
 
         Raises:
-            HTTPException: If crew execution fails or token is invalid
+            HTTPException: If agent execution fails or token is invalid
         """
         # Extract token data from request state (set by BearerAuthMiddleware)
         token_data = request.state.keycardai_auth_info
@@ -186,43 +179,20 @@ def create_agent_card_server(config: AgentServiceConfig) -> Starlette:
             f"chain={delegation_chain}"
         )
 
-        # Validate crew factory is configured
-        if not config.crew_factory:
-            from fastapi import HTTPException
-
-            raise HTTPException(
-                status_code=501,
-                detail="No crew factory configured for this service",
-            )
+        # Get executor
+        executor = config.agent_executor
 
         try:
-            # Set user token for delegation context (used by delegation tools)
-            # This allows CrewAI tools to delegate with the user's token
+            # Set delegation token context if executor supports it
             access_token = token_data.get("access_token")
-            if access_token:
-                try:
-                    from ..integrations.crewai import set_delegation_token
-                    set_delegation_token(access_token)
-                except ImportError:
-                    # CrewAI integration not available, skip token setting
-                    pass
+            if access_token and hasattr(executor, "set_token_for_delegation"):
+                executor.set_token_for_delegation(access_token)
 
-            # Create crew instance
-            crew = config.crew_factory()
-
-            # Prepare inputs
-            if isinstance(invoke_request.task, dict):
-                crew_inputs = invoke_request.task
-            else:
-                crew_inputs = {"task": invoke_request.task}
-
-            # Merge additional inputs if provided
-            if invoke_request.inputs:
-                crew_inputs.update(invoke_request.inputs)
-
-            # Execute crew
-            # Note: crew.kickoff() is synchronous in CrewAI
-            result = crew.kickoff(inputs=crew_inputs)
+            # Execute agent
+            result = executor.execute(
+                task=invoke_request.task,
+                inputs=invoke_request.inputs,
+            )
 
             # Update delegation chain
             updated_chain = delegation_chain + [config.client_id]
@@ -235,10 +205,10 @@ def create_agent_card_server(config: AgentServiceConfig) -> Starlette:
         except Exception as e:
             from fastapi import HTTPException
 
-            logger.error(f"Crew execution failed: {e}", exc_info=True)
+            logger.error(f"Agent execution failed: {e}", exc_info=True)
             raise HTTPException(
                 status_code=500,
-                detail=f"Crew execution failed: {str(e)}",
+                detail=f"Agent execution failed: {str(e)}",
             )
 
     # OAuth metadata endpoints (public)

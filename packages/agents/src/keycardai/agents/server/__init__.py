@@ -5,14 +5,21 @@ This package provides tools for building agent services:
 - DelegationClient: Server-to-server delegation with token exchange
 - serve_agent: Convenience function to start a server
 - create_agent_card_server: Create FastAPI app for agent service
+- AgentExecutor: Protocol for framework-agnostic agent execution
+- SimpleExecutor, LambdaExecutor: Simple executor implementations
 """
 
 from .app import AgentServer, create_agent_card_server, serve_agent
-from .delegation import DelegationClient
+from .delegation import DelegationClient, DelegationClientSync
+from .executor import AgentExecutor, LambdaExecutor, SimpleExecutor
 
 __all__ = [
     "AgentServer",
     "create_agent_card_server",
     "serve_agent",
     "DelegationClient",
+    "DelegationClientSync",
+    "AgentExecutor",
+    "SimpleExecutor",
+    "LambdaExecutor",
 ]

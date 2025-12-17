@@ -1,17 +1,33 @@
 """CrewAI integration for A2A (agent-to-agent) delegation.
 
-This module extends the base CrewAI MCP integration to add service-to-service
-delegation capabilities. It provides tools that allow CrewAI agents to
-delegate tasks to other agent services.
+This module provides:
+1. CrewAIExecutor: Adapter for running CrewAI crews in the agent service server
+2. Delegation tools: CrewAI tools for calling other agent services
 
-Usage:
+Usage with executor:
+    >>> from keycardai.agents import AgentServiceConfig
+    >>> from keycardai.agents.integrations.crewai import CrewAIExecutor
+    >>> from crewai import Agent, Crew, Task
+    >>>
+    >>> def create_my_crew():
+    ...     agent = Agent(role="Assistant", goal="Help users")
+    ...     task = Task(description="{task}", agent=agent)
+    ...     return Crew(agents=[agent], tasks=[task])
+    >>>
+    >>> config = AgentServiceConfig(
+    ...     service_name="My Service",
+    ...     agent_executor=CrewAIExecutor(create_my_crew),
+    ...     # ... other config
+    ... )
+
+Usage with delegation tools:
     >>> from keycardai.agents import AgentServiceConfig
     >>> from keycardai.agents.integrations.crewai import get_a2a_tools
     >>> from crewai import Agent, Crew
-    >>> 
+    >>>
     >>> # Create service config
     >>> config = AgentServiceConfig(...)
-    >>> 
+    >>>
     >>> # Define services we can delegate to
     >>> delegatable_services = [
     >>>     {
@@ -20,10 +36,10 @@ Usage:
     >>>         "description": "Echo service that repeats messages",
     >>>     }
     >>> ]
-    >>> 
+    >>>
     >>> # Get A2A delegation tools
     >>> a2a_tools = await get_a2a_tools(config, delegatable_services)
-    >>> 
+    >>>
     >>> # Use tools in crew
     >>> agent = Agent(
     >>>     role="Orchestrator",
@@ -34,7 +50,7 @@ Usage:
 
 import contextvars
 import logging
-from typing import Any
+from typing import Any, Callable
 
 from pydantic import BaseModel, Field
 
@@ -44,6 +60,7 @@ _current_user_token: contextvars.ContextVar[str | None] = contextvars.ContextVar
 )
 
 try:
+    from crewai import Crew
     from crewai.tools import BaseTool
 except ImportError:
     raise ImportError(
@@ -59,24 +76,113 @@ logger = logging.getLogger(__name__)
 
 def set_delegation_token(access_token: str) -> None:
     """Set the user's access token for delegation context.
-    
+
     This should be called before crew execution to provide the user's
     token for service-to-service delegation. The token will be used
     for token exchange when delegating to other services.
-    
+
     Args:
         access_token: The user's access token from the request
-        
+
     Example:
         >>> # In your server's invoke handler
         >>> access_token = request.state.keycardai_auth_info.get("access_token")
         >>> set_delegation_token(access_token)
-        >>> 
+        >>>
         >>> # Now crew tools can delegate with the user's context
         >>> crew = create_my_crew()
         >>> result = crew.kickoff()
     """
     _current_user_token.set(access_token)
+
+
+class CrewAIExecutor:
+    """Executor adapter for CrewAI crews.
+
+    This executor implements the AgentExecutor protocol for CrewAI crews,
+    allowing them to be used in the generic agent service server.
+
+    The executor:
+    1. Takes a crew factory callable
+    2. Sets delegation token context before execution
+    3. Calls crew.kickoff() with the task/inputs
+    4. Returns the result as a string
+
+    Args:
+        crew_factory: Callable that returns a Crew instance
+        set_token_context: If True, automatically set delegation token before execution
+
+    Example:
+        >>> from crewai import Agent, Crew, Task
+        >>>
+        >>> def create_my_crew():
+        ...     agent = Agent(role="Assistant", goal="Help users", backstory="Helpful AI")
+        ...     task = Task(description="{task}", agent=agent, expected_output="A response")
+        ...     return Crew(agents=[agent], tasks=[task])
+        >>>
+        >>> executor = CrewAIExecutor(create_my_crew)
+        >>> result = executor.execute("Hello world", {"name": "Alice"})
+    """
+
+    def __init__(self, crew_factory: Callable[[], Crew], set_token_context: bool = True):
+        """Initialize CrewAI executor.
+
+        Args:
+            crew_factory: Callable that returns a Crew instance
+            set_token_context: If True, automatically set delegation token before execution
+        """
+        self.crew_factory = crew_factory
+        self.set_token_context = set_token_context
+
+    def execute(
+        self,
+        task: dict[str, Any] | str,
+        inputs: dict[str, Any] | None = None,
+    ) -> str:
+        """Execute crew with the given task and inputs.
+
+        Args:
+            task: Task description (string) or parameters (dict)
+            inputs: Optional additional inputs for the crew
+
+        Returns:
+            Result from crew execution as string
+
+        Raises:
+            Exception: If crew execution fails
+        """
+        # Create crew instance
+        crew = self.crew_factory()
+
+        # Prepare inputs for crew
+        if isinstance(task, dict):
+            crew_inputs = task
+        else:
+            crew_inputs = {"task": task}
+
+        # Merge additional inputs if provided
+        if inputs:
+            crew_inputs.update(inputs)
+
+        # Execute crew
+        # Note: crew.kickoff() is synchronous in CrewAI
+        logger.info(f"Executing CrewAI crew with inputs: {list(crew_inputs.keys())}")
+        result = crew.kickoff(inputs=crew_inputs)
+
+        # Return result as string
+        return str(result)
+
+    def set_token_for_delegation(self, access_token: str) -> None:
+        """Set access token for delegation context.
+
+        This is called by the server before execution to provide
+        the user's token for service-to-service delegation.
+
+        Args:
+            access_token: User's access token
+        """
+        if self.set_token_context:
+            set_delegation_token(access_token)
 
 
 async def get_a2a_tools(

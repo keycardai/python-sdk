@@ -1,19 +1,25 @@
 """Service configuration for agent services."""
 
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any, Callable, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .server.executor import AgentExecutor
 
 
 @dataclass
 class AgentServiceConfig:
-    """Configuration for deploying a crew as an HTTP service with Keycard identity.
+    """Configuration for deploying an agent service with Keycard identity.
 
-    This configuration enables an agent crew to be deployed as a standalone HTTP service
+    This configuration enables an agent to be deployed as a standalone HTTP service
     with its own Keycard Application identity, capable of:
     - Serving requests via REST API
     - Exposing capabilities via agent card
     - Delegating to other agent services (A2A)
     - Using MCP tools with per-call authentication
+
+    The service is framework-agnostic and supports any agent framework through
+    the AgentExecutor protocol. For CrewAI, use CrewAIExecutor adapter.
 
     Args:
         service_name: Human-readable name of the service
@@ -25,10 +31,12 @@ class AgentServiceConfig:
         host: Server bind address (default: "0.0.0.0")
         description: Service description for agent card discovery
         capabilities: List of capabilities this service provides
-        crew_factory: Callable that returns a Crew instance (or None for custom implementations)
+        agent_executor: Executor that runs agent tasks (AgentExecutor protocol)
 
     Example:
         >>> from keycardai.agents import AgentServiceConfig
+        >>> from keycardai.agents.integrations.crewai import CrewAIExecutor
+        >>>
         >>> config = AgentServiceConfig(
         ...     service_name="PR Analysis Service",
         ...     client_id="pr_analyzer_service",
@@ -37,7 +45,7 @@ class AgentServiceConfig:
         ...     zone_id="xr9r33ga15",
         ...     description="Analyzes GitHub pull requests",
         ...     capabilities=["pr_analysis", "code_review"],
-        ...     crew_factory=lambda: create_pr_crew()
+        ...     agent_executor=CrewAIExecutor(lambda: create_pr_crew())
         ... )
     """
 
@@ -47,6 +55,11 @@ class AgentServiceConfig:
     client_secret: str
     identity_url: str
     zone_id: str
+
+    # Agent implementation (required)
+    agent_executor: "AgentExecutor"
+
+    # Optional configuration
     authorization_server_url: str | None = None
 
     # Deployment configuration
@@ -56,9 +69,6 @@ class AgentServiceConfig:
     # Agent card metadata
     description: str = ""
     capabilities: list[str] = field(default_factory=list)
-
-    # Crew/agent implementation
-    crew_factory: Callable[[], Any] | None = None
 
     def __post_init__(self) -> None:
         """Validate configuration after initialization."""
@@ -111,22 +121,74 @@ class AgentServiceConfig:
     def to_agent_card(self) -> dict[str, Any]:
         """Generate agent card metadata for discovery.
 
+        Returns A2A Protocol-compliant AgentCard as a dictionary.
+        Uses the standard A2A AgentCard format with Keycard-specific extensions.
+
         Returns:
-            Dictionary representing the agent card in standard format.
+            Dictionary representing the agent card in A2A standard format.
+
+        Reference:
+            https://a2a-protocol.org/latest/protocol/agent_card/
         """
-        return {
-            "name": self.service_name,
-            "description": self.description,
-            "type": "crew_service",
-            "identity": self.identity_url,
-            "capabilities": self.capabilities,
-            "endpoints": {
-                "invoke": self.invoke_url,
-                "status": self.status_url,
+        from a2a.types import (
+            AgentCard,
+            AgentCapabilities,
+            AgentInterface,
+            AgentSkill,
+            SecurityScheme,
+            TransportProtocol,
+        )
+
+        # Convert our simple capabilities list to A2A skills
+        skills = [
+            AgentSkill(
+                id=capability,
+                name=capability.replace("_", " ").title(),
+                description=f"{capability} capability",
+                tags=[capability],
+            )
+            for capability in self.capabilities
+        ]
+
+        # Build A2A-compliant agent card
+        agent_card = AgentCard(
+            name=self.service_name,
+            description=self.description or f"{self.service_name} agent service",
+            url=self.identity_url,
+            version="1.0.0",
+            skills=skills,
+            capabilities=AgentCapabilities(
+                streaming=False,  # We don't support streaming yet
+                multi_turn=True,  # We support conversational context
+                async_tasks=False,  # Currently synchronous
+            ),
+            default_input_modes=["text"],
+            default_output_modes=["text"],
+            preferred_transport="jsonrpc",  # TransportProtocol enum value
+            protocol_version="0.3.0",
+            # Additional interfaces for our custom invoke endpoint
+            additional_interfaces=[
+                AgentInterface(
+                    url=f"{self.identity_url}/invoke",
+                    transport="http+json",  # TransportProtocol enum value
+                    description="Keycard-specific invoke endpoint with delegation support",
+                )
+            ],
+            # OAuth security scheme
+            security_schemes={
+                "oauth2": SecurityScheme(
+                    type="oauth2",
+                    flows={
+                        "authorizationCode": {
+                            "authorizationUrl": f"{self.auth_server_url}/oauth/authorize",
+                            "tokenUrl": f"{self.auth_server_url}/oauth/token",
+                            "scopes": {},
+                        }
+                    },
+                )
             },
-            "auth": {
-                "type": "oauth2",
-                "token_url": f"https://{self.zone_id}.keycard.cloud/oauth/token",
-                "resource": self.identity_url,
-            },
-        }
+            security=[{"oauth2": []}],  # Require OAuth2 authentication
+        )
+
+        # Return as dictionary for backward compatibility
+        return agent_card.model_dump(mode="json", exclude_none=True)
