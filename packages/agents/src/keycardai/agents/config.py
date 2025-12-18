@@ -3,6 +3,14 @@
 from dataclasses import dataclass, field
 from typing import Any, Callable, TYPE_CHECKING
 
+from a2a.types import (
+    AgentCard,
+    AgentCapabilities,
+    AgentInterface,
+    AgentSkill,
+    SecurityScheme,
+)
+
 if TYPE_CHECKING:
     from .server.executor import AgentExecutor
 
@@ -130,15 +138,6 @@ class AgentServiceConfig:
         Reference:
             https://a2a-protocol.org/latest/protocol/agent_card/
         """
-        from a2a.types import (
-            AgentCard,
-            AgentCapabilities,
-            AgentInterface,
-            AgentSkill,
-            SecurityScheme,
-            TransportProtocol,
-        )
-
         # Convert our simple capabilities list to A2A skills
         skills = [
             AgentSkill(

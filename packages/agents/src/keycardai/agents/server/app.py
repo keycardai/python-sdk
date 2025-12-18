@@ -4,6 +4,10 @@ import logging
 from importlib.metadata import version
 from typing import Any
 
+from a2a.server.apps.jsonrpc import A2AStarletteApplication
+from a2a.server.request_handlers import DefaultRequestHandler
+from a2a.server.tasks import InMemoryTaskStore
+from a2a.types import AgentCard
 from fastapi import FastAPI, Request
 from pydantic import BaseModel
 from starlette.applications import Starlette
@@ -22,6 +26,7 @@ from keycardai.mcp.server.handlers.metadata import (
 
 from ..config import AgentServiceConfig
 from .executor import AgentExecutor
+from .executor_bridge import KeycardToA2AExecutorBridge
 
 logger = logging.getLogger(__name__)
 
@@ -110,8 +115,15 @@ def create_agent_card_server(config: AgentServiceConfig) -> Starlette:
     - GET /.well-known/agent-card.json (public): Service discovery
     - GET /.well-known/oauth-protected-resource (public): OAuth metadata
     - GET /.well-known/oauth-authorization-server (public): Auth server metadata
-    - POST /invoke (protected): Execute crew
+    - POST / (protected): A2A JSONRPC endpoint (message/send, message/stream, tasks/*)
+    - POST /invoke (protected): Custom Keycard invoke endpoint
     - GET /status (public): Health check
+
+    The server supports both:
+    1. A2A JSONRPC protocol (standards-compliant, event-driven)
+    2. Custom /invoke endpoint (simple, direct)
+
+    Both endpoints share OAuth middleware and use the same underlying executor.
 
     Args:
         config: Service configuration
@@ -122,7 +134,7 @@ def create_agent_card_server(config: AgentServiceConfig) -> Starlette:
     Example:
         >>> from keycardai.agents import AgentServiceConfig
         >>> from keycardai.agents.server import create_agent_card_server
-        >>> 
+        >>>
         >>> config = AgentServiceConfig(...)
         >>> app = create_agent_card_server(config)
         >>> # Run with: uvicorn app:app --host 0.0.0.0 --port 8000
@@ -138,6 +150,24 @@ def create_agent_card_server(config: AgentServiceConfig) -> Starlette:
 
     # Get token verifier
     verifier = auth_provider.get_token_verifier()
+
+    # Create A2A JSONRPC application
+    # Bridge Keycard executor to A2A executor interface
+    a2a_executor = KeycardToA2AExecutorBridge(config.agent_executor)
+    a2a_handler = DefaultRequestHandler(
+        agent_executor=a2a_executor,
+        task_store=InMemoryTaskStore(),
+    )
+
+    # Convert agent card to A2A type
+    agent_card_dict = config.to_agent_card()
+    a2a_agent_card = AgentCard.model_validate(agent_card_dict)
+
+    # Create A2A Starlette application
+    a2a_app = A2AStarletteApplication(
+        agent_card=a2a_agent_card,
+        http_handler=a2a_handler,
+    )
 
     # Protected endpoints wrapped with BearerAuthMiddleware
     protected_app = FastAPI(
@@ -291,7 +321,15 @@ def create_agent_card_server(config: AgentServiceConfig) -> Starlette:
             }
         )
 
-    # Combine public and protected apps with middleware
+    # Build A2A JSONRPC app with protected middleware
+    # Note: A2A app provides routes for POST / (JSONRPC) and GET /.well-known/agent-card.json
+    # We'll mount it at /a2a to avoid conflicts with our custom agent card
+    a2a_protected_app = a2a_app.build(
+        agent_card_url="/agent-card.json",  # Will be served at /a2a/agent-card.json
+        rpc_url="/jsonrpc",  # Will be served at /a2a/jsonrpc
+    )
+
+    # Combine public, A2A JSONRPC (protected), and custom invoke (protected) routes
     app = Starlette(
         routes=[
             # Public routes (no authentication required)
@@ -307,7 +345,16 @@ def create_agent_card_server(config: AgentServiceConfig) -> Starlette:
                 methods=["GET"],
             ),
             Route("/status", get_status),
-            # Protected routes (require authentication via middleware)
+            # A2A JSONRPC endpoints (protected)
+            # POST /a2a/jsonrpc - JSONRPC methods (message/send, message/stream, tasks/*)
+            # GET /a2a/agent-card.json - A2A agent card (duplicate of .well-known)
+            Mount(
+                "/a2a",
+                app=a2a_protected_app,
+                middleware=[Middleware(BearerAuthMiddleware, verifier=verifier)],
+            ),
+            # Custom Keycard endpoints (protected)
+            # POST /invoke - Simple custom endpoint
             Mount(
                 "/",
                 app=protected_app,
