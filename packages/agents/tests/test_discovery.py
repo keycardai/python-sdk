@@ -11,12 +11,15 @@ from keycardai.agents import AgentServiceConfig, ServiceDiscovery
 @pytest.fixture
 def service_config():
     """Create test service configuration."""
+    from keycardai.agents.server import SimpleExecutor
+
     return AgentServiceConfig(
         service_name="Test Service",
         client_id="test_client",
         client_secret="test_secret",
         identity_url="https://test.example.com",
         zone_id="test_zone_123",
+        agent_executor=SimpleExecutor(),
     )
 
 
@@ -66,11 +69,11 @@ class TestServiceDiscoveryInitialization:
         discovery = ServiceDiscovery(service_config, cache_ttl=300)
         assert discovery.cache_ttl == 300
 
-    def test_init_creates_a2a_client(self, service_config):
-        """Test initialization creates A2A client."""
+    def test_init_creates_http_client(self, service_config):
+        """Test initialization creates HTTP client."""
         discovery = ServiceDiscovery(service_config)
-        assert discovery.a2a_client is not None
-        assert hasattr(discovery.a2a_client, "discover_service")
+        assert discovery.http_client is not None
+        assert hasattr(discovery, "discover_service")
 
 
 class TestGetServiceCard:
@@ -82,7 +85,7 @@ class TestGetServiceCard:
     ):
         """Test that first call fetches from remote."""
         with patch.object(
-            discovery.a2a_client, "discover_service", new_callable=AsyncMock
+            discovery, "discover_service", new_callable=AsyncMock
         ) as mock_discover:
             mock_discover.return_value = mock_agent_card
 
@@ -95,7 +98,7 @@ class TestGetServiceCard:
     async def test_get_service_card_uses_cache(self, discovery, mock_agent_card):
         """Test that cache hit skips remote fetch."""
         with patch.object(
-            discovery.a2a_client, "discover_service", new_callable=AsyncMock
+            discovery, "discover_service", new_callable=AsyncMock
         ) as mock_discover:
             mock_discover.return_value = mock_agent_card
 
@@ -115,7 +118,7 @@ class TestGetServiceCard:
     ):
         """Test that force_refresh=True bypasses cache."""
         with patch.object(
-            discovery.a2a_client, "discover_service", new_callable=AsyncMock
+            discovery, "discover_service", new_callable=AsyncMock
         ) as mock_discover:
             mock_discover.return_value = mock_agent_card
 
@@ -137,7 +140,7 @@ class TestGetServiceCard:
     ):
         """Test that expired cache triggers refetch."""
         with patch.object(
-            discovery_short_ttl.a2a_client, "discover_service", new_callable=AsyncMock
+            discovery_short_ttl, "discover_service", new_callable=AsyncMock
         ) as mock_discover:
             mock_discover.return_value = mock_agent_card
 
@@ -156,7 +159,7 @@ class TestGetServiceCard:
     async def test_get_service_card_normalizes_url(self, discovery, mock_agent_card):
         """Test that URLs with trailing slashes are normalized."""
         with patch.object(
-            discovery.a2a_client, "discover_service", new_callable=AsyncMock
+            discovery, "discover_service", new_callable=AsyncMock
         ) as mock_discover:
             mock_discover.return_value = mock_agent_card
 
@@ -172,7 +175,7 @@ class TestGetServiceCard:
     ):
         """Test that cache uses normalized URL."""
         with patch.object(
-            discovery.a2a_client, "discover_service", new_callable=AsyncMock
+            discovery, "discover_service", new_callable=AsyncMock
         ) as mock_discover:
             mock_discover.return_value = mock_agent_card
 
@@ -191,7 +194,7 @@ class TestCachedAgentCard:
 
     def test_is_expired_when_ttl_exceeded(self, discovery):
         """Test card is expired when TTL is exceeded."""
-        from keycardai.agents.discovery import CachedAgentCard
+        from keycardai.agents.client.discovery import CachedAgentCard
 
         card = CachedAgentCard(
             card={"name": "test"},
@@ -204,7 +207,7 @@ class TestCachedAgentCard:
 
     def test_is_not_expired_within_ttl(self, discovery):
         """Test card is not expired within TTL."""
-        from keycardai.agents.discovery import CachedAgentCard
+        from keycardai.agents.client.discovery import CachedAgentCard
 
         card = CachedAgentCard(
             card={"name": "test"},
@@ -217,7 +220,7 @@ class TestCachedAgentCard:
 
     def test_age_seconds_calculation(self, discovery):
         """Test age calculation is correct."""
-        from keycardai.agents.discovery import CachedAgentCard
+        from keycardai.agents.client.discovery import CachedAgentCard
 
         fetch_time = time.time() - 42
         card = CachedAgentCard(card={"name": "test"}, fetched_at=fetch_time)
@@ -234,7 +237,7 @@ class TestCacheManagement:
     async def test_clear_cache_removes_all_entries(self, discovery, mock_agent_card):
         """Test clear_cache removes all cached entries."""
         with patch.object(
-            discovery.a2a_client, "discover_service", new_callable=AsyncMock
+            discovery, "discover_service", new_callable=AsyncMock
         ) as mock_discover:
             mock_discover.return_value = mock_agent_card
 
@@ -258,7 +261,7 @@ class TestCacheManagement:
     ):
         """Test clear_service_cache removes only specific entry."""
         with patch.object(
-            discovery.a2a_client, "discover_service", new_callable=AsyncMock
+            discovery, "discover_service", new_callable=AsyncMock
         ) as mock_discover:
             mock_discover.return_value = mock_agent_card
 
@@ -280,7 +283,7 @@ class TestCacheManagement:
     async def test_get_cache_stats_counts_correctly(self, discovery, mock_agent_card):
         """Test cache statistics are accurate."""
         with patch.object(
-            discovery.a2a_client, "discover_service", new_callable=AsyncMock
+            discovery, "discover_service", new_callable=AsyncMock
         ) as mock_discover:
             mock_discover.return_value = mock_agent_card
 
@@ -299,7 +302,7 @@ class TestCacheManagement:
     ):
         """Test cache statistics identify expired entries."""
         with patch.object(
-            discovery_short_ttl.a2a_client, "discover_service", new_callable=AsyncMock
+            discovery_short_ttl, "discover_service", new_callable=AsyncMock
         ) as mock_discover:
             mock_discover.return_value = mock_agent_card
 
@@ -333,7 +336,7 @@ class TestContextManager:
     async def test_context_manager_closes_client(self, service_config):
         """Test context manager closes A2A client properly."""
         async with ServiceDiscovery(service_config) as discovery:
-            assert discovery.a2a_client is not None
+            assert discovery.http_client is not None
 
         # After exit, client should be closed
         # Note: A2AServiceClient doesn't have close() in current implementation,

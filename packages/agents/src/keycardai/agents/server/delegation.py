@@ -1,4 +1,8 @@
-"""Client for agent-to-agent (service-to-service) delegation."""
+"""Server-to-server delegation client using OAuth token exchange.
+
+This module provides clients for agent services to delegate tasks to other
+agent services while maintaining the user context and delegation chain.
+"""
 
 import logging
 from typing import Any
@@ -11,13 +15,13 @@ from keycardai.oauth.http.auth import BasicAuth
 from keycardai.oauth.types.models import TokenExchangeRequest
 from keycardai.oauth.types.oauth import TokenType
 
-from .service_config import AgentServiceConfig
+from ..config import AgentServiceConfig
 
 logger = logging.getLogger(__name__)
 
 
-class A2AServiceClient:
-    """Client for service-to-service delegation using OAuth token exchange.
+class DelegationClient:
+    """Async client for server-to-server delegation using OAuth token exchange.
 
     Enables an agent service to:
     1. Discover other agent services (fetch agent cards)
@@ -32,8 +36,11 @@ class A2AServiceClient:
         service_config: Configuration of the calling service
 
     Example:
+        >>> from keycardai.agents import AgentServiceConfig
+        >>> from keycardai.agents.server import DelegationClient
+        >>> 
         >>> config = AgentServiceConfig(...)
-        >>> client = A2AServiceClient(config)
+        >>> client = DelegationClient(config)
         >>>
         >>> # Discover service capabilities
         >>> card = await client.discover_service("https://slack-poster.example.com")
@@ -54,7 +61,7 @@ class A2AServiceClient:
     """
 
     def __init__(self, service_config: AgentServiceConfig):
-        """Initialize A2A client with service configuration.
+        """Initialize delegation client with service configuration.
 
         Args:
             service_config: Configuration of the calling service
@@ -62,7 +69,8 @@ class A2AServiceClient:
         self.config = service_config
 
         # Initialize OAuth client for token exchange
-        oauth_base_url = f"https://{service_config.zone_id}.keycard.cloud"
+        # Use configured authorization server URL (defaults to zone URL)
+        oauth_base_url = service_config.auth_server_url
         self.oauth_client = AsyncOAuthClient(
             oauth_base_url,
             auth=BasicAuth(service_config.client_id, service_config.client_secret),
@@ -270,7 +278,7 @@ class A2AServiceClient:
         """
         await self.http_client.aclose()
 
-    async def __aenter__(self) -> "A2AServiceClient":
+    async def __aenter__(self) -> "DelegationClient":
         """Async context manager entry."""
         return self
 
@@ -279,8 +287,8 @@ class A2AServiceClient:
         await self.close()
 
 
-class A2AServiceClientSync:
-    """Synchronous client for service-to-service delegation using OAuth token exchange.
+class DelegationClientSync:
+    """Synchronous client for server-to-server delegation using OAuth token exchange.
 
     Enables an agent service to delegate tasks to other agent services using blocking I/O.
     Safe to use in environments with existing event loops (like uvloop).
@@ -293,8 +301,11 @@ class A2AServiceClientSync:
         service_config: Configuration of the calling service
 
     Example:
+        >>> from keycardai.agents import AgentServiceConfig
+        >>> from keycardai.agents.server import DelegationClientSync
+        >>> 
         >>> config = AgentServiceConfig(...)
-        >>> client = A2AServiceClientSync(config)
+        >>> client = DelegationClientSync(config)
         >>>
         >>> # Discover service capabilities
         >>> card = client.discover_service("https://slack-poster.example.com")
@@ -308,7 +319,7 @@ class A2AServiceClientSync:
     """
 
     def __init__(self, service_config: AgentServiceConfig):
-        """Initialize synchronous A2A client with service configuration.
+        """Initialize synchronous delegation client with service configuration.
 
         Args:
             service_config: Configuration of the calling service
@@ -316,7 +327,8 @@ class A2AServiceClientSync:
         self.config = service_config
 
         # Initialize OAuth client for token exchange
-        oauth_base_url = f"https://{service_config.zone_id}.keycard.cloud"
+        # Use configured authorization server URL (defaults to zone URL)
+        oauth_base_url = service_config.auth_server_url
         self.oauth_client = SyncOAuthClient(
             oauth_base_url,
             auth=BasicAuth(service_config.client_id, service_config.client_secret),
@@ -524,10 +536,15 @@ class A2AServiceClientSync:
         """
         self.http_client.close()
 
-    def __enter__(self) -> "A2AServiceClientSync":
+    def __enter__(self) -> "DelegationClientSync":
         """Synchronous context manager entry."""
         return self
 
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         """Synchronous context manager exit."""
         self.close()
+
+
+# Backward compatibility aliases
+A2AServiceClient = DelegationClient
+A2AServiceClientSync = DelegationClientSync

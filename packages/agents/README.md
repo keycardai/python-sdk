@@ -1,602 +1,528 @@
 # KeycardAI Agents
 
-Agent service framework for deploying CrewAI and other agent frameworks with Keycard authentication and service-to-service delegation.
+Framework-agnostic agent service SDK for A2A (Agent-to-Agent) delegation with Keycard OAuth authentication.
 
-## Overview
+## Features
 
-`keycardai-agents` enables you to deploy AI agent crews as HTTP services with:
-- **Service Identity**: Each crew gets a Keycard Application identity
-- **Service Discovery**: Agent cards expose capabilities via `/.well-known/agent-card.json`
-- **Service-to-Service Delegation**: Agents can delegate tasks to other agent services
-- **OAuth Security**: Full RFC 8693 token exchange with delegation chains
-- **MCP Tool Integration**: Agents use Phase 1 tool-level authentication for API access
+- 🔐 **Built-in OAuth**: Automatic JWKS validation, token exchange, delegation chains
+- 🌐 **Dual Protocol Support**: A2A JSONRPC + custom REST endpoints (same executor powers both)
+- 🔧 **Framework Agnostic**: Supports CrewAI, LangChain, custom via `AgentExecutor` protocol
+- 🔄 **Service Delegation**: RFC 8693 token exchange preserves user context
+- 👤 **User Auth**: PKCE OAuth flow with browser-based login
+
+## A2A Protocol Integration
+
+We use [a2a-python SDK](https://github.com/a2aproject/a2a-python) for protocol compliance while adding production-ready authentication:
+
+- ✅ **Full A2A JSONRPC support** - Standards-compliant `/a2a/jsonrpc` endpoint
+- ✅ **Plus simpler REST endpoint** - Custom `/invoke` for easier integration
+- ✅ **Production OAuth layer** - BearerAuthMiddleware, JWKS, token exchange (A2A SDK has none)
+- ✅ **Delegation chain tracking** - JWT-based audit trail for service-to-service calls
+- ✅ **Dual protocol support** - Same executor powers both JSONRPC and REST endpoints
+
+**Result**: A2A standards compliance + Keycard security + flexible APIs = Best of both worlds
 
 ## Installation
 
 ```bash
-pip install keycardai-agents[crewai]
+pip install keycardai-agents
+
+# With CrewAI support
+pip install 'keycardai-agents[crewai]'
 ```
 
 ## Quick Start
 
-### Deploy a CrewAI Service
+### CrewAI Service
 
 ```python
-from keycardai.agents import AgentServiceConfig, serve_agent
-from crewai import Agent, Crew, Task
 import os
+from crewai import Agent, Crew, Task
+from keycardai.agents import AgentServiceConfig
+from keycardai.agents.integrations.crewai import CrewAIExecutor
+from keycardai.agents.server import serve_agent
 
 def create_my_crew():
-    """Factory function to create your crew."""
-    agent = Agent(
-        role="Analyst",
-        goal="Analyze data",
-        tools=[...]  # MCP tools + A2A delegation tools
-    )
-
-    return Crew(agents=[agent], tasks=[...])
-
-# Configure service
-config = AgentServiceConfig(
-    service_name="My Analysis Service",
-    client_id="analysis_service",
-    client_secret=os.getenv("KEYCARD_CLIENT_SECRET"),
-    identity_url="https://analysis.example.com",
-    zone_id=os.getenv("KEYCARD_ZONE_ID"),
-    description="Analyzes data and generates reports",
-    capabilities=["data_analysis", "reporting"],
-    crew_factory=create_my_crew
-)
-
-# Start service (blocking)
-serve_agent(config)
-```
-
-### Call Another Service (A2A Delegation)
-
-```python
-from keycardai.agents import A2AServiceClient
-from keycardai.mcp.client.integrations.crewai_agents import create_client
-
-# Get A2A delegation tools
-async with create_client(mcp_client, service_config) as client:
-    mcp_tools = await client.get_tools()  # GitHub, Slack, etc.
-    a2a_tools = await client.get_a2a_tools()  # Other agent services
-
-    # Agent automatically discovers delegation tools
-    orchestrator = Agent(
-        role="Orchestrator",
-        tools=mcp_tools + a2a_tools,
-        backstory="Coordinate with other services when needed"
-    )
-```
-
-## Framework Support
-
-`keycardai-agents` provides agent service orchestration with A2A delegation.
-
-### CrewAI Integration (Full Support)
-
-The agent card server is designed for **CrewAI** workflows:
-
-```python
-from keycardai.agents import AgentServiceConfig, serve_agent
-from crewai import Agent, Crew, Task
-
-def create_crew():
-    agent = Agent(role="Analyst", goal="Analyze data", tools=[...])
-    return Crew(agents=[agent], tasks=[...])
+    agent = Agent(role="Assistant", goal="Help users", backstory="AI helper")
+    task = Task(description="{task}", agent=agent, expected_output="Response")
+    return Crew(agents=[agent], tasks=[task])
 
 config = AgentServiceConfig(
     service_name="My Service",
-    crew_factory=create_crew,  # Returns CrewAI Crew instance
-    client_id=os.getenv("KEYCARD_CLIENT_ID"),
-    client_secret=os.getenv("KEYCARD_CLIENT_SECRET"),
-    identity_url=os.getenv("SERVICE_URL"),
-    zone_id=os.getenv("KEYCARD_ZONE_ID"),
+    client_id=os.getenv("CLIENT_ID"),
+    client_secret=os.getenv("CLIENT_SECRET"),
+    identity_url="http://localhost:8000",
+    zone_id=os.getenv("ZONE_ID"),
+    agent_executor=CrewAIExecutor(create_my_crew),  # Framework adapter
+    capabilities=["assistance"],
 )
 
-serve_agent(config)  # Deploys crew as HTTP service
+serve_agent(config)  # Starts server with OAuth middleware
 ```
 
-**Installation:**
-```bash
-pip install keycardai-agents[crewai]
-```
-
-**Features for CrewAI:**
-- ✅ Deploy crews as HTTP services with OAuth authentication
-- ✅ Automatic A2A tool generation via `get_a2a_tools()`
-- ✅ Agent card discovery at `/.well-known/agent-card.json`
-- ✅ Service-to-service delegation with token exchange
-- ✅ Full delegation chain tracking
-
-**Automatic A2A Tools:**
-```python
-from keycardai.agents.integrations.crewai_a2a import get_a2a_tools
-
-# Get delegation tools for other services
-a2a_tools = await get_a2a_tools(service_config, delegatable_services=[
-    {
-        "name": "Deployment Service",
-        "url": "https://deployer.example.com",
-        "description": "Deploys applications to production",
-        "capabilities": ["deploy", "test", "rollback"]
-    }
-])
-
-# Use tools in crew - agent can delegate to other services
-agent = Agent(role="Orchestrator", tools=a2a_tools)
-```
-
-### Other Frameworks (A2A Client)
-
-**LangChain, LangGraph, AutoGen, Custom Agents:** Use the A2A client to interact with CrewAI services
-
-```bash
-pip install keycardai-agents  # No [crewai] needed
-```
+### Custom Executor
 
 ```python
-from keycardai.agents import A2AServiceClient, AgentServiceConfig
+from keycardai.agents.server import LambdaExecutor
 
-# Configure your service identity
+def my_logic(task, inputs):
+    return f"Processed: {task}"
+
 config = AgentServiceConfig(
-    service_name="My LangChain Service",
-    client_id=os.getenv("KEYCARD_CLIENT_ID"),
-    client_secret=os.getenv("KEYCARD_CLIENT_SECRET"),
-    identity_url="https://my-service.example.com",
-    zone_id=os.getenv("KEYCARD_ZONE_ID"),
+    # ... same config as above
+    agent_executor=LambdaExecutor(my_logic),  # Simple function wrapper
+)
+```
+
+### Advanced: Custom Executor Class
+
+```python
+from keycardai.agents.server import AgentExecutor
+
+class MyFrameworkExecutor:
+    """Implement AgentExecutor protocol for any framework."""
+
+    def execute(self, task, inputs):
+        # Your framework logic here
+        result = my_framework.run(task, inputs)
+        return result
+
+    def set_token_for_delegation(self, access_token):
+        # Optional: handle delegation token
+        self.context.set_auth(access_token)
+
+config = AgentServiceConfig(
+    # ...
+    agent_executor=MyFrameworkExecutor(),
+)
+```
+
+## Client Usage
+
+### User Authentication (PKCE)
+
+```python
+from keycardai.agents.client import AgentClient
+
+async with AgentClient(config) as client:
+    # Automatically: OAuth discovery → Browser login → Token exchange
+    result = await client.invoke("https://service.com", task="Hello")
+```
+
+### Service-to-Service (Token Exchange)
+
+```python
+from keycardai.agents.server import DelegationClient
+
+client = DelegationClient(service_config)
+
+# Get delegation token (RFC 8693) - preserves user context
+token = await client.get_delegation_token(
+    "https://target.com",
+    subject_token="user_token"
 )
 
-# Create A2A client
-client = A2AServiceClient(config)
-
-# Discover CrewAI services
-card = await client.discover_service("https://crew-service.com")
-
-# Delegate tasks to CrewAI services
+# Invoke with token
 result = await client.invoke_service(
-    "https://crew-service.com",
-    {"task": "Analyze PR #123", "repo": "org/repo"}
+    "https://target.com",
+    task="Process data",
+    token=token
 )
+# Result includes delegation_chain: ["service_a", "service_b"]
 ```
 
-**What you get:**
-- ✅ Call CrewAI services from any framework
-- ✅ Service discovery via agent cards
-- ✅ OAuth token exchange and authentication
-- ✅ Delegation chain tracking
-- ⚠️ No server deployment (A2A client only)
+## Architecture
 
-**Use Case Example:**
+### Server
+
 ```
-Your LangChain/AutoGen Agent
-  → A2AServiceClient.invoke_service()
-    → CrewAI PR Analysis Service (deployed with keycardai-agents)
-      → GitHub MCP tools
-      → Returns analysis result
-```
-
-### Custom Agents as Services (Advanced)
-
-To deploy **non-CrewAI agents** as HTTP services, implement the `.kickoff(inputs)` interface:
-
-```python
-class LangChainServiceWrapper:
-    """Wrapper to make LangChain compatible with agent card server."""
-
-    def __init__(self, chain):
-        self.chain = chain
-
-    def kickoff(self, inputs: dict) -> str:
-        """Adapt LangChain .invoke() to CrewAI .kickoff() interface."""
-        # Extract task from inputs
-        result = self.chain.invoke(inputs)
-        return str(result)
-
-# Deploy wrapped agent as service
-from keycardai.agents import AgentServiceConfig, serve_agent
-
-config = AgentServiceConfig(
-    service_name="My LangChain Service",
-    crew_factory=lambda: LangChainServiceWrapper(my_langchain_chain),
-    # ... other config
-)
-
-serve_agent(config)  # Now your LangChain agent is an HTTP service
+Your Agent
+  ↓
+AgentExecutor.execute(task, inputs)
+  ↓
+AgentServer (keycardai-agents)
+  ├─ OAuth Middleware (BearerAuthMiddleware)
+  │  ├─ JWKS validation
+  │  ├─ Token audience check
+  │  └─ Delegation chain extraction
+  ├─ /invoke (protected, REST-like)
+  ├─ /a2a/jsonrpc (protected, A2A JSONRPC)
+  │  ├─ message/send
+  │  ├─ message/stream
+  │  └─ tasks/* (get, cancel, list)
+  ├─ /.well-known/agent-card.json (A2A format)
+  ├─ /.well-known/oauth-protected-resource
+  └─ /status
 ```
 
-**Note:** The agent card server expects a `.kickoff(inputs)` method. Other frameworks need an adapter wrapper.
+### Dual Protocol Support
 
-## Features
+The SDK provides **two ways** to invoke agents:
 
-### Service Identity
-Each deployed crew service has a Keycard Application identity with:
-- Client ID and secret for authentication
-- Identity URL (e.g., `https://service.example.com`)
-- Service-level token for API access
+1. **A2A JSONRPC** (`/a2a/jsonrpc`) - Standards-compliant
+   - Use when: Integrating with A2A ecosystem, need standard protocol
+   - Methods: `message/send`, `message/stream`, `tasks/get`, etc.
+   - Bridge: `KeycardToA2AExecutorBridge` adapts your executor to A2A protocol
 
-### Agent Card Discovery
-Services expose capabilities at `/.well-known/agent-card.json`:
+2. **Custom REST** (`/invoke`) - Simpler API
+   - Use when: Direct service calls, simpler integration
+   - Format: `{"task": "...", "inputs": {...}}`
+   - Direct executor invocation
+
+**Both endpoints share the same underlying executor** - write once, support both protocols.
+
+### OAuth Flow
+
+```
+User → OAuth Login (PKCE)
+  ↓
+User Token → Service A
+  ↓
+Service A → Token Exchange (RFC 8693) → Service B Token
+  ↓
+Service A → Calls Service B with Service B Token
+  ↓
+Service B validates token (JWKS)
+Service B updates delegation_chain
+```
+
+## A2A Protocol Compliance
+
+### Agent Card
+
+Services expose A2A-compliant agent cards at `/.well-known/agent-card.json`:
+
 ```json
 {
-  "name": "PR Analysis Service",
-  "description": "Analyzes GitHub pull requests",
-  "capabilities": ["pr_analysis", "code_review"],
-  "endpoints": {
-    "invoke": "https://pr-analyzer.example.com/invoke"
+  "name": "My Service",
+  "url": "https://my-service.com",
+  "version": "1.0.0",
+  "protocolVersion": "0.3.0",
+  "skills": [
+    {
+      "id": "assistance",
+      "name": "Assistance",
+      "description": "assistance capability",
+      "tags": ["assistance"]
+    }
+  ],
+  "capabilities": {
+    "streaming": false,
+    "multiTurn": true
+  },
+  "additionalInterfaces": [
+    {
+      "url": "https://my-service.com/invoke",
+      "transport": "http+json"
+    }
+  ],
+  "securitySchemes": {
+    "oauth2": {
+      "type": "oauth2",
+      "flows": {
+        "authorizationCode": {
+          "authorizationUrl": "https://zone.keycard.cloud/oauth/authorize",
+          "tokenUrl": "https://zone.keycard.cloud/oauth/token"
+        }
+      }
+    }
   }
 }
 ```
 
-### Service-to-Service Delegation
-Agents can delegate tasks to other services:
-```python
-# Automatic tool generation from Keycard dependencies
-tools = await client.get_a2a_tools()  # Returns delegation tools
+### Endpoints
 
-# Tools like: delegate_to_slack_poster, delegate_to_deployment_service
-# Agent uses tools naturally based on LLM decisions
-```
-
-### OAuth Token Flow
-```
-User → Service A (Application identity)
-  ├─ Uses MCP tool → API (per-call token exchange)
-  └─ Delegates to Service B (service-to-service token exchange)
-      └─ Uses MCP tool → API (per-call token exchange)
-```
-
-Full delegation chain in audit logs: `User → Service A → Service B → API`
-
-## Relationship to MCP Package
-
-`keycardai-agents` depends on `keycardai-mcp` for shared OAuth infrastructure, but serves a different purpose:
-
-| Package | Purpose | Use Case |
-|---------|---------|----------|
-| **keycardai-mcp** | Tool-level authentication | Agents calling external APIs (GitHub, Slack) |
-| **keycardai-agents** | Service-level orchestration | Agents delegating to other agent services |
-
-### When to Use What
-
-**MCP Tools**: Agent needs to call GitHub API, Slack API, or other external resources
-```python
-# Example: Fetch PR from GitHub
-fetch_pr_tool  # MCP tool that calls GitHub API with delegated token
-```
-
-**A2A Delegation**: Agent needs to delegate a complex task to another specialized agent service
-```python
-# Example: PR Analyzer → Deployment Service → Slack Notifier
-delegate_to_deployment_service  # A2A tool that calls another agent
-```
-
-**Both Together**: An agent can use MCP tools for external APIs AND delegate to other agents via A2A
-```python
-# Orchestrator agent with both types of tools
-agent = Agent(
-    role="Orchestrator",
-    tools=[
-        *mcp_tools,  # GitHub, Slack API tools
-        *a2a_tools   # Delegation to other agent services
-    ]
-)
-```
-
-### Agent Cards vs MCP Metadata
-
-- **Agent Cards** (this package): Service discovery for A2A delegation
-  - Endpoint: `/.well-known/agent-card.json`
-  - Purpose: Discover agent service capabilities for delegation
-  - Custom format specific to Keycard agent services
-
-- **MCP Metadata** (mcp package): OAuth metadata for MCP server authentication
-  - Endpoint: `/.well-known/oauth-protected-resource`
-  - Purpose: OAuth 2.0 server configuration for MCP protocol
-  - Standard OAuth 2.0 RFC 8707 format
-
-- **MCP Protocol** (Anthropic specification): Model Context Protocol
-  - Separate specification for AI tool servers
-  - Our agent cards are NOT MCP protocol agent cards
-  - Different use case: tool servers vs agent orchestration
-
-### Architecture Comparison
-
-```
-MCP Flow (Tool-Level):
-User → Agent → MCP Tool → MCP Server → External API (GitHub/Slack)
-                 ↑
-          Per-call token exchange
-
-A2A Flow (Service-Level):
-User → Agent Service A → Agent Service B → External APIs
-            ↑                    ↑
-      Service identity     Service identity
-      Service-to-service token exchange
-```
-
-**Key Insight**: MCP and A2A are complementary, not competing. Use MCP for external API access, A2A for agent orchestration.
-
-## Architecture
-
-### Keycard Configuration
-
-```yaml
-# Applications (Service Identities)
-applications:
-  - client_id: pr_analyzer_service
-    identity_url: https://pr-analyzer.example.com
-  - client_id: slack_poster_service
-    identity_url: https://slack-poster.example.com
-
-# Resources (Protected Endpoints)
-resources:
-  - id: slack_poster_api
-    url: https://slack-poster.example.com
-    type: agent_service
-  - id: github_mcp_server
-    url: https://github-mcp.example.com
-    type: mcp_server
-
-# Dependencies (Access Control)
-dependencies:
-  - application: pr_analyzer_service
-    resource: github_mcp_server
-    permissions: [read]
-  - application: pr_analyzer_service
-    resource: slack_poster_api
-    permissions: [invoke]
-```
-
-## Production Deployment
-
-### Security Requirements
-
-#### Token Validation
-The agent card server validates OAuth bearer tokens using JWKS-based signature verification. In production:
-
-1. **JWKS Validation**: Tokens are validated against Keycard's public keys from `/.well-known/jwks.json`
-2. **Signature Verification**: JWT signatures are verified using RSA public key cryptography
-3. **Audience Check**: Token audience (`aud`) must match service identity URL
-4. **Issuer Validation**: Token issuer (`iss`) must match Keycard zone
-5. **Expiration Check**: Expired tokens are rejected
-6. **Delegation Chain**: Preserved through multi-hop delegation for audit trails
-
-#### Configuration Best Practices
-```python
-import os
-
-config = AgentServiceConfig(
-    service_name="Production Service",
-    client_id=os.getenv("KEYCARD_CLIENT_ID"),  # NEVER hardcode
-    client_secret=os.getenv("KEYCARD_CLIENT_SECRET"),  # NEVER hardcode
-    identity_url=os.getenv("SERVICE_URL"),  # From environment
-    zone_id=os.getenv("KEYCARD_ZONE_ID"),
-    # Optional but recommended
-    description="Production service description",
-    capabilities=["capability1", "capability2"],
-)
-
-# ✅ DO: Use environment variables
-# ❌ DON'T: Hardcode credentials in source code
-```
-
-### Error Handling
-
-Services should handle these error scenarios:
-
-| Error | Status Code | Cause | Action |
-|-------|-------------|-------|--------|
-| Missing Authorization | 401 | No `Authorization` header | Add `Bearer <token>` header |
-| Invalid Token | 401 | JWT signature invalid or expired | Get new token from Keycard |
-| Audience Mismatch | 403 | Token not scoped to this service | Request token with correct `resource` parameter |
-| No Crew Factory | 501 | Service configured without crew | Add `crew_factory` to config |
-| Crew Execution Failed | 500 | Exception during crew execution | Check crew logs, fix crew logic |
-| Service Unavailable | 503 | Service overloaded or down | Retry with exponential backoff |
-
-### Monitoring
-
-Key metrics to track for production agent services:
-
-**Token Operations:**
-- Token exchange success/failure rate
-- Token validation latency
-- JWKS fetch performance
-- Token expiration events
-
-**Service Performance:**
-- Crew execution latency (p50, p95, p99)
-- Delegation chain depth distribution
-- Service invocation rate
-- Error rate by type (401, 403, 500, 503)
-
-**Cache Performance:**
-- Agent card cache hit/miss ratio
-- Cache expiration events
-- Cache size and memory usage
-
-**Audit Trail:**
-```python
-# Logs automatically include:
-logger.info(f"Invoke request from user={user_id}, service={client_id}, chain={delegation_chain}")
-logger.info(f"Obtained delegation token for {target_service} (expires_in={expires_in})")
-logger.info(f"Service invocation successful: {target_service}")
-```
-
-### Deployment Patterns
-
-**Single Service** (Simple):
-```bash
-# Deploy agent service
-python -m my_service
-# Exposes:
-# - GET /.well-known/agent-card.json (public)
-# - POST /invoke (protected)
-# - GET /status (public)
-```
-
-**Multi-Service** (Microservices):
-```
-User
- ├─ PR Analysis Service (https://pr-analyzer.example.com)
- │   ├─ Uses: GitHub MCP tools
- │   └─ Delegates to: Deployment Service
- └─ Deployment Service (https://deployer.example.com)
-     ├─ Uses: CI/CD MCP tools
-     └─ Delegates to: Slack Notification Service
-```
-
-**Load Balancing**:
-- Multiple instances of same service behind load balancer
-- All instances share same `client_id` and `identity_url`
-- Stateless design enables horizontal scaling
-
-### Environment Variables
-
-Required for production:
-```bash
-# Keycard Authentication
-export KEYCARD_ZONE_ID="your_zone_id"
-export KEYCARD_CLIENT_ID="your_service_client_id"
-export KEYCARD_CLIENT_SECRET="your_client_secret"
-
-# Service Identity
-export SERVICE_URL="https://your-service.example.com"
-export PORT="8000"
-export HOST="0.0.0.0"
-
-# Optional: MCP Server URLs (if using MCP tools)
-export GITHUB_MCP_SERVER_URL="https://github-mcp.example.com"
-export SLACK_MCP_SERVER_URL="https://slack-mcp.example.com"
-
-# Optional: Delegatable Services (if not using Keycard discovery)
-export DEPLOYMENT_SERVICE_URL="https://deployer.example.com"
-```
-
-### Health Checks
+#### A2A JSONRPC Endpoint (Standards-Compliant)
 
 ```bash
-# Liveness probe
-curl https://your-service.example.com/status
-# Expected: {"status": "healthy", "service": "...", "identity": "...", "version": "..."}
+POST /a2a/jsonrpc
+Authorization: Bearer <token>
+Content-Type: application/json
 
-# Agent card discovery
-curl https://your-service.example.com/.well-known/agent-card.json
-# Expected: Agent card JSON with capabilities
+{
+  "jsonrpc": "2.0",
+  "method": "message/send",
+  "params": {
+    "message": {
+      "role": "user",
+      "parts": [{"text": "Do something"}]
+    }
+  },
+  "id": 1
+}
 ```
 
-### JWKS Caching
+Response:
+```json
+{
+  "jsonrpc": "2.0",
+  "result": {
+    "task": {
+      "taskId": "task-123",
+      "state": "completed",
+      "result": {...}
+    }
+  },
+  "id": 1
+}
+```
 
-The agent card server fetches JWKS from Keycard for token validation. To optimize:
-- JWKS keys are fetched per-request (no built-in caching yet)
-- Consider adding a caching layer (Redis, in-memory) for JWKS
-- JWKS typically updates infrequently (hours/days)
+**Supported methods:**
+- `message/send` - Send message to agent
+- `message/stream` - Stream agent responses
+- `tasks/get` - Get task status
+- `tasks/cancel` - Cancel running task
+- `tasks/list` - List all tasks
 
-### Logging Configuration
+#### Custom REST Endpoint (Simpler API)
+
+```bash
+POST /invoke
+Authorization: Bearer <token>
+
+{
+  "task": "Do something",
+  "inputs": {"key": "value"}
+}
+```
+
+Response:
+```json
+{
+  "result": "Done",
+  "delegation_chain": ["service_a", "service_b"]
+}
+```
+
+**Use `/invoke` for:** Direct service calls, easier integration, delegation chain tracking.
+
+**Use `/a2a/jsonrpc` for:** A2A ecosystem integration, standard protocol compliance, task management.
+
+## Framework Support
+
+### CrewAI
 
 ```python
-import logging
+from keycardai.agents.integrations.crewai import CrewAIExecutor
 
-# Production logging setup
-logging.basicConfig(
-    level=logging.INFO,  # Use INFO in production (not DEBUG)
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+executor = CrewAIExecutor(lambda: create_my_crew())
+```
 
-# Adjust specific loggers
-logging.getLogger("keycardai.agents").setLevel(logging.INFO)
-logging.getLogger("keycardai.oauth").setLevel(logging.WARNING)
-logging.getLogger("uvicorn").setLevel(logging.INFO)
+**Features:**
+- Automatic delegation token context
+- Supports CrewAI tools
+- Handles `crew.kickoff()` execution
+
+### LangChain, AutoGen, Custom
+
+Implement the `AgentExecutor` protocol:
+
+```python
+class MyExecutor:
+    def execute(self, task, inputs):
+        # Your logic
+        return result
 ```
 
 ## API Reference
 
 ### AgentServiceConfig
 
-Configuration for deploying an agent service.
+```python
+@dataclass
+class AgentServiceConfig:
+    service_name: str              # Human-readable name
+    client_id: str                 # Keycard Application client ID
+    client_secret: str             # Keycard Application secret
+    identity_url: str              # Public URL
+    zone_id: str                   # Keycard zone ID
+    agent_executor: AgentExecutor  # REQUIRED: Executor instance
 
-**Parameters:**
-- `service_name` (str): Human-readable service name
-- `client_id` (str): Keycard Application client ID
-- `client_secret` (str): Keycard Application client secret
-- `identity_url` (str): Public URL of this service
-- `zone_id` (str): Keycard zone identifier
-- `port` (int): HTTP server port (default: 8000)
-- `host` (str): Bind address (default: "0.0.0.0")
-- `description` (str): Service description for agent card
-- `capabilities` (list[str]): List of capabilities for discovery
-- `crew_factory` (Callable): Function that returns a Crew instance
+    # Optional
+    authorization_server_url: str | None = None
+    port: int = 8000
+    host: str = "0.0.0.0"
+    description: str = ""
+    capabilities: list[str] = []
+```
+
+### AgentExecutor Protocol
+
+```python
+class AgentExecutor(Protocol):
+    def execute(
+        self,
+        task: dict[str, Any] | str,
+        inputs: dict[str, Any] | None = None,
+    ) -> Any:
+        """Execute agent task."""
+        ...
+
+    def set_token_for_delegation(self, access_token: str) -> None:
+        """Optional: Set token for delegation."""
+        ...
+```
+
+### KeycardToA2AExecutorBridge
+
+Bridge adapter that makes your executor work with A2A JSONRPC protocol:
+
+```python
+from keycardai.agents.server import KeycardToA2AExecutorBridge, SimpleExecutor
+
+# Your executor
+executor = SimpleExecutor()
+
+# Wrap for A2A JSONRPC support
+a2a_executor = KeycardToA2AExecutorBridge(executor)
+
+# Now works with A2A DefaultRequestHandler
+from a2a.server.request_handlers import DefaultRequestHandler
+from a2a.server.tasks import InMemoryTaskStore
+
+handler = DefaultRequestHandler(
+    agent_executor=a2a_executor,
+    task_store=InMemoryTaskStore()
+)
+```
+
+**What it does:**
+- Converts A2A `RequestContext` → Keycard `task/inputs` format
+- Calls your synchronous executor
+- Publishes result as A2A Task events
+- Handles delegation tokens
+
+**Note:** This bridge is automatically configured when using `serve_agent()` - you don't need to use it directly unless building custom A2A integrations.
 
 ### serve_agent()
 
-Start an agent service (blocking call).
+Start an agent service (blocking):
 
-**Parameters:**
-- `config` (AgentServiceConfig): Service configuration
-
-**Returns:** None (blocks until shutdown)
-
-### A2AServiceClient
-
-Client for service-to-service delegation.
-
-**Methods:**
-- `discover_service(service_url)`: Fetch agent card from service
-- `get_delegation_token(target_url)`: Get OAuth token for service
-- `invoke_service(url, task, token)`: Call another agent service
-
-**Available Variants:**
-- `A2AServiceClient`: Async version for async workflows
-- `A2AServiceClientSync`: Synchronous version for sync workflows (e.g., CrewAI)
-
-### ServiceDiscovery
-
-Agent card discovery with caching.
-
-**Parameters:**
-- `service_config` (AgentServiceConfig): Service configuration
-- `cache_ttl` (int): Cache TTL in seconds (default: 900 = 15 minutes)
-
-**Methods:**
-- `get_service_card(service_url, force_refresh)`: Get agent card with caching
-- `list_delegatable_services()`: List services from Keycard dependencies (placeholder)
-- `clear_cache()`: Clear all cached agent cards
-- `clear_service_cache(service_url)`: Clear specific service cache
-- `get_cache_stats()`: Get cache statistics
-
-**Usage:**
 ```python
-async with ServiceDiscovery(service_config, cache_ttl=600) as discovery:
-    card = await discovery.get_service_card("https://service.example.com")
-    stats = discovery.get_cache_stats()
+serve_agent(config: AgentServiceConfig) -> None
 ```
 
-### get_a2a_tools()
+### AgentClient
 
-Generate CrewAI tools for A2A delegation (CrewAI integration).
+User authentication with PKCE OAuth:
 
-**Parameters:**
-- `service_config` (AgentServiceConfig): Service configuration
-- `delegatable_services` (list[dict] | None): List of services or None to discover
-
-**Returns:** List of CrewAI `BaseTool` objects for delegation
-
-**Example:**
 ```python
-from keycardai.agents.integrations.crewai_a2a import get_a2a_tools
+from keycardai.agents.client import AgentClient
 
-tools = await get_a2a_tools(service_config, delegatable_services=[
-    {"name": "Service", "url": "...", "description": "...", "capabilities": [...]}
-])
+async with AgentClient(service_config) as client:
+    result = await client.invoke(service_url, task, inputs)
+    agent_card = await client.discover_service(service_url)
 ```
+
+### DelegationClient
+
+Service-to-service with token exchange:
+
+```python
+from keycardai.agents.server import DelegationClient
+
+client = DelegationClient(service_config)
+token = await client.get_delegation_token(target_url, subject_token)
+result = await client.invoke_service(url, task, token)
+```
+
+## Service Delegation
+
+### Pattern
+
+```python
+# In Service A (orchestrator)
+from keycardai.agents.server import DelegationClient
+
+client = DelegationClient(service_a_config)
+
+# Discover Service B
+card = await client.discover_service("https://service-b.com")
+
+# Get token with user context
+token = await client.get_delegation_token(
+    "https://service-b.com",
+    subject_token=user_access_token
+)
+
+# Call Service B
+result = await client.invoke_service(
+    "https://service-b.com",
+    task="Process data",
+    token=token
+)
+
+# Result includes delegation chain for audit
+print(result["delegation_chain"])
+# ["user_service", "service_a", "service_b"]
+```
+
+### Delegation Chain Tracking
+
+1. User authenticates → Token with empty `delegation_chain`
+2. User calls Service A → Service A adds itself to chain
+3. Service A calls Service B → Token exchange preserves chain
+4. Service B adds itself → Full chain in response for audit
+
+## Production Deployment
+
+### Environment Variables
+
+```bash
+# Required
+export KEYCARD_ZONE_ID="your_zone_id"
+export KEYCARD_CLIENT_ID="service_client_id"
+export KEYCARD_CLIENT_SECRET="client_secret"
+export SERVICE_URL="https://your-service.com"
+
+# Optional
+export PORT="8000"
+export HOST="0.0.0.0"
+```
+
+### Health Checks
+
+```bash
+# Liveness
+curl https://your-service.com/status
+
+# Agent card
+curl https://your-service.com/.well-known/agent-card.json
+```
+
+### Security
+
+- **Token Validation**: JWKS-based JWT signature verification
+- **Audience Check**: Token `aud` must match service URL
+- **Issuer Validation**: Token `iss` from Keycard zone
+- **Delegation Chain**: Preserved for audit trail
 
 ## Examples
 
-See `/examples` directory for complete working examples:
-- `pr_analysis_service/` - Analyzes PRs and delegates to Slack
-- `slack_notification_service/` - Receives tasks and posts to Slack
+See `examples/` directory:
+- `oauth_client_usage.py` - PKCE user authentication
+
+## FAQ
+
+### Q: Why not use the A2A SDK server?
+**A**: The A2A SDK has no authentication layer. We'd have to rebuild all OAuth infrastructure.
+
+### Q: Can I use LangChain/AutoGen?
+**A**: Yes! Implement the `AgentExecutor` protocol or use `LambdaExecutor` for simple functions.
+
+### Q: What's the difference between AgentClient and DelegationClient?
+**A**:
+- `AgentClient`: User authentication with PKCE (browser-based login)
+- `DelegationClient`: Service-to-service with token exchange (RFC 8693)
+
+### Q: Do I need CrewAI?
+**A**: No! Use any framework or write custom logic. Just implement `AgentExecutor`.
+
+## Support
+
+- **GitHub**: https://github.com/keycardai/python-sdk
+- **Issues**: https://github.com/keycardai/python-sdk/issues
+- **Docs**: https://docs.keycard.ai
 
 ## License
 

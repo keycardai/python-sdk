@@ -1,14 +1,45 @@
-"""KeycardAI Agents - Agent service framework with authentication and delegation."""
+"""KeycardAI Agents - Agent service framework with authentication and delegation.
 
-from .a2a_client import A2AServiceClient
-from .agent_card_server import create_agent_card_server, serve_agent
-from .discovery import ServiceDiscovery
-from .service_config import AgentServiceConfig
+This package provides tools for building and consuming agent services with OAuth authentication:
+
+Client (for calling agent services):
+- AgentClient: User authentication with PKCE OAuth flow
+- ServiceDiscovery: Discover and query agent service capabilities
+
+Server (for building agent services):
+- AgentServer: High-level server interface
+- create_agent_card_server: Create FastAPI app with OAuth middleware
+- serve_agent: Convenience function to start a server
+- DelegationClient: Server-to-server delegation with token exchange
+
+Configuration:
+- AgentServiceConfig: Service configuration
+
+Integrations:
+- integrations.crewai: CrewAI tools for agent-to-agent delegation
+"""
+
+from .client import AgentClient, ServiceDiscovery
+from .server import AgentServer, DelegationClient, create_agent_card_server, serve_agent
+from .config import AgentServiceConfig
+
+# Integrations (optional)
+try:
+    from .integrations import crewai
+except ImportError:
+    crewai = None
 
 __all__ = [
+    # Configuration
     "AgentServiceConfig",
-    "serve_agent",
-    "create_agent_card_server",
-    "A2AServiceClient",
+    # Client
+    "AgentClient",
     "ServiceDiscovery",
+    # Server
+    "AgentServer",
+    "create_agent_card_server",
+    "serve_agent",
+    "DelegationClient",
+    # Integrations
+    "crewai",
 ]
