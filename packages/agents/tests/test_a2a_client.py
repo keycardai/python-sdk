@@ -1,10 +1,11 @@
-"""Tests for A2AServiceClient."""
+"""Tests for DelegationClient (formerly A2AServiceClient)."""
 
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from keycardai.agents import A2AServiceClient, AgentServiceConfig
+from keycardai.agents import AgentServiceConfig, DelegationClient
+from keycardai.agents.server import SimpleExecutor
 
 
 @pytest.fixture
@@ -16,13 +17,14 @@ def service_config():
         client_secret="test_secret",
         identity_url="https://test.example.com",
         zone_id="test_zone",
+        agent_executor=SimpleExecutor(),
     )
 
 
 @pytest.fixture
 def a2a_client(service_config):
-    """Create A2A client."""
-    return A2AServiceClient(service_config)
+    """Create delegation client."""
+    return DelegationClient(service_config)
 
 
 @pytest.mark.asyncio
@@ -190,7 +192,7 @@ async def test_invoke_service_string_task(a2a_client):
 @pytest.mark.asyncio
 async def test_context_manager(service_config):
     """Test A2A client as context manager."""
-    async with A2AServiceClient(service_config) as client:
+    async with DelegationClient(service_config) as client:
         assert client is not None
 
     # HTTP client should be closed after context exit
