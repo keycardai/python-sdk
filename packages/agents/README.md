@@ -5,21 +5,22 @@ Framework-agnostic agent service SDK for A2A (Agent-to-Agent) delegation with Ke
 ## Features
 
 - 🔐 **Built-in OAuth**: Automatic JWKS validation, token exchange, delegation chains
-- 🌐 **A2A Protocol**: Standards-compliant agent cards for discoverability
+- 🌐 **Dual Protocol Support**: A2A JSONRPC + custom REST endpoints (same executor powers both)
 - 🔧 **Framework Agnostic**: Supports CrewAI, LangChain, custom via `AgentExecutor` protocol
 - 🔄 **Service Delegation**: RFC 8693 token exchange preserves user context
 - 👤 **User Auth**: PKCE OAuth flow with browser-based login
 
-## Why Not Pure A2A SDK?
+## A2A Protocol Integration
 
-We use [a2a-python SDK](https://github.com/a2aproject/a2a-python) for types and agent card format, but keep custom server/client because:
+We use [a2a-python SDK](https://github.com/a2aproject/a2a-python) for protocol compliance while adding production-ready authentication:
 
-- ✅ **A2A SDK has NO authentication** - We'd rebuild all OAuth from scratch
-- ✅ **Our OAuth is production-ready** - BearerAuthMiddleware, JWKS, token exchange
-- ✅ **Delegation chain critical** - Tracked in JWTs for audit, not in A2A protocol
-- ✅ **Simpler API** - `/invoke` endpoint vs complex JSONRPC SendMessage
+- ✅ **Full A2A JSONRPC support** - Standards-compliant `/a2a/jsonrpc` endpoint
+- ✅ **Plus simpler REST endpoint** - Custom `/invoke` for easier integration
+- ✅ **Production OAuth layer** - BearerAuthMiddleware, JWKS, token exchange (A2A SDK has none)
+- ✅ **Delegation chain tracking** - JWT-based audit trail for service-to-service calls
+- ✅ **Dual protocol support** - Same executor powers both JSONRPC and REST endpoints
 
-**Result**: A2A discoverability + Keycard security = Best of both worlds
+**Result**: A2A standards compliance + Keycard security + flexible APIs = Best of both worlds
 
 ## Installation
 
@@ -144,11 +145,31 @@ AgentServer (keycardai-agents)
   │  ├─ JWKS validation
   │  ├─ Token audience check
   │  └─ Delegation chain extraction
-  ├─ /invoke (protected)
+  ├─ /invoke (protected, REST-like)
+  ├─ /a2a/jsonrpc (protected, A2A JSONRPC)
+  │  ├─ message/send
+  │  ├─ message/stream
+  │  └─ tasks/* (get, cancel, list)
   ├─ /.well-known/agent-card.json (A2A format)
   ├─ /.well-known/oauth-protected-resource
   └─ /status
 ```
+
+### Dual Protocol Support
+
+The SDK provides **two ways** to invoke agents:
+
+1. **A2A JSONRPC** (`/a2a/jsonrpc`) - Standards-compliant
+   - Use when: Integrating with A2A ecosystem, need standard protocol
+   - Methods: `message/send`, `message/stream`, `tasks/get`, etc.
+   - Bridge: `KeycardToA2AExecutorBridge` adapts your executor to A2A protocol
+
+2. **Custom REST** (`/invoke`) - Simpler API
+   - Use when: Direct service calls, simpler integration
+   - Format: `{"task": "...", "inputs": {...}}`
+   - Direct executor invocation
+
+**Both endpoints share the same underlying executor** - write once, support both protocols.
 
 ### OAuth Flow
 
@@ -209,9 +230,51 @@ Services expose A2A-compliant agent cards at `/.well-known/agent-card.json`:
 }
 ```
 
-### Custom Invoke Endpoint
+### Endpoints
 
-While agent cards are A2A-compliant, we use a simpler `/invoke` endpoint:
+#### A2A JSONRPC Endpoint (Standards-Compliant)
+
+```bash
+POST /a2a/jsonrpc
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "jsonrpc": "2.0",
+  "method": "message/send",
+  "params": {
+    "message": {
+      "role": "user",
+      "parts": [{"text": "Do something"}]
+    }
+  },
+  "id": 1
+}
+```
+
+Response:
+```json
+{
+  "jsonrpc": "2.0",
+  "result": {
+    "task": {
+      "taskId": "task-123",
+      "state": "completed",
+      "result": {...}
+    }
+  },
+  "id": 1
+}
+```
+
+**Supported methods:**
+- `message/send` - Send message to agent
+- `message/stream` - Stream agent responses
+- `tasks/get` - Get task status
+- `tasks/cancel` - Cancel running task
+- `tasks/list` - List all tasks
+
+#### Custom REST Endpoint (Simpler API)
 
 ```bash
 POST /invoke
@@ -231,7 +294,9 @@ Response:
 }
 ```
 
-**Why not pure A2A JSONRPC?** Simpler API, easier to use, and our delegation chain pattern doesn't map cleanly to A2A Task model.
+**Use `/invoke` for:** Direct service calls, easier integration, delegation chain tracking.
+
+**Use `/a2a/jsonrpc` for:** A2A ecosystem integration, standard protocol compliance, task management.
 
 ## Framework Support
 
@@ -297,6 +362,37 @@ class AgentExecutor(Protocol):
         """Optional: Set token for delegation."""
         ...
 ```
+
+### KeycardToA2AExecutorBridge
+
+Bridge adapter that makes your executor work with A2A JSONRPC protocol:
+
+```python
+from keycardai.agents.server import KeycardToA2AExecutorBridge, SimpleExecutor
+
+# Your executor
+executor = SimpleExecutor()
+
+# Wrap for A2A JSONRPC support
+a2a_executor = KeycardToA2AExecutorBridge(executor)
+
+# Now works with A2A DefaultRequestHandler
+from a2a.server.request_handlers import DefaultRequestHandler
+from a2a.server.tasks import InMemoryTaskStore
+
+handler = DefaultRequestHandler(
+    agent_executor=a2a_executor,
+    task_store=InMemoryTaskStore()
+)
+```
+
+**What it does:**
+- Converts A2A `RequestContext` → Keycard `task/inputs` format
+- Calls your synchronous executor
+- Publishes result as A2A Task events
+- Handles delegation tokens
+
+**Note:** This bridge is automatically configured when using `serve_agent()` - you don't need to use it directly unless building custom A2A integrations.
 
 ### serve_agent()
 
