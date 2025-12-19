@@ -17,15 +17,14 @@ from starlette.routing import Mount, Route
 
 from keycardai.mcp.server.auth import AuthProvider
 from keycardai.mcp.server.auth.application_credentials import ClientSecret
-from keycardai.mcp.server.middleware.bearer import BearerAuthMiddleware
 from keycardai.mcp.server.handlers.metadata import (
     InferredProtectedResourceMetadata,
     authorization_server_metadata,
     protected_resource_metadata,
 )
+from keycardai.mcp.server.middleware.bearer import BearerAuthMiddleware
 
 from ..config import AgentServiceConfig
-from .executor import AgentExecutor
 from .executor_bridge import KeycardToA2AExecutorBridge
 
 logger = logging.getLogger(__name__)

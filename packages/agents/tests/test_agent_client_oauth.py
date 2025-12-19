@@ -4,10 +4,9 @@ These tests verify the OAuth discovery and PKCE authentication flow
 that AgentClient uses to call protected agent services.
 """
 
-import pytest
-from unittest.mock import AsyncMock, Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 
-import httpx
+import pytest
 
 from keycardai.agents import AgentServiceConfig
 from keycardai.agents.client import AgentClient

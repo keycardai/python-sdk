@@ -4,9 +4,9 @@ This module tests the bridge that allows Keycard's simple synchronous executor
 interface to work with A2A's event-driven asynchronous JSONRPC protocol.
 """
 
-import pytest
 from unittest.mock import AsyncMock, Mock
 
+import pytest
 from a2a.server.agent_execution.context import RequestContext
 from a2a.server.events.event_queue import EventQueue
 from a2a.types import (
@@ -17,7 +17,7 @@ from a2a.types import (
     TaskState,
 )
 
-from keycardai.agents.server.executor import SimpleExecutor, LambdaExecutor
+from keycardai.agents.server.executor import LambdaExecutor, SimpleExecutor
 from keycardai.agents.server.executor_bridge import KeycardToA2AExecutorBridge
 
 

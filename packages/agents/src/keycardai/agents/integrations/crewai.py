@@ -54,6 +54,10 @@ from typing import Any, Callable
 
 from pydantic import BaseModel, Field
 
+from ..client.discovery import ServiceDiscovery
+from ..config import AgentServiceConfig
+from ..server.delegation import DelegationClientSync
+
 # Context variable to store the current user's access token for delegation
 _current_user_token: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "current_user_token", default=None
@@ -66,10 +70,6 @@ except ImportError:
     raise ImportError(
         "CrewAI is not installed. Install it with: pip install 'keycardai-agents[crewai]'"
     ) from None
-
-from ..server.delegation import DelegationClientSync
-from ..client.discovery import ServiceDiscovery
-from ..config import AgentServiceConfig
 
 logger = logging.getLogger(__name__)
 

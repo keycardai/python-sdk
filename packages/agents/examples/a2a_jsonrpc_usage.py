@@ -11,7 +11,6 @@ Both approaches work with the same agent service - you can choose based on your 
 This example shows the A2A JSONRPC approach.
 """
 
-import asyncio
 import httpx
 
 from keycardai.agents import AgentServiceConfig

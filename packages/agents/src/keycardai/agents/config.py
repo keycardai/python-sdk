@@ -1,11 +1,11 @@
 """Service configuration for agent services."""
 
 from dataclasses import dataclass, field
-from typing import Any, Callable, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from a2a.types import (
-    AgentCard,
     AgentCapabilities,
+    AgentCard,
     AgentInterface,
     AgentSkill,
     SecurityScheme,

@@ -7,8 +7,8 @@ OAuth PKCE authentication (browser-based user login) when calling protected agen
 
 import asyncio
 
-from keycardai.agents.client import AgentClient
 from keycardai.agents import AgentServiceConfig
+from keycardai.agents.client import AgentClient
 
 
 async def main():

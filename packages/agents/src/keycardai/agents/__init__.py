@@ -20,8 +20,8 @@ Integrations:
 """
 
 from .client import AgentClient, ServiceDiscovery
-from .server import AgentServer, DelegationClient, create_agent_card_server, serve_agent
 from .config import AgentServiceConfig
+from .server import AgentServer, DelegationClient, create_agent_card_server, serve_agent
 
 # Integrations (optional)
 try:

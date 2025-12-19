@@ -5,7 +5,7 @@ This package provides integrations with various agent frameworks:
 """
 
 try:
-    from .crewai import get_a2a_tools, set_delegation_token, create_a2a_tool_for_service
+    from .crewai import create_a2a_tool_for_service, get_a2a_tools, set_delegation_token
     
     __all__ = [
         "get_a2a_tools",
