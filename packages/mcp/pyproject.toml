@@ -38,6 +38,9 @@ crewai = [
     "crewai>=0.86.0",
     "nest-asyncio>=1.6.0",
 ]
+pydantic-ai = [
+    "pydantic-ai>=0.2.0",
+]
 test = [
     "pytest>=8.4.1",
     "pytest-asyncio>=1.1.0",
@@ -49,6 +52,7 @@ test = [
     "langchain>=1.0.5",
     "langchain-openai>=1.0.2",
     "crewai>=0.86.0",
+    "pydantic-ai>=0.2.0",
 ]
 
 [project.urls]

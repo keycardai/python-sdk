@@ -39,3 +39,10 @@ try:
 except ImportError:
     pass
 
+# Try to import Pydantic AI integration
+try:
+    from . import pydantic_agents  # noqa: F401
+    __all__.extend(["pydantic_agents"])
+except ImportError:
+    pass
+
