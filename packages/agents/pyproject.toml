@@ -1,6 +1,6 @@
 [project]
 name = "keycardai-agents"
-version = "0.1.1"
+dynamic = ["version"]
 description = "Framework-agnostic agent service SDK for A2A delegation with Keycard authentication. Supports CrewAI, LangChain, and custom agents."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -48,8 +48,16 @@ dev = [
 ]
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "uv-dynamic-versioning"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "uv-dynamic-versioning"
+
+[tool.uv-dynamic-versioning]
+vcs = "git"
+pattern = "(?P<base>\\d+\\.\\d+\\.\\d+)-keycardai-agents"
+style = "pep440"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/keycardai"]
@@ -81,3 +89,15 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+
+[tool.commitizen]
+name = "cz_customize"
+version = "0.1.1"
+tag_format = "${version}-keycardai-agents"
+ignored_tag_formats = ["${version}-*"]
+update_changelog_on_bump = true
+bump_message = "bump: keycardai-agents $current_version → $new_version"
+major_version_zero = true
+
+[tool.commitizen.customize]
+changelog_pattern = "^(feat|fix|refactor|perf|test|build|ci|revert)\\(keycardai-agents\\)(!)?:"
