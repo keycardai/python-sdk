@@ -1,3 +1,14 @@
+## 0.19.0-keycardai-mcp (2026-01-07)
+
+
+- feat(keycardai-mcp): Add greater control over OAuth metadata location
+- - Refactors `auth_metadata_mount` into it's component parts
+- Exposes mounts for individual metadata
+- Allows the user to specify exactly where their OAuth metadata is
+exposed
+- NOTE: This is only for advanced use cases where you know you need
+something non-standard. Otherwise, follow the OAuth spec.
+
 ## 0.18.0-keycardai-mcp (2025-12-04)
 
 

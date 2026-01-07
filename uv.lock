@@ -1806,7 +1806,6 @@ dev = [
 
 [[package]]
 name = "keycardai-agents"
-version = "0.1.1"
 source = { editable = "packages/agents" }
 dependencies = [
     { name = "a2a-sdk" },
@@ -1852,7 +1851,7 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.8.6" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32.0" },
 ]
-provides-extras = ["crewai", "test", "dev"]
+provides-extras = ["crewai", "dev", "test"]
 
 [[package]]
 name = "keycardai-mcp"
