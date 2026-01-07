@@ -181,7 +181,7 @@ if __name__ == "__main__":
 import os
 from fastmcp import FastMCP, Context
 from keycardai.mcp.integrations.fastmcp import (
-    AuthProvider, 
+    AuthProvider,
     AccessContext,
     ClientSecret
 )
@@ -209,11 +209,11 @@ mcp = FastMCP("My Secure FastMCP Server", auth=auth)
 def call_external_api(ctx: Context, query: str) -> str:
     # Get access context to check token exchange status
     access_context: AccessContext = ctx.get_state("keycardai")
-    
+
     # Check for errors before accessing token
     if access_context.has_errors():
         return f"Error: Failed to obtain access token - {access_context.get_errors()}"
-    
+
     # Access delegated token through context namespace
     token = access_context.access("https://api.example.com").access_token
     # Use token to call external API
@@ -239,6 +239,143 @@ Configure the remote MCP in your AI client, like [Cursor](https://cursor.com/?fr
 
 ### 🎉 Your MCP server is now protected with Keycard authentication! 🎉
 
+## Using FastAPI
+
+Mounting a FastMCP server into a larger FastAPI service introduces a few
+gotchas, particularly related to the various OAuth metadata endpoints.
+
+### Standards Compliant Approach
+
+> [!NOTE]
+> Most MCP clients expect standards-compliance. Follow this approach if you're
+> using those clients or the official MCP SDKs.
+
+The OAuth spec declares that your metadata must be exposed at the root of your
+service.
+
+```
+/.well-known/oauth-protected-resource
+```
+
+This causes a problem when you're mounting multiple APIs or MCP servers to a
+common FastAPI service. Each API or MCP Server will potentially have their own
+OAuth metadata.
+
+The OAuth spec defines that the metadata for each individual service should be
+exposed as an extension to the base `well-known` URI. For example:
+
+```
+/.well-known/oauth-protected-resource/api
+/.well-known/oauth-protected-resource/mcp-server/mcp
+```
+
+To ensure FastMCP and FastAPI produce this, you need to ensure your routing is
+defined in a specific way:
+
+```python
+from fastmcp import FastMCP
+from fastapi import FastAPI
+
+mcp = FastMCP("MCP Server")
+mcp_app = mcp.http_app() # DO NOT specify a path here
+
+app = FastAPI(title="API", lifespan=mcp_app.lifespan)
+
+# You MUST mount the MCP's `http_app` to the full path for FastMCP to expose the
+# OAuth metadata correctly.
+app.mount("/mcp-server/mcp", mcp_app)
+```
+
+### Custom, Non Standards Compliant, Approach
+
+> ![WARNING]
+> **This is not advised.** Only follow this if you know for sure you need
+> flexibility outside of what the spec requires.
+
+If you've built custom clients or need to mount the metadata at a different, non
+standards compliant, location, you can do that manually.
+
+#### Mounting at a Custom Root
+
+```python
+from fastmcp import FastMCP
+from fastapi import FastAPI
+from keycardai.mcp.server.routers.metadata import well_known_metadata_mount
+
+auth_provider = AuthProvider(
+    zone_id="your-zone-id",  # Get this from keycard.ai
+    mcp_server_name="My Secure FastMCP Server",
+    mcp_base_url="http://127.0.0.1:8000/"
+)
+
+auth = auth_provider.get_remote_auth_provider()
+
+mcp = FastMCP("MCP Server", auth=auth)
+mcp_app = mcp.http_app()
+
+app = FastAPI(title="API", lifespan=mcp_app.lifespan)
+
+app.mount(
+    "/custom-well-known",
+    well_known_metadata_mount(issuer=auth.zone_url),
+)
+```
+
+which will produce the following endpoints
+
+```
+/custom-well-known/oauth-protected-resource
+/custom-well-known/oauth-authorization-server
+```
+
+#### Mounting at a Specific URI
+
+If you need even more control, you can mount the individual routes at a specific
+URI.
+
+```python
+from fastmcp import FastMCP
+from fastapi import FastAPI
+from keycardai.mcp.server.routers.metadata import (
+    well_known_authorization_server_route,
+    well_known_protected_resource_route,
+)
+
+auth_provider = AuthProvider(
+    zone_id="your-zone-id",  # Get this from keycard.ai
+    mcp_server_name="My Secure FastMCP Server",
+    mcp_base_url="http://127.0.0.1:8000/"
+)
+
+auth = auth_provider.get_remote_auth_provider()
+
+mcp = FastMCP("MCP Server", auth=auth)
+mcp_app = mcp.http_app()
+
+app = FastAPI(title="API", lifespan=mcp_app.lifespan)
+
+app.router.routes.append(
+    well_known_protected_resource_route(
+        path="/my/custom/path/to/well-known/oauth-protected-resource",
+        issuer=auth.zone_url,
+    )
+)
+
+app.router.routes.append(
+    well_known_authorization_server_route(
+        path="/my/custom/path/to/well-known/oauth-authorization-server",
+        issuer=auth.zone_url,
+    )
+)
+```
+
+which will produce the following endpoints
+
+```
+/my/custom/path/to/well-known/oauth-protected-resource
+/my/custom/path/to/well-known/oauth-authorization-server
+```
+
 ## Features
 
 ### Delegated Access
@@ -248,10 +385,9 @@ Keycard allows MCP servers to access other resources on behalf of users with aut
 #### Setup Protected Resources
 
 1. **Configure credential provider** (e.g., Google Workspace)
-2. **Configure protected resource** (e.g., Google Drive API)  
+2. **Configure protected resource** (e.g., Google Drive API)
 3. **Set MCP server dependencies** to allow delegated access
 4. **Create client secret identity** for secure authentication
-
 
 ## Overview
 
@@ -314,6 +450,7 @@ pip install ./packages/mcp-fastmcp
 ## Documentation
 
 Comprehensive documentation is available at our [documentation site](https://docs.keycard.ai), including:
+
 - API reference for all packages
 - Usage examples and tutorials
 - Integration guides
