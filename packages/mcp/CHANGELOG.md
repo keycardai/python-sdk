@@ -1,3 +1,12 @@
+## 0.20.0-keycardai-mcp (2026-01-07)
+
+
+- feat(keycardai-mcp): Adds PydanticAI integration for MCP frameworks
+- - Adds PaydanticAI adapter to client integrations directory
+- Support for PydanticAI agents with secure MCP tool access
+- Follows established pattern with LangChain and OpenAI integrations
+- Adds tests for PydanticAI integration imports
+
 ## 0.19.0-keycardai-mcp (2026-01-07)
 
 

@@ -141,7 +141,7 @@ filterwarnings = [
 
 [tool.commitizen]
 name = "cz_customize"
-version = "0.19.0"
+version = "0.20.0"
 tag_format = "${version}-keycardai-mcp"
 ignored_tag_formats = ["${version}-*"]
 update_changelog_on_bump = true
