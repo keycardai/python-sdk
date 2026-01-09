@@ -82,6 +82,10 @@ def my_protected_tool(data: str) -> str:
 access = AuthProvider(
     zone_id="your_zone_id_here",
     mcp_server_name="My Secure MCP Server",
+    application_credential=ClientSecret((
+        os.getenv("KEYCARD_CLIENT_ID"),
+        os.getenv("KEYCARD_CLIENT_SECRET")
+    ))
 )
 
 # Create authenticated app
