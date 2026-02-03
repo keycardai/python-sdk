@@ -2114,7 +2114,7 @@ requires-dist = [
     { name = "aiosqlite", specifier = ">=0.20.0" },
     { name = "crewai", marker = "extra == 'crewai'", specifier = ">=0.86.0" },
     { name = "crewai", marker = "extra == 'test'", specifier = ">=0.86.0" },
-    { name = "fastmcp", marker = "extra == 'test'", specifier = ">=2.13.0" },
+    { name = "fastmcp", marker = "extra == 'test'", specifier = ">=2.13.0,<3.0.0" },
     { name = "httpx", specifier = ">=0.27.2" },
     { name = "keycardai-mcp-fastmcp", marker = "extra == 'test'", editable = "packages/mcp-fastmcp" },
     { name = "keycardai-oauth", editable = "packages/oauth" },
@@ -2160,7 +2160,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "fastmcp", specifier = "==2.13.0" },
+    { name = "fastmcp", specifier = ">=2.13.0,<3.0.0" },
     { name = "httpx", specifier = ">=0.27.2" },
     { name = "keycardai-mcp", editable = "packages/mcp" },
     { name = "keycardai-oauth", editable = "packages/oauth" },
