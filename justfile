@@ -21,6 +21,13 @@ test-package PACKAGE:
 test-file PACKAGE FILE:
     cd packages/{{PACKAGE}} && uv run --extra test pytest tests/{{FILE}} -v
 
+# Run tests with coverage enforcement
+# Note: mcp package has lower threshold due to optional client integrations (CrewAI, LangChain, etc.)
+test-coverage: build
+    cd packages/oauth && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=70
+    cd packages/mcp && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=65
+    cd packages/mcp-fastmcp && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=70
+
 check:
     uv run ruff check
 

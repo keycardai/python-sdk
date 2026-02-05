@@ -56,8 +56,8 @@ jobs:
       - name: Run linting and formatting checks
         run: just check
 
-      - name: Run tests
-        run: just test
+      - name: Run tests with coverage
+        run: just test-coverage
 
   release-preview:
     runs-on: ubuntu-latest
