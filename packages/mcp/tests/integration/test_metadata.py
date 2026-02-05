@@ -337,6 +337,101 @@ class TestAuthMetadataMount:
         assert f"{issuer}/" in data["authorization_servers"]
 
 
+class TestDynamicResourcePaths:
+    """Integration tests for dynamic resource path matching.
+
+    These tests verify that the metadata endpoints correctly handle
+    requests with resource path suffixes (e.g., /oauth-protected-resource/mcp).
+    """
+
+    @pytest.fixture
+    def issuer(self):
+        return "https://auth.localdev.keycard.sh"
+
+    @pytest.fixture
+    def app(self, issuer):
+        """Create app using auth_metadata_mount which should support dynamic paths."""
+        mount = auth_metadata_mount(issuer=issuer)
+        return Starlette(routes=[mount])
+
+    @pytest.fixture
+    def client(self, app):
+        return TestClient(app)
+
+    def test_protected_resource_with_path_suffix_returns_200(self, client):
+        """Test that protected resource endpoint matches requests with path suffix."""
+        response = client.get("/.well-known/oauth-protected-resource/mcp")
+        assert response.status_code == 200, (
+            "Expected 200 for dynamic path /mcp, got 404. "
+            "Resource path parameter is not being propagated to routes."
+        )
+
+    def test_protected_resource_with_nested_path_suffix_returns_200(self, client):
+        """Test that protected resource endpoint matches nested path suffixes."""
+        response = client.get("/.well-known/oauth-protected-resource/api/v1/service")
+        assert response.status_code == 200, (
+            "Expected 200 for nested path, got 404. "
+            "Resource path parameter should match nested paths."
+        )
+
+    def test_protected_resource_path_suffix_included_in_resource_field(self, client):
+        """Test that the path suffix is included in the resource field of response."""
+        response = client.get("/.well-known/oauth-protected-resource/mcp")
+        data = response.json()
+
+        assert "resource" in data
+        assert "/mcp" in data["resource"], (
+            f"Expected '/mcp' in resource field, got '{data['resource']}'. "
+            "The path suffix should be reflected in the resource URL."
+        )
+
+    def test_protected_resource_nested_path_included_in_resource_field(self, client):
+        """Test that nested path suffix is included in the resource field."""
+        response = client.get("/.well-known/oauth-protected-resource/api/v1/service")
+        data = response.json()
+
+        assert "resource" in data
+        assert "/api/v1/service" in data["resource"], (
+            f"Expected '/api/v1/service' in resource field, got '{data['resource']}'. "
+            "The full path suffix should be reflected in the resource URL."
+        )
+
+    def test_protected_resource_client_id_matches_resource(self, client):
+        """Test that client_id matches the resource URL including path suffix."""
+        response = client.get("/.well-known/oauth-protected-resource/my-service")
+        data = response.json()
+
+        assert data["client_id"] == data["resource"], (
+            "client_id should equal resource URL including the path suffix."
+        )
+
+    def test_base_path_still_works(self, client):
+        """Test that the base path without suffix still works."""
+        response = client.get("/.well-known/oauth-protected-resource")
+        assert response.status_code == 200
+
+    def test_authorization_server_with_path_suffix_returns_200(self, client):
+        """Test that authorization server endpoint matches requests with path suffix."""
+        # Note: This will try to fetch from upstream, so we need to mock
+        with patch("httpx.Client") as mock_client_class:
+            mock_response = Mock()
+            mock_response.json.return_value = {
+                "issuer": "https://auth.localdev.keycard.sh",
+                "authorization_endpoint": "https://auth.localdev.keycard.sh/oauth/authorize",
+                "token_endpoint": "https://auth.localdev.keycard.sh/oauth/token",
+            }
+            mock_response.raise_for_status.return_value = None
+
+            mock_client = Mock()
+            mock_client.get.return_value = mock_response
+            mock_client_class.return_value.__enter__.return_value = mock_client
+
+            response = client.get("/.well-known/oauth-authorization-server/zone123")
+            assert response.status_code == 200, (
+                "Expected 200 for authorization server with path suffix."
+            )
+
+
 class TestMultiZone:
     """Integration tests for multi-zone functionality."""
 

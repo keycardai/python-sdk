@@ -94,6 +94,7 @@ def protected_resource_metadata(metadata: InferredProtectedResourceMetadata, ena
 
         request_metadata.resource = _create_resource_url(base_url, path)
         request_metadata.jwks_uri = _create_jwks_uri(base_url)
+        # Resource URL serves as client_id for private_key_jwt auth (each resource is its own OAuth client)
         request_metadata.client_id = str(request_metadata.resource)
         request_metadata.client_name = "MCP Server"
         request_metadata.token_endpoint_auth_method = TokenEndpointAuthMethod.PRIVATE_KEY_JWT
