@@ -1,0 +1,16 @@
+[project]
+name = "hello-world-server"
+version = "0.1.0"
+description = "A minimal FastMCP server with Keycard authentication"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "keycardai-mcp-fastmcp",
+    "fastmcp>=2.13.0,<3.0.0",
+]
+
+[tool.uv.sources]
+keycardai-mcp-fastmcp = { path = "../../", editable = true }
+
+[project.scripts]
+hello-world-server = "main:main"

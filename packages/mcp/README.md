@@ -682,6 +682,18 @@ middleware = [
 
 ## Examples
 
+### Hello World Server
+
+A minimal example demonstrating low-level MCP integration with Keycard authentication is available at [`examples/hello_world_server/`](examples/hello_world_server/).
+
+```bash
+cd examples/hello_world_server
+export KEYCARD_ZONE_ID="your-zone-id"
+uv sync && uv run python main.py
+```
+
+> **Note**: For most use cases, we recommend using the [FastMCP integration](https://pypi.org/project/keycardai-mcp-fastmcp/) which provides a simpler API. This low-level approach is for advanced scenarios requiring more control.
+
 For complete examples and advanced usage patterns, see our [documentation](https://docs.keycard.ai).
 
 ## License

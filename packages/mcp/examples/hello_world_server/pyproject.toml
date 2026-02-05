@@ -1,0 +1,16 @@
+[project]
+name = "hello-world-server-lowlevel"
+version = "0.1.0"
+description = "A minimal MCP server with low-level Keycard authentication"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "keycardai-mcp",
+    "uvicorn>=0.30.0",
+]
+
+[tool.uv.sources]
+keycardai-mcp = { path = "../../", editable = true }
+
+[project.scripts]
+hello-world-server = "main:main"
