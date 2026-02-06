@@ -41,6 +41,16 @@ uv run python main.py
 
 The server will start on `http://localhost:8000`.
 
+### 4. Verify the Server
+
+Check that OAuth metadata is being served:
+
+```bash
+curl http://localhost:8000/.well-known/oauth-authorization-server
+```
+
+You should see JSON with `issuer`, `authorization_endpoint`, and other OAuth metadata.
+
 ## Testing with MCP Client
 
 Connect to your server using any MCP-compatible client (e.g., Cursor, Claude Desktop) and authenticate through your configured identity provider.

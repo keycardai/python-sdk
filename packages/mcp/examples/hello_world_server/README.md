@@ -50,6 +50,16 @@ uv run python main.py
 
 The server will start on `http://localhost:8000`.
 
+### 4. Verify the Server
+
+Check that OAuth metadata is being served:
+
+```bash
+curl http://localhost:8000/.well-known/oauth-authorization-server
+```
+
+You should see JSON with `issuer`, `authorization_endpoint`, and other OAuth metadata.
+
 ## Key Differences from FastMCP Integration
 
 | Feature | FastMCP Integration | Low-Level MCP |
