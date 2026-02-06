@@ -1,3 +1,8 @@
+## 0.20.1-keycardai-mcp (2026-02-06)
+
+
+- fix(keycardai-mcp): return prm for resources dynamically
+
 ## 0.20.0-keycardai-mcp (2026-01-07)
 
 
