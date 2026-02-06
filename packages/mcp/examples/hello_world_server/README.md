@@ -17,7 +17,7 @@ Before running this example, set up Keycard:
 3. **Configure an identity provider** (Google, Microsoft, etc.) — this is how your users will sign in
 4. **Create an MCP resource** with URL `http://localhost:8000/` — this registers your server with Keycard
 
-Once configured, get your **zone ID** from the Keycard console.
+Once configured, get your **zone ID** from the Keycard console. See [MCP Server Setup](https://docs.keycard.ai/build-with-keycard/mcp-server) for detailed instructions.
 
 ## When to Use This
 
