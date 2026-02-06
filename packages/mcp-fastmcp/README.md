@@ -714,6 +714,16 @@ This is because FastMCP automatically appends the `/mcp` path to your base URL f
 
 ## Examples
 
+### Hello World Server
+
+A minimal example demonstrating FastMCP integration with Keycard authentication is available at [`examples/hello_world_server/`](examples/hello_world_server/).
+
+```bash
+cd examples/hello_world_server
+export KEYCARD_ZONE_ID="your-zone-id"
+uv sync && uv run python main.py
+```
+
 For complete examples and advanced usage patterns, see our [documentation](https://docs.keycard.ai).
 
 ## License
