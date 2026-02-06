@@ -2,11 +2,20 @@
 
 A minimal example demonstrating how to add Keycard authentication to a FastMCP server.
 
+## Why Keycard?
+
+Keycard lets you securely connect your AI IDE or agent to external resources. It provides OAuth-based authentication for your MCP server plus auditability—so you know who accessed what.
+
 ## Prerequisites
 
-1. Sign up at [keycard.ai](https://keycard.ai)
-2. Create a zone and get your zone ID from the console
-3. Configure an MCP resource in your zone with URL: `http://localhost:8000/`
+Before running this example, set up Keycard:
+
+1. **Sign up** at [keycard.ai](https://keycard.ai)
+2. **Create a zone** — this is your authentication boundary
+3. **Configure an identity provider** (Google, Microsoft, etc.) — this is how your users will sign in
+4. **Create an MCP resource** with URL `http://localhost:8000/` — this registers your server with Keycard
+
+Once configured, get your **zone ID** from the Keycard console.
 
 ## Quick Start
 

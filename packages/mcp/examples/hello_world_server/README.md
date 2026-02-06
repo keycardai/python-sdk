@@ -4,6 +4,21 @@ A minimal example using the `keycardai-mcp` package's AuthProvider directly.
 
 **Note**: For most use cases, we recommend using the FastMCP integration (`keycardai-mcp-fastmcp`). This low-level approach is for advanced scenarios requiring more control over the Starlette application.
 
+## Why Keycard?
+
+Keycard lets you securely connect your AI IDE or agent to external resources. It provides OAuth-based authentication for your MCP server plus auditability—so you know who accessed what.
+
+## Prerequisites
+
+Before running this example, set up Keycard:
+
+1. **Sign up** at [keycard.ai](https://keycard.ai)
+2. **Create a zone** — this is your authentication boundary
+3. **Configure an identity provider** (Google, Microsoft, etc.) — this is how your users will sign in
+4. **Create an MCP resource** with URL `http://localhost:8000/` — this registers your server with Keycard
+
+Once configured, get your **zone ID** from the Keycard console.
+
 ## When to Use This
 
 - Custom middleware requirements
