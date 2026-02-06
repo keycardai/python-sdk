@@ -292,6 +292,74 @@ class TestWellKnownJwksRoute:
         assert isinstance(result, Route)
 
 
+class TestResourceParameterPropagation:
+    """Tests to verify resource parameter is correctly propagated through the routing chain."""
+
+    def test_well_known_metadata_routes_passes_resource_to_protected_resource_route(self):
+        """Test that well_known_metadata_routes passes resource parameter to route paths."""
+        issuer = "https://auth.example.com"
+        resource = "{resource_path:path}"
+
+        routes = well_known_metadata_routes(issuer, resource=resource)
+
+        # Find the protected resource route
+        protected_route = next(r for r in routes if r.name == "oauth-protected-resource")
+        assert resource in protected_route.path, (
+            f"Expected '{resource}' in route path, got '{protected_route.path}'. "
+            "Resource parameter is not being propagated to route creation."
+        )
+
+    def test_well_known_metadata_routes_passes_resource_to_auth_server_route(self):
+        """Test that well_known_metadata_routes passes resource parameter to auth server route."""
+        issuer = "https://auth.example.com"
+        resource = "{resource_path:path}"
+
+        routes = well_known_metadata_routes(issuer, resource=resource)
+
+        # Find the authorization server route
+        auth_route = next(r for r in routes if r.name == "oauth-authorization-server")
+        assert resource in auth_route.path, (
+            f"Expected '{resource}' in route path, got '{auth_route.path}'. "
+            "Resource parameter is not being propagated to route creation."
+        )
+
+    def test_auth_metadata_mount_creates_dynamic_path_routes(self):
+        """Test that auth_metadata_mount creates routes with dynamic path matching."""
+        issuer = "https://auth.example.com"
+
+        mount = auth_metadata_mount(issuer)
+
+        # Find the protected resource route within the mount
+        protected_route = next(
+            r for r in mount.routes
+            if hasattr(r, "name") and r.name == "oauth-protected-resource"
+        )
+
+        # The route should include the path parameter for dynamic matching
+        assert "{resource_path:path}" in protected_route.path, (
+            f"Expected dynamic path parameter in route, got '{protected_route.path}'. "
+            "auth_metadata_mount should create routes that match dynamic resource paths."
+        )
+
+    def test_well_known_metadata_mount_propagates_resource_parameter(self):
+        """Test that well_known_metadata_mount propagates resource to child routes."""
+        issuer = "https://auth.example.com"
+        resource = "{custom_path:path}"
+
+        mount = well_known_metadata_mount(issuer, path="/.well-known", resource=resource)
+
+        # Verify the resource parameter appears in route paths
+        protected_route = next(
+            r for r in mount.routes
+            if hasattr(r, "name") and r.name == "oauth-protected-resource"
+        )
+
+        assert resource in protected_route.path, (
+            f"Expected '{resource}' in route path, got '{protected_route.path}'. "
+            "well_known_metadata_mount should propagate resource parameter to routes."
+        )
+
+
 class TestEdgeCases:
     """Test edge cases and parameter combinations."""
 

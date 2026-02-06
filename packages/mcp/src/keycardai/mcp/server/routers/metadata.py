@@ -84,14 +84,18 @@ def well_known_metadata_routes(
         issuer: The OAuth issuer URL used for authorization server metadata.
         enable_multi_zone: Whether to enable multi-zone support for metadata endpoints.
         jwks: Optional JSON Web Key Set to expose. If provided, adds a JWKS route.
-        resource: Optional resource path prefix (currently unused in route creation).
+        resource: Optional resource path suffix for dynamic path matching (e.g., "{resource_path:path}").
 
     Returns:
         A list of Starlette Route objects for the well-known endpoints.
     """
+    # Build route paths with optional resource suffix for dynamic matching
+    protected_resource_path = f"/oauth-protected-resource{resource}" if resource else "/oauth-protected-resource"
+    auth_server_path = f"/oauth-authorization-server{resource}" if resource else "/oauth-authorization-server"
+
     routes = [
-        well_known_protected_resource_route(issuer, enable_multi_zone),
-        well_known_authorization_server_route(issuer, enable_multi_zone),
+        well_known_protected_resource_route(issuer, enable_multi_zone, resource=protected_resource_path),
+        well_known_authorization_server_route(issuer, enable_multi_zone, resource=auth_server_path),
     ]
 
     if jwks:
