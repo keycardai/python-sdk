@@ -55,19 +55,9 @@ You should see JSON with `issuer`, `authorization_endpoint`, and other OAuth met
 
 Connect to your server using any MCP-compatible client (e.g., Cursor, Claude Desktop) and authenticate through your configured identity provider.
 
-## Adding Delegated Access
+## Delegated Access
 
-To enable the `@grant` decorator for accessing external APIs on behalf of users:
-
-1. Get client credentials from your Keycard zone
-2. Set additional environment variables:
-
-```bash
-export KEYCARD_CLIENT_ID="your-client-id"
-export KEYCARD_CLIENT_SECRET="your-client-secret"
-```
-
-3. Uncomment the `get_external_data` tool in `main.py`
+For accessing external APIs on behalf of users using the `@grant` decorator, see the [Delegated Access Example](../delegated_access/).
 
 ## Environment Variables Reference
 
@@ -75,8 +65,6 @@ export KEYCARD_CLIENT_SECRET="your-client-secret"
 |----------|----------|-------------|
 | `KEYCARD_ZONE_ID` | Yes | Your Keycard zone ID |
 | `MCP_SERVER_URL` | No | Server URL (default: `http://localhost:8000/`) |
-| `KEYCARD_CLIENT_ID` | No | Client ID for delegated access |
-| `KEYCARD_CLIENT_SECRET` | No | Client secret for delegated access |
 
 ## Learn More
 
