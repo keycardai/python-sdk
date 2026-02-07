@@ -63,18 +63,18 @@ from .types.oauth import (
 from .utils.bearer import extract_bearer_token, validate_bearer_format
 
 __all__ = [
-    # Core clients
+    # === Core Clients ===
     "AsyncClient",
     "Client",
-    # Exceptions
-    "OAuthError",
+    # === Exceptions ===
+    "OAuthError",  # Base exception for all OAuth errors
     "OAuthHttpError",
     "OAuthProtocolError",
     "NetworkError",
     "ConfigError",
     "AuthenticationError",
     "TokenExchangeError",
-    # Models and types
+    # === Data Models ===
     "TokenResponse",
     "ClientRegistrationResponse",
     "PKCE",
@@ -83,7 +83,7 @@ __all__ = [
     "ClientRegistrationRequest",
     "TokenExchangeRequest",
     "AuthorizationServerMetadata",
-    # Enums
+    # === OAuth Enums ===
     "GrantType",
     "ResponseType",
     "TokenEndpointAuthMethod",
@@ -91,13 +91,13 @@ __all__ = [
     "TokenTypeHint",
     "PKCECodeChallengeMethod",
     "WellKnownEndpoint",
-    # Auth strategies
+    # === HTTP Auth Strategies ===
     "AuthStrategy",
     "BasicAuth",
     "BearerAuth",
     "NoneAuth",
     "MultiZoneBasicAuth",
-    # Utility functions
+    # === Utility Functions ===
     "extract_bearer_token",
     "validate_bearer_format",
 ]
