@@ -1,3 +1,17 @@
+"""Keycard MCP Client.
+
+This module provides the MCP client for connecting to MCP servers with OAuth authentication.
+
+Primary API:
+    Client: High-level client for MCP operations
+    ClientManager: Manage multiple client instances
+    Context: Client context with auth state
+
+Advanced API (for custom implementations):
+    Session, SessionStatus, SessionStatusCategory: Low-level session management
+    AuthCoordinator subclasses: Custom auth coordination
+"""
+
 from .auth.coordinators import (
     AuthCoordinator,
     LocalAuthCoordinator,
@@ -20,35 +34,36 @@ from .storage import InMemoryBackend, NamespacedStorage, SQLiteBackend, StorageB
 from .types import AuthChallenge, ToolInfo
 
 __all__ = [
-    # Core primitives
+    # === Primary API ===
     "Client",
     "ClientManager",
     "Context",
-    # Storage
+    # === Storage ===
     "StorageBackend",
     "InMemoryBackend",
     "SQLiteBackend",
     "NamespacedStorage",
-    # Auth coordination
+    # === Auth Coordination ===
     "AuthCoordinator",
     "LocalAuthCoordinator",
     "StarletteAuthCoordinator",
-    # Auth strategies
+    # === Auth Strategies ===
     "AuthStrategy",
     "OAuthStrategy",
     "ApiKeyStrategy",
     "NoAuthStrategy",
     "create_auth_strategy",
-    # Types
+    # === Types ===
     "AuthChallenge",
     "ToolInfo",
-    # Exceptions
-    "MCPClientError",
+    # === Exceptions ===
+    "MCPClientError",  # Base exception for MCP client errors
     "ClientConfigurationError",
-    # Logging
+    # === Logging ===
     "configure_logging",
     "get_logger",
-    # Lower-level primitives (advanced usage)
+    # === Advanced (Low-level Session Management) ===
+    # Use these only when building custom MCP client implementations
     "Session",
     "SessionStatus",
     "SessionStatusCategory",

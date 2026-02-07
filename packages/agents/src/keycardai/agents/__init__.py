@@ -30,16 +30,17 @@ except ImportError:
     crewai = None
 
 __all__ = [
-    # Configuration
+    # === Configuration ===
     "AgentServiceConfig",
-    # Client
+    # === Client (Calling Agent Services) ===
     "AgentClient",
     "ServiceDiscovery",
-    # Server
+    # === Server (Building Agent Services) ===
     "AgentServer",
     "create_agent_card_server",
     "serve_agent",
+    # === Server-to-Server Delegation ===
     "DelegationClient",
-    # Integrations
-    "crewai",
+    # === Framework Integrations (Optional) ===
+    "crewai",  # May be None if crewai not installed
 ]
