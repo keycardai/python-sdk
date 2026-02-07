@@ -37,34 +37,6 @@ def hello_world(name: str) -> str:
     return f"Hello, {name}! You are authenticated."
 
 
-# Example tool with delegated access (uncomment to use)
-# Requires KEYCARD_CLIENT_ID and KEYCARD_CLIENT_SECRET env vars
-#
-# from fastmcp import Context
-# from keycardai.mcp.integrations.fastmcp import AccessContext
-#
-# @mcp.tool()
-# @auth_provider.grant("https://api.example.com")
-# def get_external_data(ctx: Context, query: str) -> str:
-#     """Fetch data from an external API using delegated access.
-#
-#     Args:
-#         ctx: FastMCP context with authentication state
-#         query: Search query for the external API
-#
-#     Returns:
-#         Data from the external API or error message
-#     """
-#     access_context: AccessContext = ctx.get_state("keycardai")
-#
-#     if access_context.has_errors():
-#         return f"Token exchange failed: {access_context.get_errors()}"
-#
-#     token = access_context.access("https://api.example.com").access_token
-#     # Use token to call external API
-#     return f"Fetched data for query: {query}"
-
-
 def main():
     """Entry point for the MCP server."""
     mcp.run(transport="streamable-http")

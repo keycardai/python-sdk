@@ -99,6 +99,8 @@ dev = [
     "ruff>=0.12.10",
     "pre-commit>=4.3.0",
     "commitizen>=3.29.0",
+    "httpx>=0.28.1",
+    "fastmcp>=2.13.0,<3.0.0",
 ]
 
 # Configure as a namespace/workspace root package

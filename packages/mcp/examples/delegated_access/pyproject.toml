@@ -1,0 +1,17 @@
+[project]
+name = "delegated-access-example"
+version = "0.1.0"
+description = "GitHub API integration with Keycard delegated access using the low-level MCP package"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "keycardai-mcp",
+    "uvicorn>=0.30.0",
+    "httpx>=0.27.0,<1.0.0",
+]
+
+[tool.uv.sources]
+keycardai-mcp = { path = "../../", editable = true }
+
+[project.scripts]
+delegated-access-server = "main:main"

@@ -2031,6 +2031,8 @@ dev = [
 [package.dev-dependencies]
 dev = [
     { name = "commitizen" },
+    { name = "fastmcp" },
+    { name = "httpx" },
     { name = "pre-commit" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
@@ -2054,6 +2056,8 @@ provides-extras = ["dev"]
 [package.metadata.requires-dev]
 dev = [
     { name = "commitizen", specifier = ">=3.29.0" },
+    { name = "fastmcp", specifier = ">=2.13.0,<3.0.0" },
+    { name = "httpx", specifier = ">=0.28.1" },
     { name = "pre-commit", specifier = ">=4.3.0" },
     { name = "pytest", specifier = ">=8.4.1" },
     { name = "pytest-asyncio", specifier = ">=1.1.0" },
