@@ -10,7 +10,6 @@ Key concepts:
 - Tool calling on authenticated servers
 """
 
-import asyncio
 import os
 from contextlib import asynccontextmanager
 
@@ -116,13 +115,13 @@ async def homepage(request: Request) -> HTMLResponse:
         </form>
         """
     elif session.is_failed:
-        html += f"""
+        html += """
         <h2>Connection Failed</h2>
         <p>The connection to the MCP server failed.</p>
         <p><a href="/reconnect">Try Reconnecting</a></p>
         """
     else:
-        html += f"""
+        html += """
         <h2>Connecting...</h2>
         <p>Connection in progress. <a href="/">Refresh</a> to check status.</p>
         """
