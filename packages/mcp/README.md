@@ -4,7 +4,7 @@ A comprehensive Python SDK for Model Context Protocol (MCP) functionality that s
 
 ## Requirements
 
-- **Python 3.9 or greater**
+- **Python 3.10 or greater**
 - Virtual environment (recommended)
 
 ## Setup Guide

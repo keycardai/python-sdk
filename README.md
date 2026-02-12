@@ -4,8 +4,84 @@ A collection of Python packages for Keycard services, organized as a uv workspac
 
 ## Requirements
 
-- **Python 3.9 or greater**
+- **Python 3.10 or greater**
 - Virtual environment (recommended)
+
+## Known Limitations & Non-Goals
+
+### Current Limitations
+
+- **Alpha Status**: All packages are in early development (`Development Status :: 3 - Alpha`). APIs may change between minor versions.
+- **FastMCP 3.x Not Supported**: The `keycardai-mcp-fastmcp` package is pinned to FastMCP 2.x due to breaking async API changes in FastMCP 3.0 (see [PR #49](https://github.com/keycardai/python-sdk/pull/49)). Support for 3.x will be evaluated once the API stabilizes.
+- **MCP Protocol Version**: Tested against MCP protocol version as implemented by `mcp>=1.13.1`. Newer MCP protocol versions may introduce incompatibilities.
+
+### Non-Goals
+
+- **Standalone Identity Provider**: Keycard SDKs are designed to integrate with Keycard's hosted identity service, not to provide standalone identity management.
+- **Multi-Language Support**: This SDK is Python-only. Other language SDKs are separate projects.
+- **Offline Operation**: All authentication flows require network connectivity to Keycard services.
+
+## Compatibility Matrix
+
+### Python Version Support
+
+| Python Version | Status |
+|---------------|--------|
+| 3.9 | Not Supported |
+| 3.10 | Supported (minimum) |
+| 3.11 | Supported |
+| 3.12 | Supported |
+| 3.13 | Supported |
+
+### Key Dependency Constraints
+
+| Package | Dependency | Version Constraint | Rationale |
+|---------|------------|-------------------|-----------|
+| `keycardai-mcp-fastmcp` | `fastmcp` | `>=2.13.0,<3.0.0` | FastMCP 3.x has breaking async API changes. Constraint will be lifted when migration is complete. |
+| All packages | `pydantic` | `>=2.11.7` | No upper bound - Pydantic 2.x maintains backward compatibility. |
+| All packages | `httpx` | `>=0.27.2` | No upper bound - httpx follows semver. |
+| `keycardai-mcp` | `mcp` | `>=1.13.1` | No upper bound - API is protocol-defined. |
+
+### Why No Upper Bounds on Most Dependencies?
+
+Following Python packaging best practices:
+1. **Upper bounds cause resolver conflicts** in end-user projects when multiple packages specify conflicting ranges.
+2. **Well-maintained libraries** (pydantic, httpx) follow semantic versioning and maintain backward compatibility.
+3. **Testing against latest** via CI catches issues before users encounter them.
+
+## Versioning & Breaking Changes
+
+### Versioning Strategy
+
+All packages follow [Semantic Versioning](https://semver.org/):
+
+- **MAJOR.MINOR.PATCH** (e.g., `0.15.0`)
+- During `0.x.y` development:
+  - **MINOR** bumps (`0.x.0`) may contain breaking changes
+  - **PATCH** bumps (`0.x.y`) are backward-compatible bug fixes
+
+### Alpha Status (`0.x.y`)
+
+All packages are currently in alpha status. This means:
+
+1. **API Stability**: Public APIs may change between minor versions
+2. **Documentation**: APIs are documented but may evolve
+3. **Production Use**: Suitable for early adopters comfortable with potential migration work
+
+### When Will Packages Reach 1.0?
+
+Packages will graduate to `1.0.0` when:
+- Public API is stable and well-documented
+- Comprehensive test coverage exists
+- Production usage validates the design
+- No planned breaking changes for foreseeable future
+
+### Breaking Change Policy
+
+1. **Breaking changes** are documented in CHANGELOG.md with migration guides
+2. **Deprecation warnings** will be added before removal where feasible
+3. **Commit messages** use `!` suffix (e.g., `feat!:`) for breaking changes
+4. **Release notes** highlight breaking changes prominently
 
 ## Setup Guide
 

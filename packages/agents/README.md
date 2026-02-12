@@ -2,6 +2,11 @@
 
 Framework-agnostic agent service SDK for A2A (Agent-to-Agent) delegation with Keycard OAuth authentication.
 
+## Requirements
+
+- **Python 3.10 or greater**
+- Virtual environment (recommended)
+
 ## Features
 
 - 🔐 **Built-in OAuth**: Automatic JWKS validation, token exchange, delegation chains
