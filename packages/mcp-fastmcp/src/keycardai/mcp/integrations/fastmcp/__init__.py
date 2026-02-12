@@ -9,6 +9,14 @@ Components:
 - Application credentials: ClientSecret, WebIdentity, EKSWorkloadIdentity for different authentication scenarios
 - Auth strategies: BasicAuth, MultiZoneBasicAuth, NoneAuth for HTTP client authentication
 
+Re-export Guide:
+    Local definitions (primary API): AuthProvider, AccessContext
+    From keycardai.mcp.server.auth: ApplicationCredential, ClientSecret, EKSWorkloadIdentity, WebIdentity
+    From keycardai.mcp.server.auth.client_factory: ClientFactory, DefaultClientFactory
+    From keycardai.oauth.http.auth: AuthStrategy, BasicAuth, MultiZoneBasicAuth, NoneAuth
+    From keycardai.mcp.server.exceptions: All exceptions
+    For canonical imports, use the source packages directly.
+
 Basic Usage:
 
     from fastmcp import FastMCP, Context
@@ -102,43 +110,41 @@ from .provider import AccessContext, AuthProvider
 from .testing import mock_access_context
 
 __all__ = [
-    # Core classes
+    # === Primary API (Local Definitions) ===
     "AuthProvider",
     "AccessContext",
-
-    # Application credentials
+    # === Application Credentials (re-exported from keycardai.mcp.server.auth) ===
     "ApplicationCredential",
     "ClientSecret",
     "EKSWorkloadIdentity",
     "WebIdentity",
-
-    # Client factory
+    # === Client Factory (Advanced - re-exported from keycardai.mcp.server.auth) ===
+    # Use ClientFactory protocol for custom implementations; DefaultClientFactory for defaults
     "ClientFactory",
     "DefaultClientFactory",
-
-    # Auth strategies
+    # === HTTP Auth Strategies (re-exported from keycardai.oauth.http.auth) ===
     "AuthStrategy",
     "BasicAuth",
     "MultiZoneBasicAuth",
     "NoneAuth",
-
-    # Exceptions - Base
+    # === Exceptions (re-exported from keycardai.mcp.server.exceptions) ===
+    # Base
     "MCPServerError",
-
-    # Exceptions - Specific
+    # Configuration
     "AuthProviderConfigurationError",
+    "OAuthClientConfigurationError",
+    "EKSWorkloadIdentityConfigurationError",
+    "ClientInitializationError",
+    # Runtime
     "AuthProviderInternalError",
     "AuthProviderRemoteError",
-    "ClientInitializationError",
-    "EKSWorkloadIdentityConfigurationError",
     "EKSWorkloadIdentityRuntimeError",
-    "JWKSValidationError",
-    "MissingContextError",
-    "OAuthClientConfigurationError",
-    "ResourceAccessError",
     "TokenExchangeError",
+    "ResourceAccessError",
+    "MissingContextError",
+    # Validation
+    "JWKSValidationError",
     "MetadataDiscoveryError",
-
-    # Testing utilities
+    # === Testing Utilities ===
     "mock_access_context",
 ]
