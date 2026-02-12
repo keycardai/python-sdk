@@ -34,35 +34,53 @@ A zone is your authentication boundary. Create one in the Keycard console.
 
 Set up an identity provider (Google, Microsoft, etc.) for user authentication.
 
-### 4. Configure GitHub as an API Resource
+### 4. Create a GitHub App
+
+Create a GitHub App in your organization (or personal account) to enable delegated access:
+
+1. Go to your GitHub organization → **Settings** → **Developer settings** → **GitHub Apps**
+2. Click **New GitHub App**
+3. Configure the app with the permissions your MCP server needs (e.g., **Repository** access, **User** profile read)
+4. Generate a **Client Secret**
+5. Note down the **Client ID** and **Client Secret** — you'll use these to configure the credential provider in Keycard
+
+### 5. Configure a Credential Provider in Keycard
+
+Set up the GitHub credential provider so Keycard can obtain tokens on behalf of users:
+
+1. In your Keycard zone, go to **Providers**
+2. Add a new GitHub credential provider using the **Client ID** and **Client Secret** from the GitHub App you created in step 4
+3. This credential provider is what Keycard uses to issue GitHub API tokens on behalf of authenticated users
+
+### 6. Configure GitHub as an API Resource
 
 Add GitHub as an API resource in your zone:
 
 1. In your Keycard zone, go to **Resources**
 2. Add a new API resource for GitHub:
    - **Resource URL**: `https://api.github.com`
-   - **OAuth Provider**: GitHub (or your GitHub OAuth App)
+   - **Credential Provider**: Select the GitHub credential provider you created in step 5
    - **Scopes**: `read:user`, `repo` (adjust based on your needs)
 
-### 5. Create an Application
+### 7. Create an Application
 
 Create an application that will represent your MCP server:
 
 1. Go to **Applications** in your zone
 2. Create a new application
    - **Identifier**: Set this to match your `MCP_SERVER_URL` (e.g., `http://localhost:8000/`)
-3. Add **GitHub API** as a dependency of this application
+3. Add the **GitHub API** resource as a dependency of this application
 4. Generate **Application Credentials** (Client ID and Client Secret)
    - These are what you'll use for `KEYCARD_CLIENT_ID` and `KEYCARD_CLIENT_SECRET`
 
-### 6. Create an MCP Server Resource
+### 8. Create an MCP Server Resource
 
 Register your MCP server with Keycard:
 
 1. Go to **Resources** and add a new MCP Server resource
 2. Set the URL to your server's MCP endpoint: `http://localhost:8000/mcp`
 3. Configure the resource:
-   - **Provided by**: Select the application you created in step 5
+   - **Provided by**: Select the application you created in step 7
    - **Credential Provider**: Keycard STS Zone Provider
 
 > **Note:** Delegated token exchange requires Keycard to reach your MCP server. For local development, use a tunneling service (e.g., ngrok, Cloudflare Tunnel) or host the server on a publicly accessible URL.
