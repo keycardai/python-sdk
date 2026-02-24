@@ -188,3 +188,6 @@ Thumbs.db
 
 # Local development
 .local/
+
+# Claude Code
+CLAUDE.md

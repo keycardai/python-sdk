@@ -185,7 +185,7 @@ class AuthProvider:
         )
 
         @provider.grant("https://api.example.com")
-        async def my_tool(ctx, access_ctx: AccessContext = None):
+        async def my_tool(access_ctx: AccessContext, ctx: Context):
             token = access_ctx.access("https://api.example.com").access_token
             # Use token to call API
         ```

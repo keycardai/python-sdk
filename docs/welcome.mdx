@@ -1,27 +1,23 @@
 ---
 title: "Welcome to Keycard Python SDK"
-description: "Python SDK for Keycard OAuth 2.0 and Model Context Protocol (MCP) integration"
+description: "Python SDK for Keycard — OAuth, identity, and access for MCP servers"
 ---
 
 # Keycard Python SDK
 
-The Python SDK for Keycard OAuth 2.0 and Model Context Protocol (MCP) integration.
+**Keycard handles OAuth, identity, and access so your MCP servers don't have to.** Add authentication, authorization, and delegated API access to any MCP server with a few lines of Python.
+
+- **Drop-in auth** for MCP servers (OAuth 2.0, PKCE, token exchange — handled for you)
+- **Delegated access** — call Google, GitHub, Slack APIs on behalf of your users with automatic token exchange
+- **Works with both** the MCP Python SDK and the FastMCP framework
 
 ## Packages
 
-This SDK is organized into separate packages:
-
-- **keycardai-oauth**: Core OAuth 2.0 client functionality
-- **keycardai-mcp**: Model Context Protocol base functionality  
-- **keycardai-mcp-fastmcp**: FastMCP-specific integration with automated token exchange
-
-## Getting Started
-
-Choose the package that best fits your needs:
-
-- For OAuth 2.0 operations: `keycardai-oauth`
-- For MCP server functionality: `keycardai-mcp`
-- For FastMCP integration: `keycardai-mcp-fastmcp`
+| You want... | Install | Guide |
+|---|---|---|
+| Auth for MCP servers (using the `mcp` SDK) | `pip install keycardai-mcp` | [MCP Server Auth](examples/mcp-server-auth) |
+| Auth for FastMCP servers | `pip install keycardai-mcp-fastmcp` | [FastMCP Integration](examples/fastmcp-integration) |
+| OAuth 2.0 client only | `pip install keycardai-oauth` | [OAuth package docs](https://github.com/keycardai/python-sdk/tree/main/packages/oauth) |
 
 ## Quick Start
 
@@ -75,7 +71,7 @@ def main():
 uv run my-mcp-server
 ```
 
-🎉 Your authenticated MCP server is now running on `http://localhost:8000`!
+Your authenticated MCP server is now running on `http://localhost:8000`!
 
 See the [FastMCP Integration example](examples/fastmcp-integration) for advanced features like delegated access to external APIs.
 

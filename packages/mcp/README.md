@@ -75,13 +75,13 @@ def my_protected_tool(data: str) -> str:
     return f"Processed: {data}"
 
 # Add Keycard authentication
-access = AuthProvider(
+auth_provider = AuthProvider(
     zone_id="your_zone_id_here",
     mcp_server_name="My Secure MCP Server",
 )
 
 # Create authenticated app
-app = access.app(mcp)
+app = auth_provider.app(mcp)
 ```
 
 ### Run with Authentication
@@ -357,7 +357,7 @@ from keycardai.mcp.server.auth import AuthProvider, AccessContext, ClientSecret
 import os
 
 # Configure your provider with client credentials
-access = AuthProvider(
+auth_provider = AuthProvider(
     zone_id="your_zone_id",
     mcp_server_name="My MCP Server",
     application_credential=ClientSecret((
@@ -369,14 +369,14 @@ access = AuthProvider(
 mcp = FastMCP("My MCP Server")
 
 @mcp.tool()
-@access.grant("https://protected-api")
+@auth_provider.grant("https://protected-api")
 def protected_tool(ctx: Context, access_context: AccessContext, name: str) -> str:
     # Use the access_context to call external APIs on behalf of the user
     token = access_context.access("https://protected-api").access_token
     # Make authenticated API calls...
     return f"Protected data for {name}"
 
-app = access.app(mcp)
+app = auth_provider.app(mcp)
 ```
 
 ### Lowlevel Integration
@@ -661,7 +661,7 @@ middleware = [
     )
 ]
 
-app = access.app(mcp, middleware=middleware)
+app = auth_provider.app(mcp, middleware=middleware)
 ```
 
 **Important Security Note:** The configuration above uses permissive CORS settings (`allow_origins=["*"]`) which should **only be used for local development and testing**. In production environments, you should restrict `allow_origins` to specific domains that need access to your MCP server.
