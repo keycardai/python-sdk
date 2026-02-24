@@ -4,7 +4,7 @@ A Python package that provides seamless integration between Keycard and FastMCP 
 
 ## Requirements
 
-- **Python 3.9 or greater**
+- **Python 3.10 or greater**
 - Virtual environment (recommended)
 
 ## Setup Guide
