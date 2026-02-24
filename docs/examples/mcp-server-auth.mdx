@@ -1,142 +1,64 @@
 ---
 title: "MCP Server Authentication"
-description: "How to add Keycard authentication to your MCP server using the server AuthProvider"
+description: "How Keycard authentication works with standard MCP servers"
 ---
 
 # MCP Server Authentication
 
-A step-by-step guide to add Keycard authentication to any MCP server.
+This guide explains how Keycard adds authentication and delegated access to MCP servers built with the official [MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) (`keycardai-mcp` package).
 
-## Quick Start
+For the FastMCP framework, see the [FastMCP Integration guide](fastmcp-integration).
 
-### Step 1: Create Project
+## When to use this package
 
-```bash
-uv init --package my-secure-mcp
-cd my-secure-mcp
+Use `keycardai-mcp` when your server imports from `mcp.server.fastmcp` (the MCP SDK's built-in FastMCP class). This is different from the standalone `fastmcp` framework — see the [README](https://github.com/keycardai/python-sdk#which-package) for a comparison.
+
+## How authentication works
+
+`AuthProvider` wraps your MCP server with OAuth 2.0 middleware. You create your `FastMCP` server as usual, then call `auth_provider.app(mcp)` to get a Starlette application with authentication baked in. The resulting app:
+
+- Serves OAuth metadata at `/.well-known/oauth-protected-resource`
+- Validates bearer tokens on every MCP request
+- Optionally handles dynamic client registration
+- Runs with any ASGI server (uvicorn, etc.)
+
+## How delegated access works
+
+Delegated access lets your MCP tools call external APIs (Google Calendar, GitHub, Slack, etc.) on behalf of authenticated users.
+
+The `@grant` decorator handles token exchange automatically. When a user calls a granted tool:
+
+1. Keycard exchanges the user's token for a scoped token targeting the external API
+2. The exchanged token is injected into an `AccessContext` object
+3. Your function receives `AccessContext` as a parameter, alongside `Context`
+4. You extract the token and call the external API
+
+Both `AccessContext` and `Context` are **required** function parameters when using `@grant` with this package. `AccessContext` carries the exchanged tokens; `Context` provides the MCP request state that the decorator needs to perform the exchange.
+
+If the exchange fails, the error is set on the `AccessContext` — no exceptions are thrown. Always check `access_ctx.has_errors()` before using tokens.
+
+### Key difference from FastMCP integration
+
+In `keycardai-mcp`, `AccessContext` is a **function parameter** injected by `@grant`:
+
+```
+def my_tool(access_ctx: AccessContext, ctx: Context) -> dict:
 ```
 
-### Step 2: Install Dependencies
+In `keycardai-mcp-fastmcp`, `AccessContext` is **retrieved from context state**:
 
-```bash
-uv add keycardai-mcp fastmcp uvicorn
+```
+def my_tool(ctx: Context) -> dict:
+    access_context = ctx.get_state("keycardai")
 ```
 
-### Step 3: Create Your Server
+## Get started
 
-Create `src/my_secure_mcp/__init__.py`:
+Runnable examples with full setup instructions:
 
-```python
-from mcp.server.fastmcp import FastMCP
-from keycardai.mcp.server.auth import AuthProvider
-import uvicorn
+- **[Hello World Server](https://github.com/keycardai/python-sdk/tree/main/packages/mcp/examples/hello_world_server)** — Basic authenticated MCP server in ~50 lines
+- **[Delegated Access](https://github.com/keycardai/python-sdk/tree/main/packages/mcp/examples/delegated_access)** — GitHub API integration with comprehensive error handling patterns
 
-# Create your MCP server
-mcp = FastMCP("My Secure MCP Server")
+## Reference
 
-@mcp.tool()
-def my_protected_tool(data: str) -> str:
-    """A tool that requires authentication."""
-    return f"Processed: {data}"
-
-# Add Keycard authentication
-auth_provider = AuthProvider(
-    zone_id="your-zone-id",  # Get this from console.keycard.ai
-    mcp_server_name="My Secure MCP Server"
-)
-
-# Create authenticated app
-app = auth_provider.app(mcp)
-
-def main():
-    """Entry point for the MCP server."""
-    uvicorn.run(app, host="0.0.0.0", port=8000)
-```
-
-### Step 4: Run Your Server
-
-```bash
-uv run my-secure-mcp
-```
-
-Your authenticated MCP server is now running on `http://localhost:8000`!
-
-## Delegated Access to External APIs
-
-To access external APIs on behalf of authenticated users, use the `@grant` decorator.
-
-### Step 1: Configure Client Credentials
-
-Get your client credentials from [console.keycard.ai](https://console.keycard.ai) and set them:
-
-```bash
-export KEYCARD_CLIENT_ID="your-client-id"
-export KEYCARD_CLIENT_SECRET="your-client-secret"
-```
-
-### Step 2: Add Delegated Access
-
-Update `src/my_secure_mcp/__init__.py`:
-
-```python
-import os
-from mcp.server.fastmcp import FastMCP
-from keycardai.mcp.server.auth import AuthProvider, ClientSecret, AccessContext
-import httpx
-import uvicorn
-
-# Configure with client credentials for delegated access
-auth_provider = AuthProvider(
-    zone_id="your-zone-id",
-    mcp_server_name="My MCP Server",
-    application_credential=ClientSecret((
-        os.getenv("KEYCARD_CLIENT_ID"),
-        os.getenv("KEYCARD_CLIENT_SECRET")
-    ))
-)
-
-mcp = FastMCP("My Server")
-
-@mcp.tool()
-def my_protected_tool(data: str) -> str:
-    """A tool that requires authentication."""
-    return f"Processed: {data}"
-
-# Tool with delegated access to external API
-@mcp.tool()
-@auth_provider.grant("https://www.googleapis.com/calendar/v3")
-async def get_calendar(access_ctx: AccessContext = None):
-    """Get user's calendar events with delegated access."""
-    if access_ctx.has_errors():
-        return {"error": "Failed to obtain access token"}
-    
-    # Get delegated token for Google Calendar API
-    token = access_ctx.access("https://www.googleapis.com/calendar/v3").access_token
-    
-    # Call Google Calendar API on behalf of user
-    async with httpx.AsyncClient() as client:
-        response = await client.get(
-            "https://www.googleapis.com/calendar/v3/calendars/primary/events",
-            headers={"Authorization": f"Bearer {token}"}
-        )
-        response.raise_for_status()
-        return response.json()
-
-# Create authenticated app
-app = auth_provider.app(mcp)
-
-def main():
-    """Entry point for the MCP server."""
-    uvicorn.run(app, host="0.0.0.0", port=8000)
-```
-
-### Step 3: Run with Credentials
-
-```bash
-export KEYCARD_CLIENT_ID="your-client-id"
-export KEYCARD_CLIENT_SECRET="your-client-secret"
-uv run my-secure-mcp
-```
-
-For more details on configuration options and credential types, see the [MCP package documentation](https://github.com/keycardai/python-sdk/tree/main/packages/mcp).
-
+- [keycardai-mcp README](https://github.com/keycardai/python-sdk/tree/main/packages/mcp) — Full API docs, zone configuration, credential types, lowlevel integration

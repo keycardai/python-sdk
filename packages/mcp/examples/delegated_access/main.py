@@ -6,13 +6,14 @@ authenticated users using the low-level keycardai-mcp package.
 
 Key differences from FastMCP integration:
 - AccessContext is passed as a function parameter (not retrieved from ctx.get_state())
+- Both AccessContext and Context parameters are required by @grant
 - Server startup uses uvicorn.run(auth_provider.app(mcp))
 - More control over the Starlette application
 
 Key concepts demonstrated:
 - AuthProvider setup with ClientSecret credentials
 - @grant decorator for requesting token exchange
-- AccessContext as function parameter for accessing exchanged tokens
+- AccessContext and Context as function parameters
 - Comprehensive error handling patterns
 """
 
@@ -20,7 +21,7 @@ import os
 
 import httpx
 import uvicorn
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import Context, FastMCP
 
 from keycardai.mcp.server.auth import AccessContext, AuthProvider, ClientSecret
 
@@ -45,7 +46,7 @@ mcp = FastMCP("GitHub API Server")
 
 @mcp.tool()
 @auth_provider.grant("https://api.github.com")
-async def get_github_user(access_ctx: AccessContext) -> dict:
+async def get_github_user(access_ctx: AccessContext, ctx: Context) -> dict:
     """Get the authenticated GitHub user's profile.
 
     Demonstrates:
@@ -55,6 +56,7 @@ async def get_github_user(access_ctx: AccessContext) -> dict:
 
     Args:
         access_ctx: AccessContext with exchanged tokens (injected by @grant)
+        ctx: MCP Context providing request state (required by @grant)
 
     Returns:
         User profile data or error details
@@ -95,7 +97,7 @@ async def get_github_user(access_ctx: AccessContext) -> dict:
 
 @mcp.tool()
 @auth_provider.grant("https://api.github.com")
-async def list_github_repos(access_ctx: AccessContext, per_page: int = 5) -> dict:
+async def list_github_repos(access_ctx: AccessContext, ctx: Context, per_page: int = 5) -> dict:
     """List the authenticated user's GitHub repositories.
 
     Demonstrates:
@@ -105,6 +107,7 @@ async def list_github_repos(access_ctx: AccessContext, per_page: int = 5) -> dic
 
     Args:
         access_ctx: AccessContext with exchanged tokens (injected by @grant)
+        ctx: MCP Context providing request state (required by @grant)
         per_page: Number of repositories to return (default: 5)
 
     Returns:

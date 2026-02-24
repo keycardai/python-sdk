@@ -32,7 +32,7 @@
             ]
           },
           {
-            "group": "Examples",
+            "group": "Guides",
             "pages": [
               "examples/fastmcp-integration",
               "examples/mcp-client-usage",
