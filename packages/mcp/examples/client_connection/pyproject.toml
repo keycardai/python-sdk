@@ -1,0 +1,16 @@
+[project]
+name = "client-connection-example"
+version = "0.1.0"
+description = "MCP client connection example with Keycard OAuth authentication"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "keycardai-mcp",
+    "uvicorn>=0.30.0",
+]
+
+[tool.uv.sources]
+keycardai-mcp = { path = "../../", editable = true }
+
+[project.scripts]
+client-connection = "main:main"
