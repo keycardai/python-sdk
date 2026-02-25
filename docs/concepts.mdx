@@ -1,0 +1,84 @@
+---
+title: "Key Concepts"
+description: "Core concepts and terminology used across the Keycard Python SDK"
+---
+
+# Key Concepts
+
+This page defines the core terms used throughout the Keycard SDK. Each term links to the relevant documentation for deeper details.
+
+## Zone
+
+A **zone** is a Keycard environment that groups your identity providers, MCP resources, and access policies. Every Keycard integration starts with a zone.
+
+- **zone_id** — The unique identifier for your zone, used in SDK configuration
+- **zone_url** — The full URL of your zone's OAuth endpoints (alternative to zone_id)
+
+Get your zone ID from [console.keycard.ai](https://console.keycard.ai). You can use either `zone_id` or `zone_url` to configure the SDK — zone_id is simpler, zone_url gives more control.
+
+## Delegated Access
+
+**Delegated access** lets your MCP tools call external APIs (Google Calendar, GitHub, Slack, etc.) on behalf of your authenticated users. Under the hood, it uses [RFC 8693 token exchange](https://datatracker.ietf.org/doc/html/rfc8693) to swap the user's MCP token for a scoped token targeting the external API.
+
+See the [Delegated Access guide](examples/delegated-access) for how it works and how to set it up.
+
+## @grant Decorator
+
+The **`@grant` decorator** declares which external APIs a tool needs access to. It takes one or more audience URLs and automatically performs token exchange before your function runs.
+
+```python
+@auth_provider.grant("https://www.googleapis.com/calendar/v3")
+async def get_events(ctx: Context) -> dict:
+    access_context = ctx.get_state("keycardai")
+    token = access_context.access("https://www.googleapis.com/calendar/v3").access_token
+    # Use token to call Google Calendar API
+```
+
+## AccessContext
+
+**AccessContext** is the result of a grant. It contains the exchanged tokens (or errors) for each requested audience. It is **non-throwing by design** — token exchange failures are captured as errors on the context, not raised as exceptions.
+
+Always check before using tokens:
+
+```python
+if access_context.has_errors():
+    return {"error": access_context.get_errors()}
+
+token = access_context.access("https://api.example.com").access_token
+```
+
+How you get the AccessContext depends on the package:
+
+| Package | How to get AccessContext |
+|---|---|
+| `keycardai-mcp-fastmcp` | `ctx.get_state("keycardai")` |
+| `keycardai-mcp` | Function parameter: `access_ctx: AccessContext` |
+
+## Application Credentials
+
+**Application credentials** are how your MCP server authenticates with Keycard for token exchange. They're required for [delegated access](#delegated-access).
+
+Three types are supported:
+
+| Type | Use Case |
+|---|---|
+| `ClientSecret` | Most common — client ID + secret pair |
+| `WebIdentity` | Private key JWT assertion ([RFC 7523](https://datatracker.ietf.org/doc/html/rfc7523)) |
+| `EKSWorkloadIdentity` | AWS EKS workload identity for Kubernetes deployments |
+
+Set credentials via environment variables (`KEYCARD_CLIENT_ID`, `KEYCARD_CLIENT_SECRET`) or pass them explicitly in code.
+
+## AuthProvider
+
+**AuthProvider** is the main entry point for adding Keycard authentication to your MCP server. Each package has its own AuthProvider:
+
+- **FastMCP:** `from keycardai.mcp.integrations.fastmcp import AuthProvider`
+- **Standard MCP:** `from keycardai.mcp.server.auth import AuthProvider`
+
+The AuthProvider handles OAuth metadata serving, token validation, and (with application credentials) token exchange.
+
+## MCP Client
+
+The **MCP Client** connects *to* authenticated MCP servers. It handles OAuth flows, multi-server connections, and provides integrations for AI agent frameworks (LangChain, OpenAI Agents, CrewAI).
+
+See the [MCP Client documentation](https://github.com/keycardai/python-sdk/blob/main/packages/mcp/src/keycardai/mcp/client/README.md) for complete usage guide.

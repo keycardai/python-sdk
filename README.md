@@ -8,11 +8,21 @@
 
 ## Which Package?
 
-| You want... | Install | Guide |
+| You want to... | Install | Guide |
 |---|---|---|
-| Auth for MCP servers (using the `mcp` SDK) | `pip install keycardai-mcp` | [Quick Start](#quick-start-standard-mcp) |
-| Auth for FastMCP servers | `pip install keycardai-mcp-fastmcp` | [Quick Start](#quick-start-fastmcp) |
-| OAuth 2.0 client only | `pip install keycardai-oauth` | [Package docs](packages/oauth/) |
+| Add auth to MCP servers (using the `mcp` SDK) | `pip install keycardai-mcp` | [Quick Start](#quick-start-standard-mcp) |
+| Add auth to FastMCP servers | `pip install keycardai-mcp-fastmcp` | [Quick Start](#quick-start-fastmcp) |
+| Connect to MCP servers as a client | `pip install keycardai-mcp` | [MCP Client docs](packages/mcp/src/keycardai/mcp/client/) |
+| Build agent-to-agent (A2A) services | `pip install keycardai-agents` | [Agents docs](packages/agents/) |
+| Use the OAuth 2.0 client directly | `pip install keycardai-oauth` | [OAuth docs](packages/oauth/) |
+
+## Key Concepts
+
+- **Zone** — A Keycard environment that groups your identity providers, MCP resources, and access policies. Get your zone ID from [console.keycard.ai](https://console.keycard.ai).
+- **Delegated Access** — Calling external APIs (Google, GitHub, Slack, etc.) on behalf of your authenticated users via [RFC 8693](https://datatracker.ietf.org/doc/html/rfc8693) token exchange.
+- **`@grant` decorator** — Declares which external APIs a tool needs. Automatically exchanges the user's token for a scoped token before your function runs.
+- **AccessContext** — The result of a grant. Contains exchanged tokens or errors. Non-throwing by design — always check `.has_errors()` before using tokens.
+- **Application Credentials** — How your server authenticates with Keycard for token exchange. Three types: `ClientSecret`, `WebIdentity`, `EKSWorkloadIdentity`.
 
 ## Known Limitations & Non-Goals
 
@@ -439,8 +449,13 @@ app = auth_provider.app(mcp, middleware=middleware)
 ## Documentation
 
 - [Full documentation](https://docs.keycard.ai) — API reference, tutorials, integration guides
-- [Package docs](packages/) — Detailed README for each package
-- [Examples](packages/mcp/examples/) — Runnable example projects
+- **Package docs:**
+  - [keycardai-mcp](packages/mcp/) — MCP server authentication
+  - [keycardai-mcp-fastmcp](packages/mcp-fastmcp/) — FastMCP integration
+  - [keycardai-mcp client](packages/mcp/src/keycardai/mcp/client/) — MCP client (CLI, web apps, AI agent integrations)
+  - [keycardai-agents](packages/agents/) — Agent-to-agent delegation (A2A)
+  - [keycardai-oauth](packages/oauth/) — OAuth 2.0 client
+- **Examples:** [MCP](packages/mcp/examples/) · [FastMCP](packages/mcp-fastmcp/examples/) · [OAuth](packages/oauth/examples/) · [Agents](packages/agents/examples/)
 
 ## License
 

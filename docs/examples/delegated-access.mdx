@@ -1,0 +1,50 @@
+---
+title: "Delegated Access"
+description: "How token exchange lets your MCP tools call external APIs on behalf of users"
+---
+
+# Delegated Access
+
+Delegated access is Keycard's core value proposition: your MCP tools can call external APIs (Google Calendar, GitHub, Slack, etc.) **on behalf of authenticated users** without ever handling their credentials directly.
+
+## How it works
+
+When a user calls a tool that needs external API access:
+
+1. The `@grant` decorator intercepts the call and identifies which APIs are needed
+2. Keycard exchanges the user's MCP token for scoped tokens targeting each external API ([RFC 8693](https://datatracker.ietf.org/doc/html/rfc8693) token exchange)
+3. Exchanged tokens are collected in an `AccessContext` object
+4. Your function receives the tokens and calls the external APIs
+
+If any token exchange fails, the error is set on the `AccessContext` — no exceptions are thrown. Always check `.has_errors()` before using tokens.
+
+## Setup requirements
+
+Delegated access requires **application credentials** so your server can authenticate with Keycard for token exchange. Set these as environment variables:
+
+```bash
+export KEYCARD_CLIENT_ID="your-client-id"       # From console.keycard.ai
+export KEYCARD_CLIENT_SECRET="your-client-secret" # From console.keycard.ai
+```
+
+Three credential types are supported: `ClientSecret` (most common), `WebIdentity` (private key JWT), and `EKSWorkloadIdentity` (AWS EKS). See the package READMEs for details on each.
+
+## Get started
+
+Runnable examples with full setup instructions (including GitHub App configuration):
+
+- **FastMCP:** [Delegated Access example](https://github.com/keycardai/python-sdk/tree/main/packages/mcp-fastmcp/examples/delegated_access) — GitHub API integration with error handling patterns
+- **Standard MCP:** [Delegated Access example](https://github.com/keycardai/python-sdk/tree/main/packages/mcp/examples/delegated_access) — Same flow using the low-level MCP SDK
+
+## Key differences between packages
+
+| | FastMCP (`keycardai-mcp-fastmcp`) | Standard MCP (`keycardai-mcp`) |
+|---|---|---|
+| **AccessContext** | Retrieved from context: `ctx.get_state("keycardai")` | Injected as function parameter: `access_ctx: AccessContext` |
+| **Grant decorator** | `@auth_provider.grant("https://api.example.com")` | `@auth_provider.grant("https://api.example.com")` |
+
+## Reference
+
+- [keycardai-mcp-fastmcp README — Delegated Access](https://github.com/keycardai/python-sdk/tree/main/packages/mcp-fastmcp#delegated-access) — Full configuration, credential types, error handling
+- [keycardai-mcp README — Delegated Access](https://github.com/keycardai/python-sdk/tree/main/packages/mcp#delegated-access) — Same for standard MCP
+- [Root README — Delegated Access](https://github.com/keycardai/python-sdk#delegated-access) — Side-by-side code comparison

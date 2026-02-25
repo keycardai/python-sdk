@@ -28,15 +28,18 @@
           {
             "group": "Getting Started",
             "pages": [
-              "welcome"
+              "welcome",
+              "concepts"
             ]
           },
           {
             "group": "Guides",
             "pages": [
               "examples/fastmcp-integration",
+              "examples/mcp-server-auth",
               "examples/mcp-client-usage",
-              "examples/mcp-server-auth"
+              "examples/delegated-access",
+              "examples/testing"
             ]
           }
         ],
@@ -110,7 +113,8 @@
             "group": "Architecture Decisions",
             "pages": [
               "project/decisions/0001-use-uv-workspaces-for-package-management",
-              "project/decisions/0002-modular-package-structure-for-minimal-dependencies"
+              "project/decisions/0002-modular-package-structure-for-minimal-dependencies",
+              "project/decisions/0003-use-commitizen-for-commit-validation-and-changelog-management"
             ]
           },
           {
