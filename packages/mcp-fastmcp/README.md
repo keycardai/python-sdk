@@ -2,6 +2,8 @@
 
 A Python package that provides seamless integration between Keycard and FastMCP servers, enabling secure token exchange and authentication for MCP tools.
 
+> **Using `mcp.server.fastmcp` (the MCP SDK's built-in FastMCP)?** See [keycardai-mcp](../mcp/) instead. This package is for the standalone [FastMCP](https://github.com/jlowin/fastmcp) framework. For help choosing, see the [root README](../../README.md#which-package).
+
 ## Requirements
 
 - **Python 3.10 or greater**

@@ -971,7 +971,7 @@ uv run mcp-crewai
 
 ## Support
 
-- **Documentation:** [https://docs.keycard.cloud](https://docs.keycard.cloud)
+- **Documentation:** [https://docs.keycard.ai](https://docs.keycard.ai)
 - **GitHub:** [https://github.com/keycardai/python-sdk](https://github.com/keycardai/python-sdk)
 - **Issues:** [https://github.com/keycardai/python-sdk/issues](https://github.com/keycardai/python-sdk/issues)
 

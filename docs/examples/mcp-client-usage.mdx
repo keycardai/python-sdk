@@ -12,7 +12,7 @@ The Keycard MCP client connects to authenticated MCP servers with built-in OAuth
 - **OAuth 2.0 flows** — Automatic browser-based authentication when connecting to protected servers
 - **Multi-server connections** — Connect to multiple MCP servers with independent session and status tracking
 - **Graceful failures** — Connection issues are reported via session status, not exceptions. Your app stays running even if one server is down.
-- **AI agent integrations** — Pre-built integrations with LangChain and OpenAI Agents SDK
+- **AI agent integrations** — Pre-built integrations with LangChain, OpenAI Agents SDK, and CrewAI
 
 ## How it works
 
@@ -23,8 +23,30 @@ The `Client` accepts a dictionary of server configurations. Each server specifie
 3. Tracks each server's session status independently
 4. Provides `list_tools()` and `call_tool()` across all connected servers
 
+## Use cases
+
+The MCP client supports multiple execution environments, each with its own auth coordinator and storage backend:
+
+| Use Case | Auth Coordinator | Storage | Guide Section |
+|----------|-----------------|---------|---------------|
+| **CLI / Desktop apps** | `LocalAuthCoordinator` (opens browser, blocks until auth) | `InMemoryBackend` | [CLI Applications](https://github.com/keycardai/python-sdk/blob/main/packages/mcp/src/keycardai/mcp/client/README.md#1-cli-applications) |
+| **Web apps** | `StarletteAuthCoordinator` (returns auth URL, non-blocking) | `InMemoryBackend` or `SQLiteBackend` | [Web Applications](https://github.com/keycardai/python-sdk/blob/main/packages/mcp/src/keycardai/mcp/client/README.md#2-web-applications) |
+| **Event-driven / bots** | `StarletteAuthCoordinator` + event subscribers | Configurable | [Event-Driven](https://github.com/keycardai/python-sdk/blob/main/packages/mcp/src/keycardai/mcp/client/README.md#3-event-driven--metadata-propagation) |
+| **Serverless** | `StarletteAuthCoordinator` | `SQLiteBackend` (persists to disk) | [Web Applications](https://github.com/keycardai/python-sdk/blob/main/packages/mcp/src/keycardai/mcp/client/README.md#2-web-applications) |
+
+## AI agent integrations
+
+The client provides framework integrations that automatically handle authentication for AI agents:
+
+| Framework | Installation | Notes |
+|-----------|-------------|-------|
+| **LangChain** | `uv add keycardai-mcp langchain` | Native async support |
+| **OpenAI Agents** | `uv add keycardai-mcp openai-agents` | Native async support |
+| **CrewAI** | `uv add "keycardai-mcp[crewai]"` | Requires `[crewai]` extra for sync/async bridge |
+
+Each integration provides `get_tools()`, `get_system_prompt()`, and `get_auth_tools()` — see the full client documentation for code examples.
+
 ## Get started
 
-For complete documentation, configuration examples, and advanced usage patterns (web applications, event-driven architectures, AI agent integrations):
-
-- **[MCP Client README](https://github.com/keycardai/python-sdk/blob/main/packages/mcp/src/keycardai/mcp/client/README.md)** — Full client documentation
+- **[MCP Client README](https://github.com/keycardai/python-sdk/blob/main/packages/mcp/src/keycardai/mcp/client/README.md)** — Complete documentation with use case examples, configuration, AI agent integrations, and troubleshooting
+- **[Client Connection Example](https://github.com/keycardai/python-sdk/tree/main/packages/mcp/examples/client_connection)** — Runnable example project

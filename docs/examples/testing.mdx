@@ -1,0 +1,39 @@
+---
+title: "Testing"
+description: "How to test MCP servers that use Keycard authentication"
+---
+
+# Testing
+
+Keycard provides testing utilities so you can write unit tests for your MCP tools without needing a real Keycard zone or OAuth flow.
+
+## How it works
+
+The `mock_access_context()` function creates a fake `AccessContext` that simulates token exchange results. You can configure it to return tokens, errors, or a mix of both — matching any scenario your tool might encounter in production.
+
+This lets you test:
+
+- **Default token** — The token from the authenticated user's session
+- **Custom tokens** — Tokens exchanged for specific external APIs
+- **Resource-specific tokens** — Different tokens for different APIs in a multi-grant tool
+- **Error scenarios** — What happens when token exchange fails
+
+## Package support
+
+Testing utilities are currently available for the FastMCP integration:
+
+```python
+from keycardai.mcp.integrations.fastmcp.testing import mock_access_context
+```
+
+For standard MCP (`keycardai-mcp`), test by constructing `AccessContext` objects directly.
+
+## Get started
+
+The FastMCP README has a comprehensive testing section with examples for all scenarios:
+
+- [Testing section](https://github.com/keycardai/python-sdk/tree/main/packages/mcp-fastmcp#testing) — `mock_access_context()` usage, test patterns, and complete examples
+
+## Reference
+
+- [mock_access_context API](sdk/keycardai-mcp-integrations-fastmcp-testing-test_utils) — Auto-generated API reference

@@ -2,6 +2,8 @@
 
 A comprehensive Python SDK for Model Context Protocol (MCP) functionality that simplifies authentication and authorization concerns for developers working with AI/LLM integrations.
 
+> **Using the FastMCP framework?** See [keycardai-mcp-fastmcp](../mcp-fastmcp/) instead. For help choosing, see the [root README](../../README.md#which-package).
+
 ## Requirements
 
 - **Python 3.10 or greater**
