@@ -1,3 +1,13 @@
+## 0.21.0-keycardai-mcp (2026-03-06)
+
+
+- build(keycardai-mcp): bump keycardai-oauth dependency to >=0.7.0
+- refactor(keycardai-mcp)!: optimize error formatting in token exchange chain
+- Restructure error dicts to remove redundancy and improve readability.
+Key renames: error->message, error_code->code, error_description->description,
+resource_errors->resources. Only include raw_error for non-OAuth exceptions.
+- BREAKING CHANGE: Error dict keys renamed: error->message, error_code->code, error_description->description. The get_errors() output key resource_errors is now resources.
+
 ## 0.20.1-keycardai-mcp (2026-02-06)
 
 
