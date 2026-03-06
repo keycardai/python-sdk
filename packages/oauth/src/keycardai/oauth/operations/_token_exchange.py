@@ -64,14 +64,24 @@ def parse_token_exchange_http_response(res: HttpResponse) -> TokenResponse:
         OAuthHttpError: If HTTP error status
         OAuthProtocolError: If invalid response format
     """
-    # TODO: Handle errors more granularly
     if res.status >= 400:
-        response_body = res.body[:512].decode("utf-8", "ignore")
+        full_body = res.body.decode("utf-8", "ignore")
+        try:
+            data = json.loads(full_body)
+            if isinstance(data, dict) and "error" in data:
+                raise OAuthProtocolError(
+                    error=data["error"],
+                    error_description=data.get("error_description"),
+                    error_uri=data.get("error_uri"),
+                    operation="POST /token (exchange)",
+                )
+        except (json.JSONDecodeError, ValueError):
+            pass
         raise OAuthHttpError(
             status_code=res.status,
-            response_body=response_body,
+            response_body=full_body[:512],
             headers=dict(res.headers),
-            operation="POST /token (exchange)"
+            operation="POST /token (exchange)",
         )
 
     try:
