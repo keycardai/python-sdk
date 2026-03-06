@@ -1,3 +1,12 @@
+## 0.19.0-keycardai-mcp-fastmcp (2026-03-06)
+
+
+- refactor(keycardai-mcp-fastmcp)!: optimize error formatting in token exchange chain
+- Restructure error dicts to remove redundancy and improve readability.
+Key renames: error->message, error_code->code, error_description->description,
+resource_errors->resources. Only include raw_error for non-OAuth exceptions.
+- BREAKING CHANGE: Error dict keys renamed: error->message, error_code->code, error_description->description. The get_errors() output key resource_errors is now resources.
+
 ## 0.18.1-keycardai-mcp-fastmcp (2025-11-23)
 
 
