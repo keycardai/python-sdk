@@ -1,3 +1,10 @@
+## 0.7.0-keycardai-oauth (2026-03-06)
+
+
+- fix(keycardai-oauth): update test to expect OAuthProtocolError for structured error bodies
+- feat(keycardai-oauth)!: detailed error reporting
+- BREAKING CHANGE: Token exchange HTTP 4xx errors with structured JSON bodies now raise OAuthProtocolError instead of OAuthHttpError. Callers catching OAuthHttpError for these responses must update to catch OAuthProtocolError.
+
 ## 0.6.0-keycardai-oauth (2025-11-17)
 
 
