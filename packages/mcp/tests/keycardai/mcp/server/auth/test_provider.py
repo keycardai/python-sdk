@@ -122,7 +122,7 @@ class TestGrantDecoratorParameterHandling:
         def test_function(access_ctx: AccessContext, ctx: Context, user_id: str) -> dict:
             if access_ctx.has_error():
                 error = access_ctx.get_error()
-                return {"error": error["error"]}
+                return {"error": error["message"]}
             return {"success": True}
 
         # Call without providing ctx parameter - should cause TypeError due to missing required argument
@@ -141,7 +141,7 @@ class TestGrantDecoratorParameterHandling:
         def test_function(access_ctx: AccessContext, ctx: Context, user_id: str) -> dict:
             if access_ctx.has_error():
                 error = access_ctx.get_error()
-                return {"error": error["error"]}
+                return {"error": error["message"]}
             return {"success": True}
 
         # Call with ctx=None - should cause error
@@ -161,7 +161,7 @@ class TestGrantDecoratorParameterHandling:
         def test_function(access_ctx: AccessContext, ctx: Context, user_id: str) -> dict:
             if access_ctx.has_error():
                 error = access_ctx.get_error()
-                return {"error": error["error"]}
+                return {"error": error["message"]}
             return {"success": True, "user_id": user_id}
 
         mock_context = self.create_mock_context_with_auth()
@@ -185,7 +185,7 @@ class TestGrantDecoratorParameterHandling:
         def test_function(access_ctx: AccessContext, ctx: Context, user_id: str) -> dict:
             if access_ctx.has_error():
                 error = access_ctx.get_error()
-                return {"error": error["error"]}
+                return {"error": error["message"]}
             return {"success": True, "user_id": user_id}
 
         mock_context = self.create_mock_context_with_auth()
@@ -211,7 +211,7 @@ class TestGrantDecoratorParameterHandling:
             assert isinstance(access_ctx, AccessContext)
             if access_ctx.has_error():
                 error = access_ctx.get_error()
-                return {"error": error["error"]}
+                return {"error": error["message"]}
             return {"success": True, "has_access_ctx": True}
 
         mock_context = self.create_mock_context_with_auth()
@@ -235,7 +235,7 @@ class TestGrantDecoratorParameterHandling:
         def test_function(access_ctx: AccessContext, ctx: Context, user_id: str) -> dict:
             if access_ctx.has_error():
                 error = access_ctx.get_error()
-                return {"error": error["error"]}
+                return {"error": error["message"]}
             return {"success": True, "user_id": user_id}
 
         mock_context = self.create_mock_context_with_auth()
@@ -260,7 +260,7 @@ class TestGrantDecoratorParameterHandling:
         def test_function(access_ctx: AccessContext, ctx: Context, user_id: str) -> dict:
             if access_ctx.has_error():
                 error = access_ctx.get_error()
-                return {"error": error["error"]}
+                return {"error": error["message"]}
             return {"success": True, "user_id": user_id}
 
         mock_context = self.create_mock_context_with_auth()
@@ -306,7 +306,7 @@ class TestGrantDecoratorContextExtraction:
         def test_function(access_ctx: AccessContext, ctx: Context, user_id: str) -> dict:
             if access_ctx.has_error():
                 error = access_ctx.get_error()
-                return {"error": error["error"]}
+                return {"error": error["message"]}
             return {"success": True}
 
         # Create mock Context with request_context
@@ -330,7 +330,7 @@ class TestGrantDecoratorContextExtraction:
         def test_function(access_ctx: AccessContext, ctx: RequestContext, user_id: str) -> dict:
             if access_ctx.has_error():
                 error = access_ctx.get_error()
-                return {"error": error["error"]}
+                return {"error": error["message"]}
             return {"success": True}
 
         mock_request_context = self.create_mock_request_context_with_auth()
@@ -351,7 +351,7 @@ class TestGrantDecoratorContextExtraction:
         def test_function(access_ctx: AccessContext, ctx: Context, user_id: str) -> dict:
             if access_ctx.has_error():
                 error = access_ctx.get_error()
-                return {"error": error["error"]}
+                return {"error": error["message"]}
             return {"success": True}
 
         # Create mock Context without auth info
@@ -435,7 +435,7 @@ class TestGrantDecoratorParameterInjection:
         def test_function(access_ctx: AccessContext, ctx: Context, user_id: str, extra_param: str = "default") -> dict:
             if access_ctx.has_error():
                 error = access_ctx.get_error()
-                return {"error": error["error"]}
+                return {"error": error["message"]}
             return {
                 "success": True,
                 "user_id": user_id,
@@ -466,7 +466,7 @@ class TestGrantDecoratorParameterInjection:
         def test_function(access_ctx: AccessContext, ctx: Context, user_id: str, extra_param: str = "default") -> dict:
             if access_ctx.has_error():
                 error = access_ctx.get_error()
-                return {"error": error["error"]}
+                return {"error": error["message"]}
             return {
                 "success": True,
                 "user_id": user_id,
@@ -574,7 +574,7 @@ class TestGrantDecoratorEdgeCases:
         def test_function(access_ctx: AccessContext, ctx: Context, user_id: str) -> dict:
             if access_ctx.has_error():
                 error = access_ctx.get_error()
-                return {"error": error["error"]}
+                return {"error": error["message"]}
 
             # Try to access both resources
             try:

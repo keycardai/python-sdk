@@ -239,13 +239,13 @@ class TestAccessContextE2E:
         assert ctx.get_status() == "success"
 
         # Set resource error
-        ctx.set_resource_error("https://api1.com", {"error": "Failed"})
+        ctx.set_resource_error("https://api1.com", {"message": "Failed"})
         assert ctx.has_errors()
         assert ctx.has_resource_error("https://api1.com")
         assert ctx.get_status() == "partial_error"
 
         # Set global error
-        ctx.set_error({"error": "Global failure"})
+        ctx.set_error({"message": "Global failure"})
         assert ctx.has_error()
         assert ctx.get_status() == "error"
 
@@ -274,7 +274,7 @@ class TestAccessContextE2E:
         ctx.set_token("https://api.test.com", token)
 
         # Set error for same resource
-        ctx.set_resource_error("https://api.test.com", {"error": "Now failed"})
+        ctx.set_resource_error("https://api.test.com", {"message": "Now failed"})
 
         # Token should no longer be accessible
         with pytest.raises(ResourceAccessError):

@@ -91,14 +91,28 @@ class TestTokenExchangeOperations:
         assert " ".join(result.scope) == "read write"  # scope is parsed as a list
 
     def test_parse_token_exchange_http_response_http_error(self):
-        """Test parsing HTTP error response."""
+        """Test parsing HTTP error response with structured OAuth error body."""
         http_response = HttpResponse(
             status=400,
             headers={"Content-Type": "application/json"},
             body=b'{"error": "invalid_request", "error_description": "Invalid subject_token"}'
         )
 
-        with pytest.raises(OAuthHttpError, match="HTTP 400"):
+        with pytest.raises(OAuthProtocolError, match="invalid_request") as exc_info:
+            parse_token_exchange_http_response(http_response)
+
+        assert exc_info.value.error == "invalid_request"
+        assert exc_info.value.error_description == "Invalid subject_token"
+
+    def test_parse_token_exchange_http_response_http_error_non_json(self):
+        """Test parsing HTTP error response with non-JSON body."""
+        http_response = HttpResponse(
+            status=500,
+            headers={"Content-Type": "text/plain"},
+            body=b"Internal Server Error"
+        )
+
+        with pytest.raises(OAuthHttpError, match="HTTP 500"):
             parse_token_exchange_http_response(http_response)
 
     def test_parse_token_exchange_http_response_invalid_json(self):

@@ -49,8 +49,8 @@ def mock_access_context(
         if has_errors:
             # Return proper error structure matching AccessContext.get_errors()
             mock_access_context_instance.get_errors.return_value = {
-                "resource_errors": {},
-                "error": {"error": error_message}
+                "resources": {},
+                "error": {"message": error_message}
             }
             mock_access_context_instance.access.side_effect = Exception(error_message)
         else:
@@ -66,8 +66,8 @@ def mock_access_context(
                         # Resource not granted - set error state and raise exception
                         mock_access_context_instance.has_errors.return_value = True
                         mock_access_context_instance.get_errors.return_value = {
-                            "resource_errors": {
-                                resource_url: {"error": f"Resource not granted: {resource_url}"}
+                            "resources": {
+                                resource_url: {"message": f"Resource not granted: {resource_url}"}
                             },
                             "error": None
                         }
@@ -82,7 +82,7 @@ def mock_access_context(
 
             mock_access_context_instance.access = mock_access_method
             mock_access_context_instance.get_errors.return_value = {
-                "resource_errors": {},
+                "resources": {},
                 "error": None
             }
 

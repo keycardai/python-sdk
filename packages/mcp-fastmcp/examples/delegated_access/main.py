@@ -116,8 +116,8 @@ async def list_github_repos(ctx: Context, per_page: int = 5) -> dict:
     if access_context.has_resource_error("https://api.github.com"):
         resource_errors = access_context.get_resource_errors("https://api.github.com")
         return {
-            "error": "Token exchange failed for GitHub API",
-            "resource_errors": resource_errors,
+            "message": "Token exchange failed for GitHub API",
+            "details": resource_errors,
         }
 
     # Check for global errors (e.g., no auth token available)
