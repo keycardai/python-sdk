@@ -196,7 +196,7 @@ class AccessContext:
 
     def get_errors(self) -> dict[str, Any] | None:
         """Get global errors if any."""
-        return {"resource_errors": self._resource_errors.copy(), "error": self._error}
+        return {"resources": self._resource_errors.copy(), "error": self._error}
 
     def get_error(self) -> dict[str, str] | None:
         """Get global error if any."""
@@ -689,14 +689,14 @@ class AuthProvider:
                     if not _user_token:
                         logger.warning(f"No authentication token available for {func.__name__}")
                         _set_error({
-                            "error": "No authentication token available. Please ensure you're properly authenticated.",
+                            "message": "No authentication token available. Please ensure you're properly authenticated.",
                         }, None, _access_context, _ctx)
                         return await _call_func(is_async_func, func, *args, **kwargs)
                     logger.introspect(f"User token retrieved: {get_token_debug_info(_user_token.token)}")
                 except Exception as e:
                     logger.error("Failed to get access token")
                     _set_error({
-                        "error": "Failed to get access token from context. Ensure the Context parameter is properly annotated.",
+                        "message": "Failed to get access token from context. Ensure the Context parameter is properly annotated.",
                         "raw_error": str(e),
                     }, None, _access_context, _ctx)
                     return await _call_func(is_async_func, func, *args, **kwargs)
@@ -734,10 +734,16 @@ class AuthProvider:
                         logger.introspect(f"Token details for {resource}: {get_token_debug_info(_token_response.access_token)}")
                     except Exception as e:
                         logger.error(f"Token exchange failed for {resource}")
-                        _set_error({
-                            "error": f"Token exchange failed for {resource}: {e}",
-                            "raw_error": str(e),
-                        }, resource, _access_context, _ctx)
+                        _error_dict: dict[str, str] = {
+                            "message": f"Token exchange failed for {resource}",
+                        }
+                        if hasattr(e, "error"):
+                            _error_dict["code"] = e.error
+                        if hasattr(e, "error_description") and e.error_description:
+                            _error_dict["description"] = e.error_description
+                        if not hasattr(e, "error"):
+                            _error_dict["raw_error"] = str(e)
+                        _set_error(_error_dict, resource, _access_context, _ctx)
                         return await _call_func(is_async_func, func, *args, **kwargs)
 
                 logger.debug(f"All token exchanges completed. Setting access context with {len(_access_tokens)} token(s)")

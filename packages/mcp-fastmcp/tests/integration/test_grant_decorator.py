@@ -35,12 +35,12 @@ def check_access_context_for_errors(ctx: Context, resource: str = None):
     # Check for global error first
     if access_ctx.has_error():
         error = access_ctx.get_error()
-        return {"error": error["error"], "isError": True}
+        return {"error": error["message"], "isError": True}
 
     # Check for resource-specific error if resource specified
     if resource and access_ctx.has_resource_error(resource):
         error = access_ctx.get_resource_error(resource)
-        return {"error": error["error"], "isError": True}
+        return {"error": error["message"], "isError": True}
 
     return None
 
@@ -97,7 +97,7 @@ class TestGrantDecoratorExecution:
             access_ctx = ctx.get_state("keycardai")
             if access_ctx.has_error():
                 error = access_ctx.get_error()
-                return {"error": error["error"], "isError": True}
+                return {"error": error["message"], "isError": True}
             return f"Hello {user_id}"
 
         mock_context = create_mock_context()
@@ -130,14 +130,14 @@ class TestGrantDecoratorExecution:
             access_ctx = ctx.get_state("keycardai")
             if access_ctx.has_resource_error("https://api.example.com"):
                 error = access_ctx.get_resource_errors("https://api.example.com")
-                return {"error": error["error"], "isError": True}
+                return {"error": error["message"], "isError": True}
             return {"error": "No error", "isError": False, "access_ctx": access_ctx}
 
         mock_context = create_mock_context()
 
         result = await test_function(mock_context, "user123")
 
-        assert result["error"] == "Token exchange failed for https://api.example.com: Exchange failed"
+        assert result["error"] == "Token exchange failed for https://api.example.com"
         assert result["isError"] is True
 
     @pytest.mark.asyncio
@@ -279,19 +279,19 @@ class TestAccessContext:
         access_context = AccessContext()
 
         # Test global error
-        access_context.set_error({"error": "Global failure"})
+        access_context.set_error({"message": "Global failure"})
         assert access_context.has_error()
         assert access_context.get_status() == "error"
-        assert access_context.get_error()["error"] == "Global failure"
+        assert access_context.get_error()["message"] == "Global failure"
 
         # Test resource error
         access_context = AccessContext()
         access_context.set_resource_error("https://api1.com", {
-            "error": "Resource failed",
+            "message": "Resource failed",
         })
         assert access_context.has_resource_error("https://api1.com")
         assert access_context.get_status() == "partial_error"
-        assert access_context.get_resource_errors("https://api1.com")["error"] == "Resource failed"
+        assert access_context.get_resource_errors("https://api1.com")["message"] == "Resource failed"
 
     def test_access_context_partial_success(self):
         """Test AccessContext with partial success scenario."""
@@ -304,7 +304,7 @@ class TestAccessContext:
         access_context = AccessContext()
         access_context.set_token("https://api1.com", token_response)
         access_context.set_resource_error("https://api2.com", {
-            "error": "Failed to get token",
+            "message": "Failed to get token",
         })
 
         # Check status
