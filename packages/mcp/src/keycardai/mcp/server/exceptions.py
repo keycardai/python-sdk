@@ -367,7 +367,7 @@ class ResourceAccessError(MCPServerError):
             resource_info = f"'{resource}'" if resource else "resource"
 
             if error_type == "global_error":
-                error_msg = error_details.get('error', 'Unknown global error') if error_details else 'Unknown global error'
+                error_msg = error_details.get('message', 'Unknown global error') if error_details else 'Unknown global error'
                 message = (
                     f"Cannot access resource {resource_info} due to global authentication error.\n\n"
                     f"Error: {error_msg}\n\n"
@@ -375,7 +375,7 @@ class ResourceAccessError(MCPServerError):
                     "Check your authentication setup and ensure you're properly logged in."
                 )
             elif error_type == "resource_error":
-                error_msg = error_details.get('error', 'Unknown resource error') if error_details else 'Unknown resource error'
+                error_msg = error_details.get('message', 'Unknown resource error') if error_details else 'Unknown resource error'
                 message = (
                     f"Cannot access resource {resource_info} due to resource-specific error.\n\n"
                     f"Error: {error_msg}\n\n"

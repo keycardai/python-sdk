@@ -621,7 +621,7 @@ def multi_resource_tool(access_ctx: AccessContext, ctx: Context):
     # Handle failed resources
     for resource in access_ctx.get_failed_resources():
         error = access_ctx.get_resource_errors(resource)
-        results[resource] = {"error": error["error"]}
+        results[resource] = {"error": error["message"]}
     
     return results
 ```

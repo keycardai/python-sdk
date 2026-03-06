@@ -91,7 +91,7 @@ class AccessContext:
 
     def get_errors(self) -> dict[str, Any] | None:
         """Get global errors if any."""
-        return {"resource_errors": self._resource_errors.copy(), "error": self._error}
+        return {"resources": self._resource_errors.copy(), "error": self._error}
 
     def get_error(self) -> dict[str, str] | None:
         """Get global error if any."""
@@ -467,7 +467,7 @@ class AuthProvider:
             @provider.grant("https://api.example.com")
             async def my_async_tool(access_ctx: AccessContext, ctx: Context, user_id: str):
                 if access_ctx.has_errors():
-                    return {"error": "Token exchange failed"}
+                    return {"message": "Token exchange failed"}
                 token = access_ctx.access("https://api.example.com").access_token
                 # Async API call
                 return f"Async data for {user_id}"
@@ -606,37 +606,37 @@ class AuthProvider:
                     _keycardai_auth_info = _extract_auth_info_from_context(*args, **kwargs)
                     if not _keycardai_auth_info:
                         _set_error({
-                            "error": "No request authentication information available. Ensure the provider is correctly configured.",
+                            "message": "No request authentication information available. Ensure the provider is correctly configured.",
                         }, None, _access_ctx)
                         return await _call_func(_is_async_func, func, *args, **kwargs)
 
                     if not _keycardai_auth_info["access_token"]:
                         _set_error({
-                            "error": "No authentication token available. Please ensure you're properly authenticated.",
+                            "message": "No authentication token available. Please ensure you're properly authenticated.",
                         }, None, _access_ctx)
                         return await _call_func(_is_async_func, func, *args, **kwargs)
                 except Exception as e:
                     _set_error({
-                        "error": "Failed to get access token from context. Ensure the Context parameter is properly annotated.",
+                        "message": "Failed to get access token from context. Ensure the Context parameter is properly annotated.",
                         "raw_error": str(e),
                     }, None, _access_ctx)
                     return await _call_func(_is_async_func, func, *args, **kwargs)
                 _client = None
                 if self.enable_multi_zone and not _keycardai_auth_info["zone_id"]:
                     _set_error({
-                        "error": "Zone ID is required for multi-zone configuration but not found in request.",
+                        "message": "Zone ID is required for multi-zone configuration but not found in request.",
                     }, None, _access_ctx)
                     return await _call_func(_is_async_func, func, *args, **kwargs)
                 try:
                     _client = await self._get_or_create_client(_keycardai_auth_info)
                     if _client is None:
                         _set_error({
-                            "error": "OAuth client not available. Server configuration issue.",
+                            "message": "OAuth client not available. Server configuration issue.",
                         }, None, _access_ctx)
                         return await _call_func(_is_async_func, func, *args, **kwargs)
                 except Exception as e:
                     _set_error({
-                        "error": "Failed to initialize OAuth client. Server configuration issue.",
+                        "message": "Failed to initialize OAuth client. Server configuration issue.",
                         "raw_error": str(e),
                     }, None, _access_ctx)
                     return await _call_func(_is_async_func, func, *args, **kwargs)
@@ -666,15 +666,19 @@ class AuthProvider:
                         _token_response = await _client.exchange_token(_token_exchange_request)
                         _access_tokens[resource] = _token_response
                     except Exception as e:
-                        _error_message = f"Token exchange failed for {resource}"
+                        _error_dict: dict[str, str] = {
+                            "message": f"Token exchange failed for {resource}",
+                        }
                         if self.enable_private_key_identity and _keycardai_auth_info.get("resource_client_id"):
-                            _error_message += f" with client id: {_keycardai_auth_info['resource_client_id']}"
-                        _error_message += f": {e}"
+                            _error_dict["message"] += f" with client id: {_keycardai_auth_info['resource_client_id']}"
+                        if hasattr(e, "error"):
+                            _error_dict["code"] = e.error
+                        if hasattr(e, "error_description") and e.error_description:
+                            _error_dict["description"] = e.error_description
+                        if not hasattr(e, "error"):
+                            _error_dict["raw_error"] = str(e)
 
-                        _set_error({
-                            "error": _error_message,
-                            "raw_error": str(e),
-                        }, resource, _access_ctx)
+                        _set_error(_error_dict, resource, _access_ctx)
 
                 # Set successful tokens on the existing access_context (preserves any resource errors)
                 _access_ctx.set_bulk_tokens(_access_tokens)
