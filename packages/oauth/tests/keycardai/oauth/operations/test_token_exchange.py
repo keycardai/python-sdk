@@ -1,5 +1,7 @@
 """Unit tests for OAuth 2.0 Token Exchange operations (RFC 8693)."""
 
+import base64
+import json
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -190,3 +192,39 @@ class TestTokenExchangeOperations:
         assert result.access_token == "async_exchanged_token"
         assert result.token_type == "Bearer"
         assert result.expires_in == 7200
+
+    def test_build_token_exchange_http_request_with_substitute_user(self):
+        from urllib.parse import parse_qs
+
+        from keycardai.oauth.utils.jwt import build_substitute_user_token
+
+        su_token = build_substitute_user_token("user@example.com")
+        req = TokenExchangeRequest(
+            subject_token=su_token,
+            subject_token_type=TokenType.SUBSTITUTE_USER,
+            resource="https://api.example.com",
+            grant_type=GrantType.TOKEN_EXCHANGE
+        )
+
+        auth = NoneAuth()
+        http_req = build_token_exchange_http_request(
+            req,
+            HTTPContext(endpoint="https://auth.example.com/token", transport=Mock(), auth=auth)
+        )
+
+        body_str = http_req.body.decode('utf-8')
+        assert "subject_token=" in body_str
+        assert "urn%3Akeycard%3Aparams%3Aoauth%3Atoken-type%3Asubstitute-user" in body_str
+
+        form = parse_qs(body_str)
+        subject_token = form["subject_token"][0]
+        parts = subject_token.split(".")
+        assert len(parts) == 3
+        assert parts[2] == ""
+
+        payload = json.loads(base64.urlsafe_b64decode(parts[1] + "=="))
+        assert payload["sub"] == "user@example.com"
+
+        header = json.loads(base64.urlsafe_b64decode(parts[0] + "=="))
+        assert header["typ"] == "vnd.kc.su+jwt"
+        assert header["alg"] == "none"

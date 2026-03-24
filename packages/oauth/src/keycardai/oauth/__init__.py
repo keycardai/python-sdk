@@ -41,6 +41,7 @@ from .exceptions import (
     TokenExchangeError,
 )
 from .http.auth import AuthStrategy, BasicAuth, BearerAuth, MultiZoneBasicAuth, NoneAuth
+from .operations._authorize import build_authorize_url
 from .types.models import (
     PKCE,
     AuthorizationServerMetadata,
@@ -83,6 +84,8 @@ __all__ = [
     "ClientRegistrationRequest",
     "TokenExchangeRequest",
     "AuthorizationServerMetadata",
+    # === Authorization ===
+    "build_authorize_url",
     # === OAuth Enums ===
     "GrantType",
     "ResponseType",

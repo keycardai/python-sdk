@@ -135,6 +135,9 @@ class TokenType(str, Enum):
     # RFC 9068 - JWT Profile for Access Tokens
     JWT = "urn:ietf:params:oauth:token-type:jwt"
 
+    # Keycard extension - Substitute user for impersonation via token exchange
+    SUBSTITUTE_USER = "urn:keycard:params:oauth:token-type:substitute-user"
+
 
 class TokenTypeHint(str, Enum):
     """Token type hints for introspection and revocation as defined in RFCs.

@@ -1,0 +1,12 @@
+[project]
+name = "impersonation-token-exchange"
+version = "0.1.0"
+description = "User impersonation via OAuth 2.0 token exchange with Keycard"
+requires-python = ">=3.10"
+dependencies = [
+    "keycardai-oauth",
+    "python-dotenv>=1.0.0",
+]
+
+[tool.uv.sources]
+keycardai-oauth = { path = "../../", editable = true }

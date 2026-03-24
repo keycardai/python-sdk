@@ -184,8 +184,6 @@ async def exchange_token_async(
 
     Reference: https://datatracker.ietf.org/doc/html/rfc8693#section-2.1
     """
-    # Build HTTP request
-
     http_req = build_token_exchange_http_request(request, context)
 
     # Execute HTTP request using async transport
