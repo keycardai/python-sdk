@@ -118,9 +118,9 @@ mcp = FastMCP("My Secure FastMCP Server", auth=auth)
 # Example with token exchange for external API access
 @mcp.tool()
 @auth_provider.grant("https://api.example.com")
-def call_external_api(ctx: Context, query: str) -> str:
+async def call_external_api(ctx: Context, query: str) -> str:
     # Get access context to check token exchange status
-    access_context: AccessContext = ctx.get_state("keycardai")
+    access_context: AccessContext = await ctx.get_state("keycardai")
     
     # Check for errors before accessing token
     if access_context.has_errors():
@@ -151,9 +151,9 @@ from keycardai.mcp.integrations.fastmcp import AccessContext
 
 @mcp.tool()
 @auth_provider.grant("https://api.example.com")
-def my_tool(ctx: Context, user_id: str) -> str:
+async def my_tool(ctx: Context, user_id: str) -> str:
     # Get the access context
-    access_context: AccessContext = ctx.get_state("keycardai")
+    access_context: AccessContext = await ctx.get_state("keycardai")
     
     # Always check for errors first
     if access_context.has_errors():
@@ -177,8 +177,8 @@ You can request tokens for multiple resources in a single decorator:
 ```python
 @mcp.tool()
 @auth_provider.grant(["https://api.example.com", "https://other-api.com"])
-def multi_resource_tool(ctx: Context) -> str:
-    access_context: AccessContext = ctx.get_state("keycardai")
+async def multi_resource_tool(ctx: Context) -> str:
+    access_context: AccessContext = await ctx.get_state("keycardai")
     
     # Check overall status
     status = access_context.get_status()  # "success", "partial_error", or "error"
@@ -514,15 +514,15 @@ async def test_tool_with_default_token(auth_provider):
     
     @mcp.tool()
     @auth_provider.grant("https://api.example.com")
-    def call_external_api(ctx: Context, query: str) -> str:
-        access_context = ctx.get_state("keycardai")
-        
+    async def call_external_api(ctx: Context, query: str) -> str:
+        access_context = await ctx.get_state("keycardai")
+
         if access_context.has_errors():
             return f"Error: {access_context.get_errors()}"
-        
+
         token = access_context.access("https://api.example.com").access_token
         return f"API result for {query} with token {token}"
-    
+
     # Test with default token
     with mock_access_context():  # Uses "test_access_token" by default
         async with Client(mcp) as client:
@@ -544,11 +544,11 @@ async def test_tool_with_custom_token(auth_provider):
     
     @mcp.tool()
     @auth_provider.grant("https://api.example.com")
-    def call_external_api(ctx: Context, query: str) -> str:
-        access_context = ctx.get_state("keycardai")
+    async def call_external_api(ctx: Context, query: str) -> str:
+        access_context = await ctx.get_state("keycardai")
         token = access_context.access("https://api.example.com").access_token
         return f"API result for {query} with token {token}"
-    
+
     # Test with custom token
     with mock_access_context(access_token="my_custom_token_123"):
         async with Client(mcp) as client:
@@ -568,8 +568,8 @@ async def test_tool_with_resource_specific_tokens(auth_provider):
     
     @mcp.tool()
     @auth_provider.grant(["https://api.example.com", "https://calendar-api.com"])
-    def sync_data(ctx: Context) -> str:
-        access_context = ctx.get_state("keycardai")
+    async def sync_data(ctx: Context) -> str:
+        access_context = await ctx.get_state("keycardai")
         
         api_token = access_context.access("https://api.example.com").access_token
         calendar_token = access_context.access("https://calendar-api.com").access_token
@@ -601,8 +601,8 @@ async def test_tool_with_authentication_error(auth_provider):
     
     @mcp.tool()
     @auth_provider.grant("https://api.example.com")
-    def failing_tool(ctx: Context, query: str) -> str:
-        access_context = ctx.get_state("keycardai")
+    async def failing_tool(ctx: Context, query: str) -> str:
+        access_context = await ctx.get_state("keycardai")
         
         # Always check for errors first
         if access_context.has_errors():
@@ -628,8 +628,8 @@ async def test_tool_with_custom_error_message(auth_provider):
     
     @mcp.tool()
     @auth_provider.grant("https://api.example.com")
-    def error_handling_tool(ctx: Context) -> str:
-        access_context = ctx.get_state("keycardai")
+    async def error_handling_tool(ctx: Context) -> str:
+        access_context = await ctx.get_state("keycardai")
         
         if access_context.has_errors():
             return f"Error occurred: {access_context.get_errors()}"

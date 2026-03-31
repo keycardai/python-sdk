@@ -31,7 +31,7 @@ The `@grant` decorator handles token exchange automatically. When a user calls a
 
 1. Keycard exchanges the user's token for a scoped token targeting the external API
 2. The exchanged token is stored in FastMCP's context state under the `"keycardai"` namespace
-3. Your function retrieves it via `ctx.get_state("keycardai")`
+3. Your function retrieves it via `await ctx.get_state("keycardai")`
 4. You extract the token and call the external API
 
 If the exchange fails, the error is set on the `AccessContext` — no exceptions are thrown. Always check `access_context.has_errors()` before using tokens.
@@ -41,8 +41,8 @@ If the exchange fails, the error is set on the `AccessContext` — no exceptions
 In `keycardai-mcp-fastmcp`, `AccessContext` is **retrieved from context state**:
 
 ```
-def my_tool(ctx: Context) -> dict:
-    access_context = ctx.get_state("keycardai")
+async def my_tool(ctx: Context) -> dict:
+    access_context = await ctx.get_state("keycardai")
 ```
 
 In `keycardai-mcp`, `AccessContext` is a **function parameter** injected by `@grant`:

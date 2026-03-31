@@ -57,7 +57,7 @@ async def get_github_user(ctx: Context) -> dict:
         User profile data or error details
     """
     # Get access context from FastMCP context namespace
-    access_context: AccessContext = ctx.get_state("keycardai")
+    access_context: AccessContext = await ctx.get_state("keycardai")
 
     # Check for any errors (global or resource-specific)
     if access_context.has_errors():
@@ -110,7 +110,7 @@ async def list_github_repos(ctx: Context, per_page: int = 5) -> dict:
     Returns:
         List of repositories or error details
     """
-    access_context: AccessContext = ctx.get_state("keycardai")
+    access_context: AccessContext = await ctx.get_state("keycardai")
 
     # Check for resource-specific error (alternative to has_errors())
     if access_context.has_resource_error("https://api.github.com"):

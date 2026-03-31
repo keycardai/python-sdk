@@ -36,8 +36,8 @@ Basic Usage:
     # Use grant decorator for token exchange
     @mcp.tool()
     @auth_provider.grant("https://api.example.com")
-    def call_external_api(ctx: Context, query: str):
-        token = ctx.get_state("keycardai").access("https://api.example.com").access_token
+    async def call_external_api(ctx: Context, query: str):
+        token = (await ctx.get_state("keycardai")).access("https://api.example.com").access_token
         # Use token to call external API
         return f"Results for {query}"
 
@@ -57,8 +57,8 @@ Advanced Configuration:
     @mcp.tool()
     @auth_provider.grant(["https://www.googleapis.com/calendar/v3", "https://www.googleapis.com/drive/v3"])
     async def sync_calendar_to_drive(ctx: Context):
-        calendar_token = ctx.get_state("keycardai").access("https://www.googleapis.com/calendar/v3").access_token
-        drive_token = ctx.get_state("keycardai").access("https://www.googleapis.com/drive/v3").access_token
+        calendar_token = (await ctx.get_state("keycardai")).access("https://www.googleapis.com/calendar/v3").access_token
+        drive_token = (await ctx.get_state("keycardai")).access("https://www.googleapis.com/drive/v3").access_token
         # Use both tokens for cross-service operations
         return "Sync completed"
 

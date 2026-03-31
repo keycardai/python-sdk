@@ -48,8 +48,8 @@ def my_tool(access_ctx: AccessContext, ctx: Context) -> dict:
 In `keycardai-mcp-fastmcp`, `AccessContext` is **retrieved from context state**:
 
 ```
-def my_tool(ctx: Context) -> dict:
-    access_context = ctx.get_state("keycardai")
+async def my_tool(ctx: Context) -> dict:
+    access_context = await ctx.get_state("keycardai")
 ```
 
 ## Get started

@@ -65,7 +65,7 @@ You should see JSON with `issuer`, `authorization_endpoint`, and other OAuth met
 | Feature | FastMCP Integration | Low-Level MCP |
 |---------|---------------------|---------------|
 | Auth provider | `get_remote_auth_provider()` | `auth_provider.app(mcp)` |
-| AccessContext | `ctx.get_state("keycardai")` | Function parameter |
+| AccessContext | `await ctx.get_state("keycardai")` | Function parameter |
 | Server startup | `mcp.run()` | `uvicorn.run(app)` |
 
 ## Delegated Access

@@ -282,8 +282,8 @@ class MissingContextError(MCPServerError):
                     "Fix by adding Context parameter:\n"
                     "  from fastmcp import Context\n\n"
                     "  @auth_provider.grant('https://api.example.com')\n"
-                    f"  def {function_name or 'your_function'}(ctx: Context, ...):  # <- Add 'ctx: Context' parameter\n"
-                    "      access_context = ctx.get_state('keycardai')\n"
+                    f"  async def {function_name or 'your_function'}(ctx: Context, ...):  # <- Add 'ctx: Context' parameter\n"
+                    "      access_context = await ctx.get_state('keycardai')\n"
                     "      # ... rest of function"
                 )
 
