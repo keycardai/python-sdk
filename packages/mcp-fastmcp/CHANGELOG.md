@@ -1,3 +1,14 @@
+## 0.20.0-keycardai-mcp-fastmcp (2026-04-01)
+
+
+- feat(keycardai-mcp-fastmcp): upgrade to FastMCP 3.0
+- Upgrade keycardai-mcp-fastmcp from fastmcp>=2.14.0,<3.0.0 to fastmcp>=3.0.0.
+- Key changes:
+- ctx.get_state()/ctx.set_state() are now async (FastMCP 3.0 breaking change)
+- grant decorator uses await ctx.set_state(..., serializable=False)
+- All examples, docs, and tests updated for async state access
+- Test mocks updated to use async functions for get_state/set_state
+
 ## 0.19.0-keycardai-mcp-fastmcp (2026-03-06)
 
 
