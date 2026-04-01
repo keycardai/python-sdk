@@ -29,7 +29,7 @@ The **`@grant` decorator** declares which external APIs a tool needs access to. 
 ```python
 @auth_provider.grant("https://www.googleapis.com/calendar/v3")
 async def get_events(ctx: Context) -> dict:
-    access_context = ctx.get_state("keycardai")
+    access_context = await ctx.get_state("keycardai")
     token = access_context.access("https://www.googleapis.com/calendar/v3").access_token
     # Use token to call Google Calendar API
 ```
@@ -51,7 +51,7 @@ How you get the AccessContext depends on the package:
 
 | Package | How to get AccessContext |
 |---|---|
-| `keycardai-mcp-fastmcp` | `ctx.get_state("keycardai")` |
+| `keycardai-mcp-fastmcp` | `await ctx.get_state("keycardai")` |
 | `keycardai-mcp` | Function parameter: `access_ctx: AccessContext` |
 
 ## Application Credentials

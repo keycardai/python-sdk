@@ -20,7 +20,7 @@ from keycardai.mcp.server.exceptions import MissingContextError
 from keycardai.oauth.types.models import TokenResponse
 
 
-def check_access_context_for_errors(ctx: Context, resource: str = None):
+async def check_access_context_for_errors(ctx: Context, resource: str = None):
     """Helper function to check AccessContext for errors and return error dict if found.
 
     Args:
@@ -30,7 +30,7 @@ def check_access_context_for_errors(ctx: Context, resource: str = None):
     Returns:
         dict: Error dictionary if error found, None otherwise
     """
-    access_ctx = ctx.get_state("keycardai")
+    access_ctx = await ctx.get_state("keycardai")
 
     # Check for global error first
     if access_ctx.has_error():
@@ -52,10 +52,10 @@ def create_mock_context():
     # Create a state storage for the mock context
     context_state = {}
 
-    def mock_set_state(key: str, value):
+    async def mock_set_state(key: str, value, *, serializable=True):
         context_state[key] = value
 
-    def mock_get_state(key: str):
+    async def mock_get_state(key: str):
         return context_state.get(key)
 
     mock_context.set_state = mock_set_state
@@ -92,9 +92,9 @@ class TestGrantDecoratorExecution:
         )
 
         @auth_provider.grant("https://api.example.com")
-        def test_function(ctx: Context, user_id: str):
+        async def test_function(ctx: Context, user_id: str):
             # Check if there's an error in the context
-            access_ctx = ctx.get_state("keycardai")
+            access_ctx = await ctx.get_state("keycardai")
             if access_ctx.has_error():
                 error = access_ctx.get_error()
                 return {"error": error["message"], "isError": True}
@@ -125,9 +125,9 @@ class TestGrantDecoratorExecution:
         auth_provider.client = mock_client
 
         @auth_provider.grant("https://api.example.com")
-        def test_function(ctx: Context, user_id: str):
+        async def test_function(ctx: Context, user_id: str):
             # Check if there's a resource error
-            access_ctx = ctx.get_state("keycardai")
+            access_ctx = await ctx.get_state("keycardai")
             if access_ctx.has_resource_error("https://api.example.com"):
                 error = access_ctx.get_resource_errors("https://api.example.com")
                 return {"error": error["message"], "isError": True}
@@ -152,9 +152,9 @@ class TestGrantDecoratorExecution:
         )
 
         @auth_provider.grant("https://api.example.com")
-        def test_function(ctx: Context, user_id: str):
+        async def test_function(ctx: Context, user_id: str):
             # Access the token through context
-            token = ctx.get_state("keycardai").access("https://api.example.com").access_token
+            token = (await ctx.get_state("keycardai")).access("https://api.example.com").access_token
             return f"Hello {user_id}, token: {token}"
 
         mock_context = create_mock_context()
@@ -162,7 +162,7 @@ class TestGrantDecoratorExecution:
         result = await test_function(mock_context, "user123")
 
         # Verify context was set with AccessContext
-        keycardai_context = mock_context.get_state("keycardai")
+        keycardai_context = await mock_context.get_state("keycardai")
         assert keycardai_context is not None
         assert isinstance(keycardai_context, AccessContext)
 
@@ -183,7 +183,7 @@ class TestGrantDecoratorExecution:
         @auth_provider.grant("https://api.example.com")
         async def test_async_function(ctx: Context, user_id: str):
             # Access the token through context
-            token = ctx.get_state("keycardai").access("https://api.example.com").access_token
+            token = (await ctx.get_state("keycardai")).access("https://api.example.com").access_token
             return f"Async Hello {user_id}, token: {token}"
 
         mock_context = create_mock_context()
@@ -205,10 +205,11 @@ class TestGrantDecoratorExecution:
         )
 
         @auth_provider.grant(["https://api1.example.com", "https://api2.example.com"])
-        def test_function(ctx: Context, user_id: str):
+        async def test_function(ctx: Context, user_id: str):
             # Access tokens for both resources
-            token1 = ctx.get_state("keycardai").access("https://api1.example.com").access_token
-            token2 = ctx.get_state("keycardai").access("https://api2.example.com").access_token
+            access_ctx = await ctx.get_state("keycardai")
+            token1 = access_ctx.access("https://api1.example.com").access_token
+            token2 = access_ctx.access("https://api2.example.com").access_token
             return f"Hello {user_id}, token1: {token1}, token2: {token2}"
 
         mock_context = create_mock_context()
@@ -345,9 +346,9 @@ class TestGrantDecoratorIntegration:
         )
 
         @auth_provider.grant("https://api.integration.com")
-        def integration_tool(ctx: Context, query: str):
+        async def integration_tool(ctx: Context, query: str):
             """Integration test tool that uses delegated token."""
-            token = ctx.get_state("keycardai").access("https://api.integration.com").access_token
+            token = (await ctx.get_state("keycardai")).access("https://api.integration.com").access_token
             return {
                 "query": query,
                 "token": token,
@@ -368,6 +369,6 @@ class TestGrantDecoratorIntegration:
         # Verify the integration flow worked correctly
 
         # Verify context state was set correctly
-        keycardai_context = mock_context.get_state("keycardai")
+        keycardai_context = await mock_context.get_state("keycardai")
         assert keycardai_context is not None
         assert isinstance(keycardai_context, AccessContext)

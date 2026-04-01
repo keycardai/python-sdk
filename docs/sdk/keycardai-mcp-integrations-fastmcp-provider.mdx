@@ -270,7 +270,7 @@ Decorator for automatic delegated token exchange.
 
 This decorator automates the OAuth token exchange process for accessing
 external resources on behalf of authenticated users. It follows the FastMCP
-Context namespace pattern, making tokens available through ctx.get_state("keycardai").
+Context namespace pattern, making tokens available through await ctx.get_state("keycardai").
 
 The returned value is an instance of AccessContext, which can be used to check the status of the token exchange
 

@@ -309,10 +309,10 @@ class AuthProvider:
         # Use grant decorator for token exchange
         @mcp.tool()
         @auth_provider.grant("https://api.example.com")
-        def my_tool(ctx: Context, user_id: str):
+        async def my_tool(ctx: Context, user_id: str):
             # Use access context to check the status of the token exchange
             # and handle the error state accordingly
-            access_context: AccessContext = ctx.get_state("keycardai")
+            access_context: AccessContext = await ctx.get_state("keycardai")
             if access_context.has_errors():
                 print("Failed to obtain access token for resource")
                 print(f"Error: {access_context.get_errors()}")
@@ -598,9 +598,9 @@ class AuthProvider:
 
             @mcp.tool()
             @auth_provider.grant("https://api.example.com")
-            def my_tool(ctx: Context, user_id: str):
+            async def my_tool(ctx: Context, user_id: str):
                 # Access token available through context namespace
-                access_context: AccessContext = ctx.get_state("keycardai")
+                access_context: AccessContext = await ctx.get_state("keycardai")
                 if access_context.has_errors():
                     print("Failed to obtain access token for resource")
                     print(f"Error: {access_context.get_errors()}")
@@ -609,19 +609,11 @@ class AuthProvider:
                 headers = {"Authorization": f"Bearer {token}"}
                 # Use headers to call external API
                 return f"Data for {user_id}"
-
-            # Also works with async functions
-            @mcp.tool()
-            @auth_provider.grant("https://api.example.com")
-            async def my_async_tool(ctx: Context, user_id: str):
-                token = ctx.get_state("keycardai").access("https://api.example.com").access_token
-                # Async API call
-                return f"Async data for {user_id}"
             ```
 
         The decorated function must:
         - Have a Context parameter from FastMCP (e.g., `ctx: Context`)
-        - Can be either async or sync (the decorator handles both cases automatically)
+        - Be an async function (required for `await ctx.get_state()`)
 
         Raises:
             MissingContextError: If the decorated function doesn't have a Context parameter
@@ -648,13 +640,13 @@ class AuthProvider:
                     return value
             return None
 
-        def _set_error(error: dict[str, str], resource: str | None, access_context: AccessContext, ctx: Context):
+        async def _set_error(error: dict[str, str], resource: str | None, access_context: AccessContext, ctx: Context):
             """Helper to set error context and call function."""
             if resource:
                 access_context.set_resource_error(resource, error)
             else:
                 access_context.set_error(error)
-            ctx.set_state("keycardai", access_context)
+            await ctx.set_state("keycardai", access_context, serializable=False)
 
         async def _call_func(is_async_func: bool, func: Callable, *args, **kwargs):
             if is_async_func:
@@ -688,14 +680,14 @@ class AuthProvider:
                     _user_token = get_access_token()
                     if not _user_token:
                         logger.warning(f"No authentication token available for {func.__name__}")
-                        _set_error({
+                        await _set_error({
                             "message": "No authentication token available. Please ensure you're properly authenticated.",
                         }, None, _access_context, _ctx)
                         return await _call_func(is_async_func, func, *args, **kwargs)
                     logger.introspect(f"User token retrieved: {get_token_debug_info(_user_token.token)}")
                 except Exception as e:
                     logger.error("Failed to get access token")
-                    _set_error({
+                    await _set_error({
                         "message": "Failed to get access token from context. Ensure the Context parameter is properly annotated.",
                         "raw_error": str(e),
                     }, None, _access_context, _ctx)
@@ -743,12 +735,12 @@ class AuthProvider:
                             _error_dict["description"] = e.error_description
                         if not hasattr(e, "error"):
                             _error_dict["raw_error"] = str(e)
-                        _set_error(_error_dict, resource, _access_context, _ctx)
+                        await _set_error(_error_dict, resource, _access_context, _ctx)
                         return await _call_func(is_async_func, func, *args, **kwargs)
 
                 logger.debug(f"All token exchanges completed. Setting access context with {len(_access_tokens)} token(s)")
                 _access_context.set_bulk_tokens(_access_tokens)
-                _ctx.set_state("keycardai", _access_context)
+                await _ctx.set_state("keycardai", _access_context, serializable=False)
                 logger.debug(f"Executing decorated function: {func.__name__}")
                 return await _call_func(is_async_func, func, *args, **kwargs)
             return wrapper

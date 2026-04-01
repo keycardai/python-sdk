@@ -17,7 +17,7 @@ Keycard lets you securely connect your AI IDE or agent to external resources. Wi
 | Feature | FastMCP Integration | Low-Level MCP (this example) |
 |---------|---------------------|------------------------------|
 | Import | `keycardai.mcp.integrations.fastmcp` | `keycardai.mcp.server.auth` |
-| AccessContext | `ctx.get_state("keycardai")` | Function parameter |
+| AccessContext | `await ctx.get_state("keycardai")` | Function parameter |
 | Server startup | `mcp.run()` | `uvicorn.run(auth_provider.app(mcp))` |
 
 ## Prerequisites
@@ -182,7 +182,7 @@ async def get_github_user(access_ctx: AccessContext) -> dict:
     ...
 ```
 
-This differs from the FastMCP integration where you retrieve it via `ctx.get_state("keycardai")`.
+This differs from the FastMCP integration where you retrieve it via `await ctx.get_state("keycardai")`.
 
 ## Error Handling
 

@@ -29,7 +29,7 @@
 ### Current Limitations
 
 - **Alpha Status**: All packages are in early development (`Development Status :: 3 - Alpha`). APIs may change between minor versions.
-- **FastMCP 3.x Not Supported**: The `keycardai-mcp-fastmcp` package is pinned to FastMCP 2.x due to breaking async API changes in FastMCP 3.0 (see [PR #49](https://github.com/keycardai/python-sdk/pull/49)). Support for 3.x will be evaluated once the API stabilizes.
+- **FastMCP 3.x Required**: The `keycardai-mcp-fastmcp` package requires FastMCP 3.0 or later. FastMCP 3.0 made `ctx.get_state()` and `ctx.set_state()` async; all tool functions using these calls must be `async def`.
 - **MCP Protocol Version**: Tested against MCP protocol version as implemented by `mcp>=1.13.1`. Newer MCP protocol versions may introduce incompatibilities.
 
 ### Non-Goals
@@ -54,7 +54,7 @@
 
 | Package | Dependency | Version Constraint | Rationale |
 |---------|------------|-------------------|-----------|
-| `keycardai-mcp-fastmcp` | `fastmcp` | `>=2.13.0,<3.0.0` | FastMCP 3.x has breaking async API changes. Constraint will be lifted when migration is complete. |
+| `keycardai-mcp-fastmcp` | `fastmcp` | `>=3.0.0` | FastMCP 3.0+ required. `ctx.get_state()`/`ctx.set_state()` are now async. |
 | All packages | `pydantic` | `>=2.11.7` | No upper bound - Pydantic 2.x maintains backward compatibility. |
 | All packages | `httpx` | `>=0.27.2` | No upper bound - httpx follows semver. |
 | `keycardai-mcp` | `mcp` | `>=1.13.1` | No upper bound - API is protocol-defined. |
@@ -205,7 +205,7 @@ mcp = FastMCP("My Server", auth=auth)
 async def get_calendar_events(ctx: Context) -> dict:
     """Get the user's calendar events with delegated access."""
     # Retrieve access context from FastMCP context
-    access_context: AccessContext = ctx.get_state("keycardai")
+    access_context: AccessContext = await ctx.get_state("keycardai")
 
     if access_context.has_errors():
         return {"error": f"Token exchange failed: {access_context.get_errors()}"}
@@ -262,7 +262,7 @@ async def get_calendar_events(access_ctx: AccessContext, ctx: Context) -> dict:
 app = auth_provider.app(mcp)
 ```
 
-> **Key difference:** In `keycardai-mcp`, the `@grant` decorator requires both `access_ctx: AccessContext` and `ctx: Context` as function parameters. In `keycardai-mcp-fastmcp`, `AccessContext` is retrieved from the FastMCP `Context` via `ctx.get_state("keycardai")`.
+> **Key difference:** In `keycardai-mcp`, the `@grant` decorator requires both `access_ctx: AccessContext` and `ctx: Context` as function parameters. In `keycardai-mcp-fastmcp`, `AccessContext` is retrieved from the FastMCP `Context` via `await ctx.get_state("keycardai")`.
 
 For complete delegated access examples with error handling patterns, see:
 - [FastMCP delegated access example](packages/mcp-fastmcp/examples/delegated_access/)

@@ -40,7 +40,7 @@ Runnable examples with full setup instructions (including GitHub App configurati
 
 | | FastMCP (`keycardai-mcp-fastmcp`) | Standard MCP (`keycardai-mcp`) |
 |---|---|---|
-| **AccessContext** | Retrieved from context: `ctx.get_state("keycardai")` | Injected as function parameter: `access_ctx: AccessContext` |
+| **AccessContext** | Retrieved from context: `await ctx.get_state("keycardai")` | Injected as function parameter: `access_ctx: AccessContext` |
 | **Grant decorator** | `@auth_provider.grant("https://api.example.com")` | `@auth_provider.grant("https://api.example.com")` |
 
 ## Reference
