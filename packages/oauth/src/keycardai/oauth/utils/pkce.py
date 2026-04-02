@@ -17,6 +17,10 @@ Security Benefits:
 - Enables secure OAuth flows for mobile and SPA applications
 """
 
+import base64
+import hashlib
+import secrets
+
 from pydantic import BaseModel
 
 
@@ -86,8 +90,12 @@ class PKCEGenerator:
 
         Reference: https://datatracker.ietf.org/doc/html/rfc7636#section-4.1
         """
-        # Implementation placeholder
-        raise NotImplementedError("PKCE code verifier generation not yet implemented")
+        if length < 43 or length > 128:
+            raise ValueError("Code verifier length must be between 43 and 128 characters")
+        # Scale byte count to requested length so we only generate as much
+        # entropy as needed (base64url expands 3 bytes into 4 chars).
+        nbytes = (length * 3 + 3) // 4
+        return secrets.token_urlsafe(nbytes)[:length]
 
     @staticmethod
     def generate_code_challenge(verifier: str, method: str = "S256") -> str:
@@ -107,8 +115,13 @@ class PKCEGenerator:
 
         Reference: https://datatracker.ietf.org/doc/html/rfc7636#section-4.2
         """
-        # Implementation placeholder
-        raise NotImplementedError("PKCE code challenge generation not yet implemented")
+        if method == PKCEMethods.S256:
+            digest = hashlib.sha256(verifier.encode("ascii")).digest()
+            return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+        elif method == PKCEMethods.PLAIN:
+            return verifier
+        else:
+            raise ValueError(f"Unsupported PKCE method: {method}")
 
     def generate_pkce_pair(
         self, method: str = "S256", verifier_length: int = 128
@@ -127,8 +140,13 @@ class PKCEGenerator:
 
         Reference: https://datatracker.ietf.org/doc/html/rfc7636#section-4
         """
-        # Implementation placeholder
-        raise NotImplementedError("PKCE pair generation not yet implemented")
+        verifier = self.generate_code_verifier(verifier_length)
+        challenge = self.generate_code_challenge(verifier, method)
+        return PKCEChallenge(
+            code_verifier=verifier,
+            code_challenge=challenge,
+            code_challenge_method=method,
+        )
 
     @staticmethod
     def validate_pkce_pair(
@@ -148,5 +166,5 @@ class PKCEGenerator:
 
         Reference: https://datatracker.ietf.org/doc/html/rfc7636#section-4.6
         """
-        # Implementation placeholder
-        raise NotImplementedError("PKCE validation not yet implemented")
+        expected = PKCEGenerator.generate_code_challenge(code_verifier, method)
+        return secrets.compare_digest(expected, code_challenge)
