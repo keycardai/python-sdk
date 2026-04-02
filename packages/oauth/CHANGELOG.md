@@ -1,3 +1,12 @@
+## 0.9.0-keycardai-oauth (2026-04-02)
+
+
+- feat(keycardai-oauth): support for impersonation token exchange
+- - Add substitute-user token type and unsigned JWT builder
+- Add impersonate method to Client and AsyncClient
+- Add user_identifier callback to MCP grant decorator
+- Add impersonation token exchange example
+
 ## 0.8.0-keycardai-oauth (2026-04-02)
 
 
