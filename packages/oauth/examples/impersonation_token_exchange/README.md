@@ -15,7 +15,7 @@ The landing page is a web application where users sign in and grant the backgrou
 
 The same landing page can be used again when new resources need to be authorized.
 
-### Background agent (repeatable, offline)
+### Background agent (repeatable, non-interactive)
 
 The background agent is a confidential client (e.g. `client_secret_basic` or workload identity).
 
@@ -74,7 +74,7 @@ Set up the following in Keycard Console:
 uv sync
 ```
 
-### Step 2: Landing page (interactive, one-time)
+### Step 2: Landing page
 
 Starts the landing page where users sign in and grant the background agent access to resources. In production, this would be deployed as a hosted web application. Resources are determined by the application's dependencies configured in Keycard Console.
 
@@ -99,7 +99,7 @@ Open `http://localhost:3000` in a browser and click "Continue with Keycard".
 
 After the user signs in, find their identifier in Keycard Console under the Users section. The Provider can be configured to map claims (e.g. `email`, `sub`) to the user identifier on creation. The identifier can also be changed from Keycard Console at any time.
 
-### Step 4: Run background agent (offline, repeatable)
+### Step 4: Run background agent
 
 The background agent obtains a resource token for the user without any browser interaction.
 
