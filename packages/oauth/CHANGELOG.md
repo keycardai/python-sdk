@@ -1,3 +1,14 @@
+## 0.8.0-keycardai-oauth (2026-04-02)
+
+
+- feat(keycardai-oauth): add authorization code exchange and PKCE support
+- - Implement PKCE code verifier, challenge generation, and validation
+- Add authorization code exchange operation (sync and async)
+- Add build_authorize_url for constructing OAuth authorize URLs
+- Add exchange_authorization_code to Client and AsyncClient
+- Add get_endpoints/endpoints property to expose resolved endpoints
+- Add id_token field to TokenResponse
+
 ## 0.7.0-keycardai-oauth (2026-03-06)
 
 
