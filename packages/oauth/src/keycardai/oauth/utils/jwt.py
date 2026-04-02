@@ -42,6 +42,39 @@ from ..http._wire import HttpRequest
 from ..types.models import ClientConfig
 
 
+def build_substitute_user_token(identifier: str) -> str:
+    """Build an unsigned JWT for user impersonation via token exchange.
+
+    Creates a JWT with header {"typ": "vnd.kc.su+jwt", "alg": "none"}
+    and payload {"sub": identifier}, with no signature.
+
+    The token is intentionally unsigned. Security relies on client
+    authentication (e.g. client_secret_basic) and prior user consent
+    (a delegated grant for the requested resource).
+
+    Args:
+        identifier: User identifier string (e.g. email, sub, oid value)
+
+    Returns:
+        Base64url-encoded JWT string in format: header.payload.
+    """
+    header = {"typ": "vnd.kc.su+jwt", "alg": "none"}
+    if not identifier:
+        raise ValueError("identifier must be a non-empty string")
+
+    payload = {"sub": identifier}
+
+    # Encode header and payload as base64url (no padding)
+    header_json = json.dumps(header, separators=(",", ":"))
+    payload_json = json.dumps(payload, separators=(",", ":"))
+
+    header_b64 = base64.urlsafe_b64encode(header_json.encode()).decode().rstrip("=")
+    payload_b64 = base64.urlsafe_b64encode(payload_json.encode()).decode().rstrip("=")
+
+    # Return header.payload. (trailing dot, empty signature)
+    return f"{header_b64}.{payload_b64}."
+
+
 def _split_jwt_token(jwt_token: str) -> tuple[str, str, str]:
     """Split JWT token into its three parts.
 
