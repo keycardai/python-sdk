@@ -18,6 +18,10 @@ from .http.auth import (
     NoneAuth,
 )
 from .http.transport import AsyncHTTPTransport, HTTPTransport
+from .operations._authorize import (
+    exchange_authorization_code as _exchange_authorization_code,
+    exchange_authorization_code_async as _exchange_authorization_code_async,
+)
 from .operations._discovery import (
     discover_server_metadata,
     discover_server_metadata_async,
@@ -387,6 +391,25 @@ class AsyncClient:
             )
         return self._client_secret
 
+    async def get_endpoints(self) -> "Endpoints":
+        """Get the resolved endpoint URLs.
+
+        Returns endpoints resolved during initialization, incorporating
+        any discovered metadata and explicit overrides.
+
+        Returns:
+            Resolved Endpoints configuration.
+
+        Raises:
+            RuntimeError: If called outside of async context manager.
+        """
+        if not self._initialized:
+            raise RuntimeError(
+                "AsyncClient must be used within 'async with' statement. "
+                "Use 'async with AsyncClient(...) as client:' to properly initialize."
+            )
+        return self._discovered_endpoints or self._endpoints
+
     async def _get_current_endpoints(self) -> "Endpoints":
         """Get current endpoints from cached discovery.
 
@@ -644,6 +667,55 @@ class AsyncClient:
 
         return await exchange_token_async(request, ctx)
 
+    async def exchange_authorization_code(
+        self,
+        *,
+        code: str,
+        redirect_uri: str,
+        code_verifier: str,
+        client_id: str | None = None,
+        timeout: float | None = None,
+    ) -> TokenResponse:
+        """Exchange an authorization code for tokens.
+
+        Supports both public clients (client_id in the body, no auth header)
+        and confidential clients (auth via the client's auth strategy).
+
+        Args:
+            code: The authorization code from the callback.
+            redirect_uri: The redirect URI used in the authorize request.
+            code_verifier: The PKCE code verifier.
+            client_id: Client ID for the form body. Required for public
+                clients. Optional for confidential clients where identity
+                is provided via the auth strategy.
+            timeout: Optional request timeout override.
+
+        Returns:
+            TokenResponse with access token and metadata.
+
+        Raises:
+            OAuthHttpError: If the token endpoint returns an HTTP error.
+            OAuthProtocolError: If the response contains an OAuth error.
+        """
+        endpoints = await self._get_current_endpoints()
+
+        ctx = build_http_context(
+            endpoint=endpoints.token,
+            transport=self.transport,
+            auth=self.auth_strategy,
+            user_agent=self.config.user_agent,
+            custom_headers=self.config.custom_headers,
+            timeout=timeout or self.config.timeout,
+        )
+
+        return await _exchange_authorization_code_async(
+            code=code,
+            redirect_uri=redirect_uri,
+            code_verifier=code_verifier,
+            client_id=client_id,
+            context=ctx,
+        )
+
     def endpoints_summary(self) -> dict[str, dict[str, str]]:
         """Get diagnostic summary of resolved endpoints.
 
@@ -844,6 +916,20 @@ class Client:
         self._ensure_initialized()
         return self._client_secret
 
+    @property
+    def endpoints(self) -> "Endpoints":
+        """Resolved endpoint URLs (lazily initialized).
+
+        Returns endpoints resolved during initialization, incorporating
+        any discovered metadata and explicit overrides.
+
+        Accessing this property will trigger automatic initialization if needed.
+
+        Returns:
+            Resolved Endpoints configuration.
+        """
+        self._ensure_initialized()
+        return self._discovered_endpoints or self._endpoints
 
     @overload
     def register_client(
@@ -1090,6 +1176,55 @@ class Client:
         )
 
         return exchange_token(request, ctx)
+
+    def exchange_authorization_code(
+        self,
+        *,
+        code: str,
+        redirect_uri: str,
+        code_verifier: str,
+        client_id: str | None = None,
+        timeout: float | None = None,
+    ) -> TokenResponse:
+        """Exchange an authorization code for tokens.
+
+        Supports both public clients (client_id in the body, no auth header)
+        and confidential clients (auth via the client's auth strategy).
+
+        Args:
+            code: The authorization code from the callback.
+            redirect_uri: The redirect URI used in the authorize request.
+            code_verifier: The PKCE code verifier.
+            client_id: Client ID for the form body. Required for public
+                clients. Optional for confidential clients where identity
+                is provided via the auth strategy.
+            timeout: Optional request timeout override.
+
+        Returns:
+            TokenResponse with access token and metadata.
+
+        Raises:
+            OAuthHttpError: If the token endpoint returns an HTTP error.
+            OAuthProtocolError: If the response contains an OAuth error.
+        """
+        endpoints = self._get_current_endpoints()
+
+        ctx = build_http_context(
+            endpoint=endpoints.token,
+            transport=self.transport,
+            auth=self.auth_strategy,
+            user_agent=self.config.user_agent,
+            custom_headers=self.config.custom_headers,
+            timeout=timeout or self.config.timeout,
+        )
+
+        return _exchange_authorization_code(
+            code=code,
+            redirect_uri=redirect_uri,
+            code_verifier=code_verifier,
+            client_id=client_id,
+            context=ctx,
+        )
 
     def endpoints_summary(self) -> dict[str, dict[str, str]]:
         """Get diagnostic summary of resolved endpoints.

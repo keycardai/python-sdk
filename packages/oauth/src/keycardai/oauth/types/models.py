@@ -65,6 +65,7 @@ class TokenResponse:
     expires_in: int | None = None
     refresh_token: str | None = None
     scope: list[str] | None = None
+    id_token: str | None = None
 
     # RFC 8693 specific fields
     issued_token_type: TokenType | None = None
