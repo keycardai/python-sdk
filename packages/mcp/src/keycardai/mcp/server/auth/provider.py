@@ -429,7 +429,7 @@ class AuthProvider:
             client_factory=self.client_factory,
         )
 
-    def grant(self, resources: str | list[str]):
+    def grant(self, resources: str | list[str], user_identifier: Callable[..., str] | None = None):
         """Decorator for automatic delegated token exchange.
 
         This decorator automates the OAuth token exchange process for accessing
@@ -477,6 +477,18 @@ class AuthProvider:
         - Have a parameter annotated with `AccessContext` type (e.g., `access_ctx: AccessContext`)
         - Have a parameter annotated with `Context` type from MCP (e.g., `ctx: Context`)
         - Can be either async or sync (the decorator handles both cases automatically)
+
+        When ``user_identifier`` is provided, the decorator uses impersonation
+        (substitute-user token exchange) instead of subject-token-based exchange.
+        The callable receives only the tool's **keyword** arguments (not positional
+        arguments) and should return the user identifier string::
+
+            @provider.grant(
+                "https://graph.microsoft.com",
+                user_identifier=lambda **kw: kw["user_email"],
+            )
+            async def get_calendar(access_ctx: AccessContext, ctx: Context, user_email: str):
+                token = access_ctx.access("https://graph.microsoft.com").access_token
 
         Error handling:
         - Sets error state in AccessContext if token exchange fails
@@ -643,17 +655,37 @@ class AuthProvider:
                 _resource_list = (
                     [resources] if isinstance(resources, str) else resources
                 )
+
+                # Resolve user identifier for impersonation if callback provided
+                _resolved_user_id: str | None = None
+                if user_identifier is not None:
+                    try:
+                        _resolved_user_id = user_identifier(**kwargs)
+                    except Exception as e:
+                        _set_error({
+                            "message": "Failed to resolve user_identifier from tool arguments.",
+                            "raw_error": str(e),
+                        }, None, _access_ctx)
+                        return await _call_func(_is_async_func, func, *args, **kwargs)
+
                 _access_tokens = {}
                 for resource in _resource_list:
                     try:
-                        # Prepare token exchange request using application identity provider
-                        if self.application_credential:
+                        if _resolved_user_id is not None:
+                            # Impersonation path: use substitute-user token exchange
+                            _token_response = await _client.impersonate(
+                                user_identifier=_resolved_user_id,
+                                resource=resource,
+                            )
+                        elif self.application_credential:
+                            # Prepare token exchange request using application identity provider
                             _token_exchange_request = await self.application_credential.prepare_token_exchange_request(
                                 client=_client,
                                 subject_token=_keycardai_auth_info["access_token"],
                                 resource=resource,
                                 auth_info=_keycardai_auth_info,
                             )
+                            _token_response = await _client.exchange_token(_token_exchange_request)
                         else:
                             # Basic token exchange without client authentication
                             _token_exchange_request = TokenExchangeRequest(
@@ -661,9 +693,8 @@ class AuthProvider:
                                 resource=resource,
                                 subject_token_type="urn:ietf:params:oauth:token-type:access_token",
                             )
+                            _token_response = await _client.exchange_token(_token_exchange_request)
 
-                        # Execute token exchange
-                        _token_response = await _client.exchange_token(_token_exchange_request)
                         _access_tokens[resource] = _token_response
                     except Exception as e:
                         _error_dict: dict[str, str] = {

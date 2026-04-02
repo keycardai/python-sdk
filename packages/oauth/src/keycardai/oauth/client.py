@@ -49,7 +49,9 @@ from .types.oauth import (
     OAuth2DefaultEndpoints,
     ResponseType,
     TokenEndpointAuthMethod,
+    TokenType,
 )
+from .utils.jwt import build_substitute_user_token
 
 
 def resolve_endpoints(
@@ -716,6 +718,67 @@ class AsyncClient:
             context=ctx,
         )
 
+    async def impersonate(
+        self,
+        *,
+        user_identifier: str,
+        resource: str,
+        scope: str | None = None,
+        timeout: float | None = None,
+    ) -> TokenResponse:
+        """Impersonate a user to obtain a resource token.
+
+        Performs an RFC 8693 token exchange using a substitute-user subject token.
+        The calling application must authenticate via client credentials and the
+        user must have previously established a delegated grant for the resource.
+
+        This is a privileged operation controlled by policy. Impersonation is
+        forbidden by default; an administrator must explicitly allow it.
+
+        Args:
+            user_identifier: Stable user identifier (e.g. email, oid).
+            resource: Target resource URI (e.g. "https://graph.microsoft.com").
+            scope: Optional scope string for the requested token.
+            timeout: Optional request timeout override.
+
+        Returns:
+            TokenResponse with the resource access token.
+
+        Raises:
+            OAuthHttpError: If the token endpoint returns an HTTP error.
+            OAuthProtocolError: If the response contains an OAuth error.
+
+        Example:
+            async with AsyncClient(
+                "https://zone.keycard.cloud",
+                auth=BasicAuth("client_id", "client_secret"),
+            ) as client:
+                response = await client.impersonate(
+                    user_identifier="user@example.com",
+                    resource="https://graph.microsoft.com",
+                )
+                print(response.access_token)
+        """
+        request = TokenExchangeRequest(
+            subject_token=build_substitute_user_token(user_identifier),
+            subject_token_type=TokenType.SUBSTITUTE_USER,
+            resource=resource,
+            scope=scope,
+        )
+
+        endpoints = await self._get_current_endpoints()
+
+        ctx = build_http_context(
+            endpoint=endpoints.token,
+            transport=self.transport,
+            auth=self.auth_strategy,
+            user_agent=self.config.user_agent,
+            custom_headers=self.config.custom_headers,
+            timeout=timeout or self.config.timeout,
+        )
+
+        return await exchange_token_async(request, ctx)
+
     def endpoints_summary(self) -> dict[str, dict[str, str]]:
         """Get diagnostic summary of resolved endpoints.
 
@@ -1225,6 +1288,67 @@ class Client:
             client_id=client_id,
             context=ctx,
         )
+
+    def impersonate(
+        self,
+        *,
+        user_identifier: str,
+        resource: str,
+        scope: str | None = None,
+        timeout: float | None = None,
+    ) -> TokenResponse:
+        """Impersonate a user to obtain a resource token.
+
+        Performs an RFC 8693 token exchange using a substitute-user subject token.
+        The calling application must authenticate via client credentials and the
+        user must have previously established a delegated grant for the resource.
+
+        This is a privileged operation controlled by policy. Impersonation is
+        forbidden by default; an administrator must explicitly allow it.
+
+        Args:
+            user_identifier: Stable user identifier (e.g. email, oid).
+            resource: Target resource URI (e.g. "https://graph.microsoft.com").
+            scope: Optional scope string for the requested token.
+            timeout: Optional request timeout override.
+
+        Returns:
+            TokenResponse with the resource access token.
+
+        Raises:
+            OAuthHttpError: If the token endpoint returns an HTTP error.
+            OAuthProtocolError: If the response contains an OAuth error.
+
+        Example:
+            with Client(
+                "https://zone.keycard.cloud",
+                auth=BasicAuth("client_id", "client_secret"),
+            ) as client:
+                response = client.impersonate(
+                    user_identifier="user@example.com",
+                    resource="https://graph.microsoft.com",
+                )
+                print(response.access_token)
+        """
+        request = TokenExchangeRequest(
+            subject_token=build_substitute_user_token(user_identifier),
+            subject_token_type=TokenType.SUBSTITUTE_USER,
+            resource=resource,
+            scope=scope,
+        )
+
+        endpoints = self._get_current_endpoints()
+
+        ctx = build_http_context(
+            endpoint=endpoints.token,
+            transport=self.transport,
+            auth=self.auth_strategy,
+            user_agent=self.config.user_agent,
+            custom_headers=self.config.custom_headers,
+            timeout=timeout or self.config.timeout,
+        )
+
+        return exchange_token(request, ctx)
 
     def endpoints_summary(self) -> dict[str, dict[str, str]]:
         """Get diagnostic summary of resolved endpoints.

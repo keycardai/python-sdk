@@ -14,6 +14,7 @@ from keycardai.oauth.utils.jwt import (
     JWTAccessToken,
     _decode_jwt_part,
     _split_jwt_token,
+    build_substitute_user_token,
     decode_and_verify_jwt,
     extract_scopes,
     get_claims,
@@ -51,6 +52,39 @@ class TestJWTTokenSplitting:
             with pytest.raises(ValueError, match="Invalid JWT token format"):
                 _split_jwt_token(token)
 
+
+
+class TestBuildSubstituteUserToken:
+    """Test building unsigned JWT for user impersonation via token exchange."""
+
+    def test_build_substitute_user_token_basic(self):
+        identifier = "user@example.com"
+        token = build_substitute_user_token(identifier)
+
+        parts = token.split(".")
+        assert len(parts) == 3
+        assert parts[2] == ""
+
+        header_json = base64.urlsafe_b64decode(parts[0] + "==").decode()
+        header = json.loads(header_json)
+        assert header["typ"] == "vnd.kc.su+jwt"
+        assert header["alg"] == "none"
+
+        payload_json = base64.urlsafe_b64decode(parts[1] + "==").decode()
+        payload = json.loads(payload_json)
+        assert payload["sub"] == identifier
+
+    def test_build_substitute_user_token_format(self):
+        token = build_substitute_user_token("test@example.com")
+
+        assert token.endswith(".")
+        assert "=" not in token[:-1]
+        assert "+" not in token
+        assert "/" not in token
+
+    def test_build_substitute_user_token_empty_identifier_raises(self):
+        with pytest.raises(ValueError, match="identifier must be a non-empty string"):
+            build_substitute_user_token("")
 
 
 class TestJWTPartDecoding:
