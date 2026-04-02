@@ -76,7 +76,7 @@ def main() -> None:
     load_dotenv()
 
     parser = argparse.ArgumentParser(
-        description="Background Agent: obtain a resource token on behalf of a user (offline)",
+        description="Background Agent: obtain a resource token on behalf of a user (non-interactive)",
     )
     parser.add_argument(
         "--zone-url",
