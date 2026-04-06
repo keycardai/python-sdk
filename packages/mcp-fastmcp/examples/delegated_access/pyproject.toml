@@ -1,5 +1,5 @@
 [project]
-name = "delegated-access-example"
+name = "delegated-access-fastmcp-example"
 version = "0.1.0"
 description = "GitHub API integration with Keycard delegated access using the @grant decorator"
 readme = "README.md"
