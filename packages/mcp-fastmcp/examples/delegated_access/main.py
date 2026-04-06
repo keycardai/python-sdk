@@ -26,8 +26,8 @@ auth_provider = AuthProvider(
     # ClientSecret enables token exchange for delegated access
     application_credential=ClientSecret(
         (
-            os.getenv("KEYCARD_CLIENT_ID"),
-            os.getenv("KEYCARD_CLIENT_SECRET"),
+            os.getenv("KEYCARD_CLIENT_ID", "your-client-id"),
+            os.getenv("KEYCARD_CLIENT_SECRET", "your-client-secret"),
         )
     ),
 )
