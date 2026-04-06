@@ -9,11 +9,35 @@ resolution-markers = [
 
 [manifest]
 members = [
+    "a2a-jsonrpc-usage",
+    "client-connection-example",
+    "delegated-access-fastmcp-example",
+    "delegated-access-lowlevel-example",
+    "discover-server-metadata",
+    "dynamic-client-registration",
+    "hello-world-server",
+    "hello-world-server-lowlevel",
     "keycardai",
     "keycardai-agents",
     "keycardai-mcp",
     "keycardai-mcp-fastmcp",
     "keycardai-oauth",
+    "oauth-client-usage",
+]
+
+[[package]]
+name = "a2a-jsonrpc-usage"
+version = "0.1.0"
+source = { virtual = "packages/agents/examples/a2a_jsonrpc_usage" }
+dependencies = [
+    { name = "httpx" },
+    { name = "keycardai-agents" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx", specifier = ">=0.27.2" },
+    { name = "keycardai-agents", editable = "packages/agents" },
 ]
 
 [[package]]
@@ -727,6 +751,21 @@ wheels = [
 ]
 
 [[package]]
+name = "client-connection-example"
+version = "0.1.0"
+source = { virtual = "packages/mcp/examples/client_connection" }
+dependencies = [
+    { name = "keycardai-mcp" },
+    { name = "uvicorn" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "keycardai-mcp", editable = "packages/mcp" },
+    { name = "uvicorn", specifier = ">=0.30.0" },
+]
+
+[[package]]
 name = "cohere"
 version = "5.20.1"
 source = { registry = "https://pypi.org/simple" }
@@ -988,6 +1027,51 @@ wheels = [
 ]
 
 [[package]]
+name = "delegated-access-fastmcp-example"
+version = "0.1.0"
+source = { virtual = "packages/mcp-fastmcp/examples/delegated_access" }
+dependencies = [
+    { name = "fastmcp" },
+    { name = "httpx" },
+    { name = "keycardai-mcp-fastmcp" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fastmcp", specifier = ">=3.0.0" },
+    { name = "httpx", specifier = ">=0.27.0,<1.0.0" },
+    { name = "keycardai-mcp-fastmcp", editable = "packages/mcp-fastmcp" },
+]
+
+[[package]]
+name = "delegated-access-lowlevel-example"
+version = "0.1.0"
+source = { virtual = "packages/mcp/examples/delegated_access" }
+dependencies = [
+    { name = "httpx" },
+    { name = "keycardai-mcp" },
+    { name = "uvicorn" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx", specifier = ">=0.27.0,<1.0.0" },
+    { name = "keycardai-mcp", editable = "packages/mcp" },
+    { name = "uvicorn", specifier = ">=0.30.0" },
+]
+
+[[package]]
+name = "discover-server-metadata"
+version = "0.1.0"
+source = { virtual = "packages/oauth/examples/discover_server_metadata" }
+dependencies = [
+    { name = "keycardai-oauth" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "keycardai-oauth", editable = "packages/oauth" }]
+
+[[package]]
 name = "diskcache"
 version = "5.6.3"
 source = { registry = "https://pypi.org/simple" }
@@ -1049,6 +1133,17 @@ sdist = { url = "https://files.pythonhosted.org/packages/9d/a4/e44218c2b394e31a6
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b0/0d/9feae160378a3553fa9a339b0e9c1a048e147a4127210e286ef18b730f03/durationpy-0.10-py3-none-any.whl", hash = "sha256:3b41e1b601234296b4fb368338fdcd3e13e0b4fb5b67345948f4f2bf9868b286", size = 3922, upload-time = "2025-05-17T13:52:36.463Z" },
 ]
+
+[[package]]
+name = "dynamic-client-registration"
+version = "0.1.0"
+source = { virtual = "packages/oauth/examples/dynamic_client_registration" }
+dependencies = [
+    { name = "keycardai-oauth" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "keycardai-oauth", editable = "packages/oauth" }]
 
 [[package]]
 name = "email-validator"
@@ -1521,6 +1616,36 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/01/ee/02a2c011bdab74c6fb3c75474d40b3052059d95df7e73351460c8588d963/h11-0.16.0.tar.gz", hash = "sha256:4e35b956cf45792e4caa5885e69fba00bdbc6ffafbfa020300e549b208ee5ff1", size = 101250, upload-time = "2025-04-24T03:35:25.427Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/04/4b/29cac41a4d98d144bf5f6d33995617b185d14b22401f75ca86f384e87ff1/h11-0.16.0-py3-none-any.whl", hash = "sha256:63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86", size = 37515, upload-time = "2025-04-24T03:35:24.344Z" },
+]
+
+[[package]]
+name = "hello-world-server"
+version = "0.1.0"
+source = { virtual = "packages/mcp-fastmcp/examples/hello_world_server" }
+dependencies = [
+    { name = "fastmcp" },
+    { name = "keycardai-mcp-fastmcp" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fastmcp", specifier = ">=3.0.0" },
+    { name = "keycardai-mcp-fastmcp", editable = "packages/mcp-fastmcp" },
+]
+
+[[package]]
+name = "hello-world-server-lowlevel"
+version = "0.1.0"
+source = { virtual = "packages/mcp/examples/hello_world_server" }
+dependencies = [
+    { name = "keycardai-mcp" },
+    { name = "uvicorn" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "keycardai-mcp", editable = "packages/mcp" },
+    { name = "uvicorn", specifier = ">=0.30.0" },
 ]
 
 [[package]]
@@ -3078,6 +3203,17 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/b8/50/94ccd8a2b141cb50651fddd4f6a48874acb3c91c8f0842b08a6afc4b0b21/numpy-2.3.5-pp311-pypy311_pp73-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:63c0e9e7eea69588479ebf4a8a270d5ac22763cc5854e9a7eae952a3908103f7", size = 16729263, upload-time = "2025-11-16T22:52:36.369Z" },
     { url = "https://files.pythonhosted.org/packages/2d/ee/346fa473e666fe14c52fcdd19ec2424157290a032d4c41f98127bfb31ac7/numpy-2.3.5-pp311-pypy311_pp73-win_amd64.whl", hash = "sha256:f16417ec91f12f814b10bafe79ef77e70113a2f5f7018640e7425ff979253425", size = 12967213, upload-time = "2025-11-16T22:52:39.38Z" },
 ]
+
+[[package]]
+name = "oauth-client-usage"
+version = "0.1.0"
+source = { virtual = "packages/agents/examples/oauth_client_usage" }
+dependencies = [
+    { name = "keycardai-agents" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "keycardai-agents", editable = "packages/agents" }]
 
 [[package]]
 name = "oauthlib"
