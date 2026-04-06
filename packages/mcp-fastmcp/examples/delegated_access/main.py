@@ -19,16 +19,15 @@ from fastmcp import Context, FastMCP
 from keycardai.mcp.integrations.fastmcp import AccessContext, AuthProvider, ClientSecret
 
 # Configure Keycard authentication with client credentials for delegated access
-# Get your zone_id and client credentials from console.keycard.ai
+# Set KEYCARD_ZONE_ID (or KEYCARD_ZONE_URL) and client credentials from console.keycard.ai
 auth_provider = AuthProvider(
-    zone_id=os.getenv("KEYCARD_ZONE_ID", "your-zone-id"),
     mcp_server_name="GitHub API Server",
     mcp_base_url=os.getenv("MCP_SERVER_URL", "http://localhost:8000/"),
     # ClientSecret enables token exchange for delegated access
     application_credential=ClientSecret(
         (
-            os.getenv("KEYCARD_CLIENT_ID", "your-client-id"),
-            os.getenv("KEYCARD_CLIENT_SECRET", "your-client-secret"),
+            os.getenv("KEYCARD_CLIENT_ID"),
+            os.getenv("KEYCARD_CLIENT_SECRET"),
         )
     ),
 )

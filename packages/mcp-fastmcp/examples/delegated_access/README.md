@@ -96,26 +96,29 @@ Use the public URL from your tunnel as `MCP_SERVER_URL`.
 ### 2. Set Environment Variables
 
 ```bash
-export KEYCARD_ZONE_ID="your-zone-id"
+export KEYCARD_ZONE_ID="your-zone-id"          # or use KEYCARD_ZONE_URL
 export KEYCARD_CLIENT_ID="your-client-id"
 export KEYCARD_CLIENT_SECRET="your-client-secret"
 export MCP_SERVER_URL="https://your-tunnel-url.ngrok.io/"  # Must be publicly reachable
 ```
 
-### 3. Install Dependencies
+### 3. Install Dependencies and Run the Server
 
 ```bash
 cd packages/mcp-fastmcp/examples/delegated_access
 uv sync
-```
-
-### 4. Run the Server
-
-```bash
 uv run python main.py
 ```
 
 The server will start on `http://localhost:8000`.
+
+> **Local SDK development:** If you're working on the Keycard SDK packages locally and want to run this example against your local changes, run from the repository root instead:
+>
+> ```bash
+> uv run --package delegated-access-example python packages/mcp-fastmcp/examples/delegated_access/main.py
+> ```
+>
+> This uses the root workspace to resolve all SDK packages from source.
 
 ### 5. Verify the Server
 
@@ -176,10 +179,13 @@ The example demonstrates comprehensive error handling patterns:
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `KEYCARD_ZONE_ID` | Yes | Your Keycard zone ID |
+| `KEYCARD_ZONE_ID` | Yes* | Your Keycard zone ID |
+| `KEYCARD_ZONE_URL` | Yes* | Your full Keycard zone URL (alternative to `KEYCARD_ZONE_ID`) |
 | `KEYCARD_CLIENT_ID` | Yes | Client ID from application credentials |
 | `KEYCARD_CLIENT_SECRET` | Yes | Client secret from application credentials |
 | `MCP_SERVER_URL` | Yes | Server URL (must be publicly reachable for delegated access) |
+
+\* Provide either `KEYCARD_ZONE_ID` or `KEYCARD_ZONE_URL`, not both.
 
 ## Learn More
 
