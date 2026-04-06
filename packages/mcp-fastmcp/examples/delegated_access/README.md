@@ -112,14 +112,6 @@ uv run python main.py
 
 The server will start on `http://localhost:8000`.
 
-> **Local SDK development:** If you're working on the Keycard SDK packages locally and want to run this example against your local changes, run from the repository root instead:
->
-> ```bash
-> uv run --package delegated-access-example python packages/mcp-fastmcp/examples/delegated_access/main.py
-> ```
->
-> This uses the root workspace to resolve all SDK packages from source.
-
 ### 5. Verify the Server
 
 Check that OAuth metadata is being served:
