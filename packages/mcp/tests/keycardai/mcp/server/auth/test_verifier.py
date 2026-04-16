@@ -4,10 +4,8 @@ import time
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-from mcp.server.auth.provider import AccessToken
-
 from keycardai.mcp.server.auth._cache import JWKSKey
-from keycardai.mcp.server.auth.verifier import TokenVerifier
+from keycardai.mcp.server.auth.verifier import AccessToken, TokenVerifier
 from keycardai.mcp.server.exceptions import (
     JWKSDiscoveryError,
     VerifierConfigError,
@@ -93,7 +91,7 @@ class TestTokenVerifierVerifyToken:
         mock_jwt_token = self.create_mock_jwt_access_token()
 
         with patch.object(verifier, '_get_verification_key', new_callable=AsyncMock) as mock_get_key, \
-             patch('keycardai.mcp.server.auth.verifier.parse_jwt_access_token') as mock_parse:
+             patch('keycardai.oauth.server.verifier.parse_jwt_access_token') as mock_parse:
 
             mock_get_key.return_value = mock_key
             mock_parse.return_value = mock_jwt_token
@@ -131,7 +129,7 @@ class TestTokenVerifierVerifyToken:
         )
 
         with patch.object(verifier, '_get_verification_key', new_callable=AsyncMock) as mock_get_key, \
-             patch('keycardai.mcp.server.auth.verifier.parse_jwt_access_token') as mock_parse:
+             patch('keycardai.oauth.server.verifier.parse_jwt_access_token') as mock_parse:
 
             mock_get_key.return_value = mock_key
             mock_parse.return_value = mock_jwt_token
@@ -160,7 +158,7 @@ class TestTokenVerifierVerifyToken:
         mock_jwt_token = self.create_mock_jwt_access_token(exp=expired_time)
 
         with patch.object(verifier, '_get_verification_key', new_callable=AsyncMock) as mock_get_key, \
-             patch('keycardai.mcp.server.auth.verifier.parse_jwt_access_token') as mock_parse:
+             patch('keycardai.oauth.server.verifier.parse_jwt_access_token') as mock_parse:
 
             mock_get_key.return_value = mock_key
             mock_parse.return_value = mock_jwt_token
@@ -187,7 +185,7 @@ class TestTokenVerifierVerifyToken:
         )
 
         with patch.object(verifier, '_get_verification_key', new_callable=AsyncMock) as mock_get_key, \
-             patch('keycardai.mcp.server.auth.verifier.parse_jwt_access_token') as mock_parse:
+             patch('keycardai.oauth.server.verifier.parse_jwt_access_token') as mock_parse:
 
             mock_get_key.return_value = mock_key
             mock_parse.return_value = mock_jwt_token
@@ -214,7 +212,7 @@ class TestTokenVerifierVerifyToken:
         )
 
         with patch.object(verifier, '_get_verification_key', new_callable=AsyncMock) as mock_get_key, \
-             patch('keycardai.mcp.server.auth.verifier.parse_jwt_access_token') as mock_parse:
+             patch('keycardai.oauth.server.verifier.parse_jwt_access_token') as mock_parse:
 
             mock_get_key.return_value = mock_key
             mock_parse.return_value = mock_jwt_token
@@ -243,7 +241,7 @@ class TestTokenVerifierVerifyToken:
         )
 
         with patch.object(verifier, '_get_verification_key', new_callable=AsyncMock) as mock_get_key, \
-             patch('keycardai.mcp.server.auth.verifier.parse_jwt_access_token') as mock_parse:
+             patch('keycardai.oauth.server.verifier.parse_jwt_access_token') as mock_parse:
 
             mock_get_key.return_value = mock_key
             mock_parse.return_value = mock_jwt_token
@@ -271,7 +269,7 @@ class TestTokenVerifierVerifyToken:
         )
 
         with patch.object(verifier, '_get_verification_key', new_callable=AsyncMock) as mock_get_key, \
-             patch('keycardai.mcp.server.auth.verifier.parse_jwt_access_token') as mock_parse:
+             patch('keycardai.oauth.server.verifier.parse_jwt_access_token') as mock_parse:
 
             mock_get_key.return_value = mock_key
             mock_parse.return_value = mock_jwt_token
@@ -297,7 +295,7 @@ class TestTokenVerifierVerifyToken:
         mock_jwt_token = self.create_mock_jwt_access_token(scope=None)
 
         with patch.object(verifier, '_get_verification_key', new_callable=AsyncMock) as mock_get_key, \
-             patch('keycardai.mcp.server.auth.verifier.parse_jwt_access_token') as mock_parse:
+             patch('keycardai.oauth.server.verifier.parse_jwt_access_token') as mock_parse:
 
             mock_get_key.return_value = mock_key
             mock_parse.return_value = mock_jwt_token
@@ -324,7 +322,7 @@ class TestTokenVerifierVerifyToken:
         mock_jwt_token = self.create_mock_jwt_access_token(scope="")
 
         with patch.object(verifier, '_get_verification_key', new_callable=AsyncMock) as mock_get_key, \
-             patch('keycardai.mcp.server.auth.verifier.parse_jwt_access_token') as mock_parse:
+             patch('keycardai.oauth.server.verifier.parse_jwt_access_token') as mock_parse:
 
             mock_get_key.return_value = mock_key
             mock_parse.return_value = mock_jwt_token
@@ -363,7 +361,7 @@ class TestTokenVerifierVerifyToken:
         )
 
         with patch.object(verifier, '_get_verification_key', new_callable=AsyncMock) as mock_get_key, \
-             patch('keycardai.mcp.server.auth.verifier.parse_jwt_access_token') as mock_parse:
+             patch('keycardai.oauth.server.verifier.parse_jwt_access_token') as mock_parse:
 
             mock_get_key.return_value = mock_key
             mock_parse.side_effect = Exception("Invalid JWT signature")
@@ -398,7 +396,7 @@ class TestTokenVerifierVerifyToken:
         )
 
         with patch.object(verifier, '_get_verification_key', new_callable=AsyncMock) as mock_get_key, \
-             patch('keycardai.mcp.server.auth.verifier.parse_jwt_access_token') as mock_parse:
+             patch('keycardai.oauth.server.verifier.parse_jwt_access_token') as mock_parse:
 
             mock_get_key.return_value = mock_key
             mock_parse.return_value = mock_jwt_token
@@ -429,12 +427,12 @@ class TestTokenVerifierVerifyToken:
         # Test token expiring exactly now (should be rejected)
         current_time = int(time.time())
 
-        with patch('keycardai.mcp.server.auth.verifier.time.time') as mock_time:
+        with patch('keycardai.oauth.server.verifier.time.time') as mock_time:
             mock_time.return_value = current_time
             mock_jwt_token = self.create_mock_jwt_access_token(exp=current_time - 1)
 
             with patch.object(verifier, '_get_verification_key', new_callable=AsyncMock) as mock_get_key, \
-                 patch('keycardai.mcp.server.auth.verifier.parse_jwt_access_token') as mock_parse:
+                 patch('keycardai.oauth.server.verifier.parse_jwt_access_token') as mock_parse:
 
                 mock_get_key.return_value = mock_key
                 mock_parse.return_value = mock_jwt_token
@@ -443,12 +441,12 @@ class TestTokenVerifierVerifyToken:
                 assert result is None
 
         # Test token expiring in the future (should be accepted)
-        with patch('keycardai.mcp.server.auth.verifier.time.time') as mock_time:
+        with patch('keycardai.oauth.server.verifier.time.time') as mock_time:
             mock_time.return_value = current_time
             mock_jwt_token = self.create_mock_jwt_access_token(exp=current_time + 1)
 
             with patch.object(verifier, '_get_verification_key', new_callable=AsyncMock) as mock_get_key, \
-                 patch('keycardai.mcp.server.auth.verifier.parse_jwt_access_token') as mock_parse:
+                 patch('keycardai.oauth.server.verifier.parse_jwt_access_token') as mock_parse:
 
                 mock_get_key.return_value = mock_key
                 mock_parse.return_value = mock_jwt_token
@@ -474,7 +472,7 @@ class TestTokenVerifierVerifyToken:
         mock_jwt_token = self.create_mock_jwt_access_token(scope="any scope")
 
         with patch.object(verifier, '_get_verification_key', new_callable=AsyncMock) as mock_get_key, \
-             patch('keycardai.mcp.server.auth.verifier.parse_jwt_access_token') as mock_parse:
+             patch('keycardai.oauth.server.verifier.parse_jwt_access_token') as mock_parse:
 
             mock_get_key.return_value = mock_key
             mock_parse.return_value = mock_jwt_token
@@ -491,7 +489,7 @@ class TestTokenVerifierVerifyToken:
         mock_jwt_token = self.create_mock_jwt_access_token(scope="exact match")
 
         with patch.object(verifier, '_get_verification_key', new_callable=AsyncMock) as mock_get_key, \
-             patch('keycardai.mcp.server.auth.verifier.parse_jwt_access_token') as mock_parse:
+             patch('keycardai.oauth.server.verifier.parse_jwt_access_token') as mock_parse:
 
             mock_get_key.return_value = mock_key
             mock_parse.return_value = mock_jwt_token
@@ -612,7 +610,7 @@ class TestTokenVerifierVerifyToken:
         )
 
         with patch.object(verifier, '_get_verification_key', new_callable=AsyncMock) as mock_get_key, \
-             patch('keycardai.mcp.server.auth.verifier.parse_jwt_access_token') as mock_parse:
+             patch('keycardai.oauth.server.verifier.parse_jwt_access_token') as mock_parse:
 
             mock_get_key.return_value = mock_key
             mock_parse.return_value = mock_jwt_token

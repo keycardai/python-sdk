@@ -2,11 +2,14 @@
 
 This module provides authentication providers and token verification for MCP servers.
 
-Local Definitions:
-    AuthProvider, AccessContext, TokenVerifier: Core server auth components
+Re-exports from keycardai.oauth.server (canonical location):
+    AccessContext, TokenVerifier, AccessToken: Core server auth components
     ApplicationCredential, ClientSecret, WebIdentity, EKSWorkloadIdentity: Credential providers
 
-Re-exports (from keycardai.oauth):
+Local definitions (MCP-specific):
+    AuthProvider: MCP authentication provider with @grant decorator
+
+Re-exports from keycardai.oauth:
     AuthStrategy, BasicAuth, BearerAuth, MultiZoneBasicAuth, NoneAuth: HTTP auth strategies
 """
 
@@ -19,31 +22,37 @@ from keycardai.oauth import (
     NoneAuth,
 )
 
-from ..exceptions import (
+# Re-export from canonical oauth.server location
+from keycardai.oauth.server import (
+    AccessContext,
+    AccessToken,
+    ApplicationCredential,
+    ClientSecret,
+    EKSWorkloadIdentity,
+    TokenVerifier,
+    WebIdentity,
+)
+from keycardai.oauth.server.exceptions import (
     AuthProviderConfigurationError,
     EKSWorkloadIdentityConfigurationError,
     EKSWorkloadIdentityRuntimeError,
     MetadataDiscoveryError,
     MissingAccessContextError,
-    MissingContextError,
     ResourceAccessError,
     TokenExchangeError,
 )
-from .application_credentials import (
-    ApplicationCredential,
-    ClientSecret,
-    EKSWorkloadIdentity,
-    WebIdentity,
-)
-from .provider import AccessContext, AuthProvider
-from .verifier import TokenVerifier
+
+# MCP-specific
+from ..exceptions import MissingContextError
+from .provider import AuthProvider
 
 __all__ = [
-    # === Core Authentication (Local) ===
-    "AuthProvider",
-    "AccessContext",
-    "TokenVerifier",
-    # === Application Credentials (Local) ===
+    # === Core Authentication ===
+    "AuthProvider",  # MCP-specific (local)
+    "AccessContext",  # re-exported from keycardai.oauth.server
+    "AccessToken",  # re-exported from keycardai.oauth.server
+    "TokenVerifier",  # re-exported from keycardai.oauth.server
+    # === Application Credentials (re-exported from keycardai.oauth.server) ===
     "ApplicationCredential",
     "ClientSecret",
     "EKSWorkloadIdentity",
@@ -54,16 +63,12 @@ __all__ = [
     "BearerAuth",
     "MultiZoneBasicAuth",
     "NoneAuth",
-    # === Exceptions (re-exported from ..exceptions) ===
-    # Configuration errors
+    # === Exceptions ===
     "AuthProviderConfigurationError",
     "EKSWorkloadIdentityConfigurationError",
-    # Runtime errors
     "EKSWorkloadIdentityRuntimeError",
     "TokenExchangeError",
     "ResourceAccessError",
-    # Context errors - MissingContextError is for FastMCP Context parameter,
-    # MissingAccessContextError is for Keycard AccessContext parameter
     "MissingAccessContextError",
     "MissingContextError",
     "MetadataDiscoveryError",
