@@ -4,6 +4,7 @@ import time
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
+
 from keycardai.mcp.server.auth._cache import JWKSKey
 from keycardai.mcp.server.auth.verifier import AccessToken, TokenVerifier
 from keycardai.mcp.server.exceptions import (

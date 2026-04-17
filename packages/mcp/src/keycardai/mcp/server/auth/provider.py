@@ -17,11 +17,6 @@ from starlette.types import ASGIApp
 
 from keycardai.oauth import AsyncClient, ClientConfig
 from keycardai.oauth.http.auth import MultiZoneBasicAuth, NoneAuth
-from keycardai.oauth.types.models import (
-    JsonWebKeySet,
-    TokenExchangeRequest,
-    TokenResponse,
-)
 
 # Import from canonical oauth.server locations
 from keycardai.oauth.server.access_context import AccessContext
@@ -35,9 +30,12 @@ from keycardai.oauth.server.credentials import (
 from keycardai.oauth.server.exceptions import (
     AuthProviderConfigurationError,
     MissingAccessContextError,
-    ResourceAccessError,
 )
 from keycardai.oauth.server.verifier import TokenVerifier
+from keycardai.oauth.types.models import (
+    JsonWebKeySet,
+    TokenExchangeRequest,
+)
 
 from ..exceptions import MissingContextError
 from ..routers.metadata import protected_mcp_router
