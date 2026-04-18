@@ -143,26 +143,30 @@ class WebIdentity:
 
     Example:
         provider = WebIdentity(
-            mcp_server_name="My Server",
+            server_name="My Server",
             storage_dir="./server_keys"
         )
     """
 
     def __init__(
         self,
-        mcp_server_name: str | None = None,
+        server_name: str | None = None,
         storage: PrivateKeyStorageProtocol | None = None,
         storage_dir: str | None = None,
         key_id: str | None = None,
         audience_config: str | dict[str, str] | None = None,
+        # Backward-compatible alias
+        mcp_server_name: str | None = None,
     ):
+        server_name = server_name or mcp_server_name
+
         if storage is not None:
             self._storage = storage
         else:
-            self._storage = FilePrivateKeyStorage(storage_dir or "./mcp_keys")
+            self._storage = FilePrivateKeyStorage(storage_dir or "./server_keys")
 
         if key_id is None:
-            stable_client_id = mcp_server_name or f"mcp-server-{uuid.uuid4()}"
+            stable_client_id = server_name or f"server-{uuid.uuid4()}"
             key_id = "".join(
                 c if c.isalnum() or c in "-_" else "_" for c in stable_client_id
             )

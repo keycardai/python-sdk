@@ -123,7 +123,7 @@ class TokenVerifier:
         algorithm = header.get("alg")
         if algorithm not in self.allowed_algorithms:
             raise UnsupportedAlgorithmError(algorithm)
-        return [kid, algorithm]
+        return (kid, algorithm)
 
     def _get_zone_jwks_uri(self, jwks_uri: str, zone_id: str) -> str:
         jwks_url = AnyHttpUrl(jwks_uri)

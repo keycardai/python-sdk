@@ -55,7 +55,14 @@ class AuthProviderConfigurationError(OAuthServerError):
         jwks_error: bool = False,
         server_url: str | None = None,
         missing_server_url: bool = False,
+        # Backward-compatible aliases used by keycardai-mcp callers
+        mcp_server_url: str | None = None,
+        missing_mcp_server_url: bool = False,
     ):
+        # Merge MCP aliases into canonical params
+        server_url = server_url or mcp_server_url
+        missing_server_url = missing_server_url or missing_mcp_server_url
+
         if message is None:
             if missing_server_url:
                 message = (

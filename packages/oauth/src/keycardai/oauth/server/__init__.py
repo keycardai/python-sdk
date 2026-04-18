@@ -28,6 +28,7 @@ from .credentials import (
     EKSWorkloadIdentity,
     WebIdentity,
 )
+from .token_exchange import exchange_tokens_for_resources
 from .verifier import AccessToken, TokenVerifier
 
 __all__ = [
@@ -35,6 +36,8 @@ __all__ = [
     "AccessContext",
     "AccessToken",
     "TokenVerifier",
+    # === Token Exchange ===
+    "exchange_tokens_for_resources",
     # === Credential Providers ===
     "ApplicationCredential",
     "ClientSecret",
