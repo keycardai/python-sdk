@@ -1,5 +1,5 @@
-from .bearer import BearerAuthMiddleware
+"""Backward-compatible re-export from keycardai.starlette_oauth.middleware."""
 
-__all__ = [
-    "BearerAuthMiddleware",
-]
+from keycardai.starlette_oauth.middleware import BearerAuthMiddleware
+
+__all__ = ["BearerAuthMiddleware"]
