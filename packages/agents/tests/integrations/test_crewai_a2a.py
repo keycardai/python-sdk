@@ -6,12 +6,13 @@ import pytest
 
 pytest.importorskip("crewai")
 
-from keycardai.agents import AgentServiceConfig
 from keycardai.agents.integrations.crewai_a2a import (
     _create_delegation_tool,
     create_a2a_tool_for_service,
     get_a2a_tools,
 )
+
+from keycardai.agents import AgentServiceConfig
 
 
 @pytest.fixture
