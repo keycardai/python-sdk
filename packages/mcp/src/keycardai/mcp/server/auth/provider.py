@@ -17,8 +17,6 @@ from starlette.types import ASGIApp
 
 from keycardai.oauth import AsyncClient, ClientConfig
 from keycardai.oauth.http.auth import MultiZoneBasicAuth, NoneAuth
-
-# Import from canonical oauth.server locations
 from keycardai.oauth.server.access_context import AccessContext
 from keycardai.oauth.server.client_factory import ClientFactory, DefaultClientFactory
 from keycardai.oauth.server.credentials import (

@@ -13,7 +13,6 @@ Re-exports from keycardai.oauth:
     AuthStrategy, BasicAuth, BearerAuth, MultiZoneBasicAuth, NoneAuth: HTTP auth strategies
 """
 
-# Re-export auth strategies from keycardai.oauth for convenience
 from keycardai.oauth import (
     AuthStrategy,
     BasicAuth,
@@ -21,8 +20,6 @@ from keycardai.oauth import (
     MultiZoneBasicAuth,
     NoneAuth,
 )
-
-# Re-export from canonical oauth.server location
 from keycardai.oauth.server import (
     AccessContext,
     AccessToken,
@@ -42,28 +39,23 @@ from keycardai.oauth.server.exceptions import (
     TokenExchangeError,
 )
 
-# MCP-specific
 from ..exceptions import MissingContextError
 from .provider import AuthProvider
 
 __all__ = [
-    # === Core Authentication ===
-    "AuthProvider",  # MCP-specific (local)
-    "AccessContext",  # re-exported from keycardai.oauth.server
-    "AccessToken",  # re-exported from keycardai.oauth.server
-    "TokenVerifier",  # re-exported from keycardai.oauth.server
-    # === Application Credentials (re-exported from keycardai.oauth.server) ===
+    "AuthProvider",
+    "AccessContext",
+    "AccessToken",
+    "TokenVerifier",
     "ApplicationCredential",
     "ClientSecret",
     "EKSWorkloadIdentity",
     "WebIdentity",
-    # === HTTP Auth Strategies (re-exported from keycardai.oauth) ===
     "AuthStrategy",
     "BasicAuth",
     "BearerAuth",
     "MultiZoneBasicAuth",
     "NoneAuth",
-    # === Exceptions ===
     "AuthProviderConfigurationError",
     "EKSWorkloadIdentityConfigurationError",
     "EKSWorkloadIdentityRuntimeError",

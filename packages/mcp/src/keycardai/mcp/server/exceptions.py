@@ -8,7 +8,6 @@ Backward compatibility: ``MCPServerError`` is an alias for ``OAuthServerError``.
 
 from __future__ import annotations
 
-# Re-export all framework-free exceptions from oauth.server
 from keycardai.oauth.server.exceptions import (
     AuthProviderConfigurationError,
     AuthProviderInternalError,
@@ -32,13 +31,7 @@ from keycardai.oauth.server.exceptions import (
     VerifierConfigError,
 )
 
-# Backward-compatible alias: existing code using MCPServerError continues to work
 MCPServerError = OAuthServerError
-
-
-# ---------------------------------------------------------------------------
-# MCP-specific exceptions (not moved to oauth.server)
-# ---------------------------------------------------------------------------
 
 
 class MissingContextError(OAuthServerError):
@@ -95,14 +88,10 @@ class MissingContextError(OAuthServerError):
         super().__init__(message, details=details)
 
 
-# Export all exception classes
 __all__ = [
-    # Base exception (alias)
     "MCPServerError",
     "OAuthServerError",
-    # MCP-specific exceptions
     "MissingContextError",
-    # Re-exported from keycardai.oauth.server.exceptions
     "AuthProviderConfigurationError",
     "AuthProviderInternalError",
     "AuthProviderRemoteError",
