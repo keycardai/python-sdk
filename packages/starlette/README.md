@@ -1,18 +1,18 @@
-# keycardai-starlette-oauth
+# keycardai-starlette
 
 Starlette/FastAPI middleware and route builders for protecting HTTP APIs with Keycard OAuth. No MCP dependency.
 
 ## Installation
 
 ```bash
-pip install keycardai-starlette-oauth
+pip install keycardai-starlette
 ```
 
 ## Quick Start
 
 ```python
 from fastapi import FastAPI, Request
-from keycardai.starlette_oauth import AuthProvider
+from keycardai.starlette import AuthProvider
 from keycardai.oauth.server import AccessContext, ClientSecret
 
 auth = AuthProvider(

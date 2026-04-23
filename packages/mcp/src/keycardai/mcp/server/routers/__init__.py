@@ -1,6 +1,6 @@
-"""Backward-compatible re-export from keycardai.starlette_oauth.routers."""
+"""Backward-compatible re-export from keycardai.starlette.routers."""
 
-from keycardai.starlette_oauth.routers import auth_metadata_mount, protected_router
+from keycardai.starlette.routers import auth_metadata_mount, protected_router
 
 # Keep the MCP-specific name as an alias
 protected_mcp_router = protected_router

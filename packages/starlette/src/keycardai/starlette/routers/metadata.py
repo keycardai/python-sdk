@@ -9,12 +9,11 @@ Provides composable route builders for:
 
 from collections.abc import Sequence
 
+from keycardai.oauth.server.verifier import TokenVerifier
+from keycardai.oauth.types import JsonWebKeySet
 from starlette.middleware import Middleware
 from starlette.routing import Mount, Route
 from starlette.types import ASGIApp
-
-from keycardai.oauth.server.verifier import TokenVerifier
-from keycardai.oauth.types import JsonWebKeySet
 
 from ..handlers.jwks import jwks_endpoint
 from ..handlers.metadata import (
@@ -170,7 +169,7 @@ def protected_router(
     Example::
 
         from starlette.applications import Starlette
-        from keycardai.starlette_oauth import protected_router
+        from keycardai.starlette import protected_router
         from keycardai.oauth.server import TokenVerifier
 
         verifier = TokenVerifier(issuer="https://zone.keycard.cloud")

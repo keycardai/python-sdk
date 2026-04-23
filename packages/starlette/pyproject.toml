@@ -1,5 +1,5 @@
 [project]
-name = "keycardai-starlette-oauth"
+name = "keycardai-starlette"
 dynamic = ["version"]
 description = "Starlette/FastAPI middleware and route builders for protecting HTTP APIs with Keycard OAuth"
 readme = "README.md"
@@ -50,7 +50,7 @@ source = "uv-dynamic-versioning"
 
 [tool.uv-dynamic-versioning]
 vcs = "git"
-pattern = "(?P<base>\\d+\\.\\d+\\.\\d+)-keycardai-starlette-oauth"
+pattern = "(?P<base>\\d+\\.\\d+\\.\\d+)-keycardai-starlette"
 style = "pep440"
 
 [[tool.uv.index]]
@@ -113,11 +113,11 @@ addopts = "-ra -q"
 [tool.commitizen]
 name = "cz_customize"
 version = "0.1.0"
-tag_format = "${version}-keycardai-starlette-oauth"
+tag_format = "${version}-keycardai-starlette"
 ignored_tag_formats = ["${version}-*"]
 update_changelog_on_bump = true
-bump_message = "bump: keycardai-starlette-oauth $current_version → $new_version"
+bump_message = "bump: keycardai-starlette $current_version → $new_version"
 major_version_zero = true
 
 [tool.commitizen.customize]
-changelog_pattern = "^(feat|fix|refactor|perf|test|build|ci|revert)\\(keycardai-starlette-oauth\\)(!)?:"
+changelog_pattern = "^(feat|fix|refactor|perf|test|build|ci|revert)\\(keycardai-starlette\\)(!)?:"

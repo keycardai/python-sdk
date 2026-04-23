@@ -9,10 +9,10 @@ from collections.abc import Callable
 
 import httpx
 from pydantic import AnyHttpUrl, BaseModel, Field
-from starlette.requests import Request
-from starlette.responses import Response
 
 from keycardai.oauth.types.oauth import GrantType, TokenEndpointAuthMethod
+from starlette.requests import Request
+from starlette.responses import Response
 
 from ..shared.starlette import get_base_url
 

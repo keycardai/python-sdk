@@ -7,7 +7,7 @@ of MCP's AuthProvider — it does not depend on MCP Context or any MCP types.
 Example::
 
     from fastapi import FastAPI, Request
-    from keycardai.starlette_oauth import AuthProvider
+    from keycardai.starlette import AuthProvider
     from keycardai.oauth.server import AccessContext, ClientSecret
 
     auth = AuthProvider(
@@ -33,9 +33,6 @@ from functools import wraps
 from typing import Any
 
 from pydantic import AnyHttpUrl
-from starlette.requests import Request
-from starlette.routing import Mount, Route
-from starlette.types import ASGIApp
 
 from keycardai.oauth import AsyncClient, ClientConfig
 from keycardai.oauth.http.auth import MultiZoneBasicAuth, NoneAuth
@@ -54,6 +51,9 @@ from keycardai.oauth.server.exceptions import (
 from keycardai.oauth.server.token_exchange import exchange_tokens_for_resources
 from keycardai.oauth.server.verifier import TokenVerifier
 from keycardai.oauth.types.models import JsonWebKeySet
+from starlette.requests import Request
+from starlette.routing import Mount, Route
+from starlette.types import ASGIApp
 
 from .middleware import BearerAuthMiddleware
 from .routers.metadata import auth_metadata_mount

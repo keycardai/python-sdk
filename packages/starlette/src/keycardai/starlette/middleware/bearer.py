@@ -7,12 +7,12 @@ authentication info on the request state for downstream handlers.
 from collections.abc import Callable
 
 from pydantic import AnyHttpUrl
+
+from keycardai.oauth.server.verifier import TokenVerifier
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 from starlette.types import ASGIApp
-
-from keycardai.oauth.server.verifier import TokenVerifier
 
 from ..shared.starlette import get_base_url
 

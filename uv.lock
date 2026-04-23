@@ -17,11 +17,13 @@ members = [
     "dynamic-client-registration",
     "hello-world-server",
     "hello-world-server-lowlevel",
+    "impersonation-token-exchange",
     "keycardai",
     "keycardai-agents",
     "keycardai-mcp",
     "keycardai-mcp-fastmcp",
     "keycardai-oauth",
+    "keycardai-starlette",
     "oauth-client-usage",
 ]
 
@@ -1812,6 +1814,21 @@ wheels = [
 ]
 
 [[package]]
+name = "impersonation-token-exchange"
+version = "0.1.0"
+source = { virtual = "packages/oauth/examples/impersonation_token_exchange" }
+dependencies = [
+    { name = "keycardai-oauth" },
+    { name = "python-dotenv" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "keycardai-oauth", editable = "packages/oauth" },
+    { name = "python-dotenv", specifier = ">=1.0.0" },
+]
+
+[[package]]
 name = "importlib-metadata"
 version = "8.7.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2249,10 +2266,10 @@ dependencies = [
     { name = "aiosqlite" },
     { name = "httpx" },
     { name = "keycardai-oauth" },
+    { name = "keycardai-starlette" },
     { name = "mcp" },
     { name = "nanoid" },
     { name = "pydantic" },
-    { name = "starlette" },
 ]
 
 [package.optional-dependencies]
@@ -2287,6 +2304,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.27.2" },
     { name = "keycardai-mcp-fastmcp", marker = "extra == 'test'", editable = "packages/mcp-fastmcp" },
     { name = "keycardai-oauth", editable = "packages/oauth" },
+    { name = "keycardai-starlette", editable = "packages/starlette" },
     { name = "langchain", marker = "extra == 'test'", specifier = ">=1.0.5" },
     { name = "langchain-openai", marker = "extra == 'test'", specifier = ">=1.0.2" },
     { name = "mcp", specifier = ">=1.13.1" },
@@ -2300,7 +2318,6 @@ requires-dist = [
     { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=1.1.0" },
     { name = "pytest-cov", marker = "extra == 'test'", specifier = ">=6.2.1" },
     { name = "pytest-timeout", marker = "extra == 'test'", specifier = ">=2.3.1" },
-    { name = "starlette", specifier = ">=0.47.3" },
 ]
 provides-extras = ["crewai", "pydantic-ai", "test"]
 
@@ -2377,6 +2394,33 @@ provides-extras = ["test"]
 
 [package.metadata.requires-dev]
 dev = [{ name = "pytest-cov", specifier = ">=6.2.1" }]
+
+[[package]]
+name = "keycardai-starlette"
+source = { editable = "packages/starlette" }
+dependencies = [
+    { name = "httpx" },
+    { name = "keycardai-oauth" },
+    { name = "pydantic" },
+    { name = "starlette" },
+]
+
+[package.optional-dependencies]
+test = [
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx", specifier = ">=0.27.2" },
+    { name = "keycardai-oauth", editable = "packages/oauth" },
+    { name = "pydantic", specifier = ">=2.11.7" },
+    { name = "pytest", marker = "extra == 'test'", specifier = ">=8.4.1" },
+    { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=1.1.0" },
+    { name = "starlette", specifier = ">=0.47.3" },
+]
+provides-extras = ["test"]
 
 [[package]]
 name = "keyring"
