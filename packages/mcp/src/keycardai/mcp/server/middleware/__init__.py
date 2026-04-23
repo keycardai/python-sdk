@@ -1,5 +1,5 @@
-"""Backward-compatible re-export from keycardai.starlette_oauth.middleware."""
+"""Backward-compatible re-export from keycardai.starlette.middleware."""
 
-from keycardai.starlette_oauth.middleware import BearerAuthMiddleware
+from keycardai.starlette.middleware import BearerAuthMiddleware
 
 __all__ = ["BearerAuthMiddleware"]

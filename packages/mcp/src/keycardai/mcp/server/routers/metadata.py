@@ -1,7 +1,7 @@
 """Route builders for OAuth metadata and protected app mounting.
 
-Re-exported from keycardai.starlette_oauth.routers.metadata for backward compatibility.
-Canonical import: ``from keycardai.starlette_oauth.routers import protected_router``
+Re-exported from keycardai.starlette.routers.metadata for backward compatibility.
+Canonical import: ``from keycardai.starlette.routers import protected_router``
 """
 
 from collections.abc import Sequence
@@ -11,7 +11,7 @@ from starlette.types import ASGIApp
 
 from keycardai.oauth.server.verifier import TokenVerifier
 from keycardai.oauth.types import JsonWebKeySet
-from keycardai.starlette_oauth.routers.metadata import (
+from keycardai.starlette.routers.metadata import (
     auth_metadata_mount,
     protected_router,
     well_known_authorization_server_route,
@@ -31,7 +31,7 @@ def protected_mcp_router(
 ) -> Sequence[Route]:
     """Backward-compatible wrapper that accepts ``mcp_app`` kwarg.
 
-    Delegates to ``protected_router(app=...)`` from keycardai-starlette-oauth.
+    Delegates to ``protected_router(app=...)`` from keycardai-starlette.
     """
     return protected_router(
         issuer=issuer,

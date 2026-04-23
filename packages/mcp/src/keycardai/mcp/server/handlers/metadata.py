@@ -1,10 +1,10 @@
 """OAuth metadata handlers.
 
-Re-exported from keycardai.starlette_oauth.handlers.metadata for backward compatibility.
-Canonical import: ``from keycardai.starlette_oauth.handlers.metadata import ...``
+Re-exported from keycardai.starlette.handlers.metadata for backward compatibility.
+Canonical import: ``from keycardai.starlette.handlers.metadata import ...``
 """
 
-from keycardai.starlette_oauth.handlers.metadata import (
+from keycardai.starlette.handlers.metadata import (
     ProtectedResourceMetadata as InferredProtectedResourceMetadata,
     _create_jwks_uri,
     _create_resource_url,
@@ -17,7 +17,7 @@ from keycardai.starlette_oauth.handlers.metadata import (
 )
 
 
-# Not in starlette_oauth — was only in MCP's version. Provide it here for test compat.
+# Not in starlette — was only in MCP's version. Provide it here for test compat.
 def _is_authorization_server_zone_scoped(authorization_server_urls) -> bool:
     if len(authorization_server_urls) != 1:
         return False

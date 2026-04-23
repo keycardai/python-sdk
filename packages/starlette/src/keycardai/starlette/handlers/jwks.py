@@ -2,10 +2,9 @@
 
 from collections.abc import Callable
 
+from keycardai.oauth.types import JsonWebKeySet
 from starlette.requests import Request
 from starlette.responses import JSONResponse
-
-from keycardai.oauth.types import JsonWebKeySet
 
 
 def jwks_endpoint(jwks: JsonWebKeySet) -> Callable:

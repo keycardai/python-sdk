@@ -1,6 +1,6 @@
-"""Backward-compatible re-export from keycardai.starlette_oauth.handlers."""
+"""Backward-compatible re-export from keycardai.starlette.handlers."""
 
-from keycardai.starlette_oauth.handlers.metadata import (
+from keycardai.starlette.handlers.metadata import (
     ProtectedResourceMetadata as InferredProtectedResourceMetadata,
     authorization_server_metadata,
     protected_resource_metadata,

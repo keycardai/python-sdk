@@ -6,7 +6,7 @@ for OAuth 2.0 bearer token authentication. No MCP dependency.
 Quick Start::
 
     from fastapi import FastAPI, Request
-    from keycardai.starlette_oauth import AuthProvider
+    from keycardai.starlette import AuthProvider
     from keycardai.oauth.server import AccessContext, ClientSecret
 
     auth = AuthProvider(
