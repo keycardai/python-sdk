@@ -48,6 +48,80 @@ def _get_bearer_token(request: Request) -> str | None:
     return parts[1]
 
 
+def _create_auth_challenge_response(
+    error: str,
+    description: str,
+    request: Request,
+    status_code: int = 401,
+) -> Response:
+    """Create a standardized OAuth 2.0 Bearer challenge response (RFC 6750)."""
+    resource_metadata_url = _get_oauth_protected_resource_url(request)
+    challenge = (
+        f'Bearer error="{error}", '
+        f'error_description="{description}", '
+        f'resource_metadata="{resource_metadata_url}"'
+    )
+
+    response = Response(
+        content="Unauthorized" if status_code == 401 else "Forbidden"
+    )
+    response.status_code = status_code
+    response.headers["WWW-Authenticate"] = challenge
+    return response
+
+
+async def verify_bearer_token(
+    request: Request, verifier: TokenVerifier
+) -> dict[str, str | None] | Response:
+    """Verify the request's bearer token.
+
+    Returns an auth_info dict on success (the same shape that
+    ``BearerAuthMiddleware`` sets on ``request.state.keycardai_auth_info``),
+    or an RFC 6750 challenge ``Response`` on failure (no header, malformed
+    header, missing zone_id under multi-zone, verification failure).
+
+    Used by both the middleware (for the protected_router() / mount pattern)
+    and by ``@auth.protect()`` (for per-route opt-in protection).
+    """
+    if not request.headers.get("Authorization"):
+        return _create_auth_challenge_response(
+            "invalid_token", "No bearer token provided", request
+        )
+    token = _get_bearer_token(request)
+    if token is None:
+        return _create_auth_challenge_response(
+            "invalid_token",
+            "Invalid Authorization header format",
+            request,
+            400,
+        )
+
+    zone_id = None
+    if verifier.enable_multi_zone:
+        zone_id = request.path_params.get("zone_id")
+        if zone_id is None:
+            return _create_auth_challenge_response(
+                "invalid_token", "Zone ID is required", request
+            )
+
+    if verifier.enable_multi_zone and zone_id:
+        access_token = await verifier.verify_token_for_zone(token, zone_id)
+    else:
+        access_token = await verifier.verify_token(token)
+    if access_token is None:
+        return _create_auth_challenge_response(
+            "invalid_token", "Token verification failed", request
+        )
+
+    resource_server_url = _get_oauth_protected_resource_url(request)
+    return {
+        "access_token": access_token.token,
+        "zone_id": zone_id,
+        "resource_client_id": resource_server_url,
+        "resource_server_url": resource_server_url,
+    }
+
+
 class BearerAuthMiddleware(BaseHTTPMiddleware):
     """Starlette middleware that validates OAuth 2.0 bearer tokens.
 
@@ -67,71 +141,14 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
         self.verifier = verifier
 
-    def _create_auth_challenge_response(
-        self,
-        error: str,
-        description: str,
-        request: Request,
-        status_code: int = 401,
-    ) -> Response:
-        """Create a standardized OAuth 2.0 Bearer challenge response."""
-        resource_metadata_url = _get_oauth_protected_resource_url(request)
-        challenge = (
-            f'Bearer error="{error}", '
-            f'error_description="{description}", '
-            f'resource_metadata="{resource_metadata_url}"'
-        )
-
-        response = Response(
-            content="Unauthorized" if status_code == 401 else "Forbidden"
-        )
-        response.status_code = status_code
-        response.headers["WWW-Authenticate"] = challenge
-        return response
-
     async def dispatch(
         self, request: Request, call_next: Callable
     ) -> Response:
         if _is_oauth_metadata_path(request.url.path):
             return await call_next(request)
 
-        if not request.headers.get("Authorization"):
-            return self._create_auth_challenge_response(
-                "invalid_token", "No bearer token provided", request
-            )
-        token = _get_bearer_token(request)
-        if token is None:
-            return self._create_auth_challenge_response(
-                "invalid_token",
-                "Invalid Authorization header format",
-                request,
-                400,
-            )
-
-        zone_id = None
-        if self.verifier.enable_multi_zone:
-            zone_id = request.path_params.get("zone_id")
-            if zone_id is None:
-                return self._create_auth_challenge_response(
-                    "invalid_token", "Zone ID is required", request
-                )
-
-        if self.verifier.enable_multi_zone and zone_id:
-            access_token = await self.verifier.verify_token_for_zone(
-                token, zone_id
-            )
-        else:
-            access_token = await self.verifier.verify_token(token)
-        if access_token is None:
-            return self._create_auth_challenge_response(
-                "invalid_token", "Token verification failed", request
-            )
-
-        resource_server_url = _get_oauth_protected_resource_url(request)
-        request.state.keycardai_auth_info = {
-            "access_token": access_token.token,
-            "zone_id": zone_id,
-            "resource_client_id": resource_server_url,
-            "resource_server_url": resource_server_url,
-        }
+        result = await verify_bearer_token(request, self.verifier)
+        if isinstance(result, Response):
+            return result
+        request.state.keycardai_auth_info = result
         return await call_next(request)

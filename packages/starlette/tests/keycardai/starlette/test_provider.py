@@ -1,8 +1,9 @@
-"""Tests for AuthProvider construction and install() wiring."""
+"""Tests for AuthProvider construction, install() wiring, and @protect()."""
 
 import pytest
 from fastapi import FastAPI
 from starlette.applications import Starlette
+from starlette.requests import Request
 from starlette.testclient import TestClient
 
 from keycardai.oauth.server.credentials import ClientSecret
@@ -56,11 +57,12 @@ class TestAuthProviderInstall:
             application_credential=ClientSecret(("cid", "csec")),
         )
 
-    def test_install_on_fastapi_adds_middleware(self, provider):
+    def test_install_does_not_add_global_middleware(self, provider):
+        """install() registers metadata routes only; middleware is per-route."""
         app = FastAPI()
         provider.install(app)
         middleware_classes = [m.cls for m in app.user_middleware]
-        assert BearerAuthMiddleware in middleware_classes
+        assert BearerAuthMiddleware not in middleware_classes
 
     def test_install_on_fastapi_adds_metadata_routes(self, provider):
         app = FastAPI()
@@ -84,28 +86,22 @@ class TestAuthProviderInstall:
         assert "authorization_servers" in data
         assert "test-zone.keycard.cloud" in data["authorization_servers"][0]
 
-    def test_install_rejects_requests_without_bearer_token(self, provider):
-        app = Starlette()
+    def test_install_does_not_block_unprotected_routes(self, provider):
+        """Routes without @auth.protect() stay public."""
+        app = FastAPI()
         provider.install(app)
-        client = TestClient(app, raise_server_exceptions=False)
-        response = client.get("/some/protected/path")
-        assert response.status_code == 401
-        assert "Bearer" in response.headers.get("WWW-Authenticate", "")
 
-    def test_install_does_not_bypass_unrelated_well_known_paths(self, provider):
-        """Only OAuth metadata paths bypass auth, not all of /.well-known/."""
-        app = Starlette()
-        provider.install(app)
+        @app.get("/health")
+        async def health():
+            return {"status": "ok"}
+
         client = TestClient(app, raise_server_exceptions=False)
-        response = client.get("/.well-known/change-password")
-        assert response.status_code == 401, (
-            "Non-OAuth /.well-known paths must stay behind bearer auth; "
-            "only oauth-protected-resource, oauth-authorization-server, and "
-            "jwks.json are exempt per RFC 9728 §2 / RFC 8414 §3."
-        )
+        response = client.get("/health")
+        assert response.status_code == 200
+        assert response.json() == {"status": "ok"}
 
     def test_install_allows_oauth_metadata_subpaths(self, provider):
-        """Delimited subpaths under OAuth metadata roots stay public (multi-zone)."""
+        """Delimited subpaths under OAuth metadata roots resolve (multi-zone)."""
         app = Starlette()
         provider.install(app)
         client = TestClient(app, raise_server_exceptions=False)
@@ -113,6 +109,118 @@ class TestAuthProviderInstall:
             "/.well-known/oauth-protected-resource/some/zone-scoped/path"
         )
         assert response.status_code == 200
+
+
+class TestProtectDecorator:
+    @pytest.fixture
+    def provider(self):
+        return AuthProvider(
+            zone_id="test-zone",
+            application_credential=ClientSecret(("cid", "csec")),
+        )
+
+    def test_no_args_returns_401_without_bearer(self, provider):
+        app = FastAPI()
+        provider.install(app)
+
+        @app.get("/api/me")
+        @provider.protect()
+        async def me(request: Request):
+            return {"ok": True}
+
+        client = TestClient(app, raise_server_exceptions=False)
+        response = client.get("/api/me")
+        assert response.status_code == 401
+        assert "Bearer" in response.headers.get("WWW-Authenticate", "")
+
+    def test_with_resource_returns_401_without_bearer(self, provider):
+        from keycardai.oauth.server import AccessContext
+
+        app = FastAPI()
+        provider.install(app)
+
+        @app.get("/api/calendar")
+        @provider.protect("https://api.example.com")
+        async def calendar(request: Request, access: AccessContext):
+            return {"ok": True}
+
+        client = TestClient(app, raise_server_exceptions=False)
+        response = client.get("/api/calendar")
+        assert response.status_code == 401
+        assert "Bearer" in response.headers.get("WWW-Authenticate", "")
+
+    def test_no_args_does_not_require_access_context_param(self, provider):
+        """Verify-only decorator works on a plain (request) signature."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        # Stub the verifier so the decorator's verify call succeeds without
+        # JWKS/network dependencies.
+        token = MagicMock()
+        token.token = "verified-token"
+        provider.get_token_verifier = MagicMock(  # type: ignore[method-assign]
+            return_value=MagicMock(
+                enable_multi_zone=False,
+                verify_token=AsyncMock(return_value=token),
+            )
+        )
+
+        app = FastAPI()
+        provider.install(app)
+
+        @app.get("/api/me")
+        @provider.protect()
+        async def me(request: Request):
+            return {"sub": request.state.keycardai_auth_info["access_token"]}
+
+        client = TestClient(app)
+        response = client.get(
+            "/api/me", headers={"Authorization": "Bearer some-token"}
+        )
+        assert response.status_code == 200
+        assert response.json() == {"sub": "verified-token"}
+
+    def test_reuses_existing_state_set_by_middleware(self, provider):
+        """If middleware already set request.state.keycardai_auth_info, the
+        decorator reuses it instead of re-verifying. Use a verifier that would
+        fail to prove it isn't called."""
+        from unittest.mock import AsyncMock, MagicMock
+
+        from starlette.middleware.base import BaseHTTPMiddleware
+
+        provider.get_token_verifier = MagicMock(  # type: ignore[method-assign]
+            return_value=MagicMock(
+                enable_multi_zone=False,
+                verify_token=AsyncMock(
+                    side_effect=AssertionError(
+                        "verify_token must not be called when state is preset"
+                    )
+                ),
+            )
+        )
+
+        class PresetMiddleware(BaseHTTPMiddleware):
+            async def dispatch(self, request, call_next):
+                request.state.keycardai_auth_info = {
+                    "access_token": "preset",
+                    "zone_id": None,
+                    "resource_client_id": "preset",
+                    "resource_server_url": "preset",
+                }
+                return await call_next(request)
+
+        app = FastAPI()
+        provider.install(app)
+        app.add_middleware(PresetMiddleware)
+
+        @app.get("/api/me")
+        @provider.protect()
+        async def me(request: Request):
+            return {"sub": request.state.keycardai_auth_info["access_token"]}
+
+        client = TestClient(app)
+        response = client.get("/api/me")
+        assert response.status_code == 200
+        assert response.json() == {"sub": "preset"}
 
 
 class TestAuthProviderLock:
