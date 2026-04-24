@@ -16,6 +16,19 @@ from starlette.types import ASGIApp
 
 from ..shared.starlette import get_base_url
 
+# OAuth metadata discovery endpoints that must remain publicly reachable per
+# RFC 9728 §2 and RFC 8414 §3. Other entries under /.well-known/ (change-password,
+# assetlinks.json, etc.) are NOT exempt and stay behind the bearer check.
+_OAUTH_METADATA_PATHS = (
+    "/.well-known/oauth-protected-resource",
+    "/.well-known/oauth-authorization-server",
+    "/.well-known/jwks.json",
+)
+
+
+def _is_oauth_metadata_path(path: str) -> bool:
+    return any(path == p or path.startswith(p + "/") for p in _OAUTH_METADATA_PATHS)
+
 
 def _get_oauth_protected_resource_url(request: Request) -> str:
     path = request.url.path.lstrip("/").rstrip("/")
@@ -79,9 +92,7 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(
         self, request: Request, call_next: Callable
     ) -> Response:
-        # OAuth metadata discovery endpoints must remain publicly reachable —
-        # they are how clients learn to authenticate in the first place (RFC 9728 §2).
-        if request.url.path.startswith("/.well-known/"):
+        if _is_oauth_metadata_path(request.url.path):
             return await call_next(request)
 
         if not request.headers.get("Authorization"):

@@ -4,7 +4,6 @@ Implements RFC 9728 (OAuth Protected Resource Metadata) and RFC 8414
 (Authorization Server Metadata) discovery endpoints as Starlette handlers.
 """
 
-import json
 from collections.abc import Callable
 
 import httpx
@@ -12,7 +11,7 @@ from pydantic import AnyHttpUrl, BaseModel, Field
 
 from keycardai.oauth.types.oauth import GrantType, TokenEndpointAuthMethod
 from starlette.requests import Request
-from starlette.responses import Response
+from starlette.responses import JSONResponse, Response
 
 from ..shared.starlette import get_base_url
 
@@ -137,9 +136,8 @@ def protected_resource_metadata(
         )
         request_metadata.grant_types = [GrantType.CLIENT_CREDENTIALS]
 
-        return Response(
-            content=request_metadata.model_dump_json(exclude_none=True),
-            status_code=200,
+        return JSONResponse(
+            content=request_metadata.model_dump(mode="json", exclude_none=True),
         )
 
     return wrapper
@@ -152,8 +150,8 @@ def authorization_server_metadata(
     """Create a Starlette handler that proxies OAuth Authorization Server Metadata (RFC 8414)."""
 
     def wrapper(request: Request) -> Response:
+        actual_issuer = issuer
         try:
-            actual_issuer = issuer
             path = _remove_authorization_server_prefix(request.url.path)
 
             if enable_multi_zone:
@@ -166,39 +164,37 @@ def authorization_server_metadata(
                     )
 
             issuer_url = str(actual_issuer).rstrip("/")
-            with httpx.Client() as client:
+            # Explicit timeout so a slow upstream cannot pin a Starlette threadpool
+            # worker indefinitely. Sync httpx.Client is fine here because Starlette
+            # dispatches sync handlers to a threadpool, not the event loop.
+            with httpx.Client(timeout=httpx.Timeout(5.0)) as client:
                 resp = client.get(
                     f"{issuer_url}/.well-known/oauth-authorization-server"
                 )
                 resp.raise_for_status()
-                auth_server_metadata = resp.json()
-                return Response(
-                    content=json.dumps(auth_server_metadata),
-                    status_code=200,
-                )
+                return JSONResponse(content=resp.json())
         except httpx.HTTPStatusError as e:
-            error_message = {
-                "error": f"Upstream authorization server returned {e.response.status_code}: {e.response.text}",
-                "type": "upstream_error",
-                "url": str(e.request.url),
-            }
-            return Response(
-                content=json.dumps(error_message),
+            return JSONResponse(
+                content={
+                    "error": f"Upstream authorization server returned {e.response.status_code}: {e.response.text}",
+                    "type": "upstream_error",
+                    "url": str(e.request.url),
+                },
                 status_code=e.response.status_code,
             )
         except (httpx.ConnectError, httpx.TimeoutException) as e:
-            error_message = {
-                "error": f"Unable to connect to authorization server: {str(e)}",
-                "type": "connectivity_error",
-                "url": f"{actual_issuer}/.well-known/oauth-authorization-server",
-            }
-            return Response(
-                content=json.dumps(error_message), status_code=503
+            return JSONResponse(
+                content={
+                    "error": f"Unable to connect to authorization server: {str(e)}",
+                    "type": "connectivity_error",
+                    "url": f"{actual_issuer}/.well-known/oauth-authorization-server",
+                },
+                status_code=503,
             )
         except Exception as e:
-            error_message = {"error": str(e), "type": type(e).__name__}
-            return Response(
-                content=json.dumps(error_message), status_code=500
+            return JSONResponse(
+                content={"error": str(e), "type": type(e).__name__},
+                status_code=500,
             )
 
     return wrapper

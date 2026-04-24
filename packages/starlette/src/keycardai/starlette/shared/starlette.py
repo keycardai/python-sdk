@@ -14,9 +14,10 @@ def get_base_url(request: Request) -> str:
     if proto not in SUPPORTED_PROTOCOLS:
         proto = "https"
 
-    if request_base_url.port not in [443, 80]:
-        base_url = f"{proto}://{request_base_url.host}:{request_base_url.port}"
-    else:
+    port = request_base_url.port
+    if port is None or port in (80, 443):
         base_url = f"{proto}://{request_base_url.host}"
+    else:
+        base_url = f"{proto}://{request_base_url.host}:{port}"
 
     return base_url

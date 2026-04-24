@@ -60,10 +60,10 @@ from .routers.metadata import auth_metadata_mount
 
 
 class AuthProvider:
-    """Keycard authentication provider for Starlette/FastAPI applications.
+    """Keycard authentication provider for Starlette and FastAPI applications.
 
-    Handles token verification, metadata discovery, and delegated token exchange
-    without any MCP dependency.
+    Handles token verification, OAuth metadata discovery, and delegated token
+    exchange.
     """
 
     def __init__(
@@ -118,7 +118,7 @@ class AuthProvider:
         self.enable_dynamic_client_registration = enable_dynamic_client_registration
 
         self._clients: dict[str, AsyncClient | None] = {}
-        self._init_lock: asyncio.Lock | None = None
+        self._init_lock = asyncio.Lock()
         self.audience = audience
 
         self.application_credential = self._discover_application_credential(
@@ -194,15 +194,12 @@ class AuthProvider:
         return "default"
 
     async def _get_or_create_client(
-        self, auth_info: dict[str, str] | None = None
+        self, auth_info: dict[str, str]
     ) -> AsyncClient | None:
         client = None
         client_key = self._get_client_key(auth_info["zone_id"])
         if client_key in self._clients and self._clients[client_key] is not None:
             return self._clients[client_key]
-
-        if self._init_lock is None:
-            self._init_lock = asyncio.Lock()
 
         async with self._init_lock:
             if (

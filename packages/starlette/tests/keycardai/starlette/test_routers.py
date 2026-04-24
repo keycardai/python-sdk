@@ -39,6 +39,10 @@ class TestProtectedResourceMetadata:
         response = client.get("/.well-known/oauth-protected-resource")
         assert response.status_code == 200
 
+    def test_returns_application_json_content_type(self, client):
+        response = client.get("/.well-known/oauth-protected-resource")
+        assert response.headers["content-type"].startswith("application/json")
+
     def test_contains_authorization_servers(self, issuer, client):
         response = client.get("/.well-known/oauth-protected-resource")
         data = response.json()
@@ -86,6 +90,22 @@ class TestAuthorizationServerMetadata:
             )
             response = client.get("/.well-known/oauth-authorization-server")
             assert response.status_code == 503
+
+    def test_explicit_timeout_passed_to_client(self, client, issuer):
+        """authorization_server_metadata must pass an explicit timeout to httpx."""
+        with patch("httpx.Client") as mock_client_cls:
+            mock_resp = Mock()
+            mock_resp.json.return_value = {"issuer": issuer}
+            mock_resp.raise_for_status.return_value = None
+            mock_client_cls.return_value.__enter__.return_value.get.return_value = (
+                mock_resp
+            )
+            client.get("/.well-known/oauth-authorization-server")
+            call_kwargs = mock_client_cls.call_args.kwargs
+            assert "timeout" in call_kwargs, (
+                "httpx.Client must be constructed with explicit timeout to "
+                "avoid pinning a threadpool worker indefinitely."
+            )
 
 
 class TestJwksEndpoint:

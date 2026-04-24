@@ -92,6 +92,39 @@ class TestAuthProviderInstall:
         assert response.status_code == 401
         assert "Bearer" in response.headers.get("WWW-Authenticate", "")
 
+    def test_install_does_not_bypass_unrelated_well_known_paths(self, provider):
+        """Only OAuth metadata paths bypass auth, not all of /.well-known/."""
+        app = Starlette()
+        provider.install(app)
+        client = TestClient(app, raise_server_exceptions=False)
+        response = client.get("/.well-known/change-password")
+        assert response.status_code == 401, (
+            "Non-OAuth /.well-known paths must stay behind bearer auth; "
+            "only oauth-protected-resource, oauth-authorization-server, and "
+            "jwks.json are exempt per RFC 9728 §2 / RFC 8414 §3."
+        )
+
+    def test_install_allows_oauth_metadata_subpaths(self, provider):
+        """Delimited subpaths under OAuth metadata roots stay public (multi-zone)."""
+        app = Starlette()
+        provider.install(app)
+        client = TestClient(app, raise_server_exceptions=False)
+        response = client.get(
+            "/.well-known/oauth-protected-resource/some/zone-scoped/path"
+        )
+        assert response.status_code == 200
+
+
+class TestAuthProviderLock:
+    def test_init_lock_is_constructed_eagerly(self):
+        """Avoid lazy lock construction; eager init removes any race question."""
+        provider = AuthProvider(
+            zone_id="test-zone",
+            application_credential=ClientSecret(("cid", "csec")),
+        )
+        import asyncio
+        assert isinstance(provider._init_lock, asyncio.Lock)
+
 
 class TestPackageHasNoMcpDependency:
     """The core KEP promise: keycardai-starlette does not import keycardai.mcp.*"""
