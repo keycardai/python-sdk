@@ -13,6 +13,7 @@ Credential Providers:
 
 import os
 import uuid
+import warnings
 from typing import Protocol
 
 from keycardai.oauth import (
@@ -144,9 +145,12 @@ class WebIdentity:
     Example:
         provider = WebIdentity(
             server_name="My Server",
-            storage_dir="./mcp_keys"
+            storage_dir="./server_keys"
         )
     """
+
+    _DEFAULT_STORAGE_DIR = "./server_keys"
+    _LEGACY_STORAGE_DIR = "./mcp_keys"
 
     def __init__(
         self,
@@ -163,12 +167,11 @@ class WebIdentity:
         if storage is not None:
             self._storage = storage
         else:
-            # Default dir and key_id prefix preserve pre-extraction behavior so
-            # existing keycardai-mcp services find their existing keys after upgrade.
-            self._storage = FilePrivateKeyStorage(storage_dir or "./mcp_keys")
+            resolved_dir = storage_dir or self._resolve_default_storage_dir()
+            self._storage = FilePrivateKeyStorage(resolved_dir)
 
         if key_id is None:
-            stable_client_id = server_name or f"mcp-server-{uuid.uuid4()}"
+            stable_client_id = server_name or f"server-{uuid.uuid4()}"
             key_id = "".join(
                 c if c.isalnum() or c in "-_" else "_" for c in stable_client_id
             )
@@ -180,6 +183,28 @@ class WebIdentity:
         )
 
         self.identity_manager.bootstrap_identity()
+
+    @classmethod
+    def _resolve_default_storage_dir(cls) -> str:
+        # Prefer the new default. Fall back to the pre-extraction directory
+        # (./mcp_keys) when it exists and the new one does not, so services
+        # that relied on the implicit default keep their existing keys after
+        # upgrade. This fallback will be removed in a future release.
+        if not os.path.isdir(cls._DEFAULT_STORAGE_DIR) and os.path.isdir(
+            cls._LEGACY_STORAGE_DIR
+        ):
+            warnings.warn(
+                f"WebIdentity is using legacy storage directory "
+                f"{cls._LEGACY_STORAGE_DIR!r} because no storage_dir was "
+                f"provided and {cls._DEFAULT_STORAGE_DIR!r} does not exist. "
+                f"Pass storage_dir={cls._LEGACY_STORAGE_DIR!r} explicitly to "
+                f"silence this warning, or migrate keys to "
+                f"{cls._DEFAULT_STORAGE_DIR!r} (the new default).",
+                DeprecationWarning,
+                stacklevel=3,
+            )
+            return cls._LEGACY_STORAGE_DIR
+        return cls._DEFAULT_STORAGE_DIR
 
     def get_http_client_auth(self) -> AuthStrategy:
         return NoneAuth()
