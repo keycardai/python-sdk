@@ -11,17 +11,17 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from keycardai.mcp.server.auth.application_credentials import (
+from keycardai.oauth import BasicAuth, ClientConfig, MultiZoneBasicAuth
+from keycardai.oauth.server.credentials import (
     ClientSecret,
     EKSWorkloadIdentity,
     WebIdentity,
 )
-from keycardai.mcp.server.exceptions import (
+from keycardai.oauth.server.exceptions import (
     ClientSecretConfigurationError,
     EKSWorkloadIdentityConfigurationError,
     EKSWorkloadIdentityRuntimeError,
 )
-from keycardai.oauth import BasicAuth, ClientConfig, MultiZoneBasicAuth
 from keycardai.oauth.types.models import (
     AuthorizationServerMetadata,
     TokenExchangeRequest,
@@ -264,6 +264,38 @@ class TestWebIdentity:
 
             # JWT should be created successfully
             assert request.client_assertion is not None
+
+    def test_default_storage_dir_uses_new_location(self, tmp_path, monkeypatch):
+        """New installs default to ./server_keys when no legacy dir exists."""
+        monkeypatch.chdir(tmp_path)
+        provider = WebIdentity(server_name="Test Server")
+        assert (tmp_path / "server_keys").is_dir()
+        assert Path(provider._storage.storage_dir) == Path("./server_keys")
+
+    def test_default_storage_dir_falls_back_to_legacy_with_warning(
+        self, tmp_path, monkeypatch
+    ):
+        """Pre-extraction installs with ./mcp_keys keep working, warning emitted."""
+        monkeypatch.chdir(tmp_path)
+        legacy = tmp_path / "mcp_keys"
+        legacy.mkdir()
+
+        with pytest.warns(DeprecationWarning, match="legacy storage directory"):
+            provider = WebIdentity(server_name="Test Server")
+
+        assert Path(provider._storage.storage_dir) == Path("./mcp_keys")
+        assert not (tmp_path / "server_keys").exists()
+
+    def test_explicit_storage_dir_skips_legacy_fallback(self, tmp_path, monkeypatch):
+        """Passing storage_dir explicitly does not trigger the legacy warning."""
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "mcp_keys").mkdir()
+        explicit = tmp_path / "explicit_keys"
+
+        import warnings as _warnings
+        with _warnings.catch_warnings():
+            _warnings.simplefilter("error", DeprecationWarning)
+            WebIdentity(server_name="Test Server", storage_dir=str(explicit))
 
 
 class TestEKSWorkloadIdentity:
