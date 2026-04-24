@@ -22,11 +22,9 @@ test-package PACKAGE:
 test-file PACKAGE FILE:
     cd packages/{{PACKAGE}} && uv run --extra test pytest tests/{{FILE}} -v
 
-# Run tests with coverage enforcement
-# Note: mcp package has lower threshold due to optional client integrations (CrewAI, LangChain, etc.).
-# The threshold dropped from 65% to 60% when framework-free server primitives moved to
-# keycardai-oauth / keycardai-starlette: the extracted code was well-tested, so the remaining
-# ratio is dragged down by the under-tested client integrations that stayed behind.
+# Run tests with coverage enforcement. mcp sits at 60% because well-tested server
+# primitives moved to oauth/starlette, leaving the under-tested client integrations
+# (CrewAI, LangChain, OpenAI) as the dominant share of what remains.
 test-coverage: build
     cd packages/oauth && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=70
     cd packages/starlette && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=55
