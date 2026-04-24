@@ -51,8 +51,11 @@ def get_changed_packages() -> list[dict[str, str]]:
 
 def get_version_info(package_dir: str, package_name: str) -> dict[str, str]:
     """Get version information for a package using commitizen."""
+    # --yes auto-confirms commitizen's "Is this the first tag created?" prompt,
+    # which only fires for brand-new packages with no existing tag matching
+    # `tag_format`. Without it, the prompt EOFs in non-TTY CI runs.
     exit_code, stdout, stderr = run_command([
-        "uv", "run", "cz", "bump", "--dry-run"
+        "uv", "run", "cz", "bump", "--dry-run", "--yes"
     ], cwd=package_dir)
 
     result = {
