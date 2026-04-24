@@ -10,6 +10,7 @@ build:
 # Run tests for all packages
 test: build
     just test-package oauth
+    just test-package starlette
     just test-package mcp
     just test-package mcp-fastmcp
 
@@ -22,10 +23,14 @@ test-file PACKAGE FILE:
     cd packages/{{PACKAGE}} && uv run --extra test pytest tests/{{FILE}} -v
 
 # Run tests with coverage enforcement
-# Note: mcp package has lower threshold due to optional client integrations (CrewAI, LangChain, etc.)
+# Note: mcp package has lower threshold due to optional client integrations (CrewAI, LangChain, etc.).
+# The threshold dropped from 65% to 60% when framework-free server primitives moved to
+# keycardai-oauth / keycardai-starlette: the extracted code was well-tested, so the remaining
+# ratio is dragged down by the under-tested client integrations that stayed behind.
 test-coverage: build
     cd packages/oauth && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=70
-    cd packages/mcp && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=65
+    cd packages/starlette && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=55
+    cd packages/mcp && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=60
     cd packages/mcp-fastmcp && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=70
 
 check:
