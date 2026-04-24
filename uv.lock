@@ -1938,21 +1938,6 @@ requires-dist = [
 ]
 
 [[package]]
-name = "impersonation-token-exchange"
-version = "0.1.0"
-source = { virtual = "packages/oauth/examples/impersonation_token_exchange" }
-dependencies = [
-    { name = "keycardai-oauth" },
-    { name = "python-dotenv" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "keycardai-oauth", editable = "packages/oauth" },
-    { name = "python-dotenv", specifier = ">=1.0.0" },
-]
-
-[[package]]
 name = "importlib-metadata"
 version = "8.7.1"
 source = { registry = "https://pypi.org/simple" }
@@ -2527,13 +2512,17 @@ dependencies = [
 
 [package.optional-dependencies]
 test = [
+    { name = "fastapi" },
+    { name = "httpx" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "fastapi", marker = "extra == 'test'", specifier = ">=0.116.0" },
     { name = "httpx", specifier = ">=0.27.2" },
+    { name = "httpx", marker = "extra == 'test'", specifier = ">=0.27.2" },
     { name = "keycardai-oauth", editable = "packages/oauth" },
     { name = "pydantic", specifier = ">=2.11.7" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=8.4.1" },

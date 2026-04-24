@@ -79,6 +79,11 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(
         self, request: Request, call_next: Callable
     ) -> Response:
+        # OAuth metadata discovery endpoints must remain publicly reachable —
+        # they are how clients learn to authenticate in the first place (RFC 9728 §2).
+        if request.url.path.startswith("/.well-known/"):
+            return await call_next(request)
+
         if not request.headers.get("Authorization"):
             return self._create_auth_challenge_response(
                 "invalid_token", "No bearer token provided", request
