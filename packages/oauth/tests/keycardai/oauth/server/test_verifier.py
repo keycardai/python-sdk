@@ -5,13 +5,13 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from keycardai.mcp.server.auth._cache import JWKSKey
-from keycardai.mcp.server.auth.verifier import AccessToken, TokenVerifier
-from keycardai.mcp.server.exceptions import (
+from keycardai.oauth.exceptions import OAuthHttpError
+from keycardai.oauth.server._cache import JWKSKey
+from keycardai.oauth.server.exceptions import (
     JWKSDiscoveryError,
     VerifierConfigError,
 )
-from keycardai.oauth.exceptions import OAuthHttpError
+from keycardai.oauth.server.verifier import AccessToken, TokenVerifier
 from keycardai.oauth.utils.jwt import JWTAccessToken
 
 

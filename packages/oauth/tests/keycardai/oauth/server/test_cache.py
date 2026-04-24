@@ -4,7 +4,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from unittest.mock import patch
 
-from keycardai.mcp.server.auth._cache import JWKSCache
+from keycardai.oauth.server._cache import JWKSCache
 
 
 class TestJWKSCache:

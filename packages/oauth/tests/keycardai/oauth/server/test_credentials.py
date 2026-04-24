@@ -11,17 +11,17 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from keycardai.mcp.server.auth.application_credentials import (
+from keycardai.oauth import BasicAuth, ClientConfig, MultiZoneBasicAuth
+from keycardai.oauth.server.credentials import (
     ClientSecret,
     EKSWorkloadIdentity,
     WebIdentity,
 )
-from keycardai.mcp.server.exceptions import (
+from keycardai.oauth.server.exceptions import (
     ClientSecretConfigurationError,
     EKSWorkloadIdentityConfigurationError,
     EKSWorkloadIdentityRuntimeError,
 )
-from keycardai.oauth import BasicAuth, ClientConfig, MultiZoneBasicAuth
 from keycardai.oauth.types.models import (
     AuthorizationServerMetadata,
     TokenExchangeRequest,

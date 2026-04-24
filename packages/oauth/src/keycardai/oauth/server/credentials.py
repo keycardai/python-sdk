@@ -144,7 +144,7 @@ class WebIdentity:
     Example:
         provider = WebIdentity(
             server_name="My Server",
-            storage_dir="./server_keys"
+            storage_dir="./mcp_keys"
         )
     """
 
@@ -163,10 +163,12 @@ class WebIdentity:
         if storage is not None:
             self._storage = storage
         else:
-            self._storage = FilePrivateKeyStorage(storage_dir or "./server_keys")
+            # Default dir and key_id prefix preserve pre-extraction behavior so
+            # existing keycardai-mcp services find their existing keys after upgrade.
+            self._storage = FilePrivateKeyStorage(storage_dir or "./mcp_keys")
 
         if key_id is None:
-            stable_client_id = server_name or f"server-{uuid.uuid4()}"
+            stable_client_id = server_name or f"mcp-server-{uuid.uuid4()}"
             key_id = "".join(
                 c if c.isalnum() or c in "-_" else "_" for c in stable_client_id
             )
