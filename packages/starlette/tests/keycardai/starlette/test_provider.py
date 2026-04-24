@@ -57,8 +57,8 @@ class TestAuthProviderInstall:
             application_credential=ClientSecret(("cid", "csec")),
         )
 
-    def test_install_does_not_add_global_middleware(self, provider):
-        """install() registers metadata routes only; middleware is per-route."""
+    def test_install_leaves_user_middleware_stack_empty(self, provider):
+        """install() registers metadata routes only; protection is per-route."""
         app = FastAPI()
         provider.install(app)
         middleware_classes = [m.cls for m in app.user_middleware]
@@ -86,8 +86,8 @@ class TestAuthProviderInstall:
         assert "authorization_servers" in data
         assert "test-zone.keycard.cloud" in data["authorization_servers"][0]
 
-    def test_install_does_not_block_unprotected_routes(self, provider):
-        """Routes without @auth.protect() stay public."""
+    def test_routes_without_protect_decorator_stay_public(self, provider):
+        """Routes without @auth.protect() are reachable without a bearer token."""
         app = FastAPI()
         provider.install(app)
 

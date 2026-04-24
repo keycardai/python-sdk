@@ -415,9 +415,6 @@ class AuthProvider:
                         "accept a starlette.Request parameter."
                     )
 
-                # Reuse middleware-set auth info if BearerAuthMiddleware ran
-                # (e.g. inside a protected_router() mount); otherwise verify
-                # the bearer token here.
                 _keycardai_auth_info = getattr(
                     request.state, "keycardai_auth_info", None
                 )
@@ -435,7 +432,6 @@ class AuthProvider:
                         _is_async_func, func, *args, **kwargs
                     )
 
-                # Delegation path: inject AccessContext, exchange tokens.
                 if (
                     _access_ctx_param_info[0] not in kwargs
                     or kwargs[_access_ctx_param_info[0]] is None

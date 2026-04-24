@@ -75,13 +75,10 @@ async def verify_bearer_token(
 ) -> dict[str, str | None] | Response:
     """Verify the request's bearer token.
 
-    Returns an auth_info dict on success (the same shape that
-    ``BearerAuthMiddleware`` sets on ``request.state.keycardai_auth_info``),
-    or an RFC 6750 challenge ``Response`` on failure (no header, malformed
-    header, missing zone_id under multi-zone, verification failure).
-
-    Used by both the middleware (for the protected_router() / mount pattern)
-    and by ``@auth.protect()`` (for per-route opt-in protection).
+    Returns an auth_info dict on success (suitable for assigning to
+    ``request.state.keycardai_auth_info``) or an RFC 6750 challenge
+    ``Response`` on failure (missing header, malformed header, missing
+    zone_id under multi-zone, or verification failure).
     """
     if not request.headers.get("Authorization"):
         return _create_auth_challenge_response(
