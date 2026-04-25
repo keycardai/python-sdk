@@ -12,6 +12,7 @@ from collections.abc import Sequence
 from keycardai.oauth.server.verifier import TokenVerifier
 from keycardai.oauth.types import JsonWebKeySet
 from starlette.middleware import Middleware
+from starlette.middleware.authentication import AuthenticationMiddleware
 from starlette.routing import Mount, Route
 from starlette.types import ASGIApp
 
@@ -21,7 +22,7 @@ from ..handlers.metadata import (
     authorization_server_metadata,
     protected_resource_metadata,
 )
-from ..middleware import BearerAuthMiddleware
+from ..middleware import KeycardAuthBackend, keycard_on_error
 
 
 def auth_metadata_mount(
@@ -185,12 +186,18 @@ def protected_router(
         ),
     ]
 
+    auth_middleware = Middleware(
+        AuthenticationMiddleware,
+        backend=KeycardAuthBackend(verifier),
+        on_error=keycard_on_error,
+    )
+
     if enable_multi_zone:
         routes.append(
             Mount(
                 "/{zone_id:str}",
                 app=app,
-                middleware=[Middleware(BearerAuthMiddleware, verifier)],
+                middleware=[auth_middleware],
             )
         )
     else:
@@ -198,7 +205,7 @@ def protected_router(
             Mount(
                 "/",
                 app=app,
-                middleware=[Middleware(BearerAuthMiddleware, verifier)],
+                middleware=[auth_middleware],
             )
         )
 

@@ -1,12 +1,17 @@
 """Keycard Starlette OAuth: protect HTTP APIs with Keycard.
 
-Starlette/FastAPI middleware, route builders, and a @protect() decorator
-for OAuth 2.0 bearer token authentication.
+Plugs Keycard bearer-token authentication into Starlette's standard
+authentication framework: ``AuthenticationMiddleware`` populates
+``request.user`` / ``request.auth`` via :class:`KeycardAuthBackend`, the
+:func:`requires` decorator gates routes (drop-in for
+``starlette.authentication.requires`` with RFC 6750 challenges), and
+:func:`grant` (also exposed as ``AuthProvider.grant``) performs delegated
+OAuth 2.0 token exchange (RFC 8693) for downstream APIs.
 
 Quick Start::
 
     from fastapi import FastAPI, Request
-    from keycardai.starlette import AuthProvider
+    from keycardai.starlette import AuthProvider, KeycardUser, requires
     from keycardai.oauth.server import AccessContext, ClientSecret
 
     auth = AuthProvider(
@@ -15,26 +20,34 @@ Quick Start::
     )
 
     app = FastAPI()
-    auth.install(app)  # adds /.well-known/* metadata; routes stay public
+    auth.install(app)
 
     @app.get("/health")
     async def health():
-        return {"ok": True}                # public, no auth
+        return {"ok": True}
 
     @app.get("/api/me")
-    @auth.protect()                        # verify only
+    @requires("authenticated")
     async def me(request: Request):
-        return request.state.keycardai_auth_info
+        user: KeycardUser = request.user
+        return {"client_id": user.client_id, "scopes": list(request.auth.scopes)}
 
     @app.get("/api/data")
-    @auth.protect("https://api.example.com")  # verify + delegated exchange
+    @requires("authenticated")
+    @auth.grant("https://api.example.com")
     async def get_data(request: Request, access: AccessContext):
         token = access.access("https://api.example.com").access_token
-        # Use token to call downstream API
 """
 
+from .authorization import grant, requires
 from .handlers.metadata import ProtectedResourceMetadata
-from .middleware import BearerAuthMiddleware
+from .middleware import (
+    KeycardAuthBackend,
+    KeycardAuthCredentials,
+    KeycardAuthError,
+    KeycardUser,
+    keycard_on_error,
+)
 from .provider import AuthProvider
 from .routers import (
     auth_metadata_mount,
@@ -46,8 +59,14 @@ from .routers import (
 __all__ = [
     # === Primary API ===
     "AuthProvider",
-    # === Middleware ===
-    "BearerAuthMiddleware",
+    "requires",
+    "grant",
+    # === Authentication backend ===
+    "KeycardAuthBackend",
+    "KeycardAuthCredentials",
+    "KeycardAuthError",
+    "KeycardUser",
+    "keycard_on_error",
     # === Route Builders ===
     "auth_metadata_mount",
     "protected_router",
