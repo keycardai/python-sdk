@@ -1,0 +1,6 @@
+[zone]
+id = "o36mbsre94s2vlt8x5jq6nbxs0"
+
+[[credentials.default]]
+env_var = "EVENTS_API_TOKEN"
+resource = "http://localhost:7878/api"

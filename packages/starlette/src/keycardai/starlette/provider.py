@@ -1,12 +1,20 @@
-"""Starlette/FastAPI AuthProvider with @protect() decorator.
+"""Starlette/FastAPI AuthProvider integrated with Starlette's standard auth framework.
 
-Provides a framework-aware authentication provider that integrates with
-Starlette and FastAPI applications.
+``AuthProvider.install(app)`` wires up
+``starlette.middleware.authentication.AuthenticationMiddleware`` with a
+``KeycardAuthBackend`` so ``request.user`` / ``request.auth`` are populated for
+every request, and adds the RFC 9728 / RFC 8414 ``/.well-known/*`` discovery
+routes. Routes that need authentication use the standard
+``@requires("authenticated")`` decorator (Keycard's drop-in for
+``starlette.authentication.requires`` that emits an RFC 6750
+``WWW-Authenticate`` challenge instead of stock ``HTTPException(403)``).
+Delegated OAuth 2.0 token exchange is requested with
+``@auth.grant(resource_url)`` (mirroring ``keycardai.mcp``'s ``@grant()``).
 
 Example::
 
     from fastapi import FastAPI, Request
-    from keycardai.starlette import AuthProvider
+    from keycardai.starlette import AuthProvider, KeycardUser, requires
     from keycardai.oauth.server import AccessContext, ClientSecret
 
     auth = AuthProvider(
@@ -15,36 +23,34 @@ Example::
     )
 
     app = FastAPI()
-    auth.install(app)  # adds /.well-known/* metadata routes; routes stay public
+    auth.install(app)
 
     @app.get("/health")
     async def health():
-        return {"ok": True}                # public, no auth
+        return {"ok": True}
 
     @app.get("/api/me")
-    @auth.protect()                        # verify only
+    @requires("authenticated")
     async def me(request: Request):
-        return request.state.keycardai_auth_info
+        user: KeycardUser = request.user
+        return {"client_id": user.client_id, "scopes": list(request.auth.scopes)}
 
     @app.get("/api/calendar")
-    @auth.protect("https://graph.microsoft.com")  # verify + delegated exchange
-    async def get_calendar(request: Request, access: AccessContext):
+    @requires("authenticated")
+    @auth.grant("https://graph.microsoft.com")
+    async def calendar(request: Request, access: AccessContext):
         token = access.access("https://graph.microsoft.com").access_token
-        # call Microsoft Graph with token
 """
 
 import asyncio
-import inspect
 import os
 from collections.abc import Callable
-from functools import wraps
 from typing import Any
 
 from pydantic import AnyHttpUrl
 
 from keycardai.oauth import AsyncClient, ClientConfig
 from keycardai.oauth.http.auth import MultiZoneBasicAuth, NoneAuth
-from keycardai.oauth.server.access_context import AccessContext
 from keycardai.oauth.server.client_factory import ClientFactory, DefaultClientFactory
 from keycardai.oauth.server.credentials import (
     ApplicationCredential,
@@ -52,19 +58,16 @@ from keycardai.oauth.server.credentials import (
     EKSWorkloadIdentity,
     WebIdentity,
 )
-from keycardai.oauth.server.exceptions import (
-    AuthProviderConfigurationError,
-    MissingAccessContextError,
-)
-from keycardai.oauth.server.token_exchange import exchange_tokens_for_resources
+from keycardai.oauth.server.exceptions import AuthProviderConfigurationError
 from keycardai.oauth.server.verifier import TokenVerifier
 from keycardai.oauth.types.models import JsonWebKeySet
-from starlette.requests import Request
-from starlette.responses import Response
+from starlette.middleware.authentication import AuthenticationMiddleware
 from starlette.routing import Mount, Route
 from starlette.types import ASGIApp
 
-from .middleware.bearer import verify_bearer_token
+from .authorization import grant as _grant_factory
+from .authorization import requires as _requires_module_func
+from .middleware.bearer import KeycardAuthBackend, keycard_on_error
 from .routers.metadata import auth_metadata_mount
 
 
@@ -74,6 +77,13 @@ class AuthProvider:
     Handles token verification, OAuth metadata discovery, and delegated token
     exchange.
     """
+
+    # Module-level ``requires`` exposed as a method-style alias so users who
+    # prefer accessing the API through their AuthProvider instance can write
+    # ``@auth.requires("authenticated")``. The function is stateless aside
+    # from the request scope, so the alias and the module-level export
+    # share one implementation.
+    requires = staticmethod(_requires_module_func)
 
     def __init__(
         self,
@@ -296,18 +306,19 @@ class AuthProvider:
             )
         )
 
-    def install(self, app: ASGIApp) -> None:
-        """Install OAuth metadata discovery routes on a Starlette/FastAPI app.
+    def install(self, app: Any) -> None:
+        """Install OAuth metadata discovery routes and AuthenticationMiddleware.
 
-        Adds:
-        - ``/.well-known/oauth-protected-resource``
-        - ``/.well-known/oauth-authorization-server``
-        - ``/.well-known/jwks.json`` (when WebIdentity is configured)
+        Adds the ``/.well-known/*`` metadata routes (RFC 9728, RFC 8414, and
+        JWKS when configured) and registers
+        ``starlette.middleware.authentication.AuthenticationMiddleware`` wired
+        to ``KeycardAuthBackend``. After installation, every request passes
+        through the backend; routes without ``@requires(...)`` stay public,
+        but ``request.user`` / ``request.auth`` are populated for every route.
 
-        Routes remain public by default. Protect specific routes with
-        ``@auth.protect()`` (verify only) or ``@auth.protect("resource")``
-        (verify + delegated token exchange). For protecting an entire
-        sub-app or mount, use ``protected_router()``.
+        Anonymous requests to protected routes receive an RFC 6750 401
+        response with a ``WWW-Authenticate: Bearer ... resource_metadata=...``
+        header (built by ``keycard_on_error``).
         """
         metadata_routes = auth_metadata_mount(
             self.issuer,
@@ -316,209 +327,19 @@ class AuthProvider:
         )
         app.routes.insert(0, metadata_routes)
 
-    def protect(
+        app.add_middleware(
+            AuthenticationMiddleware,
+            backend=KeycardAuthBackend(self.get_token_verifier()),
+            on_error=keycard_on_error,
+        )
+
+    def grant(
         self,
-        resources: str | list[str] | None = None,
+        resources: str | list[str],
         user_identifier: Callable[..., str] | None = None,
     ):
-        """Decorator that requires a valid bearer token, optionally exchanges it.
+        """Decorator: delegated OAuth 2.0 token exchange for one or more resources.
 
-        Without ``resources``, the decorator only verifies the bearer token and
-        returns a 401 challenge (RFC 6750) if it is missing or invalid. The
-        verified auth info is available as ``request.state.keycardai_auth_info``.
-
-        With ``resources``, the decorator additionally runs delegated token
-        exchange for each named resource and populates an ``AccessContext``
-        parameter on the decorated function. Errors are stored per-resource on
-        the ``AccessContext`` rather than raised.
-
-        Args:
-            resources: Target resource URL(s) for delegated token exchange.
-                When None, only verification runs.
-            user_identifier: Callable that extracts a user identifier from the
-                function kwargs for impersonation exchange. Only meaningful
-                when ``resources`` is set.
-
-        Examples::
-
-            @app.get("/api/me")
-            @auth.protect()
-            async def me(request: Request):
-                return request.state.keycardai_auth_info
-
-            @app.get("/api/calendar")
-            @auth.protect("https://graph.microsoft.com")
-            async def get_calendar(request: Request, access: AccessContext):
-                token = access.access("https://graph.microsoft.com").access_token
-                # Use token to call Microsoft Graph
+        See :func:`keycardai.starlette.authorization.grant` for the full contract.
         """
-
-        def _get_param_info_by_type(
-            func: Callable, param_type: type
-        ) -> tuple[str, int] | None:
-            sig = inspect.signature(func)
-            for index, value in enumerate(sig.parameters.values()):
-                if value.annotation == param_type:
-                    return value.name, index
-            return None
-
-        def _get_safe_func_signature(
-            func: Callable,
-        ) -> inspect.Signature:
-            sig = inspect.signature(func)
-            safe_params = [
-                p for p in sig.parameters.values() if p.annotation != AccessContext
-            ]
-            return sig.replace(parameters=safe_params)
-
-        def _get_request(*args, **kwargs) -> Request | None:
-            for value in args:
-                if isinstance(value, Request):
-                    return value
-            for value in kwargs.values():
-                if isinstance(value, Request):
-                    return value
-            return None
-
-        def _set_error(
-            error: dict[str, str],
-            resource: str | None,
-            access_context: AccessContext,
-        ):
-            if resource:
-                access_context.set_resource_error(resource, error)
-            else:
-                access_context.set_error(error)
-
-        async def _call_func(
-            _is_async_func: bool, func: Callable, *args, **kwargs
-        ):
-            if _is_async_func:
-                return await func(*args, **kwargs)
-            else:
-                return func(*args, **kwargs)
-
-        def decorator(func: Callable) -> Callable:
-            _is_async_func = inspect.iscoroutinefunction(func)
-            _access_ctx_param_info = _get_param_info_by_type(func, AccessContext)
-            _delegate = resources is not None
-
-            if _delegate and _access_ctx_param_info is None:
-                raise MissingAccessContextError()
-
-            @wraps(func)
-            async def wrapper(*args, **kwargs) -> Any:
-                request = _get_request(*args, **kwargs)
-                if request is None:
-                    raise RuntimeError(
-                        "@auth.protect requires the decorated function to "
-                        "accept a starlette.Request parameter."
-                    )
-
-                _keycardai_auth_info = getattr(
-                    request.state, "keycardai_auth_info", None
-                )
-                if not _keycardai_auth_info:
-                    result = await verify_bearer_token(
-                        request, self.get_token_verifier()
-                    )
-                    if isinstance(result, Response):
-                        return result
-                    _keycardai_auth_info = result
-                    request.state.keycardai_auth_info = _keycardai_auth_info
-
-                if not _delegate:
-                    return await _call_func(
-                        _is_async_func, func, *args, **kwargs
-                    )
-
-                if (
-                    _access_ctx_param_info[0] not in kwargs
-                    or kwargs[_access_ctx_param_info[0]] is None
-                ):
-                    kwargs[_access_ctx_param_info[0]] = AccessContext()
-                _access_ctx = kwargs[_access_ctx_param_info[0]]
-
-                if (
-                    self.enable_multi_zone
-                    and not _keycardai_auth_info.get("zone_id")
-                ):
-                    _set_error(
-                        {
-                            "message": "Zone ID required for multi-zone configuration but not found."
-                        },
-                        None,
-                        _access_ctx,
-                    )
-                    return await _call_func(
-                        _is_async_func, func, *args, **kwargs
-                    )
-
-                try:
-                    _client = await self._get_or_create_client(
-                        _keycardai_auth_info
-                    )
-                    if _client is None:
-                        _set_error(
-                            {
-                                "message": "OAuth client not available. Server configuration issue."
-                            },
-                            None,
-                            _access_ctx,
-                        )
-                        return await _call_func(
-                            _is_async_func, func, *args, **kwargs
-                        )
-                except Exception as e:
-                    _set_error(
-                        {
-                            "message": "Failed to initialize OAuth client.",
-                            "raw_error": str(e),
-                        },
-                        None,
-                        _access_ctx,
-                    )
-                    return await _call_func(
-                        _is_async_func, func, *args, **kwargs
-                    )
-
-                _resolved_user_id: str | None = None
-                if user_identifier is not None:
-                    try:
-                        _resolved_user_id = user_identifier(**kwargs)
-                    except Exception as e:
-                        _set_error(
-                            {
-                                "message": "Failed to resolve user_identifier.",
-                                "raw_error": str(e),
-                            },
-                            None,
-                            _access_ctx,
-                        )
-                        return await _call_func(
-                            _is_async_func, func, *args, **kwargs
-                        )
-
-                _resource_list = (
-                    [resources]
-                    if isinstance(resources, str)
-                    else resources
-                )
-                await exchange_tokens_for_resources(
-                    client=_client,
-                    resources=_resource_list,
-                    subject_token=_keycardai_auth_info["access_token"],
-                    access_context=_access_ctx,
-                    application_credential=self.application_credential,
-                    auth_info=_keycardai_auth_info,
-                    user_identifier=_resolved_user_id,
-                )
-
-                return await _call_func(
-                    _is_async_func, func, *args, **kwargs
-                )
-
-            wrapper.__signature__ = _get_safe_func_signature(func)
-            return wrapper
-
-        return decorator
+        return _grant_factory(self, resources, user_identifier=user_identifier)
