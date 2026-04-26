@@ -1,0 +1,23 @@
+"""Starlette request helpers for proxy-aware URL construction."""
+
+from pydantic import AnyHttpUrl
+
+from starlette.requests import Request
+
+SUPPORTED_PROTOCOLS = ["http", "https"]
+
+
+def get_base_url(request: Request) -> str:
+    """Get the correct base URL considering proxy headers like X-Forwarded-Proto."""
+    request_base_url = AnyHttpUrl(str(request.base_url))
+    proto = request.headers.get("x-forwarded-proto") or request_base_url.scheme
+    if proto not in SUPPORTED_PROTOCOLS:
+        proto = "https"
+
+    port = request_base_url.port
+    if port is None or port in (80, 443):
+        base_url = f"{proto}://{request_base_url.host}"
+    else:
+        base_url = f"{proto}://{request_base_url.host}:{port}"
+
+    return base_url

@@ -10,6 +10,7 @@ build:
 # Run tests for all packages
 test: build
     just test-package oauth
+    just test-package starlette
     just test-package mcp
     just test-package mcp-fastmcp
 
@@ -21,11 +22,13 @@ test-package PACKAGE:
 test-file PACKAGE FILE:
     cd packages/{{PACKAGE}} && uv run --extra test pytest tests/{{FILE}} -v
 
-# Run tests with coverage enforcement
-# Note: mcp package has lower threshold due to optional client integrations (CrewAI, LangChain, etc.)
+# Run tests with coverage enforcement. mcp sits at 60% because well-tested server
+# primitives moved to oauth/starlette, leaving the under-tested client integrations
+# (CrewAI, LangChain, OpenAI) as the dominant share of what remains.
 test-coverage: build
     cd packages/oauth && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=70
-    cd packages/mcp && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=65
+    cd packages/starlette && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=55
+    cd packages/mcp && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=60
     cd packages/mcp-fastmcp && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=70
 
 check:

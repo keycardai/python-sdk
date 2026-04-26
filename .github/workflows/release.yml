@@ -5,6 +5,7 @@ on:
     tags:
       - '*-keycardai'
       - '*-keycardai-oauth'
+      - '*-keycardai-starlette'
       - '*-keycardai-mcp'
       - '*-keycardai-mcp-fastmcp'
       - '*-keycardai-agents'
