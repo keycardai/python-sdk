@@ -36,7 +36,7 @@ def _block_implicit_load_dotenv(
 ):
     if dotenv_path is None and stream is None:
         return False
-    return _real_load_dotenv(dotenv_path=dotenv_path, stream=stream, *args, **kwargs)
+    return _real_load_dotenv(dotenv_path, stream, *args, **kwargs)
 
 
 _dotenv.load_dotenv = _block_implicit_load_dotenv

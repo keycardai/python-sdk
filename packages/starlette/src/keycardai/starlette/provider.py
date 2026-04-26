@@ -65,8 +65,7 @@ from starlette.middleware.authentication import AuthenticationMiddleware
 from starlette.routing import Mount, Route
 from starlette.types import ASGIApp
 
-from .authorization import grant as _grant_factory
-from .authorization import requires as _requires_module_func
+from .authorization import grant as _grant_factory, requires as _requires_module_func
 from .middleware.bearer import KeycardAuthBackend, keycard_on_error
 from .routers.metadata import auth_metadata_mount
 

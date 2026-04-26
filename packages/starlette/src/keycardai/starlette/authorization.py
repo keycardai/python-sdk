@@ -23,15 +23,14 @@ import inspect
 from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Any
 
+from keycardai.oauth.server.access_context import AccessContext
+from keycardai.oauth.server.exceptions import MissingAccessContextError
+from keycardai.oauth.server.token_exchange import exchange_tokens_for_resources
 from starlette._utils import is_async_callable
 from starlette.authentication import has_required_scope
 from starlette.exceptions import HTTPException
 from starlette.requests import Request
 from starlette.responses import Response
-
-from keycardai.oauth.server.access_context import AccessContext
-from keycardai.oauth.server.exceptions import MissingAccessContextError
-from keycardai.oauth.server.token_exchange import exchange_tokens_for_resources
 
 from .middleware.bearer import (
     KeycardUser,
