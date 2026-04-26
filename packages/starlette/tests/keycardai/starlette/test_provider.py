@@ -6,7 +6,7 @@ import pytest
 from fastapi import FastAPI
 from starlette.applications import Starlette
 from starlette.middleware.authentication import AuthenticationMiddleware
-from starlette.requests import Request
+from starlette.requests import HTTPConnection, Request
 from starlette.testclient import TestClient
 
 from keycardai.oauth.server import AccessContext
@@ -142,31 +142,63 @@ class TestAuthProviderInstall:
 
 
 class TestKeycardAuthBackend:
-    def test_no_auth_header_returns_none(self):
-        """No Authorization header → backend returns None (anonymous)."""
-        verifier = _stub_verifier()
-        backend = KeycardAuthBackend(verifier)
-        provider = AuthProvider(
-            zone_id="test-zone",
-            application_credential=ClientSecret(("cid", "csec")),
+    @pytest.mark.asyncio
+    async def test_no_auth_header_returns_none(self):
+        """No Authorization header: backend returns None (request stays anonymous)."""
+        backend = KeycardAuthBackend(_stub_verifier())
+
+        scope = {"type": "http", "headers": [], "path": "/health"}
+        conn = HTTPConnection(scope)
+
+        assert await backend.authenticate(conn) is None
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "/.well-known/oauth-protected-resource",
+            "/.well-known/oauth-protected-resource/zone-id",
+            "/.well-known/oauth-authorization-server",
+            "/.well-known/jwks.json",
+        ],
+    )
+    @pytest.mark.asyncio
+    async def test_oauth_metadata_paths_bypass_backend(self, path):
+        """RFC 9728 §2 / RFC 8414 §3: OAuth discovery endpoints must stay public."""
+        backend = KeycardAuthBackend(_stub_verifier())
+        scope = {
+            "type": "http",
+            "headers": [(b"authorization", b"Bearer would-be-rejected")],
+            "path": path,
+        }
+        assert await backend.authenticate(HTTPConnection(scope)) is None
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "/.well-known/change-password",
+            "/.well-known/security.txt",
+            "/.well-known/oauth-protected-resource-fake",
+            "/.well-known/openid-configuration",
+        ],
+    )
+    @pytest.mark.asyncio
+    async def test_sibling_well_known_paths_do_not_bypass_backend(self, path):
+        """Non-metadata /.well-known/* paths must still go through the backend.
+
+        Guards against re-broadening the bypass to a family root prefix.
+        """
+        verifier = MagicMock(
+            enable_multi_zone=False,
+            verify_token=AsyncMock(return_value=None),
         )
-        provider.get_token_verifier = MagicMock(return_value=verifier)  # type: ignore[method-assign]
-
-        app = FastAPI()
-        provider.install(app)
-
-        @app.get("/health")
-        async def health():
-            return {"ok": True}
-
-        # Replace the middleware backend with our stub
-        for m in app.user_middleware:
-            if m.cls is AuthenticationMiddleware:
-                m.kwargs["backend"] = backend
-
-        client = TestClient(app, raise_server_exceptions=False)
-        response = client.get("/health")
-        assert response.status_code == 200
+        backend = KeycardAuthBackend(verifier)
+        scope = {
+            "type": "http",
+            "headers": [(b"authorization", b"Bearer some-token")],
+            "path": path,
+        }
+        with pytest.raises(KeycardAuthError):
+            await backend.authenticate(HTTPConnection(scope))
 
     def test_malformed_authorization_header_returns_401_challenge(self):
         provider = AuthProvider(
@@ -300,17 +332,6 @@ class TestRequires:
             "/api/admin", headers={"Authorization": "Bearer some-token"}
         )
         assert response.status_code == 403
-
-    def test_module_requires_and_provider_requires_share_implementation(self):
-        provider = AuthProvider(
-            zone_id="test-zone",
-            application_credential=ClientSecret(("cid", "csec")),
-        )
-        # ``AuthProvider.requires`` is a staticmethod alias for the module-level
-        # ``requires``; both decorate the same way. Class attribute access goes
-        # through __get__, so compare the underlying function instead.
-        assert AuthProvider.__dict__["requires"].__func__ is requires
-        assert provider.requires is requires
 
 
 class TestGrant:

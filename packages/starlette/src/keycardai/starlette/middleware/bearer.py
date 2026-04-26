@@ -148,7 +148,6 @@ class KeycardUser(BaseUser):
         self.client_id = client_id
         self.zone_id = zone_id
         self.resource_server_url = resource_server_url
-        self.resource_client_id = resource_server_url
         self.scopes = list(scopes or [])
 
     @property
@@ -240,21 +239,20 @@ class KeycardAuthBackend(AuthenticationBackend):
         return credentials, user
 
 
-def keycard_on_error(conn: HTTPConnection, exc: Exception) -> Response:
-    """Convert a ``KeycardAuthError`` into an RFC 6750 ``WWW-Authenticate`` challenge.
+def _build_unauthorized_response(
+    conn: HTTPConnection | Request,
+    *,
+    error: str = "invalid_token",
+    description: str = "Authentication required",
+    status_code: int = 401,
+) -> Response:
+    """Build an RFC 6750 ``WWW-Authenticate`` challenge response.
 
-    Suitable for use as the ``on_error`` argument to
-    ``starlette.middleware.authentication.AuthenticationMiddleware``.
+    Used by ``keycard_on_error`` (when the authentication backend raises) and
+    by the ``@requires`` / ``@auth.grant`` decorators (when the request is
+    anonymous). The ``resource_metadata=`` URL is computed from the request
+    per RFC 9728.
     """
-    if isinstance(exc, KeycardAuthError):
-        error = exc.error
-        description = exc.description
-        status_code = exc.status_code
-    else:
-        error = "invalid_token"
-        description = str(exc) or "Authentication failed"
-        status_code = 401
-
     resource_metadata = _get_oauth_protected_resource_url(conn)
     response = Response(
         content="Unauthorized" if status_code == 401 else "Forbidden",
@@ -264,6 +262,25 @@ def keycard_on_error(conn: HTTPConnection, exc: Exception) -> Response:
         error, description, resource_metadata
     )
     return response
+
+
+def keycard_on_error(conn: HTTPConnection, exc: Exception) -> Response:
+    """Convert a ``KeycardAuthError`` into an RFC 6750 ``WWW-Authenticate`` challenge.
+
+    Suitable for use as the ``on_error`` argument to
+    ``starlette.middleware.authentication.AuthenticationMiddleware``.
+    """
+    if isinstance(exc, KeycardAuthError):
+        return _build_unauthorized_response(
+            conn,
+            error=exc.error,
+            description=exc.description,
+            status_code=exc.status_code,
+        )
+    return _build_unauthorized_response(
+        conn,
+        description=str(exc) or "Authentication failed",
+    )
 
 
 # ---------------------------------------------------------------------------

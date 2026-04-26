@@ -212,7 +212,7 @@ class AuthProvider:
         return "default"
 
     async def _get_or_create_client(
-        self, auth_info: dict[str, str]
+        self, auth_info: dict[str, str | None]
     ) -> AsyncClient | None:
         client = None
         client_key = self._get_client_key(auth_info["zone_id"])

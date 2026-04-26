@@ -30,34 +30,14 @@ from starlette._utils import is_async_callable
 from starlette.authentication import has_required_scope
 from starlette.exceptions import HTTPException
 from starlette.requests import Request
-from starlette.responses import Response
 
 from .middleware.bearer import (
     KeycardUser,
-    _build_challenge_header,
-    _get_oauth_protected_resource_url,
+    _build_unauthorized_response,
 )
 
 if TYPE_CHECKING:
     from .provider import AuthProvider
-
-
-def _challenge_response(
-    request: Request,
-    *,
-    error: str = "invalid_token",
-    description: str = "Authentication required",
-    status_code: int = 401,
-) -> Response:
-    resource_metadata = _get_oauth_protected_resource_url(request)
-    response = Response(
-        content="Unauthorized" if status_code == 401 else "Forbidden",
-        status_code=status_code,
-    )
-    response.headers["WWW-Authenticate"] = _build_challenge_header(
-        error, description, resource_metadata
-    )
-    return response
 
 
 def _find_request(args: tuple, kwargs: dict) -> Request | None:
@@ -119,9 +99,7 @@ def requires(
                         "a starlette.requests.Request instance"
                     )
                 if not request.user.is_authenticated:
-                    return _challenge_response(
-                        request, description="Authentication required"
-                    )
+                    return _build_unauthorized_response(request)
                 if not has_required_scope(request, scopes_list):
                     raise HTTPException(status_code=status_code)
                 return await func(*args, **kwargs)
@@ -140,9 +118,7 @@ def requires(
                     "a starlette.requests.Request instance"
                 )
             if not request.user.is_authenticated:
-                return _challenge_response(
-                    request, description="Authentication required"
-                )
+                return _build_unauthorized_response(request)
             if not has_required_scope(request, scopes_list):
                 raise HTTPException(status_code=status_code)
             return func(*args, **kwargs)
@@ -225,9 +201,7 @@ def grant(
                 )
 
             if not request.user.is_authenticated:
-                return _challenge_response(
-                    request, description="Authentication required"
-                )
+                return _build_unauthorized_response(request)
 
             user: KeycardUser = request.user
             access_ctx = kwargs.get(access_ctx_param[0])
@@ -235,10 +209,10 @@ def grant(
                 access_ctx = AccessContext()
                 kwargs[access_ctx_param[0]] = access_ctx
 
-            auth_info = {
+            auth_info: dict[str, str | None] = {
                 "access_token": user.access_token,
                 "zone_id": user.zone_id,
-                "resource_client_id": user.resource_client_id,
+                "resource_client_id": user.resource_server_url,
                 "resource_server_url": user.resource_server_url,
             }
 
