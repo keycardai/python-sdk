@@ -12,7 +12,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from keycardai.mcp.integrations.fastmcp.provider import AuthProvider, ClientFactory
+from keycardai.fastmcp.provider import AuthProvider, ClientFactory
 from keycardai.mcp.server.auth import ClientSecret, EKSWorkloadIdentity, WebIdentity
 from keycardai.mcp.server.exceptions import AuthProviderConfigurationError
 

@@ -14,7 +14,7 @@ from unittest.mock import Mock, patch
 EXAMPLES_DIR = Path(__file__).parent.parent / "examples"
 
 # Patch target: where AuthProvider.__init__ looks up DefaultClientFactory
-_FACTORY_PATCH_TARGET = "keycardai.mcp.integrations.fastmcp.provider.DefaultClientFactory"
+_FACTORY_PATCH_TARGET = "keycardai.fastmcp.provider.DefaultClientFactory"
 
 
 def _mock_client_factory():

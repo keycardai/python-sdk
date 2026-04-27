@@ -22,6 +22,7 @@ members = [
     "impersonation-token-exchange",
     "keycardai",
     "keycardai-agents",
+    "keycardai-fastmcp",
     "keycardai-mcp",
     "keycardai-mcp-fastmcp",
     "keycardai-oauth",
@@ -1138,18 +1139,18 @@ wheels = [
 [[package]]
 name = "delegated-access-fastmcp-example"
 version = "0.1.0"
-source = { virtual = "packages/mcp-fastmcp/examples/delegated_access" }
+source = { virtual = "packages/fastmcp/examples/delegated_access" }
 dependencies = [
     { name = "fastmcp" },
     { name = "httpx" },
-    { name = "keycardai-mcp-fastmcp" },
+    { name = "keycardai-fastmcp" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "fastmcp", specifier = ">=3.0.0" },
     { name = "httpx", specifier = ">=0.27.0,<1.0.0" },
-    { name = "keycardai-mcp-fastmcp", editable = "packages/mcp-fastmcp" },
+    { name = "keycardai-fastmcp", editable = "packages/fastmcp" },
 ]
 
 [[package]]
@@ -1752,16 +1753,16 @@ wheels = [
 [[package]]
 name = "hello-world-server"
 version = "0.1.0"
-source = { virtual = "packages/mcp-fastmcp/examples/hello_world_server" }
+source = { virtual = "packages/fastmcp/examples/hello_world_server" }
 dependencies = [
     { name = "fastmcp" },
-    { name = "keycardai-mcp-fastmcp" },
+    { name = "keycardai-fastmcp" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "fastmcp", specifier = ">=3.0.0" },
-    { name = "keycardai-mcp-fastmcp", editable = "packages/mcp-fastmcp" },
+    { name = "keycardai-fastmcp", editable = "packages/fastmcp" },
 ]
 
 [[package]]
@@ -2383,6 +2384,37 @@ requires-dist = [
 provides-extras = ["crewai", "dev", "test"]
 
 [[package]]
+name = "keycardai-fastmcp"
+source = { editable = "packages/fastmcp" }
+dependencies = [
+    { name = "fastmcp" },
+    { name = "httpx" },
+    { name = "keycardai-mcp" },
+    { name = "keycardai-oauth" },
+    { name = "pydantic" },
+    { name = "pydantic-settings" },
+]
+
+[package.optional-dependencies]
+test = [
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fastmcp", specifier = ">=3.0.0" },
+    { name = "httpx", specifier = ">=0.27.2" },
+    { name = "keycardai-mcp", editable = "packages/mcp" },
+    { name = "keycardai-oauth", editable = "packages/oauth" },
+    { name = "pydantic", specifier = ">=2.11.7" },
+    { name = "pydantic-settings", specifier = ">=2.7.1" },
+    { name = "pytest", marker = "extra == 'test'", specifier = ">=8.4.1" },
+    { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=1.1.0" },
+]
+provides-extras = ["test"]
+
+[[package]]
 name = "keycardai-mcp"
 source = { editable = "packages/mcp" }
 dependencies = [
@@ -2449,12 +2481,7 @@ provides-extras = ["crewai", "pydantic-ai", "test"]
 name = "keycardai-mcp-fastmcp"
 source = { editable = "packages/mcp-fastmcp" }
 dependencies = [
-    { name = "fastmcp" },
-    { name = "httpx" },
-    { name = "keycardai-mcp" },
-    { name = "keycardai-oauth" },
-    { name = "pydantic" },
-    { name = "pydantic-settings" },
+    { name = "keycardai-fastmcp" },
 ]
 
 [package.optional-dependencies]
@@ -2470,12 +2497,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "fastmcp", specifier = ">=3.0.0" },
-    { name = "httpx", specifier = ">=0.27.2" },
-    { name = "keycardai-mcp", editable = "packages/mcp" },
-    { name = "keycardai-oauth", editable = "packages/oauth" },
-    { name = "pydantic", specifier = ">=2.11.7" },
-    { name = "pydantic-settings", specifier = ">=2.7.1" },
+    { name = "keycardai-fastmcp", editable = "packages/fastmcp" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=8.4.1" },
     { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=1.1.0" },
 ]

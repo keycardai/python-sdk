@@ -12,7 +12,7 @@ from fastmcp.server.auth import RemoteAuthProvider
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fixtures.auth_provider import mock_custom_zone_url, mock_zone_id, mock_zone_url
 
-from keycardai.mcp.integrations.fastmcp import (
+from keycardai.fastmcp import (
     AuthProvider,
     AuthProviderConfigurationError,
     AuthProviderRemoteError,
@@ -64,7 +64,7 @@ class TestAuthProviderInitialization:
 
     def test_auth_provider_init_with_basic_auth(self, mock_client_factory):
         """Test AuthProvider initialization with BasicAuth via ClientSecret."""
-        from keycardai.mcp.integrations.fastmcp import ClientSecret
+        from keycardai.fastmcp import ClientSecret
 
         auth_provider = AuthProvider(
             zone_id=mock_zone_id,
