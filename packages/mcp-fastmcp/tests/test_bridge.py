@@ -58,6 +58,25 @@ def test_bridge_provider_submodule_exposes_canonical_symbols():
     assert bridge_provider is canonical_provider
 
 
+def test_bridge_provider_exposes_full_public_surface():
+    """Every symbol in the canonical provider's __all__ resolves at the bridge path.
+
+    Regression test for the symbol-drop class of bug: callers using less common
+    public symbols (``get_token_debug_info``, ``introspect``, ``INTROSPECT``,
+    the ``AuthProvider*Error`` exceptions) at the deprecated path keep working.
+    """
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        import keycardai.fastmcp.provider as canonical
+        import keycardai.mcp.integrations.fastmcp.provider as bridge
+
+    for name in canonical.__all__:
+        assert hasattr(bridge, name), f"bridge missing {name!r}"
+        assert getattr(bridge, name) is getattr(canonical, name), (
+            f"bridge {name!r} not identity-equal to canonical"
+        )
+
+
 def test_bridge_testing_submodule_exposes_canonical_symbols():
     """``keycardai.mcp.integrations.fastmcp.testing.mock_access_context`` keeps working."""
     with warnings.catch_warnings():

@@ -32,7 +32,7 @@ Create a GitHub App in your organization (or personal account) to enable delegat
 2. Click **New GitHub App**
 3. Configure the app with the permissions your MCP server needs (e.g., **Repository** access, **User** profile read)
 4. Generate a **Client Secret**
-5. Note down the **Client ID** and **Client Secret** — you'll use these to configure the credential provider in Keycard
+5. Note down the **Client ID** and **Client Secret**; you'll use these to configure the credential provider in Keycard
 
 ### 5. Configure a Credential Provider in Keycard
 
