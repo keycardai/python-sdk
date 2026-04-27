@@ -7,7 +7,7 @@ import os
 
 from fastmcp import FastMCP
 
-from keycardai.mcp.integrations.fastmcp import AuthProvider
+from keycardai.fastmcp import AuthProvider
 
 # Configure Keycard authentication
 # Get your zone_id from console.keycard.ai

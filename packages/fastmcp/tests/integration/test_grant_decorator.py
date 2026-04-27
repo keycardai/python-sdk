@@ -11,7 +11,7 @@ import pytest
 from fastmcp import Context
 from fastmcp.server.dependencies import AccessToken
 
-from keycardai.mcp.integrations.fastmcp import (
+from keycardai.fastmcp import (
     AccessContext,
     AuthProvider,
     ResourceAccessError,
@@ -81,7 +81,7 @@ class TestGrantDecoratorExecution:
                 return f"Hello {user_id}"
 
     @pytest.mark.asyncio
-    @patch('keycardai.mcp.integrations.fastmcp.provider.get_access_token')
+    @patch('keycardai.fastmcp.provider.get_access_token')
     async def test_grant_decorator_missing_auth_token(self, mock_get_token, auth_provider_config, mock_client_factory):
         """Test grant decorator handles missing authentication token."""
         mock_get_token.return_value = None
@@ -108,7 +108,7 @@ class TestGrantDecoratorExecution:
         assert "No authentication token available" in result["error"]
 
     @pytest.mark.asyncio
-    @patch('keycardai.mcp.integrations.fastmcp.provider.get_access_token')
+    @patch('keycardai.fastmcp.provider.get_access_token')
     async def test_grant_decorator_token_exchange_failure_with_injected_client(self, mock_get_token, auth_provider_config, mock_client_factory):
         """Test grant decorator handles token exchange failure with injected client."""
         mock_get_token.return_value = AccessToken(token="test_token", client_id="test_client", scopes=["test_scope"])
@@ -141,7 +141,7 @@ class TestGrantDecoratorExecution:
         assert result["isError"] is True
 
     @pytest.mark.asyncio
-    @patch('keycardai.mcp.integrations.fastmcp.provider.get_access_token')
+    @patch('keycardai.fastmcp.provider.get_access_token')
     async def test_grant_decorator_successful_sync_function_with_injected_client(self, mock_get_token, auth_provider_config, mock_client_factory):
         """Test grant decorator with successful token exchange for sync function using injected client."""
         mock_get_token.return_value = AccessToken(token="test_token", client_id="test_client", scopes=["test_scope"])
@@ -170,7 +170,7 @@ class TestGrantDecoratorExecution:
         assert result == "Hello user123, token: exchanged_token_123"
 
     @pytest.mark.asyncio
-    @patch('keycardai.mcp.integrations.fastmcp.provider.get_access_token')
+    @patch('keycardai.fastmcp.provider.get_access_token')
     async def test_grant_decorator_successful_async_function_with_injected_client(self, mock_get_token, auth_provider_config, mock_client_factory):
         """Test grant decorator with successful token exchange for async function using injected client."""
         mock_get_token.return_value = AccessToken(token="test_token", client_id="test_client", scopes=["test_scope"])
@@ -194,7 +194,7 @@ class TestGrantDecoratorExecution:
         assert result == "Async Hello user123, token: exchanged_token_123"
 
     @pytest.mark.asyncio
-    @patch('keycardai.mcp.integrations.fastmcp.provider.get_access_token')
+    @patch('keycardai.fastmcp.provider.get_access_token')
     async def test_grant_decorator_multiple_resources_success_with_injected_client(self, mock_get_token, auth_provider_config, mock_client_factory):
         """Test grant decorator with multiple resources successful token exchange using injected client."""
         mock_get_token.return_value = AccessToken(token="test_token", client_id="test_client", scopes=["test_scope"])
@@ -333,7 +333,7 @@ class TestGrantDecoratorIntegration:
     """Integration tests for grant decorator end-to-end functionality."""
 
     @pytest.mark.asyncio
-    @patch('keycardai.mcp.integrations.fastmcp.provider.get_access_token')
+    @patch('keycardai.fastmcp.provider.get_access_token')
     async def test_full_grant_decorator_flow_with_injected_client(self, mock_get_token, auth_provider_config, mock_client_factory):
         """Test complete grant decorator flow from decoration to execution using injected client."""
         # Setup mocks

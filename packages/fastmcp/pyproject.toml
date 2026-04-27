@@ -1,13 +1,18 @@
 [project]
-name = "keycardai-mcp-fastmcp"
+name = "keycardai-fastmcp"
 dynamic = ["version"]
-description = "Deprecated bridge package: imports from keycardai-mcp-fastmcp continue to work but emit a DeprecationWarning. Install keycardai-fastmcp directly."
+description = "FastMCP integration for Keycard OAuth client with automated token exchange and authentication"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "Keycard", email = "support@keycard.ai" }]
 dependencies = [
-    "keycardai-fastmcp>=0.1.0",
+    "pydantic>=2.11.7",
+    "pydantic-settings>=2.7.1",
+    "httpx>=0.27.2",
+    "keycardai-oauth>=0.7.0",
+    "fastmcp>=3.0.0",
+    "keycardai-mcp>=0.15.0",
 ]
 keywords = ["fastmcp", "mcp", "model-context-protocol", "oauth", "token-exchange", "authentication", "keycard"]
 classifiers = [
@@ -47,7 +52,7 @@ source = "uv-dynamic-versioning"
 
 [tool.uv-dynamic-versioning]
 vcs = "git"
-pattern = "(?P<base>\\d+\\.\\d+\\.\\d+)-keycardai-mcp-fastmcp"
+pattern = "(?P<base>\\d+\\.\\d+\\.\\d+)-keycardai-fastmcp"
 style = "pep440"
 
 [[tool.uv.index]]
@@ -55,7 +60,6 @@ name = "testpypi"
 url = "https://test.pypi.org/simple/"
 publish-url = "https://test.pypi.org/legacy/"
 explicit = true
-
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/keycardai"]
@@ -108,19 +112,14 @@ exclude_also = [
 testpaths = ["tests"]
 addopts = "-ra -q"
 
-[dependency-groups]
-dev = [
-    "pytest-cov>=6.2.1",
-]
-
 [tool.commitizen]
 name = "cz_customize"
-version = "0.20.0"
-tag_format = "${version}-keycardai-mcp-fastmcp"
+version = "0.1.0"
+tag_format = "${version}-keycardai-fastmcp"
 ignored_tag_formats = ["${version}-*"]
 update_changelog_on_bump = true
-bump_message = "bump: keycardai-mcp-fastmcp $current_version → $new_version"
+bump_message = "bump: keycardai-fastmcp $current_version → $new_version"
 major_version_zero = true
 
 [tool.commitizen.customize]
-changelog_pattern = "^(feat|fix|refactor|perf|test|build|ci|revert)\\(keycardai-mcp-fastmcp\\)(!)?:"
+changelog_pattern = "^(feat|fix|refactor|perf|test|build|ci|revert)\\(keycardai-fastmcp\\)(!)?:"

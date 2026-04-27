@@ -5,12 +5,12 @@ description = "A minimal FastMCP server with Keycard authentication"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "keycardai-mcp-fastmcp",
+    "keycardai-fastmcp",
     "fastmcp>=3.0.0",
 ]
 
 [tool.uv.sources]
-keycardai-mcp-fastmcp = { path = "../../", editable = true }
+keycardai-fastmcp = { path = "../../", editable = true }
 
 [project.scripts]
 hello-world-server = "main:main"

@@ -11,7 +11,7 @@ import pytest
 import requests
 from pydantic import AnyHttpUrl
 
-from keycardai.mcp.integrations.fastmcp.provider import ClientFactory
+from keycardai.fastmcp.provider import ClientFactory
 from keycardai.oauth.types.models import (
     AuthorizationServerMetadata,
     TokenExchangeRequest,

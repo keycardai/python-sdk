@@ -16,7 +16,7 @@ import os
 import httpx
 from fastmcp import Context, FastMCP
 
-from keycardai.mcp.integrations.fastmcp import AccessContext, AuthProvider, ClientSecret
+from keycardai.fastmcp import AccessContext, AuthProvider, ClientSecret
 
 # Configure Keycard authentication with client credentials for delegated access
 # Set KEYCARD_ZONE_ID (or KEYCARD_ZONE_URL) and client credentials from console.keycard.ai
