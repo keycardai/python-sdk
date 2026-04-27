@@ -2,9 +2,9 @@
 
 `AgentClient` invokes A2A agent services and handles 401 responses by running
 the OAuth 2.0 authorization code with PKCE flow against the issuer advertised
-by the resource. The PKCE machinery itself lives in
-:mod:`keycardai.oauth.pkce`; this module is the agent-facing wrapper that
-adds A2A invocation and per-resource token caching.
+by the resource. The PKCE flow itself is :func:`keycardai.oauth.pkce.authenticate`;
+this module is the agent-facing wrapper that adds A2A invocation and
+per-resource token caching.
 """
 
 import logging
@@ -13,7 +13,7 @@ from typing import Any
 
 import httpx
 
-from keycardai.oauth.pkce import PKCEClient
+from keycardai.oauth.pkce import authenticate as pkce_authenticate
 
 from ..config import AgentServiceConfig
 
@@ -23,9 +23,9 @@ logger = logging.getLogger(__name__)
 class AgentClient:
     """Client for calling agent services with automatic user authentication.
 
-    Wraps :class:`keycardai.oauth.pkce.PKCEClient` and adds the A2A specifics:
-    invoking the ``/invoke`` endpoint, retrying on 401 with a fresh token,
-    caching tokens per service URL, and discovering agent cards.
+    Calls :func:`keycardai.oauth.pkce.authenticate` on 401 to obtain a token,
+    caches the token per service URL, and retries the original ``/invoke``
+    request. Also exposes ``discover_service`` for agent-card lookups.
 
     Example::
 
@@ -60,14 +60,6 @@ class AgentClient:
         self.scopes = scopes or []
         self._token_cache: dict[str, str] = {}
         self.http_client = httpx.AsyncClient(timeout=30.0)
-        self._pkce = PKCEClient(
-            client_id=service_config.client_id,
-            client_secret=service_config.client_secret,
-            redirect_uri=redirect_uri,
-            callback_port=callback_port,
-            scopes=self.scopes,
-            http_client=self.http_client,
-        )
 
     async def authenticate(
         self,
@@ -75,13 +67,18 @@ class AgentClient:
         www_authenticate_header: str,
     ) -> str:
         """Run PKCE flow and return the access token, caching it per service."""
-        token_response = await self._pkce.authenticate(
+        token = await pkce_authenticate(
+            client_id=self.config.client_id,
+            client_secret=self.config.client_secret,
             resource_url=service_url,
             www_authenticate_header=www_authenticate_header,
+            redirect_uri=self.redirect_uri,
+            callback_port=self.callback_port,
+            scopes=self.scopes,
+            http_client=self.http_client,
         )
-        access_token = token_response["access_token"]
-        self._token_cache[service_url] = access_token
-        return access_token
+        self._token_cache[service_url] = token.access_token
+        return token.access_token
 
     async def invoke(
         self,
@@ -131,7 +128,6 @@ class AgentClient:
         return response.json()
 
     async def close(self) -> None:
-        await self._pkce.close()
         await self.http_client.aclose()
 
     async def __aenter__(self) -> "AgentClient":

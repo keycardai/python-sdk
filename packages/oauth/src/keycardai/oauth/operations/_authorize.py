@@ -71,6 +71,7 @@ def build_authorization_code_http_request(
     code_verifier: str,
     client_id: str | None,
     context: HTTPContext,
+    resource: str | None = None,
 ) -> HttpRequest:
     """Build the HTTP request for an authorization code exchange.
 
@@ -81,6 +82,8 @@ def build_authorization_code_http_request(
         client_id: Client ID to include in the form body (required for
             public clients, optional for confidential clients).
         context: HTTP context with endpoint, transport, and auth.
+        resource: Optional RFC 8707 resource indicator. Scopes the issued
+            token to a specific resource.
 
     Returns:
         HttpRequest ready to send.
@@ -93,6 +96,8 @@ def build_authorization_code_http_request(
     }
     if client_id is not None:
         payload["client_id"] = client_id
+    if resource is not None:
+        payload["resource"] = resource
 
     headers = {
         "Accept": "application/json",
@@ -193,6 +198,7 @@ def exchange_authorization_code(
     code_verifier: str,
     client_id: str | None = None,
     context: HTTPContext,
+    resource: str | None = None,
 ) -> TokenResponse:
     """Exchange an authorization code for tokens (sync).
 
@@ -202,6 +208,7 @@ def exchange_authorization_code(
         code_verifier: The PKCE code verifier.
         client_id: Client ID for the form body. Required for public clients.
         context: HTTP context with endpoint, transport, and auth.
+        resource: Optional RFC 8707 resource indicator.
 
     Returns:
         TokenResponse with tokens.
@@ -216,6 +223,7 @@ def exchange_authorization_code(
         code_verifier=code_verifier,
         client_id=client_id,
         context=context,
+        resource=resource,
     )
     http_res = context.transport.request_raw(http_req, timeout=context.timeout)
     return parse_authorization_code_http_response(http_res)
@@ -228,6 +236,7 @@ async def exchange_authorization_code_async(
     code_verifier: str,
     client_id: str | None = None,
     context: HTTPContext,
+    resource: str | None = None,
 ) -> TokenResponse:
     """Exchange an authorization code for tokens (async).
 
@@ -237,6 +246,7 @@ async def exchange_authorization_code_async(
         code_verifier: The PKCE code verifier.
         client_id: Client ID for the form body. Required for public clients.
         context: HTTP context with endpoint, transport, and auth.
+        resource: Optional RFC 8707 resource indicator.
 
     Returns:
         TokenResponse with tokens.
@@ -251,6 +261,7 @@ async def exchange_authorization_code_async(
         code_verifier=code_verifier,
         client_id=client_id,
         context=context,
+        resource=resource,
     )
     http_res = await context.transport.request_raw(http_req, timeout=context.timeout)
     return parse_authorization_code_http_response(http_res)

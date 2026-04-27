@@ -1,18 +1,26 @@
-"""High-level PKCE flow client for browser-based OAuth 2.0 user authentication.
+"""High-level PKCE flow for browser-based OAuth 2.0 user authentication.
 
-Drives the full authorization code with PKCE flow:
+The :func:`authenticate` function drives the full authorization code with
+PKCE flow:
 
-1. Parse the ``WWW-Authenticate`` challenge from the protected resource (RFC 9728)
-2. Fetch protected resource metadata, then authorization server metadata (RFC 8414)
+1. Parse the ``WWW-Authenticate`` challenge from the protected resource
+   (RFC 9728)
+2. Fetch protected resource metadata, then drive
+   :class:`keycardai.oauth.AsyncClient` against the discovered authorization
+   server for metadata discovery (RFC 8414) and code exchange (RFC 6749 +
+   RFC 7636)
 3. Generate a PKCE verifier/challenge pair (RFC 7636) and a CSRF state value
-4. Start a local callback server, open the user's browser at the authorize endpoint
+4. Start a local callback server, open the user's browser at the authorize
+   endpoint
 5. Receive the authorization code from the redirect
-6. Exchange the code at the token endpoint and return a :class:`TokenResponse`
+6. Exchange the code at the token endpoint and return a
+   :class:`~keycardai.oauth.types.models.TokenResponse`
 
-The actual PKCE primitives (``PKCEGenerator``, ``build_authorize_url``,
-``exchange_authorization_code_async``) live elsewhere in
-:mod:`keycardai.oauth`; this module is the thin orchestration layer that
-wires them together with browser + callback machinery.
+The OAuth-server-facing operations (server metadata discovery, token
+exchange) go through :class:`AsyncClient` so there is one client surface in
+``keycardai.oauth`` that talks to OAuth servers. This module is the
+user-flow orchestration on top: it parses the RFC 9728 challenge, opens the
+browser, and runs the loopback callback server (RFC 8252).
 """
 
 import logging
@@ -20,208 +28,150 @@ import re
 import secrets
 import webbrowser
 from typing import Any
-from urllib.parse import urlencode
 
 import httpx
 
+from ..client import AsyncClient
+from ..http.auth import BasicAuth, NoneAuth
+from ..operations._authorize import build_authorize_url
+from ..types.models import ClientConfig, TokenResponse
 from ..utils.pkce import PKCEGenerator
 from .callback import OAuthCallbackServer
 
 logger = logging.getLogger(__name__)
 
 
-class PKCEClient:
-    """OAuth 2.0 user-login client using authorization code with PKCE.
+async def authenticate(
+    *,
+    client_id: str,
+    resource_url: str,
+    www_authenticate_header: str,
+    client_secret: str | None = None,
+    redirect_uri: str = "http://localhost:8765/callback",
+    callback_port: int = 8765,
+    scopes: list[str] | None = None,
+    callback_timeout: int = 300,
+    http_client: httpx.AsyncClient | None = None,
+) -> TokenResponse:
+    """Run the OAuth 2.0 authorization-code-with-PKCE flow against the issuer
+    advertised by ``www_authenticate_header``.
 
-    Targets desktop / CLI public clients running against a loopback redirect URI
-    (RFC 8252). Intended to be used as an async context manager.
-
-    Example::
-
-        async with PKCEClient(client_id="my-app") as pkce:
-            token = await pkce.authenticate(
-                resource_url="https://api.example.com",
-                www_authenticate_header=resp.headers["WWW-Authenticate"],
-            )
+    Targets desktop / CLI public clients running against a loopback redirect
+    URI (RFC 8252). Confidential clients pass ``client_secret`` and get HTTP
+    Basic auth on the token endpoint.
 
     Args:
         client_id: OAuth client ID.
-        client_secret: Optional client secret. Public clients (the PKCE use
-            case) usually omit this.
+        resource_url: The protected resource the caller is targeting. Passed
+            through as the RFC 8707 ``resource`` parameter on both the
+            authorize and token requests.
+        www_authenticate_header: The ``WWW-Authenticate`` value from the
+            resource's 401 response. Must contain a ``resource_metadata``
+            URL per RFC 9728.
+        client_secret: Optional client secret for confidential clients.
+            Public clients (the typical PKCE use case) omit this.
         redirect_uri: Loopback redirect URI registered with the authorization
             server.
         callback_port: Port for the local callback server.
         scopes: Optional list of OAuth scopes to request.
-        timeout: HTTP timeout for metadata and token requests when this
-            client owns its ``httpx.AsyncClient``. Ignored if ``http_client``
-            is supplied.
-        http_client: Optional ``httpx.AsyncClient`` to share with another
-            component. When provided, ``close()`` does not close it; the
-            owner of the injected client is responsible for its lifecycle.
+        callback_timeout: How long to wait for the user to complete
+            authorization, in seconds.
+        http_client: Optional ``httpx.AsyncClient`` to use for fetching the
+            protected resource metadata document. When not supplied, a
+            short-lived client is created internally. The OAuth-server
+            calls (server metadata discovery, token exchange) always go
+            through a fresh :class:`AsyncClient`.
+
+    Returns:
+        ``TokenResponse`` from the token endpoint.
+
+    Raises:
+        ValueError: If discovery fails (no ``resource_metadata`` in the
+            challenge, no ``authorization_servers`` in the metadata, or the
+            authorization server is missing required endpoints).
+        httpx.HTTPStatusError: If the resource metadata fetch fails.
+        keycardai.oauth.OAuthHttpError: If the OAuth server's metadata or
+            token endpoint returns an HTTP error.
+        keycardai.oauth.OAuthProtocolError: If the token endpoint response
+            contains an OAuth error.
+        TimeoutError: If the user does not complete authorization within
+            ``callback_timeout``.
+        RuntimeError: If the authorization redirect carried an OAuth
+            ``error`` parameter.
     """
+    logger.info("PKCE flow starting for resource %s", resource_url)
 
-    def __init__(
-        self,
-        client_id: str,
-        *,
-        client_secret: str | None = None,
-        redirect_uri: str = "http://localhost:8765/callback",
-        callback_port: int = 8765,
-        scopes: list[str] | None = None,
-        timeout: float = 30.0,
-        http_client: httpx.AsyncClient | None = None,
-    ):
-        self.client_id = client_id
-        self.client_secret = client_secret
-        self.redirect_uri = redirect_uri
-        self.callback_port = callback_port
-        self.scopes = scopes or []
-        if http_client is not None:
-            self._http = http_client
-            self._owns_http = False
-        else:
-            self._http = httpx.AsyncClient(timeout=timeout)
-            self._owns_http = True
+    metadata_url = _extract_resource_metadata_url(www_authenticate_header)
+    if not metadata_url:
+        raise ValueError("No resource_metadata URL in WWW-Authenticate header")
 
-    async def authenticate(
-        self,
-        resource_url: str,
-        www_authenticate_header: str,
-        callback_timeout: int = 300,
-    ) -> dict[str, Any]:
-        """Run the PKCE flow against the issuer advertised by the resource.
+    resource_metadata = await _fetch_resource_metadata(metadata_url, http_client)
+    auth_servers = resource_metadata.get("authorization_servers") or []
+    if not auth_servers:
+        raise ValueError("No authorization_servers in resource metadata")
 
-        Args:
-            resource_url: The protected resource the caller is targeting.
-                Passed through as the RFC 8707 ``resource`` parameter.
-            www_authenticate_header: The ``WWW-Authenticate`` value from the
-                resource's 401 response. Must contain a ``resource_metadata``
-                URL per RFC 9728.
-            callback_timeout: How long to wait for the user to complete
-                authorization, in seconds.
+    auth_server_url = auth_servers[0].rstrip("/")
 
-        Returns:
-            The raw token endpoint response as a dict (always includes
-            ``access_token``; usually includes ``token_type``, ``expires_in``,
-            and may include ``refresh_token``, ``id_token``, ``scope``).
+    auth_strategy = (
+        BasicAuth(client_id, client_secret) if client_secret else NoneAuth()
+    )
+    config = ClientConfig(enable_metadata_discovery=True, auto_register_client=False)
 
-        Raises:
-            ValueError: If discovery fails (no ``resource_metadata`` in the
-                challenge, no ``authorization_servers`` in the metadata, or
-                missing endpoints in the auth server metadata).
-            httpx.HTTPStatusError: If a metadata fetch or token exchange
-                request fails.
-            TimeoutError: If the user does not complete authorization within
-                ``callback_timeout``.
-            RuntimeError: If the authorization redirect carried an OAuth
-                ``error`` parameter.
-        """
-        logger.info("PKCE flow starting for resource %s", resource_url)
-
-        metadata_url = _extract_resource_metadata_url(www_authenticate_header)
-        if not metadata_url:
+    async with AsyncClient(
+        base_url=auth_server_url, auth=auth_strategy, config=config
+    ) as oauth_client:
+        endpoints = await oauth_client.get_endpoints()
+        if not endpoints.authorize or not endpoints.token:
             raise ValueError(
-                "No resource_metadata URL in WWW-Authenticate header"
-            )
-
-        resource_metadata = await self._fetch_json(metadata_url)
-        auth_servers = resource_metadata.get("authorization_servers") or []
-        if not auth_servers:
-            raise ValueError("No authorization_servers in resource metadata")
-
-        auth_server_url = auth_servers[0].rstrip("/")
-        auth_server_metadata = await self._fetch_json(
-            f"{auth_server_url}/.well-known/oauth-authorization-server"
-        )
-
-        authorization_endpoint = auth_server_metadata.get("authorization_endpoint")
-        token_endpoint = auth_server_metadata.get("token_endpoint")
-        if not authorization_endpoint or not token_endpoint:
-            raise ValueError(
-                "Missing authorization_endpoint or token_endpoint in metadata"
+                "Authorization server metadata is missing authorization_endpoint "
+                "or token_endpoint"
             )
 
         pkce = PKCEGenerator().generate_pkce_pair()
         state = secrets.token_urlsafe(32)
+        authorization_url = build_authorize_url(
+            endpoints.authorize,
+            client_id=client_id,
+            redirect_uri=redirect_uri,
+            pkce=pkce,
+            resources=[resource_url],
+            scope=" ".join(scopes) if scopes else None,
+            state=state,
+        )
 
-        callback_server = OAuthCallbackServer(self.callback_port)
+        callback_server = OAuthCallbackServer(callback_port)
         await callback_server.start()
         try:
-            authorization_url = self._build_authorization_url(
-                authorization_endpoint, resource_url, pkce.code_challenge, state
-            )
             logger.info("Opening browser for user authorization")
             webbrowser.open(authorization_url)
-
             code = await callback_server.wait_for_code(timeout=callback_timeout)
             logger.info("Authorization code received; exchanging for token")
-
-            return await self._exchange_code(
-                token_endpoint, code, pkce.code_verifier, resource_url
-            )
         finally:
             callback_server.stop()
 
-    async def close(self) -> None:
-        if self._owns_http:
-            await self._http.aclose()
+        return await oauth_client.exchange_authorization_code(
+            code=code,
+            redirect_uri=redirect_uri,
+            code_verifier=pkce.code_verifier,
+            client_id=client_id,
+            resource=resource_url,
+        )
 
-    async def __aenter__(self) -> "PKCEClient":
-        return self
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
-        await self.close()
+async def _fetch_resource_metadata(
+    metadata_url: str, http_client: httpx.AsyncClient | None
+) -> dict[str, Any]:
+    """Fetch the RFC 9728 protected resource metadata document.
 
-    async def _fetch_json(self, url: str) -> dict[str, Any]:
-        response = await self._http.get(url)
+    This step is paired with the protected resource (not the OAuth server),
+    so it lives outside :class:`AsyncClient`.
+    """
+    if http_client is not None:
+        response = await http_client.get(metadata_url)
         response.raise_for_status()
         return response.json()
-
-    def _build_authorization_url(
-        self,
-        authorization_endpoint: str,
-        resource_url: str,
-        code_challenge: str,
-        state: str,
-    ) -> str:
-        params: dict[str, str] = {
-            "response_type": "code",
-            "client_id": self.client_id,
-            "redirect_uri": self.redirect_uri,
-            "state": state,
-            "code_challenge": code_challenge,
-            "code_challenge_method": "S256",
-            "resource": resource_url,
-        }
-        if self.scopes:
-            params["scope"] = " ".join(self.scopes)
-        return f"{authorization_endpoint}?{urlencode(params)}"
-
-    async def _exchange_code(
-        self,
-        token_endpoint: str,
-        code: str,
-        code_verifier: str,
-        resource_url: str,
-    ) -> dict[str, Any]:
-        token_params: dict[str, str] = {
-            "grant_type": "authorization_code",
-            "code": code,
-            "redirect_uri": self.redirect_uri,
-            "client_id": self.client_id,
-            "code_verifier": code_verifier,
-            "resource": resource_url,
-        }
-        auth_tuple = None
-        if self.client_secret:
-            auth_tuple = (self.client_id, self.client_secret)
-
-        response = await self._http.post(
-            token_endpoint,
-            data=token_params,
-            auth=auth_tuple,
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-        )
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.get(metadata_url)
         response.raise_for_status()
         return response.json()
 

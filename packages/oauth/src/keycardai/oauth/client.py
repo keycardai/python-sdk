@@ -676,6 +676,7 @@ class AsyncClient:
         redirect_uri: str,
         code_verifier: str,
         client_id: str | None = None,
+        resource: str | None = None,
         timeout: float | None = None,
     ) -> TokenResponse:
         """Exchange an authorization code for tokens.
@@ -690,6 +691,8 @@ class AsyncClient:
             client_id: Client ID for the form body. Required for public
                 clients. Optional for confidential clients where identity
                 is provided via the auth strategy.
+            resource: Optional RFC 8707 resource indicator. Scopes the
+                issued token to a specific resource.
             timeout: Optional request timeout override.
 
         Returns:
@@ -716,6 +719,7 @@ class AsyncClient:
             code_verifier=code_verifier,
             client_id=client_id,
             context=ctx,
+            resource=resource,
         )
 
     async def impersonate(
@@ -1247,6 +1251,7 @@ class Client:
         redirect_uri: str,
         code_verifier: str,
         client_id: str | None = None,
+        resource: str | None = None,
         timeout: float | None = None,
     ) -> TokenResponse:
         """Exchange an authorization code for tokens.
@@ -1261,6 +1266,8 @@ class Client:
             client_id: Client ID for the form body. Required for public
                 clients. Optional for confidential clients where identity
                 is provided via the auth strategy.
+            resource: Optional RFC 8707 resource indicator. Scopes the
+                issued token to a specific resource.
             timeout: Optional request timeout override.
 
         Returns:
@@ -1287,6 +1294,7 @@ class Client:
             code_verifier=code_verifier,
             client_id=client_id,
             context=ctx,
+            resource=resource,
         )
 
     def impersonate(

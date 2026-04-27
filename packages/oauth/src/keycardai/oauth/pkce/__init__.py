@@ -1,23 +1,24 @@
 """High-level PKCE flow for browser-based OAuth 2.0 user authentication.
 
 Builds on the lower-level PKCE primitives in :mod:`keycardai.oauth.utils.pkce`
-to drive the full authorization code with PKCE flow: discovery from a
-``WWW-Authenticate`` challenge (RFC 9728), local callback server, browser
-authorization, and token exchange.
+and reuses :class:`keycardai.oauth.AsyncClient` for the OAuth-server-facing
+operations (server metadata discovery, code exchange). This package owns the
+user-flow orchestration on top: discovery from a ``WWW-Authenticate``
+challenge (RFC 9728), local callback server (RFC 8252), and browser launch.
 
 Example::
 
-    from keycardai.oauth.pkce import PKCEClient
+    from keycardai.oauth.pkce import authenticate
 
-    async with PKCEClient(client_id="my-app") as pkce:
-        token = await pkce.authenticate(
-            resource_url="https://api.example.com",
-            www_authenticate_header=resp.headers["WWW-Authenticate"],
-        )
-        print(token.access_token)
+    token = await authenticate(
+        client_id="my-app",
+        resource_url="https://api.example.com",
+        www_authenticate_header=resp.headers["WWW-Authenticate"],
+    )
+    print(token.access_token)
 """
 
 from .callback import OAuthCallbackServer
-from .client import PKCEClient
+from .client import authenticate
 
-__all__ = ["OAuthCallbackServer", "PKCEClient"]
+__all__ = ["OAuthCallbackServer", "authenticate"]
