@@ -22,7 +22,7 @@ from keycardai.mcp.server.handlers.metadata import (
     authorization_server_metadata,
     protected_resource_metadata,
 )
-from keycardai.mcp.server.middleware.bearer import BearerAuthMiddleware
+from keycardai.starlette.middleware.bearer import BearerAuthMiddleware
 
 from ..config import AgentServiceConfig
 from .executor_bridge import KeycardToA2AExecutorBridge
