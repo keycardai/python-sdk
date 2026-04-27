@@ -96,7 +96,7 @@ asyncio_default_fixture_loop_scope = "function"
 
 [tool.commitizen]
 name = "cz_customize"
-version = "0.1.1"
+version = "0.2.0"
 tag_format = "${version}-keycardai-agents"
 ignored_tag_formats = ["${version}-*"]
 update_changelog_on_bump = true
