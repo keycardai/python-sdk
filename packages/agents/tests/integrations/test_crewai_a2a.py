@@ -6,13 +6,12 @@ import pytest
 
 pytest.importorskip("crewai")
 
-from keycardai.agents.integrations.crewai_a2a import (
+from keycardai.agents import AgentServiceConfig
+from keycardai.agents.integrations.crewai import (
     _create_delegation_tool,
     create_a2a_tool_for_service,
     get_a2a_tools,
 )
-
-from keycardai.agents import AgentServiceConfig
 
 
 @pytest.fixture
@@ -99,7 +98,7 @@ class TestGetA2ATools:
         # When delegatable_services=None, it should try to discover
         # Currently returns empty list (discovery not implemented)
         with patch(
-            "keycardai.agents.integrations.crewai_a2a.ServiceDiscovery"
+            "keycardai.agents.integrations.crewai.ServiceDiscovery"
         ) as mock_discovery_class:
             mock_discovery = AsyncMock()
             mock_discovery.list_delegatable_services.return_value = []
@@ -254,7 +253,7 @@ class TestDelegationToolExecution:
             call_args = mock_invoke.call_args
             task = call_args[0][1]  # Second positional argument
             assert task["task"] == "Analyze PR"
-            assert "pr_number" in task
+            assert task["inputs"] == {"pr_number": 123}
 
     def test_tool_run_calls_a2a_client(self, service_config):
         """Test tool delegates to A2A client correctly."""
@@ -364,7 +363,7 @@ class TestCreateA2AToolForService:
     ):
         """Test create_a2a_tool_for_service fetches agent card."""
         with patch(
-            "keycardai.agents.integrations.crewai_a2a.ServiceDiscovery"
+            "keycardai.agents.integrations.crewai.ServiceDiscovery"
         ) as mock_discovery_class:
             mock_discovery = AsyncMock()
             mock_discovery.get_service_card.return_value = mock_agent_card
@@ -388,7 +387,7 @@ class TestCreateA2AToolForService:
     async def test_create_tool_for_service(self, service_config, mock_agent_card):
         """Test tool is created correctly from agent card."""
         with patch(
-            "keycardai.agents.integrations.crewai_a2a.ServiceDiscovery"
+            "keycardai.agents.integrations.crewai.ServiceDiscovery"
         ) as mock_discovery_class:
             mock_discovery = AsyncMock()
             mock_discovery.get_service_card.return_value = mock_agent_card
