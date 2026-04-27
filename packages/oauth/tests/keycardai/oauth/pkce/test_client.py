@@ -117,6 +117,13 @@ async def test_authenticate_completes_full_flow(monkeypatch):
     callback_mock.start.assert_called_once()
     callback_mock.wait_for_code.assert_called_once()
     callback_mock.stop.assert_called_once()
+    # Discovery: resource metadata first, then RFC 8414 authorization server metadata.
+    assert http_mock.get.call_args_list[0].args[0] == (
+        "https://api.example.com/.well-known/oauth-protected-resource"
+    )
+    assert http_mock.get.call_args_list[1].args[0] == (
+        "https://auth.example.com/.well-known/oauth-authorization-server"
+    )
     http_mock.post.assert_called_once()
     posted = http_mock.post.call_args
     assert posted.args[0] == "https://auth.example.com/token"

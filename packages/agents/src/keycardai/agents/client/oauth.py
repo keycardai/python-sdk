@@ -66,6 +66,7 @@ class AgentClient:
             redirect_uri=redirect_uri,
             callback_port=callback_port,
             scopes=self.scopes,
+            http_client=self.http_client,
         )
 
     async def authenticate(

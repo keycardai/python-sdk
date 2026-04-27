@@ -52,7 +52,12 @@ class PKCEClient:
             server.
         callback_port: Port for the local callback server.
         scopes: Optional list of OAuth scopes to request.
-        timeout: HTTP timeout for metadata and token requests.
+        timeout: HTTP timeout for metadata and token requests when this
+            client owns its ``httpx.AsyncClient``. Ignored if ``http_client``
+            is supplied.
+        http_client: Optional ``httpx.AsyncClient`` to share with another
+            component. When provided, ``close()`` does not close it; the
+            owner of the injected client is responsible for its lifecycle.
     """
 
     def __init__(
@@ -64,13 +69,19 @@ class PKCEClient:
         callback_port: int = 8765,
         scopes: list[str] | None = None,
         timeout: float = 30.0,
+        http_client: httpx.AsyncClient | None = None,
     ):
         self.client_id = client_id
         self.client_secret = client_secret
         self.redirect_uri = redirect_uri
         self.callback_port = callback_port
         self.scopes = scopes or []
-        self._http = httpx.AsyncClient(timeout=timeout)
+        if http_client is not None:
+            self._http = http_client
+            self._owns_http = False
+        else:
+            self._http = httpx.AsyncClient(timeout=timeout)
+            self._owns_http = True
 
     async def authenticate(
         self,
@@ -118,9 +129,9 @@ class PKCEClient:
         if not auth_servers:
             raise ValueError("No authorization_servers in resource metadata")
 
-        auth_server_url = auth_servers[0].rstrip("/") + "/"
+        auth_server_url = auth_servers[0].rstrip("/")
         auth_server_metadata = await self._fetch_json(
-            f"{auth_server_url.rstrip('/')}/.well-known/oauth-authorization-server"
+            f"{auth_server_url}/.well-known/oauth-authorization-server"
         )
 
         authorization_endpoint = auth_server_metadata.get("authorization_endpoint")
@@ -152,7 +163,8 @@ class PKCEClient:
             callback_server.stop()
 
     async def close(self) -> None:
-        await self._http.aclose()
+        if self._owns_http:
+            await self._http.aclose()
 
     async def __aenter__(self) -> "PKCEClient":
         return self
