@@ -29,9 +29,11 @@ jobs:
         uses: astral-sh/setup-uv@v4
 
       - name: Install just
-        uses: extractions/setup-just@v2
-        with:
-          just-version: '1.50.0'
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh \
+            | bash -s -- --tag 1.50.0 --to "$HOME/.local/bin"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Sync dependencies
         run: uv sync --all-extras --all-packages
