@@ -21,6 +21,7 @@ This module exposes two layers:
 
 from __future__ import annotations
 
+import warnings
 from collections.abc import Callable, Sequence
 
 from pydantic import AnyHttpUrl
@@ -293,7 +294,10 @@ def keycard_on_error(conn: HTTPConnection, exc: Exception) -> Response:
 
 
 async def verify_bearer_token(
-    request: Request, verifier: TokenVerifier
+    request: Request,
+    verifier: TokenVerifier,
+    *,
+    _from_middleware: bool = False,
 ) -> dict[str, str | None] | Response:
     """Verify the request's bearer token.
 
@@ -305,6 +309,15 @@ async def verify_bearer_token(
         Kept for ``BearerAuthMiddleware`` compatibility. New code should rely
         on ``KeycardAuthBackend``.
     """
+    if not _from_middleware:
+        warnings.warn(
+            "verify_bearer_token is deprecated and will be removed in a "
+            "future release. Use KeycardAuthBackend(verifier) wired to "
+            "starlette.middleware.authentication.AuthenticationMiddleware; "
+            "results are exposed via request.user / request.auth.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
     if not request.headers.get("Authorization"):
         return _create_auth_challenge_response(
             "invalid_token", "No bearer token provided", request
@@ -366,6 +379,15 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
     """
 
     def __init__(self, app: ASGIApp, verifier: TokenVerifier):
+        warnings.warn(
+            "BearerAuthMiddleware is deprecated and will be removed in a "
+            "future release. Use "
+            "starlette.middleware.authentication.AuthenticationMiddleware "
+            "with backend=KeycardAuthBackend(verifier) and "
+            "on_error=keycard_on_error.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         super().__init__(app)
         self.verifier = verifier
 
@@ -375,7 +397,9 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
         if _is_oauth_metadata_path(request.url.path):
             return await call_next(request)
 
-        result = await verify_bearer_token(request, self.verifier)
+        result = await verify_bearer_token(
+            request, self.verifier, _from_middleware=True
+        )
         if isinstance(result, Response):
             return result
         request.state.keycardai_auth_info = result
