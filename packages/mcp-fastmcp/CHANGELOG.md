@@ -1,3 +1,17 @@
+## 0.21.0-keycardai-mcp-fastmcp (2026-04-27)
+
+
+- feat(keycardai-mcp-fastmcp): release deprecation bridge for keycardai-fastmcp (#103)
+- Empty commit to trigger the auto-bump pipeline for keycardai-mcp-fastmcp.
+- The actual bridge code (depends on keycardai-fastmcp, re-exports every
+public symbol at the original keycardai.mcp.integrations.fastmcp.* paths,
+emits DeprecationWarning on top-level import) shipped in #102. That PR
+landed scoped (keycardai-fastmcp), so cz only bumped the new package and
+keycardai-mcp-fastmcp on PyPI is still the pre-rename version. This
+commit gives cz a (keycardai-mcp-fastmcp)-scoped feat to recognize so
+the bridge ships as the next published version and customers on the
+old name see the deprecation warning.
+
 ## 0.20.0-keycardai-mcp-fastmcp (2026-04-01)
 
 
