@@ -1,3 +1,16 @@
+## 0.3.0-keycardai-starlette (2026-04-27)
+
+
+- feat(keycardai-starlette): emit DeprecationWarning from BearerAuthMiddleware and verify_bearer_token (#99)
+- Closes ACC-234. PR #97 retained the legacy bearer surface as docstring-only deprecated shims so keycardai-mcp and keycardai-agents keep working until they migrate (ACC-235, ACC-229..232). Without a runtime signal, non-MCP downstream users importing these symbols get no notice before the symbols disappear.
+- Changes:
+- BearerAuthMiddleware.__init__ emits DeprecationWarning pointing at AuthenticationMiddleware + KeycardAuthBackend
+- verify_bearer_token emits DeprecationWarning pointing at KeycardAuthBackend
+- BearerAuthMiddleware.dispatch passes _from_middleware=True so a single middleware instantiation fires exactly one warning total, not one per request
+- New tests: warning fires on init, warning fires on direct verify_bearer_token call, dispatch path does not double-warn
+- _create_auth_challenge_response is intentionally not warned: it is underscored, not in __all__, and not re-exported by the keycardai-mcp shims, so no external caller can plausibly hit it directly.
+- Verified mcp tests still pass (560/560). Agents tests fail on a pre-existing a2a-sdk import error unrelated to this change.
+
 ## 0.2.0-keycardai-starlette (2026-04-26)
 
 
