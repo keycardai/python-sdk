@@ -11,7 +11,7 @@ from keycardai.a2a import AgentServiceConfig, ServiceDiscovery
 @pytest.fixture
 def service_config():
     """Create test service configuration."""
-    from keycardai.a2a.server import SimpleExecutor
+    from tests._helpers import NoopAgentExecutor
 
     return AgentServiceConfig(
         service_name="Test Service",
@@ -19,7 +19,7 @@ def service_config():
         client_secret="test_secret",
         identity_url="https://test.example.com",
         zone_id="test_zone_123",
-        agent_executor=SimpleExecutor(),
+        agent_executor=NoopAgentExecutor(),
     )
 
 

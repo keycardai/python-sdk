@@ -1,19 +1,18 @@
-"""KeycardAI A2A: agent-to-agent delegation with Keycard authentication.
+"""KeycardAI A2A: Keycard-protected agent-to-agent delegation over a2a-sdk.
 
-Build agent services that can be called by other agents while preserving the
-original user's identity and authorization context through OAuth 2.0 token
-exchange (RFC 8693).
+Wraps a2a-sdk's standard server primitives (``AgentExecutor``,
+``DefaultRequestHandler``, the Starlette route factories) with Keycard
+authentication and delegated token exchange. Customers implement
+a2a-sdk's native async ``AgentExecutor`` and pass an instance to
+``AgentServiceConfig``; this package handles the OAuth bearer
+verification, OAuth metadata discovery endpoints, and Starlette
+composition.
 
 Server (build agent services):
 - AgentServer: high-level server class
-- create_agent_card_server: FastAPI app factory with Keycard OAuth wiring
+- create_agent_card_server: Starlette app factory with Keycard OAuth wiring
 - serve_agent: blocking convenience runner
 - DelegationClient / DelegationClientSync: server-to-server token exchange
-
-Executors:
-- AgentExecutor: protocol for the per-request unit of work
-- SimpleExecutor, LambdaExecutor: ergonomic executor implementations
-- KeycardToA2AExecutorBridge: adapt a Keycard executor to the A2A SDK
 
 Client (call agent services):
 - ServiceDiscovery: query an agent service's `.well-known/agent-card.json`
@@ -25,13 +24,9 @@ Configuration:
 from .client import ServiceDiscovery
 from .config import AgentServiceConfig
 from .server import (
-    AgentExecutor,
     AgentServer,
     DelegationClient,
     DelegationClientSync,
-    KeycardToA2AExecutorBridge,
-    LambdaExecutor,
-    SimpleExecutor,
     create_agent_card_server,
     serve_agent,
 )
@@ -44,8 +39,4 @@ __all__ = [
     "serve_agent",
     "DelegationClient",
     "DelegationClientSync",
-    "AgentExecutor",
-    "SimpleExecutor",
-    "LambdaExecutor",
-    "KeycardToA2AExecutorBridge",
 ]

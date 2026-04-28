@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, Mock, patch
 import pytest
 
 from keycardai.a2a import AgentServiceConfig, DelegationClient
-from keycardai.a2a.server import SimpleExecutor
+from tests._helpers import NoopAgentExecutor
 
 
 @pytest.fixture
@@ -17,7 +17,7 @@ def service_config():
         client_secret="test_secret",
         identity_url="https://test.example.com",
         zone_id="test_zone",
-        agent_executor=SimpleExecutor(),
+        agent_executor=NoopAgentExecutor(),
     )
 
 

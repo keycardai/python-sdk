@@ -1,11 +1,14 @@
-"""
-Example: Using the A2A JSONRPC protocol with Keycard agent services.
+"""Example: calling a Keycard-protected agent service over A2A JSONRPC.
 
-Demonstrates how to call agent services using the standard A2A JSONRPC protocol.
+Demonstrates two paths against the standard `/a2a/jsonrpc` endpoint:
+1. A manual httpx POST that builds the JSONRPC envelope by hand.
+2. The a2a-sdk 1.x ``Client`` (via ``create_client``), which handles
+   serialization, authentication interception, and result decoding.
 
-Both approaches work with the same agent service — choose based on your needs:
-- A2A JSONRPC: Standards-compliant, event-driven, supports streaming
-- Custom /invoke: Simple, direct, synchronous
+Bearer tokens must be obtained out-of-band. For user-side flows use
+``keycardai.oauth.pkce.authenticate`` from keycardai-oauth; for
+server-to-server delegation use ``DelegationClient`` from
+``keycardai.a2a.server``.
 """
 
 import asyncio
@@ -14,8 +17,8 @@ import os
 import httpx
 
 
-async def example_manual_jsonrpc():
-    """Call an agent service via manual JSONRPC request."""
+async def example_manual_jsonrpc() -> None:
+    """Call an agent service via a hand-built JSONRPC request."""
 
     service_url = os.getenv(
         "AGENT_SERVICE_URL", "https://agent-service.example.com"
@@ -49,65 +52,61 @@ async def example_manual_jsonrpc():
 
             result = response.json()
             print(f"JSONRPC Response: {result}")
-
-            if "result" in result:
-                task = result["result"]
-                print(f"Task ID: {task['id']}")
-                print(f"Status: {task['status']['state']}")
         except Exception as e:
             print(f"Error: {e}")
 
 
-async def example_a2a_sdk_client():
-    """Call an agent service via the A2A SDK client."""
+async def example_a2a_sdk_client() -> None:
+    """Call an agent service via the a2a-sdk 1.x ``Client``."""
 
     service_url = os.getenv(
         "AGENT_SERVICE_URL", "https://agent-service.example.com"
     )
 
-    print("\nExample 2: Using A2A SDK client")
+    print("\nExample 2: a2a-sdk 1.x Client via create_client")
     print("=" * 60)
 
-    from a2a.client import A2AClient
-    from a2a.types import Message, MessageSendParams
+    from a2a.client import A2ACardResolver, ClientConfig, create_client
 
-    async with A2AClient(base_url=f"{service_url}/a2a") as a2a_client:
-        message = Message(
-            role="user",
-            parts=[{"text": "Analyze this pull request: #123"}],
-        )
+    auth_token = os.getenv("AUTH_TOKEN", "<your-token>")
+    auth_headers = {"Authorization": f"Bearer {auth_token}"}
 
-        params = MessageSendParams(message=message)
+    async with httpx.AsyncClient(headers=auth_headers) as http_client:
+        # Resolve the agent card from the service's well-known endpoint.
+        resolver = A2ACardResolver(httpx_client=http_client, base_url=service_url)
+        agent_card = await resolver.get_agent_card()
+
+        # Build a Client against the resolved card.
+        config = ClientConfig(httpx_client=http_client)
+        client = create_client(card=agent_card, config=config)
 
         try:
-            result = await a2a_client.send_message(params)
-            print(f"Task ID: {result.id}")
-            print(f"Status: {result.status.state}")
-            print(f"Result: {result.history[-1].parts[0]['text']}")
+            async for event in client.send_message(
+                "What is the status of deployment?"
+            ):
+                print(f"Event: {event}")
         except Exception as e:
             print(f"Error: {e}")
 
 
-async def main():
-    """Run A2A JSONRPC examples."""
-
+async def main() -> None:
     print("A2A JSONRPC Protocol Examples")
     print("=" * 60)
     print()
-    print("Demonstrates calling an agent service over A2A JSONRPC, both via a")
-    print("manual httpx request and via the A2A SDK client. The bearer token")
-    print("must already be obtained out-of-band (e.g. via")
-    print("`keycardai.oauth.pkce.authenticate` for user-side flows).")
+    print("Demonstrates calling a Keycard-protected agent service over the")
+    print("standard A2A JSONRPC endpoint. The bearer token must already be")
+    print("obtained (e.g. via keycardai.oauth.pkce.authenticate for user")
+    print("flows or DelegationClient for server-to-server delegation).")
     print()
 
     await example_manual_jsonrpc()
     await example_a2a_sdk_client()
 
 
-def run():
+def run() -> None:
     """Entry point."""
     print("Note: This is a code demonstration.")
-    print("Update the URLs and credentials to run against a real service.")
+    print("Update AGENT_SERVICE_URL and AUTH_TOKEN to run against a real service.")
     print()
     asyncio.run(main())
 

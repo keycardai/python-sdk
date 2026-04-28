@@ -35,7 +35,7 @@ def mock_identity_url():
 @pytest.fixture
 def service_config(mock_zone_id, mock_identity_url):
     """Create test service configuration with minimal settings."""
-    from keycardai.a2a.server import SimpleExecutor
+    from tests._helpers import NoopAgentExecutor
 
     return AgentServiceConfig(
         service_name="Test Service",
@@ -43,14 +43,14 @@ def service_config(mock_zone_id, mock_identity_url):
         client_secret="test_secret",
         identity_url=mock_identity_url,
         zone_id=mock_zone_id,
-        agent_executor=SimpleExecutor(),
+        agent_executor=NoopAgentExecutor(),
     )
 
 
 @pytest.fixture
 def service_config_with_capabilities(mock_zone_id, mock_identity_url):
     """Create test service configuration with capabilities."""
-    from keycardai.a2a.server import SimpleExecutor
+    from tests._helpers import NoopAgentExecutor
 
     return AgentServiceConfig(
         service_name="Test Service",
@@ -60,7 +60,7 @@ def service_config_with_capabilities(mock_zone_id, mock_identity_url):
         zone_id=mock_zone_id,
         description="Test service for unit tests",
         capabilities=["test_capability", "another_capability"],
-        agent_executor=SimpleExecutor(),
+        agent_executor=NoopAgentExecutor(),
     )
 
 

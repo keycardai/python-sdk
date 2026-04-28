@@ -1,19 +1,22 @@
-"""Server package for implementing agent services.
+"""Server primitives for building Keycard-protected A2A agent services.
 
-This package provides tools for building agent services:
-- AgentServer: Create and run agent services with OAuth middleware
-- DelegationClient: Server-to-server delegation with token exchange
-- serve_agent: Convenience function to start a server
-- create_agent_card_server: Create FastAPI app for agent service
-- AgentExecutor: Protocol for framework-agnostic agent execution
-- SimpleExecutor, LambdaExecutor: Simple executor implementations
-- KeycardToA2AExecutorBridge: Bridge adapter for A2A JSONRPC support
+Customers implement a2a-sdk's native ``AgentExecutor``
+(``a2a.server.agent_execution.AgentExecutor``) and pass an instance to
+``AgentServiceConfig``. This package wires the executor into a Starlette
+app with Keycard authentication and the standard A2A JSONRPC endpoint;
+no parallel protocol or custom request shape is introduced.
+
+Exports:
+- ``AgentServer``: high-level class wrapping the Starlette composition.
+- ``create_agent_card_server``: factory function returning the configured Starlette app.
+- ``serve_agent``: blocking uvicorn runner.
+- ``DelegationClient`` / ``DelegationClientSync``: server-to-server token
+  exchange helpers for calling other agent services on behalf of the
+  original user.
 """
 
 from .app import AgentServer, create_agent_card_server, serve_agent
 from .delegation import DelegationClient, DelegationClientSync
-from .executor import AgentExecutor, LambdaExecutor, SimpleExecutor
-from .executor_bridge import KeycardToA2AExecutorBridge
 
 __all__ = [
     "AgentServer",
@@ -21,8 +24,4 @@ __all__ = [
     "serve_agent",
     "DelegationClient",
     "DelegationClientSync",
-    "AgentExecutor",
-    "SimpleExecutor",
-    "LambdaExecutor",
-    "KeycardToA2AExecutorBridge",
 ]

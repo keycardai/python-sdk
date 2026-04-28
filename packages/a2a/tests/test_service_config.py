@@ -3,7 +3,7 @@
 import pytest
 
 from keycardai.a2a import AgentServiceConfig
-from keycardai.a2a.server import SimpleExecutor
+from tests._helpers import NoopAgentExecutor
 
 
 def test_service_config_basic():
@@ -14,7 +14,7 @@ def test_service_config_basic():
         client_secret="test_secret",
         identity_url="https://test.example.com",
         zone_id="test_zone",
-        agent_executor=SimpleExecutor(),
+        agent_executor=NoopAgentExecutor(),
     )
 
     assert config.service_name == "Test Service"
@@ -34,11 +34,11 @@ def test_service_config_urls():
         client_secret="test_secret",
         identity_url="https://test.example.com",
         zone_id="test_zone",
-        agent_executor=SimpleExecutor(),
+        agent_executor=NoopAgentExecutor(),
     )
 
     assert config.agent_card_url == "https://test.example.com/.well-known/agent-card.json"
-    assert config.invoke_url == "https://test.example.com/invoke"
+    assert config.jsonrpc_url == "https://test.example.com/a2a/jsonrpc"
     assert config.status_url == "https://test.example.com/status"
 
 
@@ -50,52 +50,11 @@ def test_service_config_trailing_slash_removed():
         client_secret="test_secret",
         identity_url="https://test.example.com/",  # with trailing slash
         zone_id="test_zone",
-        agent_executor=SimpleExecutor(),
+        agent_executor=NoopAgentExecutor(),
     )
 
     assert config.identity_url == "https://test.example.com"
     assert not config.identity_url.endswith("/")
-
-
-def test_service_config_agent_card():
-    """Test agent card generation (A2A Protocol format)."""
-    config = AgentServiceConfig(
-        service_name="Test Service",
-        client_id="test_client",
-        client_secret="test_secret",
-        identity_url="https://test.example.com",
-        zone_id="test_zone",
-        agent_executor=SimpleExecutor(),
-        description="A test service",
-        capabilities=["test1", "test2"],
-    )
-
-    card = config.to_agent_card()
-
-    # A2A Protocol required fields (camelCase in JSON)
-    assert card["name"] == "Test Service"
-    assert card["description"] == "A test service"
-    assert card["url"] == "https://test.example.com"
-    assert card["version"] == "1.0.0"
-    assert card["protocolVersion"] == "0.3.0"
-
-    # Skills (converted from capabilities)
-    assert len(card["skills"]) == 2
-    assert card["skills"][0]["id"] == "test1"
-    assert card["skills"][1]["id"] == "test2"
-
-    # Capabilities metadata
-    assert card["capabilities"]["streaming"] is False
-    # Note: multi_turn is excluded when False by Pydantic
-
-    # Additional interfaces (our custom invoke endpoint, camelCase)
-    assert len(card["additionalInterfaces"]) == 1
-    assert card["additionalInterfaces"][0]["url"] == "https://test.example.com/invoke"
-
-    # Security (camelCase)
-    assert "oauth2" in card["securitySchemes"]
-    assert card["securitySchemes"]["oauth2"]["type"] == "oauth2"
-    assert "test_zone.keycard.cloud" in card["securitySchemes"]["oauth2"]["flows"]["authorizationCode"]["tokenUrl"]
 
 
 def test_service_config_validation_missing_fields():
@@ -107,7 +66,7 @@ def test_service_config_validation_missing_fields():
             client_secret="test_secret",
             identity_url="https://test.example.com",
             zone_id="test_zone",
-            agent_executor=SimpleExecutor(),
+            agent_executor=NoopAgentExecutor(),
         )
 
     with pytest.raises(ValueError, match="client_id is required"):
@@ -117,7 +76,7 @@ def test_service_config_validation_missing_fields():
             client_secret="test_secret",
             identity_url="https://test.example.com",
             zone_id="test_zone",
-            agent_executor=SimpleExecutor(),
+            agent_executor=NoopAgentExecutor(),
         )
 
 
@@ -130,7 +89,7 @@ def test_service_config_validation_invalid_url():
             client_secret="test_secret",
             identity_url="invalid-url",  # no http:// or https://
             zone_id="test_zone",
-            agent_executor=SimpleExecutor(),
+            agent_executor=NoopAgentExecutor(),
         )
 
 
@@ -143,6 +102,6 @@ def test_service_config_validation_invalid_port():
             client_secret="test_secret",
             identity_url="https://test.example.com",
             zone_id="test_zone",
-            agent_executor=SimpleExecutor(),
+            agent_executor=NoopAgentExecutor(),
             port=99999,  # invalid port
         )
