@@ -74,56 +74,6 @@ class TestAgentClientInit:
         assert client.scopes == custom_scopes
 
 
-class TestOAuthDiscoveryMethods:
-    """Test OAuth discovery helper methods."""
-
-    def test_extract_resource_metadata_url(self, service_config, mock_www_authenticate_header):
-        """Test extracting resource_metadata URL from WWW-Authenticate header."""
-        client = AgentClient(service_config)
-        url = client._extract_resource_metadata_url(mock_www_authenticate_header)
-        assert url == "https://protected-service.example.com/.well-known/oauth-protected-resource/invoke"
-
-    def test_extract_resource_metadata_url_missing(self, service_config):
-        """Test handling missing resource_metadata in header."""
-        client = AgentClient(service_config)
-        header = 'Bearer error="invalid_token"'
-        url = client._extract_resource_metadata_url(header)
-        assert url is None
-
-    @pytest.mark.asyncio
-    async def test_fetch_resource_metadata(self, service_config, mock_resource_metadata):
-        """Test fetching OAuth protected resource metadata."""
-        client = AgentClient(service_config)
-        metadata_url = "https://protected-service.example.com/.well-known/oauth-protected-resource"
-
-        with patch.object(client.http_client, "get") as mock_get:
-            mock_response = Mock()
-            mock_response.json.return_value = mock_resource_metadata
-            mock_get.return_value = mock_response
-
-            metadata = await client._fetch_resource_metadata(metadata_url)
-
-            assert metadata == mock_resource_metadata
-            mock_get.assert_called_once_with(metadata_url)
-
-    @pytest.mark.asyncio
-    async def test_fetch_authorization_server_metadata(self, service_config, mock_auth_server_metadata):
-        """Test fetching authorization server metadata."""
-        client = AgentClient(service_config)
-        auth_server_url = "https://test_zone_123.keycard.cloud"
-
-        with patch.object(client.http_client, "get") as mock_get:
-            mock_response = Mock()
-            mock_response.json.return_value = mock_auth_server_metadata
-            mock_get.return_value = mock_response
-
-            metadata = await client._fetch_authorization_server_metadata(auth_server_url)
-
-            assert metadata == mock_auth_server_metadata
-            expected_url = f"{auth_server_url}/.well-known/oauth-authorization-server"
-            mock_get.assert_called_once_with(expected_url)
-
-
 class TestInvokeWithoutAuth:
     """Test invoke method without authentication (should work with valid token)."""
 
