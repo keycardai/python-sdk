@@ -1,3 +1,21 @@
+## 0.23.0-keycardai-mcp (2026-04-28)
+
+
+- refactor(keycardai-mcp): drop deprecated bearer middleware shims (ACC-235) (#104)
+- Removes the keycardai.mcp.server.middleware re-export shims that pointed
+at the deprecated BearerAuthMiddleware in keycardai-starlette. Anyone
+importing BearerAuthMiddleware should switch to AuthenticationMiddleware
+with backend=KeycardAuthBackend(verifier) and on_error=keycard_on_error.
+The deprecated symbols themselves stay in keycardai-starlette and come
+out in ACC-237.
+- keycardai-agents repointed at keycardai.starlette.middleware.bearer so
+it keeps building. It still emits the DeprecationWarning shipped in
+keycardai-starlette 0.3.0; that goes away when ACC-232 archives the
+package.
+- Bearer-helper unit tests (_get_bearer_token, _get_oauth_protected_resource_url)
+moved from packages/mcp/tests to packages/starlette/tests where the
+helpers live.
+
 ## 0.22.0-keycardai-mcp (2026-04-24)
 
 
