@@ -1,10 +1,12 @@
 """Server-to-server delegation client using OAuth token exchange.
 
 This module provides clients for agent services to delegate tasks to other
-agent services while maintaining the user context and delegation chain.
+agent services while maintaining the user context.
 """
 
+import json
 import logging
+import uuid
 from typing import Any
 
 import httpx
@@ -18,6 +20,79 @@ from keycardai.oauth.types.oauth import TokenType
 from ..config import AgentServiceConfig
 
 logger = logging.getLogger(__name__)
+
+
+def _build_jsonrpc_message_send(task: dict[str, Any] | str) -> dict[str, Any]:
+    """Wrap a task in an A2A JSONRPC ``message/send`` envelope.
+
+    ``task`` may be a plain string, a dict carrying a ``"task"`` string under
+    that key (legacy shape preserved for the keycardai-agents CrewAI
+    integration), or any other dict (serialized to JSON for the message
+    text).
+    """
+    if isinstance(task, str):
+        text = task
+    elif isinstance(task, dict):
+        if isinstance(task.get("task"), str):
+            text = task["task"]
+        else:
+            text = json.dumps(task)
+    else:
+        raise ValueError(f"Invalid task type: {type(task)}")
+
+    return {
+        "jsonrpc": "2.0",
+        "id": str(uuid.uuid4()),
+        "method": "message/send",
+        "params": {
+            "message": {
+                "role": "user",
+                "parts": [{"text": text}],
+            },
+        },
+    }
+
+
+def _unwrap_jsonrpc_response(response_body: dict[str, Any]) -> dict[str, Any]:
+    """Unwrap an A2A JSONRPC response into the ``{result, delegation_chain}`` shape.
+
+    Best-effort surface used by CrewAI delegation tools. If the JSONRPC
+    result is a ``Message`` (parts with ``text``), the text parts are
+    joined; otherwise the raw result is JSON-stringified.
+
+    ``delegation_chain`` is returned empty: the legacy keycardai-agents
+    chain reconstruction read from ``request.state.keycardai_auth_info``
+    which never carried the claim, so it was always single-hop. Callers
+    that need multi-hop tracking should parse JWT claims directly.
+
+    Raises:
+        ValueError: if the response carries a JSONRPC ``error`` member.
+    """
+    if "error" in response_body:
+        err = response_body["error"] or {}
+        raise ValueError(
+            f"JSONRPC error from agent service: "
+            f"{err.get('code')} {err.get('message')}"
+        )
+    result = response_body.get("result")
+    if result is None:
+        return {"result": "", "delegation_chain": []}
+    if isinstance(result, dict):
+        parts = result.get("parts")
+        if isinstance(parts, list):
+            text_parts = [
+                p.get("text", "")
+                for p in parts
+                if isinstance(p, dict) and "text" in p
+            ]
+            if text_parts:
+                return {
+                    "result": "\n".join(text_parts),
+                    "delegation_chain": [],
+                }
+    if isinstance(result, str):
+        return {"result": result, "delegation_chain": []}
+    return {"result": json.dumps(result), "delegation_chain": []}
 
 
 class DelegationClient:
@@ -112,11 +187,12 @@ class DelegationClient:
 
             card = response.json()
 
-            # Validate required fields
-            required_fields = ["name", "endpoints", "auth"]
-            for field in required_fields:
-                if field not in card:
-                    raise ValueError(f"Invalid agent card: missing required field '{field}'")
+            # The 1.x card emitter (a2a-sdk) populates a "name" field on every
+            # valid card. Trust it for the rest; transport / auth / interface
+            # specifics are surfaced via supported_interfaces and the
+            # OAuth metadata routes, not the card validator.
+            if not card.get("name"):
+                raise ValueError("Invalid agent card: missing required field 'name'")
 
             logger.info(f"Discovered service: {card.get('name')} at {service_url}")
             return card
@@ -200,10 +276,13 @@ class DelegationClient:
         token: str | None = None,
         subject_token: str | None = None,
     ) -> dict[str, Any]:
-        """Call another agent service with proper authentication.
+        """Call another agent service over A2A JSONRPC with bearer auth.
 
-        Invokes the target service's /invoke endpoint with the provided task.
-        If no token is provided, automatically obtains one via token exchange.
+        Sends a ``message/send`` JSONRPC request to ``${service_url}/a2a/jsonrpc``
+        and returns ``{"result": <text>, "delegation_chain": []}`` for
+        compatibility with the legacy invocation surface. If you need the
+        full A2A protocol surface (Task lifecycle, streaming, status
+        updates), use ``a2a.client.create_client`` directly.
 
         Args:
             service_url: Base URL of the target service
@@ -212,11 +291,11 @@ class DelegationClient:
             subject_token: Optional token for exchange if token not provided
 
         Returns:
-            Service response with result and delegation chain
+            Dict with ``result`` (str) and ``delegation_chain`` (list).
 
         Raises:
-            httpx.HTTPStatusError: If service invocation fails
-            ValueError: If response format is invalid
+            httpx.HTTPStatusError: If the JSONRPC request fails
+            ValueError: If the response carries a JSONRPC error
 
         Example:
             >>> result = await client.invoke_service(
@@ -225,41 +304,25 @@ class DelegationClient:
             ...     token="access_token_123"
             ... )
             >>> print(result["result"])
-            >>> print(result["delegation_chain"])
         """
-        # Ensure URL doesn't have trailing slash
         service_url = service_url.rstrip("/")
 
-        # Get token if not provided
         if not token:
             token = await self.get_delegation_token(service_url, subject_token)
 
-        # Prepare request
-        invoke_url = f"{service_url}/invoke"
+        jsonrpc_url = f"{service_url}/a2a/jsonrpc"
+        envelope = _build_jsonrpc_message_send(task)
 
-        # Format task
-        if isinstance(task, str):
-            payload = {"task": task}
-        elif isinstance(task, dict):
-            payload = {"task": task.get("task", task), "inputs": task.get("inputs")}
-        else:
-            raise ValueError(f"Invalid task type: {type(task)}")
-
-        # Call service
         try:
             response = await self.http_client.post(
-                invoke_url,
-                json=payload,
+                jsonrpc_url,
+                json=envelope,
                 headers={"Authorization": f"Bearer {token}"},
             )
             response.raise_for_status()
-
-            result = response.json()
-
+            unwrapped = _unwrap_jsonrpc_response(response.json())
             logger.info(f"Service invocation successful: {service_url}")
-            logger.debug(f"Delegation chain: {result.get('delegation_chain', [])}")
-
-            return result
+            return unwrapped
 
         except httpx.HTTPStatusError as e:
             logger.error(
@@ -370,11 +433,12 @@ class DelegationClientSync:
 
             card = response.json()
 
-            # Validate required fields
-            required_fields = ["name", "endpoints", "auth"]
-            for field in required_fields:
-                if field not in card:
-                    raise ValueError(f"Invalid agent card: missing required field '{field}'")
+            # The 1.x card emitter (a2a-sdk) populates a "name" field on every
+            # valid card. Trust it for the rest; transport / auth / interface
+            # specifics are surfaced via supported_interfaces and the
+            # OAuth metadata routes, not the card validator.
+            if not card.get("name"):
+                raise ValueError("Invalid agent card: missing required field 'name'")
 
             logger.info(f"Discovered service: {card.get('name')} at {service_url}")
             return card
@@ -458,10 +522,11 @@ class DelegationClientSync:
         token: str | None = None,
         subject_token: str | None = None,
     ) -> dict[str, Any]:
-        """Call another agent service with proper authentication.
+        """Call another agent service over A2A JSONRPC with bearer auth.
 
-        Invokes the target service's /invoke endpoint with the provided task.
-        If no token is provided, automatically obtains one via token exchange.
+        Sends a ``message/send`` JSONRPC request to ``${service_url}/a2a/jsonrpc``
+        and returns ``{"result": <text>, "delegation_chain": []}`` for
+        compatibility with the legacy invocation surface.
 
         Args:
             service_url: Base URL of the target service
@@ -470,54 +535,30 @@ class DelegationClientSync:
             subject_token: Optional token for exchange if token not provided
 
         Returns:
-            Service response with result and delegation chain
+            Dict with ``result`` (str) and ``delegation_chain`` (list).
 
         Raises:
-            httpx.HTTPStatusError: If service invocation fails
-            ValueError: If response format is invalid
-
-        Example:
-            >>> result = client.invoke_service(
-            ...     "https://slack-poster.example.com",
-            ...     {"task": "Post to #engineering", "message": "Deploy complete"},
-            ...     token="access_token_123"
-            ... )
-            >>> print(result["result"])
-            >>> print(result["delegation_chain"])
+            httpx.HTTPStatusError: If the JSONRPC request fails
+            ValueError: If the response carries a JSONRPC error
         """
-        # Ensure URL doesn't have trailing slash
         service_url = service_url.rstrip("/")
 
-        # Get token if not provided
         if not token:
             token = self.get_delegation_token(service_url, subject_token)
 
-        # Prepare request
-        invoke_url = f"{service_url}/invoke"
+        jsonrpc_url = f"{service_url}/a2a/jsonrpc"
+        envelope = _build_jsonrpc_message_send(task)
 
-        # Format task
-        if isinstance(task, str):
-            payload = {"task": task}
-        elif isinstance(task, dict):
-            payload = {"task": task.get("task", task), "inputs": task.get("inputs")}
-        else:
-            raise ValueError(f"Invalid task type: {type(task)}")
-
-        # Call service
         try:
             response = self.http_client.post(
-                invoke_url,
-                json=payload,
+                jsonrpc_url,
+                json=envelope,
                 headers={"Authorization": f"Bearer {token}"},
             )
             response.raise_for_status()
-
-            result = response.json()
-
+            unwrapped = _unwrap_jsonrpc_response(response.json())
             logger.info(f"Service invocation successful: {service_url}")
-            logger.debug(f"Delegation chain: {result.get('delegation_chain', [])}")
-
-            return result
+            return unwrapped
 
         except httpx.HTTPStatusError as e:
             logger.error(
@@ -543,8 +584,3 @@ class DelegationClientSync:
     def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         """Synchronous context manager exit."""
         self.close()
-
-
-# Backward compatibility aliases
-A2AServiceClient = DelegationClient
-A2AServiceClientSync = DelegationClientSync

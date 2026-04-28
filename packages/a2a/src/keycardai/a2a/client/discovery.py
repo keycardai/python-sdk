@@ -117,11 +117,12 @@ class ServiceDiscovery:
 
             card = response.json()
 
-            # Validate required fields
-            required_fields = ["name", "endpoints", "auth"]
-            for field in required_fields:
-                if field not in card:
-                    raise ValueError(f"Invalid agent card: missing required field '{field}'")
+            # The 1.x card emitter (a2a-sdk) populates a "name" field on
+            # every valid card. Trust it for the rest; transport / auth /
+            # interface specifics live under supported_interfaces and the
+            # OAuth metadata routes, not the card validator.
+            if not card.get("name"):
+                raise ValueError("Invalid agent card: missing required field 'name'")
 
             logger.info(f"Discovered service: {card.get('name')} at {service_url}")
             return card

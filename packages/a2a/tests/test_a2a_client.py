@@ -1,4 +1,4 @@
-"""Tests for DelegationClient (formerly A2AServiceClient)."""
+"""Tests for DelegationClient (server-to-server delegation over A2A JSONRPC)."""
 
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -29,15 +29,21 @@ def a2a_client(service_config):
 
 @pytest.mark.asyncio
 async def test_discover_service(a2a_client):
-    """Test service discovery via agent card."""
-    # Mock HTTP response
+    """Test service discovery via agent card (a2a-sdk 1.x JSON shape)."""
     mock_response = Mock()
     mock_response.json.return_value = {
         "name": "Target Service",
         "description": "A test target service",
-        "endpoints": {"invoke": "https://target.example.com/invoke"},
-        "auth": {"type": "oauth2"},
-        "capabilities": ["test_capability"],
+        "version": "1.0.0",
+        "supportedInterfaces": [
+            {
+                "url": "https://target.example.com/a2a/jsonrpc",
+                "protocolBinding": "jsonrpc",
+                "protocolVersion": "1.0",
+            }
+        ],
+        "capabilities": {"streaming": False},
+        "skills": [{"id": "test_capability"}],
     }
     mock_response.raise_for_status = Mock()
 
@@ -45,30 +51,27 @@ async def test_discover_service(a2a_client):
         card = await a2a_client.discover_service("https://target.example.com")
 
     assert card["name"] == "Target Service"
-    assert card["capabilities"] == ["test_capability"]
-    assert "invoke" in card["endpoints"]
+    assert card["supportedInterfaces"][0]["url"].endswith("/a2a/jsonrpc")
 
 
 @pytest.mark.asyncio
 async def test_discover_service_invalid_card(a2a_client):
-    """Test error handling for invalid agent card."""
-    # Mock HTTP response with missing required fields
+    """Discovery raises ValueError when the card has no name."""
     mock_response = Mock()
     mock_response.json.return_value = {
-        "name": "Target Service",
-        # Missing 'endpoints' and 'auth'
+        # Missing 'name'
+        "version": "1.0.0",
     }
     mock_response.raise_for_status = Mock()
 
     with patch.object(a2a_client.http_client, "get", return_value=mock_response):
-        with pytest.raises(ValueError, match="missing required field"):
+        with pytest.raises(ValueError, match="missing required field 'name'"):
             await a2a_client.discover_service("https://target.example.com")
 
 
 @pytest.mark.asyncio
 async def test_get_delegation_token_with_subject(a2a_client):
     """Test token exchange with subject token."""
-    # Mock OAuth response
     mock_token_response = Mock()
     mock_token_response.access_token = "delegated_token_123"
     mock_token_response.expires_in = 3600
@@ -83,7 +86,6 @@ async def test_get_delegation_token_with_subject(a2a_client):
 
     assert token == "delegated_token_123"
 
-    # Verify exchange_token was called with correct parameters
     call_args = mock_exchange.call_args[0][0]
     assert call_args.grant_type == "urn:ietf:params:oauth:grant-type:token-exchange"
     assert call_args.subject_token == "user_token_456"
@@ -93,7 +95,6 @@ async def test_get_delegation_token_with_subject(a2a_client):
 @pytest.mark.asyncio
 async def test_get_delegation_token_client_credentials(a2a_client):
     """Test token exchange with client credentials."""
-    # Mock OAuth response
     mock_token_response = Mock()
     mock_token_response.access_token = "service_token_789"
     mock_token_response.expires_in = 3600
@@ -105,47 +106,59 @@ async def test_get_delegation_token_client_credentials(a2a_client):
 
     assert token == "service_token_789"
 
-    # Verify exchange_token was called with client_credentials grant
     call_args = mock_exchange.call_args[0][0]
     assert call_args.grant_type == "client_credentials"
     assert call_args.resource == "https://target.example.com"
 
 
 @pytest.mark.asyncio
-async def test_invoke_service(a2a_client):
-    """Test service invocation."""
-    # Mock HTTP response
+async def test_invoke_service_posts_jsonrpc_envelope(a2a_client):
+    """invoke_service sends a JSONRPC message/send to /a2a/jsonrpc."""
     mock_response = Mock()
     mock_response.json.return_value = {
-        "result": "Task completed successfully",
-        "delegation_chain": ["test_client", "target_service"],
+        "jsonrpc": "2.0",
+        "id": "1",
+        "result": {
+            "role": "agent",
+            "parts": [{"text": "Task completed successfully"}],
+        },
     }
     mock_response.raise_for_status = Mock()
 
-    with patch.object(a2a_client.http_client, "post", return_value=mock_response):
+    with patch.object(
+        a2a_client.http_client, "post", return_value=mock_response
+    ) as mock_post:
         result = await a2a_client.invoke_service(
             "https://target.example.com",
             {"task": "Test task"},
             token="test_token_123",
         )
 
+    # The wrapper unwraps the JSONRPC result back to the legacy shape.
     assert result["result"] == "Task completed successfully"
-    assert result["delegation_chain"] == ["test_client", "target_service"]
+    assert result["delegation_chain"] == []
+
+    # Confirm the request was a JSONRPC envelope to /a2a/jsonrpc.
+    posted_url = mock_post.call_args[0][0]
+    posted_body = mock_post.call_args[1]["json"]
+    assert posted_url == "https://target.example.com/a2a/jsonrpc"
+    assert posted_body["jsonrpc"] == "2.0"
+    assert posted_body["method"] == "message/send"
+    assert posted_body["params"]["message"]["parts"][0]["text"] == "Test task"
 
 
 @pytest.mark.asyncio
 async def test_invoke_service_auto_token_exchange(a2a_client):
-    """Test service invocation with automatic token exchange."""
-    # Mock token exchange
+    """invoke_service triggers token exchange when no token is supplied."""
     mock_token_response = Mock()
     mock_token_response.access_token = "auto_token_123"
     mock_token_response.expires_in = 3600
 
-    # Mock HTTP response
     mock_http_response = Mock()
     mock_http_response.json.return_value = {
-        "result": "Success",
-        "delegation_chain": ["test_client"],
+        "jsonrpc": "2.0",
+        "id": "1",
+        "result": {"role": "agent", "parts": [{"text": "Success"}]},
     }
     mock_http_response.raise_for_status = Mock()
 
@@ -158,21 +171,22 @@ async def test_invoke_service_auto_token_exchange(a2a_client):
             result = await a2a_client.invoke_service(
                 "https://target.example.com",
                 "Simple task string",
-                # No token provided - should trigger automatic exchange
             )
 
     assert result["result"] == "Success"
-
-    # Verify POST was called with auto-obtained token
     call_kwargs = mock_post.call_args[1]
     assert call_kwargs["headers"]["Authorization"] == "Bearer auto_token_123"
 
 
 @pytest.mark.asyncio
 async def test_invoke_service_string_task(a2a_client):
-    """Test service invocation with string task."""
+    """A string task lands as the message text in the JSONRPC envelope."""
     mock_response = Mock()
-    mock_response.json.return_value = {"result": "Done", "delegation_chain": []}
+    mock_response.json.return_value = {
+        "jsonrpc": "2.0",
+        "id": "1",
+        "result": {"role": "agent", "parts": [{"text": "Done"}]},
+    }
     mock_response.raise_for_status = Mock()
 
     with patch.object(
@@ -180,13 +194,32 @@ async def test_invoke_service_string_task(a2a_client):
     ) as mock_post:
         await a2a_client.invoke_service(
             "https://target.example.com",
-            "Do something",  # String task
+            "Do something",
             token="test_token",
         )
 
-    # Verify task was converted to dict format
-    call_kwargs = mock_post.call_args[1]
-    assert call_kwargs["json"]["task"] == "Do something"
+    posted_body = mock_post.call_args[1]["json"]
+    assert posted_body["params"]["message"]["parts"][0]["text"] == "Do something"
+
+
+@pytest.mark.asyncio
+async def test_invoke_service_jsonrpc_error_raises(a2a_client):
+    """A JSONRPC error response surfaces as a ValueError."""
+    mock_response = Mock()
+    mock_response.json.return_value = {
+        "jsonrpc": "2.0",
+        "id": "1",
+        "error": {"code": -32600, "message": "Invalid Request"},
+    }
+    mock_response.raise_for_status = Mock()
+
+    with patch.object(a2a_client.http_client, "post", return_value=mock_response):
+        with pytest.raises(ValueError, match="JSONRPC error"):
+            await a2a_client.invoke_service(
+                "https://target.example.com",
+                "Anything",
+                token="test_token",
+            )
 
 
 @pytest.mark.asyncio
@@ -195,16 +228,10 @@ async def test_context_manager(service_config):
     async with DelegationClient(service_config) as client:
         assert client is not None
 
-    # HTTP client should be closed after context exit
-    # (In practice, this would be verified by checking connection state)
-
 
 @pytest.mark.asyncio
 async def test_close(a2a_client):
     """Test client cleanup."""
-    # Mock the http_client.aclose method
     a2a_client.http_client.aclose = AsyncMock()
-
     await a2a_client.close()
-
     a2a_client.http_client.aclose.assert_called_once()

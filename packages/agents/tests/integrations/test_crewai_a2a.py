@@ -59,18 +59,23 @@ def mock_delegatable_services():
 
 @pytest.fixture
 def mock_agent_card():
-    """Mock agent card for service discovery."""
+    """Mock agent card for service discovery (a2a-sdk 1.x JSON shape)."""
     return {
         "name": "Echo Service",
         "description": "Simple echo service for testing",
-        "type": "crew_service",
-        "identity": "https://echo.example.com",
-        "endpoints": {
-            "invoke": "https://echo.example.com/invoke",
-            "status": "https://echo.example.com/status",
-        },
-        "auth": {"type": "oauth2"},
-        "capabilities": ["echo", "testing"],
+        "version": "1.0.0",
+        "supportedInterfaces": [
+            {
+                "url": "https://echo.example.com/a2a/jsonrpc",
+                "protocolBinding": "jsonrpc",
+                "protocolVersion": "1.0",
+            }
+        ],
+        "capabilities": {"streaming": False},
+        "skills": [
+            {"id": "echo", "name": "Echo"},
+            {"id": "testing", "name": "Testing"},
+        ],
     }
 
 

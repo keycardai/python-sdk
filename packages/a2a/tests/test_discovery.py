@@ -25,22 +25,23 @@ def service_config():
 
 @pytest.fixture
 def mock_agent_card():
-    """Mock agent card response."""
+    """Mock agent card in the a2a-sdk 1.x JSON shape."""
     return {
         "name": "Target Service",
         "description": "A test target service",
-        "type": "crew_service",
-        "identity": "https://target.example.com",
-        "endpoints": {
-            "invoke": "https://target.example.com/invoke",
-            "status": "https://target.example.com/status",
-        },
-        "auth": {
-            "type": "oauth2",
-            "token_url": "https://test_zone.keycard.cloud/oauth/token",
-            "resource": "https://target.example.com",
-        },
-        "capabilities": ["test_capability", "another_capability"],
+        "version": "1.0.0",
+        "supportedInterfaces": [
+            {
+                "url": "https://target.example.com/a2a/jsonrpc",
+                "protocolBinding": "jsonrpc",
+                "protocolVersion": "1.0",
+            }
+        ],
+        "capabilities": {"streaming": False},
+        "skills": [
+            {"id": "test_capability", "name": "Test Capability"},
+            {"id": "another_capability", "name": "Another Capability"},
+        ],
     }
 
 
