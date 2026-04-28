@@ -36,8 +36,8 @@ class DelegationClient:
         service_config: Configuration of the calling service
 
     Example:
-        >>> from keycardai.agents import AgentServiceConfig
-        >>> from keycardai.agents.server import DelegationClient
+        >>> from keycardai.a2a import AgentServiceConfig
+        >>> from keycardai.a2a.server import DelegationClient
         >>> 
         >>> config = AgentServiceConfig(...)
         >>> client = DelegationClient(config)
@@ -301,8 +301,8 @@ class DelegationClientSync:
         service_config: Configuration of the calling service
 
     Example:
-        >>> from keycardai.agents import AgentServiceConfig
-        >>> from keycardai.agents.server import DelegationClientSync
+        >>> from keycardai.a2a import AgentServiceConfig
+        >>> from keycardai.a2a.server import DelegationClientSync
         >>> 
         >>> config = AgentServiceConfig(...)
         >>> client = DelegationClientSync(config)

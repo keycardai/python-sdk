@@ -42,7 +42,7 @@ class AgentServiceConfig:
         agent_executor: Executor that runs agent tasks (AgentExecutor protocol)
 
     Example:
-        >>> from keycardai.agents import AgentServiceConfig
+        >>> from keycardai.a2a import AgentServiceConfig
         >>> from keycardai.agents.integrations.crewai import CrewAIExecutor
         >>>
         >>> config = AgentServiceConfig(

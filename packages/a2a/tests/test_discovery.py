@@ -5,13 +5,13 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from keycardai.agents import AgentServiceConfig, ServiceDiscovery
+from keycardai.a2a import AgentServiceConfig, ServiceDiscovery
 
 
 @pytest.fixture
 def service_config():
     """Create test service configuration."""
-    from keycardai.agents.server import SimpleExecutor
+    from keycardai.a2a.server import SimpleExecutor
 
     return AgentServiceConfig(
         service_name="Test Service",
@@ -194,7 +194,7 @@ class TestCachedAgentCard:
 
     def test_is_expired_when_ttl_exceeded(self, discovery):
         """Test card is expired when TTL is exceeded."""
-        from keycardai.agents.client.discovery import CachedAgentCard
+        from keycardai.a2a.client.discovery import CachedAgentCard
 
         card = CachedAgentCard(
             card={"name": "test"},
@@ -207,7 +207,7 @@ class TestCachedAgentCard:
 
     def test_is_not_expired_within_ttl(self, discovery):
         """Test card is not expired within TTL."""
-        from keycardai.agents.client.discovery import CachedAgentCard
+        from keycardai.a2a.client.discovery import CachedAgentCard
 
         card = CachedAgentCard(
             card={"name": "test"},
@@ -220,7 +220,7 @@ class TestCachedAgentCard:
 
     def test_age_seconds_calculation(self, discovery):
         """Test age calculation is correct."""
-        from keycardai.agents.client.discovery import CachedAgentCard
+        from keycardai.a2a.client.discovery import CachedAgentCard
 
         fetch_time = time.time() - 42
         card = CachedAgentCard(card={"name": "test"}, fetched_at=fetch_time)

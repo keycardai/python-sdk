@@ -4,8 +4,8 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from keycardai.agents import AgentServiceConfig, DelegationClient
-from keycardai.agents.server import SimpleExecutor
+from keycardai.a2a import AgentServiceConfig, DelegationClient
+from keycardai.a2a.server import SimpleExecutor
 
 
 @pytest.fixture

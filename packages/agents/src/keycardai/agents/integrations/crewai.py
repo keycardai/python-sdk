@@ -5,7 +5,7 @@ This module provides:
 2. Delegation tools: CrewAI tools for calling other agent services
 
 Usage with executor:
-    >>> from keycardai.agents import AgentServiceConfig
+    >>> from keycardai.a2a import AgentServiceConfig
     >>> from keycardai.agents.integrations.crewai import CrewAIExecutor
     >>> from crewai import Agent, Crew, Task
     >>>
@@ -21,7 +21,7 @@ Usage with executor:
     ... )
 
 Usage with delegation tools:
-    >>> from keycardai.agents import AgentServiceConfig
+    >>> from keycardai.a2a import AgentServiceConfig
     >>> from keycardai.agents.integrations.crewai import get_a2a_tools
     >>> from crewai import Agent, Crew
     >>>
@@ -54,9 +54,7 @@ from typing import Any, Callable
 
 from pydantic import BaseModel, Field
 
-from ..client.discovery import ServiceDiscovery
-from ..config import AgentServiceConfig
-from ..server.delegation import DelegationClientSync
+from keycardai.a2a import AgentServiceConfig, DelegationClientSync, ServiceDiscovery
 
 # Context variable to store the current user's access token for delegation
 _current_user_token: contextvars.ContextVar[str | None] = contextvars.ContextVar(
@@ -86,7 +84,7 @@ def set_delegation_token(access_token: str) -> None:
 
     Example:
         >>> # In your server's invoke handler
-        >>> access_token = request.state.keycardai_auth_info.get("access_token")
+        >>> access_token = request.user.access_token
         >>> set_delegation_token(access_token)
         >>>
         >>> # Now crew tools can delegate with the user's context

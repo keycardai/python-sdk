@@ -45,7 +45,7 @@ class KeycardToA2AExecutorBridge(A2AAgentExecutor):
         keycard_executor: The Keycard executor to wrap
 
     Example:
-        >>> from keycardai.agents.server.executor import SimpleExecutor
+        >>> from keycardai.a2a.server.executor import SimpleExecutor
         >>> keycard_executor = SimpleExecutor()
         >>> a2a_executor = KeycardToA2AExecutorBridge(keycard_executor)
         >>>

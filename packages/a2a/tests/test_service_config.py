@@ -2,8 +2,8 @@
 
 import pytest
 
-from keycardai.agents import AgentServiceConfig
-from keycardai.agents.server import SimpleExecutor
+from keycardai.a2a import AgentServiceConfig
+from keycardai.a2a.server import SimpleExecutor
 
 
 def test_service_config_basic():

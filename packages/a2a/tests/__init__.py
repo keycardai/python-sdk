@@ -1,1 +1,1 @@
-"""Tests for keycardai-agents package."""
+"""Tests for keycardai-a2a package."""

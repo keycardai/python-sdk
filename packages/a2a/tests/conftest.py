@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from keycardai.agents import AgentServiceConfig
+from keycardai.a2a import AgentServiceConfig
 
 # ============================================
 # Basic Configuration Fixtures
@@ -35,7 +35,7 @@ def mock_identity_url():
 @pytest.fixture
 def service_config(mock_zone_id, mock_identity_url):
     """Create test service configuration with minimal settings."""
-    from keycardai.agents.server import SimpleExecutor
+    from keycardai.a2a.server import SimpleExecutor
 
     return AgentServiceConfig(
         service_name="Test Service",
@@ -50,7 +50,7 @@ def service_config(mock_zone_id, mock_identity_url):
 @pytest.fixture
 def service_config_with_capabilities(mock_zone_id, mock_identity_url):
     """Create test service configuration with capabilities."""
-    from keycardai.agents.server import SimpleExecutor
+    from keycardai.a2a.server import SimpleExecutor
 
     return AgentServiceConfig(
         service_name="Test Service",

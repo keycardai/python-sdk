@@ -17,8 +17,8 @@ from a2a.types import (
     TaskState,
 )
 
-from keycardai.agents.server.executor import LambdaExecutor, SimpleExecutor
-from keycardai.agents.server.executor_bridge import KeycardToA2AExecutorBridge
+from keycardai.a2a.server.executor import LambdaExecutor, SimpleExecutor
+from keycardai.a2a.server.executor_bridge import KeycardToA2AExecutorBridge
 
 
 @pytest.fixture

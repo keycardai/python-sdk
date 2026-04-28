@@ -6,7 +6,8 @@ import pytest
 
 pytest.importorskip("crewai")
 
-from keycardai.agents import AgentServiceConfig
+from keycardai.a2a import AgentServiceConfig
+
 from keycardai.agents.integrations.crewai import (
     _create_delegation_tool,
     create_a2a_tool_for_service,
@@ -17,7 +18,7 @@ from keycardai.agents.integrations.crewai import (
 @pytest.fixture
 def service_config():
     """Create test service configuration."""
-    from keycardai.agents.server import SimpleExecutor
+    from keycardai.a2a.server import SimpleExecutor
 
     return AgentServiceConfig(
         service_name="Test Service",
@@ -133,7 +134,7 @@ class TestCreateDelegationTool:
             "capabilities": [],
         }
 
-        from keycardai.agents.server.delegation import DelegationClientSync
+        from keycardai.a2a.server.delegation import DelegationClientSync
 
         a2a_client = DelegationClientSync(service_config)
         tool = _create_delegation_tool(service_info, a2a_client)
@@ -149,7 +150,7 @@ class TestCreateDelegationTool:
             "capabilities": [],
         }
 
-        from keycardai.agents.server.delegation import DelegationClientSync
+        from keycardai.a2a.server.delegation import DelegationClientSync
 
         a2a_client = DelegationClientSync(service_config)
         tool = _create_delegation_tool(service_info, a2a_client)
@@ -166,7 +167,7 @@ class TestCreateDelegationTool:
             "capabilities": ["capability1", "capability2", "capability3"],
         }
 
-        from keycardai.agents.server.delegation import DelegationClientSync
+        from keycardai.a2a.server.delegation import DelegationClientSync
 
         a2a_client = DelegationClientSync(service_config)
         tool = _create_delegation_tool(service_info, a2a_client)
@@ -185,7 +186,7 @@ class TestCreateDelegationTool:
             "capabilities": [],
         }
 
-        from keycardai.agents.server.delegation import DelegationClientSync
+        from keycardai.a2a.server.delegation import DelegationClientSync
 
         a2a_client = DelegationClientSync(service_config)
         tool = _create_delegation_tool(service_info, a2a_client)
@@ -208,7 +209,7 @@ class TestDelegationToolExecution:
             "capabilities": [],
         }
 
-        from keycardai.agents.server.delegation import DelegationClientSync
+        from keycardai.a2a.server.delegation import DelegationClientSync
 
         a2a_client = DelegationClientSync(service_config)
         tool = _create_delegation_tool(service_info, a2a_client)
@@ -234,7 +235,7 @@ class TestDelegationToolExecution:
             "capabilities": [],
         }
 
-        from keycardai.agents.server.delegation import DelegationClientSync
+        from keycardai.a2a.server.delegation import DelegationClientSync
 
         a2a_client = DelegationClientSync(service_config)
         tool = _create_delegation_tool(service_info, a2a_client)
@@ -264,7 +265,7 @@ class TestDelegationToolExecution:
             "capabilities": [],
         }
 
-        from keycardai.agents.server.delegation import DelegationClientSync
+        from keycardai.a2a.server.delegation import DelegationClientSync
 
         a2a_client = DelegationClientSync(service_config)
         tool = _create_delegation_tool(service_info, a2a_client)
@@ -287,7 +288,7 @@ class TestDelegationToolExecution:
             "capabilities": [],
         }
 
-        from keycardai.agents.server.delegation import DelegationClientSync
+        from keycardai.a2a.server.delegation import DelegationClientSync
 
         a2a_client = DelegationClientSync(service_config)
         tool = _create_delegation_tool(service_info, a2a_client)
@@ -315,7 +316,7 @@ class TestDelegationToolExecution:
             "capabilities": [],
         }
 
-        from keycardai.agents.server.delegation import DelegationClientSync
+        from keycardai.a2a.server.delegation import DelegationClientSync
 
         a2a_client = DelegationClientSync(service_config)
         tool = _create_delegation_tool(service_info, a2a_client)
@@ -339,7 +340,7 @@ class TestDelegationToolExecution:
             "capabilities": [],
         }
 
-        from keycardai.agents.server.delegation import DelegationClientSync
+        from keycardai.a2a.server.delegation import DelegationClientSync
 
         a2a_client = DelegationClientSync(service_config)
         tool = _create_delegation_tool(service_info, a2a_client)

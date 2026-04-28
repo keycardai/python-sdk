@@ -12,13 +12,13 @@ from unittest.mock import Mock
 import pytest
 from fastapi.testclient import TestClient
 
-from keycardai.agents import AgentServiceConfig, create_agent_card_server
+from keycardai.a2a import AgentServiceConfig, create_agent_card_server
 
 
 @pytest.fixture
 def service_config():
     """Create test service configuration."""
-    from keycardai.agents.server import SimpleExecutor
+    from keycardai.a2a.server import SimpleExecutor
 
     return AgentServiceConfig(
         service_name="Test Service",

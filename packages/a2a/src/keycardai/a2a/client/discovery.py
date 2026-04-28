@@ -48,8 +48,8 @@ class ServiceDiscovery:
         cache_ttl: Cache time-to-live in seconds (default: 900 = 15 minutes)
 
     Example:
-        >>> from keycardai.agents import AgentServiceConfig
-        >>> from keycardai.agents.client import ServiceDiscovery
+        >>> from keycardai.a2a import AgentServiceConfig
+        >>> from keycardai.a2a.client import ServiceDiscovery
         >>> 
         >>> config = AgentServiceConfig(...)
         >>> discovery = ServiceDiscovery(config)
