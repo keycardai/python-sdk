@@ -1,3 +1,81 @@
+## 0.11.0-keycardai-oauth (2026-04-28)
+
+
+- feat(keycardai-oauth): add high-level PKCE user-login flow (ACC-229) (#101)
+- * feat(keycardai-oauth): add high-level PKCE flow client (ACC-229)
+- First step of the keycardai-agents decomposition (ACC-229..232). Per the
+revised KEP, the OAuth PKCE user-login flow is generic OAuth code with no
+agents-specific concerns and belongs in keycardai-oauth next to the rest
+of the OAuth client primitives.
+- New module keycardai.oauth.pkce:
+- - PKCEClient orchestrates the full authorization-code-with-PKCE flow:
+  parse the WWW-Authenticate challenge (RFC 9728), fetch protected resource
+  and authorization server metadata (RFC 8414), open the browser at the
+  authorize endpoint, capture the redirect via a local callback server,
+  and exchange the code at the token endpoint. Returns the token endpoint
+  response dict directly.
+- OAuthCallbackServer is the loopback redirect catcher (RFC 8252) used by
+  PKCEClient; exported separately so callers running their own flow on top
+  of the lower-level PKCEGenerator + build_authorize_url primitives can
+  reuse the callback machinery.
+- 7 new tests cover header parsing, discovery error paths, the happy-path
+  flow, and confidential vs public client auth on the token endpoint.
+- keycardai-agents changes:
+- - AgentClient now composes PKCEClient instead of carrying its own copy of
+  the auth flow. AgentClient.authenticate(...) is preserved as a thin shim
+  that returns the access_token string and updates the per-service token
+  cache, so existing /invoke retry-on-401 behavior is unchanged.
+- AgentClient drops ~370 lines of duplicated PKCE/discovery/callback code.
+- keycardai.agents.client.oauth re-exports OAuthCallbackServer through a
+  module __getattr__ that emits a DeprecationWarning pointing at the new
+  canonical import path.
+- Stale tests in test_agent_client_oauth.py that exercised AgentClient
+  private methods (_extract_resource_metadata_url, _fetch_resource_metadata,
+  _fetch_authorization_server_metadata) removed; equivalent contracts now
+  live in the keycardai-oauth PKCE test suite.
+- Verified: oauth 215/215 (was 208 + 7 new), agents 81/81 (was 85 - 4 removed
+implementation tests), mcp 560/560, starlette 49/49, ruff clean.
+- Stacked on #100 (ACC-236 a2a-sdk pin) so the agents test suite can run
+during validation.
+- * fix(keycardai-oauth): address review findings on PKCE move
+- Three small fixes from the review of #101:
+- 1. PKCEClient now accepts an optional injected httpx.AsyncClient. AgentClient
+   passes its existing http_client through, so a single connection pool covers
+   both the agent service calls and the OAuth flow. close() only closes the
+   client it owns. Restores the one-pool-per-AgentClient behavior from main.
+- 2. Drop the no-op rstrip("/") + "/" round-trip in PKCEClient.authenticate
+   when building the authorization server discovery URL.
+- 3. Assert the discovery URL path in test_authenticate_completes_full_flow.
+   The previous test stubbed http_mock.get with side_effects but never
+   verified what URLs were passed; a typo from oauth-authorization-server
+   to openid-configuration would have gone unnoticed.
+- * refactor(keycardai-oauth): collapse PKCEClient into a flow function on AsyncClient
+- Per Kamil review feedback (#101): a separate PKCEClient sitting next to
+AsyncClient invited "which client do I use?" The OAuth-server-facing
+operations belong on the existing AsyncClient.
+- Changes:
+- - keycardai.oauth.pkce.PKCEClient (class) -> keycardai.oauth.pkce.authenticate
+  (module-level async function). One-shot per user login, no state worth
+  preserving across calls.
+- The function uses AsyncClient internally for server metadata discovery
+  (RFC 8414) and code exchange. AsyncClient is now the only thing in
+  keycardai.oauth that talks to OAuth servers as a client.
+- AsyncClient.exchange_authorization_code (and Client + the underlying
+  operations._authorize helpers) gain an optional resource= parameter so
+  RFC 8707 tokens still work through the canonical path.
+- The pkce module retains the user-flow concerns: RFC 9728 challenge
+  parsing, resource metadata fetch (paired with the protected resource,
+  not the OAuth server), browser launch, and the loopback callback server
+  (RFC 8252).
+- AgentClient drops the cached _pkce instance and just calls the function
+  per /invoke retry, passing its own httpx.AsyncClient through for the
+  resource metadata fetch.
+- Tests rewritten for the function shape: 7/7 passing, same coverage
+  (header parsing, discovery error paths, happy path with resource
+  indicator, public vs confidential auth on the token endpoint).
+- Verified: oauth 215/215, agents 81/81, mcp 560/560, starlette 49/49.
+ruff clean.
+
 ## 0.10.0-keycardai-oauth (2026-04-24)
 
 
