@@ -1,16 +1,13 @@
 [project]
 name = "keycardai-agents"
 dynamic = ["version"]
-description = "Legacy CrewAI-over-A2A integration. Decomposing per the Keycard SDK packaging KEP: see keycardai-a2a (delegation), keycardai-oauth (PKCE), and forthcoming keycardai-crewai. This package will be archived."
+description = "Empty legacy package, pending archive. Decomposed per the Keycard SDK packaging KEP into keycardai-a2a (delegation), keycardai-oauth (PKCE user-login), and keycardai-crewai (CrewAI integration)."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "Keycard", email = "support@keycard.ai" }]
-dependencies = [
-    "keycardai-a2a>=0.1.0",
-    "pydantic>=2.11.7",
-]
-keywords = ["agents", "ai", "crewai", "authentication", "authorization", "service", "delegation"]
+dependencies = []
+keywords = ["keycard", "deprecated"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -27,18 +24,11 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-crewai = [
-    "crewai>=0.86.0",
-]
 test = [
     "pytest>=8.4.1",
-    "pytest-asyncio>=1.1.0",
-    "pytest-cov>=6.2.1",
-    "pytest-timeout>=2.3.1",
 ]
 dev = [
     "ruff>=0.8.6",
-    "mypy>=1.14.1",
 ]
 
 [build-system]
