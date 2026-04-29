@@ -1,42 +1,50 @@
-"""KeycardAI A2A: Keycard-protected agent-to-agent delegation over a2a-sdk.
+"""KeycardAI A2A: Keycard auth primitives for ``a2a-sdk`` agent services.
 
-Wraps a2a-sdk's standard server primitives (``AgentExecutor``,
-``DefaultRequestHandler``, the Starlette route factories) with Keycard
-authentication and delegated token exchange. Customers implement
-a2a-sdk's native async ``AgentExecutor`` and pass an instance to
-``AgentServiceConfig``; this package handles the OAuth bearer
-verification, OAuth metadata discovery endpoints, and Starlette
-composition.
+This package is glue, not a parallel server abstraction. Customers
+implement a2a-sdk's native async ``AgentExecutor`` and compose a2a-sdk's
+standard primitives (``DefaultRequestHandler``, ``create_jsonrpc_routes``,
+``create_agent_card_routes``) into their own Starlette / FastAPI app.
+This package contributes:
 
-Server (build agent services):
-- AgentServer: high-level server class
-- create_agent_card_server: Starlette app factory with Keycard OAuth wiring
-- serve_agent: blocking convenience runner
-- DelegationClient / DelegationClientSync: server-to-server token exchange
+Server-side wiring:
+- ``EagerKeycardAuthBackend``: an ``AuthenticationBackend`` that 401s on
+  anonymous requests. Use inside Starlette's ``AuthenticationMiddleware``.
+- ``KeycardServerCallContextBuilder``: a ``ServerCallContextBuilder`` that
+  surfaces the verified bearer token on ``ServerCallContext.state``.
+- ``build_agent_card_from_config``: construct a 1.x ``AgentCard``.
 
-Client (call agent services):
-- ServiceDiscovery: query an agent service's `.well-known/agent-card.json`
+Outbound delegation:
+- ``DelegationClient`` / ``DelegationClientSync``: server-to-server token
+  exchange and JSONRPC invocation against another agent service.
+
+Inbound discovery:
+- ``ServiceDiscovery``: query a remote agent service's
+  ``.well-known/agent-card.json`` with caching.
 
 Configuration:
-- AgentServiceConfig: identity, credentials, executor, and capabilities
+- ``AgentServiceConfig``: service identity + Keycard credentials + agent
+  card metadata.
+
+For a runnable composed server, see
+``packages/a2a/examples/keycard_protected_server/``.
 """
 
 from .client import ServiceDiscovery
 from .config import AgentServiceConfig
 from .server import (
-    AgentServer,
     DelegationClient,
     DelegationClientSync,
-    create_agent_card_server,
-    serve_agent,
+    EagerKeycardAuthBackend,
+    KeycardServerCallContextBuilder,
+    build_agent_card_from_config,
 )
 
 __all__ = [
     "AgentServiceConfig",
     "ServiceDiscovery",
-    "AgentServer",
-    "create_agent_card_server",
-    "serve_agent",
     "DelegationClient",
     "DelegationClientSync",
+    "EagerKeycardAuthBackend",
+    "KeycardServerCallContextBuilder",
+    "build_agent_card_from_config",
 ]

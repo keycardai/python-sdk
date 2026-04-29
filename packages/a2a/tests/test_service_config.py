@@ -3,18 +3,16 @@
 import pytest
 
 from keycardai.a2a import AgentServiceConfig
-from tests._helpers import NoopAgentExecutor
 
 
 def test_service_config_basic():
-    """Test basic service configuration."""
+    """Required fields hold the values passed in."""
     config = AgentServiceConfig(
         service_name="Test Service",
         client_id="test_client",
         client_secret="test_secret",
         identity_url="https://test.example.com",
         zone_id="test_zone",
-        agent_executor=NoopAgentExecutor(),
     )
 
     assert config.service_name == "Test Service"
@@ -22,35 +20,47 @@ def test_service_config_basic():
     assert config.client_secret == "test_secret"
     assert config.identity_url == "https://test.example.com"
     assert config.zone_id == "test_zone"
-    assert config.port == 8000  # default
-    assert config.host == "0.0.0.0"  # default
+    assert config.description == ""
+    assert config.capabilities == []
 
 
 def test_service_config_urls():
-    """Test URL generation."""
+    """URL helpers compose against identity_url and zone_id."""
     config = AgentServiceConfig(
         service_name="Test Service",
         client_id="test_client",
         client_secret="test_secret",
         identity_url="https://test.example.com",
         zone_id="test_zone",
-        agent_executor=NoopAgentExecutor(),
     )
 
     assert config.agent_card_url == "https://test.example.com/.well-known/agent-card.json"
     assert config.jsonrpc_url == "https://test.example.com/a2a/jsonrpc"
-    assert config.status_url == "https://test.example.com/status"
+    assert config.auth_server_url == "https://test_zone.keycard.cloud"
 
 
-def test_service_config_trailing_slash_removed():
-    """Test that trailing slash is removed from identity_url."""
+def test_service_config_authorization_server_override():
+    """An explicit authorization_server_url overrides the zone-derived default."""
     config = AgentServiceConfig(
         service_name="Test Service",
         client_id="test_client",
         client_secret="test_secret",
-        identity_url="https://test.example.com/",  # with trailing slash
+        identity_url="https://test.example.com",
         zone_id="test_zone",
-        agent_executor=NoopAgentExecutor(),
+        authorization_server_url="https://custom.example.com",
+    )
+
+    assert config.auth_server_url == "https://custom.example.com"
+
+
+def test_service_config_trailing_slash_removed():
+    """A trailing slash on identity_url is stripped."""
+    config = AgentServiceConfig(
+        service_name="Test Service",
+        client_id="test_client",
+        client_secret="test_secret",
+        identity_url="https://test.example.com/",
+        zone_id="test_zone",
     )
 
     assert config.identity_url == "https://test.example.com"
@@ -58,7 +68,7 @@ def test_service_config_trailing_slash_removed():
 
 
 def test_service_config_validation_missing_fields():
-    """Test validation of required fields."""
+    """Empty required fields raise on construction."""
     with pytest.raises(ValueError, match="service_name is required"):
         AgentServiceConfig(
             service_name="",
@@ -66,7 +76,6 @@ def test_service_config_validation_missing_fields():
             client_secret="test_secret",
             identity_url="https://test.example.com",
             zone_id="test_zone",
-            agent_executor=NoopAgentExecutor(),
         )
 
     with pytest.raises(ValueError, match="client_id is required"):
@@ -76,32 +85,16 @@ def test_service_config_validation_missing_fields():
             client_secret="test_secret",
             identity_url="https://test.example.com",
             zone_id="test_zone",
-            agent_executor=NoopAgentExecutor(),
         )
 
 
 def test_service_config_validation_invalid_url():
-    """Test validation of identity_url format."""
+    """identity_url must start with http:// or https://."""
     with pytest.raises(ValueError, match="identity_url must start with"):
         AgentServiceConfig(
             service_name="Test",
             client_id="test_client",
             client_secret="test_secret",
-            identity_url="invalid-url",  # no http:// or https://
+            identity_url="invalid-url",
             zone_id="test_zone",
-            agent_executor=NoopAgentExecutor(),
-        )
-
-
-def test_service_config_validation_invalid_port():
-    """Test validation of port number."""
-    with pytest.raises(ValueError, match="port must be between"):
-        AgentServiceConfig(
-            service_name="Test",
-            client_id="test_client",
-            client_secret="test_secret",
-            identity_url="https://test.example.com",
-            zone_id="test_zone",
-            agent_executor=NoopAgentExecutor(),
-            port=99999,  # invalid port
         )

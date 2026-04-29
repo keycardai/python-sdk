@@ -1,17 +1,28 @@
 # keycardai-a2a
 
-A2A (agent-to-agent) delegation SDK for Keycard. Wraps [a2a-sdk](https://github.com/a2aproject/A2A) 1.x with Keycard OAuth so an agent service can verify inbound bearer tokens, expose OAuth metadata for discovery, and call downstream services on behalf of the originating user via OAuth 2.0 token exchange (RFC 8693).
+Keycard auth primitives for [a2a-sdk](https://github.com/a2aproject/A2A) 1.x agent services. This package is glue, not a parallel server abstraction. Customers compose these primitives with a2a-sdk's standard route factories and request handler in their own Starlette / FastAPI app to get bearer token verification, OAuth metadata discovery, and OAuth 2.0 token exchange (RFC 8693) for downstream delegated calls.
 
 > **Preview.** This package is pre-1.0. APIs may change between minor versions.
 
 ## What's in here
 
-- **`AgentServer`**, **`create_agent_card_server`**, **`serve_agent`**: compose a2a-sdk's standard route factories with `AuthenticationMiddleware` + `KeycardAuthBackend` from keycardai-starlette. The server exposes the standard A2A JSONRPC endpoint, the `.well-known/agent-card.json` discovery endpoint, and the OAuth metadata endpoints (RFC 9728 + RFC 8414).
-- **`DelegationClient`**, **`DelegationClientSync`**: server-to-server token exchange helpers for calling other agent services on behalf of the original user.
-- **`ServiceDiscovery`**: query an agent service's `.well-known/agent-card.json`.
-- **`AgentServiceConfig`**: configuration container (identity, credentials, executor, capabilities).
+Server-side wiring:
 
-There is **no** parallel `AgentExecutor` protocol or custom HTTP endpoint here. Customers implement [a2a-sdk's native `AgentExecutor`](https://github.com/a2aproject/A2A) (async, event-driven) directly, and the verified bearer token is propagated into a2a-sdk's `ServerCallContext.state` for use during execution.
+- **`EagerKeycardAuthBackend`**: a Starlette `AuthenticationBackend` that 401s on anonymous requests. Drop into `AuthenticationMiddleware` on the mount that hosts the A2A JSONRPC route.
+- **`KeycardServerCallContextBuilder`**: a `ServerCallContextBuilder` subclass. Pass to `a2a.server.routes.create_jsonrpc_routes`. Propagates the verified bearer token onto `ServerCallContext.state["access_token"]` so executors can read it for delegated downstream calls.
+- **`build_agent_card_from_config(config)`**: produces a 1.x protobuf `AgentCard`. Pass to `a2a.server.routes.create_agent_card_routes` and `a2a.server.request_handlers.DefaultRequestHandler`.
+
+Outbound delegation:
+
+- **`DelegationClient`**, **`DelegationClientSync`**: server-to-server token exchange and JSONRPC invocation against another agent service.
+
+Inbound discovery:
+
+- **`ServiceDiscovery`**: query a remote agent service's `.well-known/agent-card.json` with caching.
+
+Configuration:
+
+- **`AgentServiceConfig`**: service identity + Keycard credentials + agent card metadata.
 
 ## Installation
 
@@ -19,32 +30,32 @@ There is **no** parallel `AgentExecutor` protocol or custom HTTP endpoint here. 
 pip install keycardai-a2a
 ```
 
-This pulls in `keycardai-oauth`, `keycardai-starlette`, `a2a-sdk[http-server]`, and `uvicorn`.
+This pulls in `keycardai-oauth`, `keycardai-starlette`, `a2a-sdk[http-server]>=1.0`.
 
 ## Quick start
 
+You already have an `a2a-sdk` server. Add the Keycard-protected A2A mount to your existing Starlette / FastAPI app:
+
 ```python
-from a2a.server.agent_execution import AgentExecutor
-from a2a.server.agent_execution.context import RequestContext
-from a2a.server.events.event_queue_v2 import EventQueue
+from a2a.server.request_handlers import DefaultRequestHandler
+from a2a.server.routes import create_agent_card_routes, create_jsonrpc_routes
+from a2a.server.tasks import InMemoryTaskStore
+from starlette.middleware import Middleware
+from starlette.middleware.authentication import AuthenticationMiddleware
+from starlette.routing import Mount
 
-from keycardai.a2a import AgentServiceConfig, serve_agent
-
-
-class EchoExecutor(AgentExecutor):
-    async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
-        # Read the verified bearer token (populated by keycardai-a2a's
-        # context_builder) for any downstream delegation:
-        access_token = context.call_context.state.get("access_token")
-
-        text = context.get_user_input()
-        # Publish a Message event back to the caller; see a2a-sdk docs for
-        # the full set of events you can emit (TaskStatusUpdateEvent, etc).
-        ...
-
-    async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
-        return None
-
+from keycardai.a2a import (
+    AgentServiceConfig,
+    EagerKeycardAuthBackend,
+    KeycardServerCallContextBuilder,
+    build_agent_card_from_config,
+)
+from keycardai.oauth.server.credentials import ClientSecret
+from keycardai.starlette import AuthProvider, keycard_on_error
+from keycardai.starlette.routers.metadata import (
+    well_known_authorization_server_route,
+    well_known_protected_resource_route,
+)
 
 config = AgentServiceConfig(
     service_name="My Agent",
@@ -52,17 +63,59 @@ config = AgentServiceConfig(
     client_secret="...",
     identity_url="https://my-agent.example.com",
     zone_id="your-zone-id",
-    agent_executor=EchoExecutor(),
+    capabilities=["chat"],
+)
+auth_provider = AuthProvider(
+    zone_url=config.auth_server_url,
+    server_name=config.service_name,
+    server_url=config.identity_url,
+    application_credential=ClientSecret((config.client_id, config.client_secret)),
+)
+verifier = auth_provider.get_token_verifier()
+
+agent_card = build_agent_card_from_config(config)
+request_handler = DefaultRequestHandler(
+    agent_executor=YourExecutor(),  # subclass of a2a.server.agent_execution.AgentExecutor
+    task_store=InMemoryTaskStore(),
+    agent_card=agent_card,
 )
 
-serve_agent(config)
+# Add these routes to your existing Starlette / FastAPI app:
+your_app.routes.extend(create_agent_card_routes(agent_card=agent_card))
+your_app.routes.append(well_known_protected_resource_route(
+    issuer=config.auth_server_url,
+    resource="/.well-known/oauth-protected-resource{resource_path:path}",
+))
+your_app.routes.append(well_known_authorization_server_route(
+    issuer=config.auth_server_url,
+    resource="/.well-known/oauth-authorization-server{resource_path:path}",
+))
+your_app.routes.append(Mount(
+    "/a2a",
+    routes=create_jsonrpc_routes(
+        request_handler=request_handler,
+        rpc_url="/jsonrpc",
+        context_builder=KeycardServerCallContextBuilder(),
+    ),
+    middleware=[
+        Middleware(
+            AuthenticationMiddleware,
+            backend=EagerKeycardAuthBackend(verifier),
+            on_error=keycard_on_error,
+        ),
+    ],
+))
 ```
+
+Inside your `AgentExecutor.execute(self, context, event_queue)`, read the bearer token via `context.call_context.state["access_token"]` and use it as the subject token in `keycardai-oauth`'s `TokenExchangeRequest` for downstream API calls.
+
+For a runnable greenfield example (no existing app), see `examples/keycard_protected_server/`.
 
 ## Relationship to other Keycard packages
 
-- **`keycardai-oauth`**: OAuth 2.0 primitives used internally for token exchange and PKCE flows.
-- **`keycardai-starlette`**: provides the `AuthenticationMiddleware` + `KeycardAuthBackend` that protect this package's JSONRPC mount.
-- **`keycardai-mcp`**: sister package for MCP server protection. Same shape (Keycard auth + delegation), different protocol.
+- **`keycardai-oauth`**: OAuth 2.0 primitives used for token exchange and PKCE.
+- **`keycardai-starlette`**: provides `AuthenticationMiddleware` + `KeycardAuthBackend` and the OAuth metadata route helpers used here.
+- **`keycardai-mcp`**: sister package for MCP server protection. Same auth shape, different protocol.
 
 ## History
 

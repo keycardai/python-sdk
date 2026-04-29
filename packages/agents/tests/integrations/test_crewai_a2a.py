@@ -15,16 +15,6 @@ from keycardai.agents.integrations.crewai import (
 )
 
 
-class _NoopAgentExecutor:
-    """Minimal a2a-sdk-compatible AgentExecutor stub for tests."""
-
-    async def execute(self, context, event_queue) -> None:
-        return None
-
-    async def cancel(self, context, event_queue) -> None:
-        return None
-
-
 @pytest.fixture
 def service_config():
     """Create test service configuration."""
@@ -34,7 +24,6 @@ def service_config():
         client_secret="test_secret",
         identity_url="https://test.example.com",
         zone_id="test_zone_123",
-        agent_executor=_NoopAgentExecutor(),
     )
 
 

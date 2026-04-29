@@ -1,27 +1,39 @@
-"""Server primitives for building Keycard-protected A2A agent services.
+"""Server-side primitives for Keycard-protected A2A agent services.
 
-Customers implement a2a-sdk's native ``AgentExecutor``
-(``a2a.server.agent_execution.AgentExecutor``) and pass an instance to
-``AgentServiceConfig``. This package wires the executor into a Starlette
-app with Keycard authentication and the standard A2A JSONRPC endpoint;
-no parallel protocol or custom request shape is introduced.
+This package is glue, not a parallel server abstraction. Compose these
+primitives with a2a-sdk's standard route factories and request handler
+in your own Starlette/FastAPI app. See
+``packages/a2a/examples/keycard_protected_server/`` for a runnable
+composition.
 
-Exports:
-- ``AgentServer``: high-level class wrapping the Starlette composition.
-- ``create_agent_card_server``: factory function returning the configured Starlette app.
-- ``serve_agent``: blocking uvicorn runner.
+Auth wiring:
+- ``EagerKeycardAuthBackend``: ``AuthenticationBackend`` that 401s on
+  anonymous requests. Use inside ``AuthenticationMiddleware``.
+- ``KeycardServerCallContextBuilder``: ``ServerCallContextBuilder`` that
+  exposes the verified ``KeycardUser`` and bare ``access_token`` on
+  ``ServerCallContext.state``. Pass to ``create_jsonrpc_routes``.
+
+Agent card:
+- ``build_agent_card_from_config``: construct an ``a2a.types.AgentCard``
+  protobuf from an ``AgentServiceConfig``. Pass to
+  ``create_agent_card_routes`` and ``DefaultRequestHandler``.
+
+Outbound delegation:
 - ``DelegationClient`` / ``DelegationClientSync``: server-to-server token
-  exchange helpers for calling other agent services on behalf of the
-  original user.
+  exchange and A2A JSONRPC invocation against another agent service.
 """
 
-from .app import AgentServer, create_agent_card_server, serve_agent
+from .app import (
+    EagerKeycardAuthBackend,
+    KeycardServerCallContextBuilder,
+    build_agent_card_from_config,
+)
 from .delegation import DelegationClient, DelegationClientSync
 
 __all__ = [
-    "AgentServer",
-    "create_agent_card_server",
-    "serve_agent",
+    "EagerKeycardAuthBackend",
+    "KeycardServerCallContextBuilder",
+    "build_agent_card_from_config",
     "DelegationClient",
     "DelegationClientSync",
 ]
