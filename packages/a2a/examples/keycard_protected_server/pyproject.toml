@@ -1,0 +1,16 @@
+[project]
+name = "keycard-protected-server"
+version = "0.1.0"
+description = "Example: Keycard-protected A2A agent service composed from primitives"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "keycardai-a2a",
+    "uvicorn[standard]>=0.32.0",
+]
+
+[tool.uv.sources]
+keycardai-a2a = { path = "../../", editable = true }
+
+[project.scripts]
+keycard-protected-server = "main:run"

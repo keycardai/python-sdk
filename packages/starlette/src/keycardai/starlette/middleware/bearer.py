@@ -183,19 +183,43 @@ class KeycardAuthBackend(AuthenticationBackend):
 
     Behavior contract:
 
-    - No ``Authorization`` header → returns ``None`` so the request stays
-      anonymous (``request.user = UnauthenticatedUser()``). Public routes
-      remain reachable.
     - Requests to OAuth metadata paths (``/.well-known/oauth-*``,
-      ``/.well-known/jwks.json``) always pass through anonymously.
+      ``/.well-known/jwks.json``) always pass through anonymously per
+      RFC 9728 §2 and RFC 8414 §3.
+    - No ``Authorization`` header on a non-metadata path:
+
+      - Default (``require_authentication=False``): returns ``None`` so the
+        request stays anonymous (``request.user = UnauthenticatedUser()``).
+        Public routes remain reachable; protected routes that are gated by
+        ``@requires("authenticated")`` 401 at the decorator boundary. Use
+        this for mixed-route apps.
+      - ``require_authentication=True``: raises ``KeycardAuthError`` so the
+        middleware invokes ``on_error`` immediately. Use this on mounts
+        where every path requires auth and there is no per-route gate
+        downstream (for example, a JSONRPC dispatcher mount or any
+        non-Starlette ASGI sub-app).
+
     - Malformed ``Authorization`` header, missing zone id under multi-zone
       configuration, or token verification failure → raises
       ``KeycardAuthError`` so the middleware invokes ``on_error``.
     - Valid token → returns ``(KeycardAuthCredentials, KeycardUser)``.
+
+    Args:
+        verifier: TokenVerifier instance configured for the zone.
+        require_authentication: When True, missing Authorization on a
+            non-metadata path raises ``KeycardAuthError`` instead of
+            falling through anonymously. Defaults to False to preserve
+            the mixed-route default.
     """
 
-    def __init__(self, verifier: TokenVerifier):
+    def __init__(
+        self,
+        verifier: TokenVerifier,
+        *,
+        require_authentication: bool = False,
+    ):
         self.verifier = verifier
+        self.require_authentication = require_authentication
 
     async def authenticate(
         self, conn: HTTPConnection
@@ -204,6 +228,10 @@ class KeycardAuthBackend(AuthenticationBackend):
             return None
 
         if not conn.headers.get("Authorization"):
+            if self.require_authentication:
+                raise KeycardAuthError(
+                    "invalid_token", "No bearer token provided"
+                )
             return None
 
         token = _get_bearer_token(conn)

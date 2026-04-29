@@ -5,12 +5,12 @@ description = "Example: Calling agent services via the A2A JSONRPC protocol"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "keycardai-agents",
+    "keycardai-a2a",
     "httpx>=0.27.2",
 ]
 
 [tool.uv.sources]
-keycardai-agents = { path = "../../", editable = true }
+keycardai-a2a = { path = "../../", editable = true }
 
 [project.scripts]
 a2a-jsonrpc-usage = "main:run"

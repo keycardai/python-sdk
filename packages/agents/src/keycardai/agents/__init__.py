@@ -1,27 +1,17 @@
-"""KeycardAI Agents - Agent service framework with authentication and delegation.
+"""KeycardAI Agents (legacy package).
 
-This package provides tools for building and consuming agent services with OAuth authentication:
+This package previously housed three concerns. Per the KEP "Decompose
+keycardai-agents", they have moved to:
 
-Client (for calling agent services):
-- AgentClient: User authentication with PKCE OAuth flow
-- ServiceDiscovery: Discover and query agent service capabilities
-
-Server (for building agent services):
-- AgentServer: High-level server interface
-- create_agent_card_server: Create FastAPI app with OAuth middleware
-- serve_agent: Convenience function to start a server
-- DelegationClient: Server-to-server delegation with token exchange
-
-Configuration:
-- AgentServiceConfig: Service configuration
-
-Integrations:
-- integrations.crewai: CrewAI tools for agent-to-agent delegation
+- A2A delegation, agent service hosting, executor primitives, and service
+  discovery → ``keycardai-a2a`` (``from keycardai.a2a import ...``).
+- OAuth 2.0 PKCE user-login flow (``AgentClient``) → ``keycardai-oauth``
+  (``from keycardai.oauth.pkce import authenticate``).
+- The CrewAI-over-A2A integration is the only remaining piece, accessible
+  via ``from keycardai.agents.integrations.crewai import ...``. It will
+  move to a dedicated ``keycardai-crewai`` package; this package will be
+  archived once that ships.
 """
-
-from .client import AgentClient, ServiceDiscovery
-from .config import AgentServiceConfig
-from .server import AgentServer, DelegationClient, create_agent_card_server, serve_agent
 
 # Integrations (optional)
 try:
@@ -30,17 +20,5 @@ except ImportError:
     crewai = None
 
 __all__ = [
-    # === Configuration ===
-    "AgentServiceConfig",
-    # === Client (Calling Agent Services) ===
-    "AgentClient",
-    "ServiceDiscovery",
-    # === Server (Building Agent Services) ===
-    "AgentServer",
-    "create_agent_card_server",
-    "serve_agent",
-    # === Server-to-Server Delegation ===
-    "DelegationClient",
-    # === Framework Integrations (Optional) ===
-    "crewai",  # May be None if crewai not installed
+    "crewai",
 ]

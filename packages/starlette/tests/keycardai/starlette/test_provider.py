@@ -152,6 +152,46 @@ class TestKeycardAuthBackend:
 
         assert await backend.authenticate(conn) is None
 
+    @pytest.mark.asyncio
+    async def test_require_authentication_raises_on_missing_header(self):
+        """`require_authentication=True`: missing Authorization raises KeycardAuthError.
+
+        For mounts where every path requires auth and no per-route gate
+        exists downstream (JSONRPC dispatchers, gRPC handlers, raw ASGI
+        sub-apps), the backend itself has to be the gate. The kwarg flips
+        the default fall-through-anonymous behavior to immediate 401.
+        """
+        backend = KeycardAuthBackend(
+            _stub_verifier(), require_authentication=True
+        )
+
+        scope = {"type": "http", "headers": [], "path": "/api/protected"}
+        with pytest.raises(KeycardAuthError, match="No bearer token provided"):
+            await backend.authenticate(HTTPConnection(scope))
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "/.well-known/oauth-protected-resource",
+            "/.well-known/oauth-authorization-server",
+            "/.well-known/jwks.json",
+        ],
+    )
+    @pytest.mark.asyncio
+    async def test_require_authentication_still_bypasses_oauth_metadata(self, path):
+        """`require_authentication=True` does NOT override the OAuth metadata bypass.
+
+        RFC 9728 §2 and RFC 8414 §3 require these endpoints stay publicly
+        reachable regardless of the surrounding auth policy. The kwarg
+        only affects behavior on non-metadata paths.
+        """
+        backend = KeycardAuthBackend(
+            _stub_verifier(), require_authentication=True
+        )
+
+        scope = {"type": "http", "headers": [], "path": path}
+        assert await backend.authenticate(HTTPConnection(scope)) is None
+
     @pytest.mark.parametrize(
         "path",
         [

@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from keycardai.agents import AgentServiceConfig
+from keycardai.a2a import AgentServiceConfig
 
 # ============================================
 # Basic Configuration Fixtures
@@ -35,23 +35,18 @@ def mock_identity_url():
 @pytest.fixture
 def service_config(mock_zone_id, mock_identity_url):
     """Create test service configuration with minimal settings."""
-    from keycardai.agents.server import SimpleExecutor
-
     return AgentServiceConfig(
         service_name="Test Service",
         client_id="test_client",
         client_secret="test_secret",
         identity_url=mock_identity_url,
         zone_id=mock_zone_id,
-        agent_executor=SimpleExecutor(),
     )
 
 
 @pytest.fixture
 def service_config_with_capabilities(mock_zone_id, mock_identity_url):
     """Create test service configuration with capabilities."""
-    from keycardai.agents.server import SimpleExecutor
-
     return AgentServiceConfig(
         service_name="Test Service",
         client_id="test_client",
@@ -60,7 +55,6 @@ def service_config_with_capabilities(mock_zone_id, mock_identity_url):
         zone_id=mock_zone_id,
         description="Test service for unit tests",
         capabilities=["test_capability", "another_capability"],
-        agent_executor=SimpleExecutor(),
     )
 
 
@@ -108,47 +102,47 @@ def mock_async_oauth_client():
 # HTTP Client Mocking Fixtures
 # ============================================
 
+def _agent_card_1x(name: str = "Test Service") -> dict:
+    """Build an a2a-sdk 1.x agent card dict for fixtures."""
+    return {
+        "name": name,
+        "description": f"{name} description",
+        "version": "1.0.0",
+        "supportedInterfaces": [
+            {
+                "url": f"https://{name.lower().replace(' ', '-')}.example.com/a2a/jsonrpc",
+                "protocolBinding": "jsonrpc",
+                "protocolVersion": "1.0",
+            }
+        ],
+        "capabilities": {"streaming": False},
+        "skills": [{"id": "test_capability", "name": "Test Capability"}],
+    }
+
+
 @pytest.fixture
 def mock_http_client():
-    """Mock HTTP client for service calls."""
+    """Mock HTTP client returning a 1.x-shape agent card."""
     client = Mock()
-
     mock_response = Mock()
-    mock_response.json.return_value = {
-        "name": "Test Service",
-        "description": "Test description",
-        "endpoints": {"invoke": "https://test.example.com/invoke"},
-        "auth": {"type": "oauth2"},
-        "capabilities": ["test_capability"],
-    }
+    mock_response.json.return_value = _agent_card_1x()
     mock_response.raise_for_status = Mock()
     mock_response.status_code = 200
-
     client.get.return_value = mock_response
     client.post.return_value = mock_response
-
     return client
 
 
 @pytest.fixture
 def mock_async_http_client():
-    """Mock async HTTP client for service calls."""
+    """Mock async HTTP client returning a 1.x-shape agent card."""
     client = AsyncMock()
-
     mock_response = AsyncMock()
-    mock_response.json.return_value = {
-        "name": "Test Service",
-        "description": "Test description",
-        "endpoints": {"invoke": "https://test.example.com/invoke"},
-        "auth": {"type": "oauth2"},
-        "capabilities": ["test_capability"],
-    }
+    mock_response.json.return_value = _agent_card_1x()
     mock_response.raise_for_status = AsyncMock()
     mock_response.status_code = 200
-
     client.get.return_value = mock_response
     client.post.return_value = mock_response
-
     return client
 
 
@@ -158,37 +152,14 @@ def mock_async_http_client():
 
 @pytest.fixture
 def mock_agent_card():
-    """Mock agent card response."""
-    return {
-        "name": "Target Service",
-        "description": "A test target service",
-        "type": "crew_service",
-        "identity": "https://target.example.com",
-        "endpoints": {
-            "invoke": "https://target.example.com/invoke",
-            "status": "https://target.example.com/status",
-        },
-        "auth": {
-            "type": "oauth2",
-            "token_url": "https://test_zone.keycard.cloud/oauth/token",
-            "resource": "https://target.example.com",
-        },
-        "capabilities": ["test_capability"],
-    }
+    """Mock agent card in the a2a-sdk 1.x JSON shape."""
+    return _agent_card_1x("Target Service")
 
 
 @pytest.fixture
 def mock_agent_card_minimal():
-    """Mock minimal agent card with only required fields."""
-    return {
-        "name": "Minimal Service",
-        "endpoints": {
-            "invoke": "https://minimal.example.com/invoke",
-        },
-        "auth": {
-            "type": "oauth2",
-        },
-    }
+    """Mock minimal agent card with only the required `name` field."""
+    return {"name": "Minimal Service"}
 
 
 # ============================================

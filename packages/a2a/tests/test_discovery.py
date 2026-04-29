@@ -5,42 +5,40 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from keycardai.agents import AgentServiceConfig, ServiceDiscovery
+from keycardai.a2a import AgentServiceConfig, ServiceDiscovery
 
 
 @pytest.fixture
 def service_config():
     """Create test service configuration."""
-    from keycardai.agents.server import SimpleExecutor
-
     return AgentServiceConfig(
         service_name="Test Service",
         client_id="test_client",
         client_secret="test_secret",
         identity_url="https://test.example.com",
         zone_id="test_zone_123",
-        agent_executor=SimpleExecutor(),
     )
 
 
 @pytest.fixture
 def mock_agent_card():
-    """Mock agent card response."""
+    """Mock agent card in the a2a-sdk 1.x JSON shape."""
     return {
         "name": "Target Service",
         "description": "A test target service",
-        "type": "crew_service",
-        "identity": "https://target.example.com",
-        "endpoints": {
-            "invoke": "https://target.example.com/invoke",
-            "status": "https://target.example.com/status",
-        },
-        "auth": {
-            "type": "oauth2",
-            "token_url": "https://test_zone.keycard.cloud/oauth/token",
-            "resource": "https://target.example.com",
-        },
-        "capabilities": ["test_capability", "another_capability"],
+        "version": "1.0.0",
+        "supportedInterfaces": [
+            {
+                "url": "https://target.example.com/a2a/jsonrpc",
+                "protocolBinding": "jsonrpc",
+                "protocolVersion": "1.0",
+            }
+        ],
+        "capabilities": {"streaming": False},
+        "skills": [
+            {"id": "test_capability", "name": "Test Capability"},
+            {"id": "another_capability", "name": "Another Capability"},
+        ],
     }
 
 
@@ -194,7 +192,7 @@ class TestCachedAgentCard:
 
     def test_is_expired_when_ttl_exceeded(self, discovery):
         """Test card is expired when TTL is exceeded."""
-        from keycardai.agents.client.discovery import CachedAgentCard
+        from keycardai.a2a.client.discovery import CachedAgentCard
 
         card = CachedAgentCard(
             card={"name": "test"},
@@ -207,7 +205,7 @@ class TestCachedAgentCard:
 
     def test_is_not_expired_within_ttl(self, discovery):
         """Test card is not expired within TTL."""
-        from keycardai.agents.client.discovery import CachedAgentCard
+        from keycardai.a2a.client.discovery import CachedAgentCard
 
         card = CachedAgentCard(
             card={"name": "test"},
@@ -220,7 +218,7 @@ class TestCachedAgentCard:
 
     def test_age_seconds_calculation(self, discovery):
         """Test age calculation is correct."""
-        from keycardai.agents.client.discovery import CachedAgentCard
+        from keycardai.a2a.client.discovery import CachedAgentCard
 
         fetch_time = time.time() - 42
         card = CachedAgentCard(card={"name": "test"}, fetched_at=fetch_time)
