@@ -24,6 +24,12 @@ from a2a.server.events.event_queue_v2 import EventQueue
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.routes import create_agent_card_routes, create_jsonrpc_routes
 from a2a.server.tasks import InMemoryTaskStore
+from keycardai.oauth.server.credentials import ClientSecret
+from keycardai.starlette import AuthProvider, keycard_on_error
+from keycardai.starlette.routers.metadata import (
+    well_known_authorization_server_route,
+    well_known_protected_resource_route,
+)
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.middleware.authentication import AuthenticationMiddleware
@@ -34,12 +40,6 @@ from keycardai.a2a import (
     EagerKeycardAuthBackend,
     KeycardServerCallContextBuilder,
     build_agent_card_from_config,
-)
-from keycardai.oauth.server.credentials import ClientSecret
-from keycardai.starlette import AuthProvider, keycard_on_error
-from keycardai.starlette.routers.metadata import (
-    well_known_authorization_server_route,
-    well_known_protected_resource_route,
 )
 
 
