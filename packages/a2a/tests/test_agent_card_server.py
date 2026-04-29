@@ -12,7 +12,12 @@ from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.routes import create_agent_card_routes, create_jsonrpc_routes
 from a2a.server.tasks import InMemoryTaskStore
 from keycardai.oauth.server.credentials import ClientSecret
-from keycardai.starlette import AuthProvider, KeycardUser, keycard_on_error
+from keycardai.starlette import (
+    AuthProvider,
+    KeycardAuthBackend,
+    KeycardUser,
+    keycard_on_error,
+)
 from keycardai.starlette.routers.metadata import (
     well_known_authorization_server_route,
     well_known_protected_resource_route,
@@ -26,7 +31,6 @@ from starlette.testclient import TestClient
 
 from keycardai.a2a import (
     AgentServiceConfig,
-    EagerKeycardAuthBackend,
     KeycardServerCallContextBuilder,
     build_agent_card_from_config,
 )
@@ -92,7 +96,9 @@ def app(service_config):
                 middleware=[
                     Middleware(
                         AuthenticationMiddleware,
-                        backend=EagerKeycardAuthBackend(verifier),
+                        backend=KeycardAuthBackend(
+                            verifier, require_authentication=True
+                        ),
                         on_error=keycard_on_error,
                     ),
                 ],
@@ -145,9 +151,10 @@ class TestAgentCardEndpoint:
 class TestJsonRpcAuthGate:
     """The `/a2a/jsonrpc` mount must reject anonymous requests with 401.
 
-    A 401 means ``EagerKeycardAuthBackend`` caught the missing/malformed
-    auth before the JSONRPC dispatcher saw the body. Any other status
-    means the gate let the request through, which is a regression.
+    A 401 means ``KeycardAuthBackend(verifier, require_authentication=True)``
+    caught the missing/malformed auth before the JSONRPC dispatcher saw
+    the body. Any other status means the gate let the request through,
+    which is a regression.
     """
 
     def test_jsonrpc_requires_authorization(self, client):

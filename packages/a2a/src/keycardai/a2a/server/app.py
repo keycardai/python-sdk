@@ -3,10 +3,12 @@
 This module is glue, not a parallel server abstraction. Customers compose
 these primitives into their own ``a2a-sdk`` setup:
 
-- ``EagerKeycardAuthBackend``: a Starlette ``AuthenticationBackend`` that
-  rejects anonymous requests outright. Wrap it in
-  ``starlette.middleware.authentication.AuthenticationMiddleware`` and
-  attach it to the mount that hosts the A2A JSONRPC route.
+- For the A2A JSONRPC mount, use
+  ``KeycardAuthBackend(verifier, require_authentication=True)`` from
+  keycardai-starlette inside Starlette's ``AuthenticationMiddleware``.
+  The kwarg flips the default mixed-route behavior to "every path on this
+  mount needs auth," which matches the JSONRPC dispatcher's lack of a
+  per-route gate.
 - ``KeycardServerCallContextBuilder``: a ``ServerCallContextBuilder``
   subclass that propagates the verified ``KeycardUser`` plus the bare
   bearer token into ``ServerCallContext.state`` so executors can read
@@ -22,31 +24,11 @@ For a runnable composed-server example see
 
 from a2a.server.routes.common import DefaultServerCallContextBuilder
 from a2a.types import AgentCapabilities, AgentCard, AgentInterface, AgentSkill
-from starlette.requests import HTTPConnection, Request
+from starlette.requests import Request
 
-from keycardai.starlette import (
-    KeycardAuthBackend,
-    KeycardAuthError,
-    KeycardUser,
-)
+from keycardai.starlette import KeycardUser
 
 from ..config import AgentServiceConfig
-
-
-class EagerKeycardAuthBackend(KeycardAuthBackend):
-    """KeycardAuthBackend variant that rejects anonymous requests outright.
-
-    The base ``KeycardAuthBackend`` returns ``None`` for missing
-    Authorization headers so public routes can coexist with protected ones
-    in a single app. The A2A JSONRPC dispatcher has no per-route gate, so
-    when this backend is used to protect that mount, anonymous requests
-    must 401 immediately rather than fall through.
-    """
-
-    async def authenticate(self, conn: HTTPConnection):
-        if not conn.headers.get("Authorization"):
-            raise KeycardAuthError("invalid_token", "No bearer token provided")
-        return await super().authenticate(conn)
 
 
 class KeycardServerCallContextBuilder(DefaultServerCallContextBuilder):

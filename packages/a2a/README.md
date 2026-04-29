@@ -8,9 +8,10 @@ Keycard auth primitives for [a2a-sdk](https://github.com/a2aproject/A2A) 1.x age
 
 Server-side wiring:
 
-- **`EagerKeycardAuthBackend`**: a Starlette `AuthenticationBackend` that 401s on anonymous requests. Drop into `AuthenticationMiddleware` on the mount that hosts the A2A JSONRPC route.
 - **`KeycardServerCallContextBuilder`**: a `ServerCallContextBuilder` subclass. Pass to `a2a.server.routes.create_jsonrpc_routes`. Propagates the verified bearer token onto `ServerCallContext.state["access_token"]` so executors can read it for delegated downstream calls.
 - **`build_agent_card_from_config(config)`**: produces a 1.x protobuf `AgentCard`. Pass to `a2a.server.routes.create_agent_card_routes` and `a2a.server.request_handlers.DefaultRequestHandler`.
+
+For the auth backend itself, use `keycardai.starlette.KeycardAuthBackend(verifier, require_authentication=True)` on the JSONRPC mount. The kwarg flips the default mixed-route behavior to "every path on this mount needs auth," which matches the JSONRPC dispatcher's lack of a per-route gate.
 
 Outbound delegation:
 
@@ -46,12 +47,11 @@ from starlette.routing import Mount
 
 from keycardai.a2a import (
     AgentServiceConfig,
-    EagerKeycardAuthBackend,
     KeycardServerCallContextBuilder,
     build_agent_card_from_config,
 )
 from keycardai.oauth.server.credentials import ClientSecret
-from keycardai.starlette import AuthProvider, keycard_on_error
+from keycardai.starlette import AuthProvider, KeycardAuthBackend, keycard_on_error
 from keycardai.starlette.routers.metadata import (
     well_known_authorization_server_route,
     well_known_protected_resource_route,
@@ -100,7 +100,7 @@ your_app.routes.append(Mount(
     middleware=[
         Middleware(
             AuthenticationMiddleware,
-            backend=EagerKeycardAuthBackend(verifier),
+            backend=KeycardAuthBackend(verifier, require_authentication=True),
             on_error=keycard_on_error,
         ),
     ],

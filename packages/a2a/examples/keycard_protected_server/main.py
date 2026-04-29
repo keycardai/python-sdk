@@ -1,8 +1,9 @@
 """Runnable example: Keycard-protected A2A agent service from scratch.
 
 Composes a2a-sdk's standard server primitives (route factories, request
-handler, executor) with the keycardai-a2a auth wiring (EagerKeycardAuthBackend,
-KeycardServerCallContextBuilder) and keycardai-starlette's OAuth metadata
+handler, executor) with keycardai-starlette's auth backend (configured
+with ``require_authentication=True`` for the JSONRPC mount), the
+keycardai-a2a context-builder + agent-card helpers, and the OAuth metadata
 routes into a single Starlette app.
 
 Customers running an existing a2a-sdk app should NOT use the full
@@ -25,7 +26,7 @@ from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.routes import create_agent_card_routes, create_jsonrpc_routes
 from a2a.server.tasks import InMemoryTaskStore
 from keycardai.oauth.server.credentials import ClientSecret
-from keycardai.starlette import AuthProvider, keycard_on_error
+from keycardai.starlette import AuthProvider, KeycardAuthBackend, keycard_on_error
 from keycardai.starlette.routers.metadata import (
     well_known_authorization_server_route,
     well_known_protected_resource_route,
@@ -37,7 +38,6 @@ from starlette.routing import Mount
 
 from keycardai.a2a import (
     AgentServiceConfig,
-    EagerKeycardAuthBackend,
     KeycardServerCallContextBuilder,
     build_agent_card_from_config,
 )
@@ -70,11 +70,11 @@ def build_app(config: AgentServiceConfig, executor: AgentExecutor) -> Starlette:
 
     1. ``AuthProvider`` from keycardai-starlette gives us a ``TokenVerifier``
        configured for the zone.
-    2. ``EagerKeycardAuthBackend(verifier)`` wraps it for use inside
-       Starlette's ``AuthenticationMiddleware``. The eager variant 401s on
-       missing Authorization rather than falling through anonymous; the
-       JSONRPC dispatcher has no per-route gate, so the mount-level
-       middleware needs to be the gate.
+    2. ``KeycardAuthBackend(verifier, require_authentication=True)`` wraps
+       it for use inside Starlette's ``AuthenticationMiddleware``. The
+       kwarg flips the default mixed-route behavior to "every path on this
+       mount needs auth," matching the JSONRPC dispatcher's lack of a
+       per-route gate.
     3. ``build_agent_card_from_config(config)`` produces the 1.x ``AgentCard``
        passed to both ``create_agent_card_routes`` (for discovery) and
        ``DefaultRequestHandler`` (for executor wiring).
@@ -119,7 +119,9 @@ def build_app(config: AgentServiceConfig, executor: AgentExecutor) -> Starlette:
                 middleware=[
                     Middleware(
                         AuthenticationMiddleware,
-                        backend=EagerKeycardAuthBackend(verifier),
+                        backend=KeycardAuthBackend(
+                            verifier, require_authentication=True
+                        ),
                         on_error=keycard_on_error,
                     ),
                 ],

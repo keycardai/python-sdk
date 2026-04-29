@@ -7,8 +7,9 @@ in your own Starlette/FastAPI app. See
 composition.
 
 Auth wiring:
-- ``EagerKeycardAuthBackend``: ``AuthenticationBackend`` that 401s on
-  anonymous requests. Use inside ``AuthenticationMiddleware``.
+- For the JSONRPC mount, use
+  ``KeycardAuthBackend(verifier, require_authentication=True)`` from
+  keycardai-starlette inside ``AuthenticationMiddleware``.
 - ``KeycardServerCallContextBuilder``: ``ServerCallContextBuilder`` that
   exposes the verified ``KeycardUser`` and bare ``access_token`` on
   ``ServerCallContext.state``. Pass to ``create_jsonrpc_routes``.
@@ -24,14 +25,12 @@ Outbound delegation:
 """
 
 from .app import (
-    EagerKeycardAuthBackend,
     KeycardServerCallContextBuilder,
     build_agent_card_from_config,
 )
 from .delegation import DelegationClient, DelegationClientSync
 
 __all__ = [
-    "EagerKeycardAuthBackend",
     "KeycardServerCallContextBuilder",
     "build_agent_card_from_config",
     "DelegationClient",

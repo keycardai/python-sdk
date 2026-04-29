@@ -7,11 +7,13 @@ standard primitives (``DefaultRequestHandler``, ``create_jsonrpc_routes``,
 This package contributes:
 
 Server-side wiring:
-- ``EagerKeycardAuthBackend``: an ``AuthenticationBackend`` that 401s on
-  anonymous requests. Use inside Starlette's ``AuthenticationMiddleware``.
 - ``KeycardServerCallContextBuilder``: a ``ServerCallContextBuilder`` that
   surfaces the verified bearer token on ``ServerCallContext.state``.
 - ``build_agent_card_from_config``: construct a 1.x ``AgentCard``.
+
+For the auth backend itself, use
+``keycardai.starlette.KeycardAuthBackend(verifier, require_authentication=True)``
+on the JSONRPC mount.
 
 Outbound delegation:
 - ``DelegationClient`` / ``DelegationClientSync``: server-to-server token
@@ -34,7 +36,6 @@ from .config import AgentServiceConfig
 from .server import (
     DelegationClient,
     DelegationClientSync,
-    EagerKeycardAuthBackend,
     KeycardServerCallContextBuilder,
     build_agent_card_from_config,
 )
@@ -44,7 +45,6 @@ __all__ = [
     "ServiceDiscovery",
     "DelegationClient",
     "DelegationClientSync",
-    "EagerKeycardAuthBackend",
     "KeycardServerCallContextBuilder",
     "build_agent_card_from_config",
 ]
