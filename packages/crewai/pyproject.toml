@@ -1,0 +1,101 @@
+[project]
+name = "keycardai-crewai"
+dynamic = ["version"]
+description = "CrewAI integration for Keycard A2A: run CrewAI crews as agent services and create delegation tools that exchange tokens with downstream services."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Keycard", email = "support@keycard.ai" }]
+dependencies = [
+    "keycardai-a2a>=0.2.0",
+    "pydantic>=2.11.7",
+    "crewai>=0.86.0",
+]
+keywords = ["crewai", "agents", "ai", "a2a", "agent-to-agent", "delegation", "authentication", "oauth", "token-exchange", "keycard"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: OS Independent",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Security",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "License :: OSI Approved :: MIT License",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.4.1",
+    "pytest-asyncio>=1.1.0",
+    "pytest-cov>=6.2.1",
+    "pytest-timeout>=2.3.1",
+]
+dev = [
+    "ruff>=0.8.6",
+    "mypy>=1.14.1",
+]
+
+[project.urls]
+Homepage = "https://github.com/keycardai/python-sdk"
+Repository = "https://github.com/keycardai/python-sdk"
+Documentation = "https://docs.keycardai.com"
+Issues = "https://github.com/keycardai/python-sdk/issues"
+
+[build-system]
+requires = ["hatchling", "uv-dynamic-versioning"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "uv-dynamic-versioning"
+
+[tool.uv-dynamic-versioning]
+vcs = "git"
+pattern = "(?P<base>\\d+\\.\\d+\\.\\d+)-keycardai-crewai"
+style = "pep440"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/keycardai"]
+
+[tool.hatch.build.targets.sdist]
+exclude = [
+    "/.github",
+    "/tests",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.commitizen]
+name = "cz_customize"
+version = "0.0.0"
+tag_format = "${version}-keycardai-crewai"
+ignored_tag_formats = ["${version}-*"]
+update_changelog_on_bump = true
+bump_message = "bump: keycardai-crewai $current_version → $new_version"
+major_version_zero = true
+
+[tool.commitizen.customize]
+changelog_pattern = "^(feat|fix|refactor|perf|test|build|ci|revert)\\(keycardai-crewai\\)(!)?:"

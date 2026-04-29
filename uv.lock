@@ -24,6 +24,7 @@ members = [
     "keycardai",
     "keycardai-a2a",
     "keycardai-agents",
+    "keycardai-crewai",
     "keycardai-fastmcp",
     "keycardai-mcp",
     "keycardai-mcp-fastmcp",
@@ -2473,6 +2474,41 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.8.6" },
 ]
 provides-extras = ["crewai", "dev", "test"]
+
+[[package]]
+name = "keycardai-crewai"
+source = { editable = "packages/crewai" }
+dependencies = [
+    { name = "crewai" },
+    { name = "keycardai-a2a" },
+    { name = "pydantic" },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "mypy" },
+    { name = "ruff" },
+]
+test = [
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-cov" },
+    { name = "pytest-timeout" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "crewai", specifier = ">=0.86.0" },
+    { name = "keycardai-a2a", editable = "packages/a2a" },
+    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.14.1" },
+    { name = "pydantic", specifier = ">=2.11.7" },
+    { name = "pytest", marker = "extra == 'test'", specifier = ">=8.4.1" },
+    { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=1.1.0" },
+    { name = "pytest-cov", marker = "extra == 'test'", specifier = ">=6.2.1" },
+    { name = "pytest-timeout", marker = "extra == 'test'", specifier = ">=2.3.1" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.8.6" },
+]
+provides-extras = ["dev", "test"]
 
 [[package]]
 name = "keycardai-fastmcp"

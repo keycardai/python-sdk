@@ -65,6 +65,7 @@ keycardai-fastmcp = { workspace = true }
 keycardai-mcp-fastmcp = { workspace = true }
 keycardai-mcp = { workspace = true }
 keycardai-a2a = { workspace = true }
+keycardai-crewai = { workspace = true }
 keycardai-agents = { workspace = true }
 
 [build-system]
