@@ -8,7 +8,7 @@ pytest.importorskip("crewai")
 
 from keycardai.a2a import AgentServiceConfig
 
-from keycardai.agents.integrations.crewai import (
+from keycardai.crewai import (
     _create_delegation_tool,
     create_a2a_tool_for_service,
     get_a2a_tools,
@@ -101,7 +101,7 @@ class TestGetA2ATools:
         # When delegatable_services=None, it should try to discover
         # Currently returns empty list (discovery not implemented)
         with patch(
-            "keycardai.agents.integrations.crewai.ServiceDiscovery"
+            "keycardai.crewai.ServiceDiscovery"
         ) as mock_discovery_class:
             mock_discovery = AsyncMock()
             mock_discovery.list_delegatable_services.return_value = []
@@ -366,7 +366,7 @@ class TestCreateA2AToolForService:
     ):
         """Test create_a2a_tool_for_service fetches agent card."""
         with patch(
-            "keycardai.agents.integrations.crewai.ServiceDiscovery"
+            "keycardai.crewai.ServiceDiscovery"
         ) as mock_discovery_class:
             mock_discovery = AsyncMock()
             mock_discovery.get_service_card.return_value = mock_agent_card
@@ -390,7 +390,7 @@ class TestCreateA2AToolForService:
     async def test_create_tool_for_service(self, service_config, mock_agent_card):
         """Test tool is created correctly from agent card."""
         with patch(
-            "keycardai.agents.integrations.crewai.ServiceDiscovery"
+            "keycardai.crewai.ServiceDiscovery"
         ) as mock_discovery_class:
             mock_discovery = AsyncMock()
             mock_discovery.get_service_card.return_value = mock_agent_card

@@ -1,13 +1,17 @@
 [project]
-name = "keycardai-agents"
+name = "keycardai-crewai"
 dynamic = ["version"]
-description = "Empty legacy package, pending archive. Decomposed per the Keycard SDK packaging KEP into keycardai-a2a (delegation), keycardai-oauth (PKCE user-login), and keycardai-crewai (CrewAI integration)."
+description = "CrewAI integration for Keycard A2A: run CrewAI crews as agent services and create delegation tools that exchange tokens with downstream services."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "Keycard", email = "support@keycard.ai" }]
-dependencies = []
-keywords = ["keycard", "deprecated"]
+dependencies = [
+    "keycardai-a2a>=0.2.0",
+    "pydantic>=2.11.7",
+    "crewai>=0.86.0",
+]
+keywords = ["crewai", "agents", "ai", "a2a", "agent-to-agent", "delegation", "authentication", "oauth", "token-exchange", "keycard"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -26,10 +30,20 @@ classifiers = [
 [project.optional-dependencies]
 test = [
     "pytest>=8.4.1",
+    "pytest-asyncio>=1.1.0",
+    "pytest-cov>=6.2.1",
+    "pytest-timeout>=2.3.1",
 ]
 dev = [
     "ruff>=0.8.6",
+    "mypy>=1.14.1",
 ]
+
+[project.urls]
+Homepage = "https://github.com/keycardai/python-sdk"
+Repository = "https://github.com/keycardai/python-sdk"
+Documentation = "https://docs.keycardai.com"
+Issues = "https://github.com/keycardai/python-sdk/issues"
 
 [build-system]
 requires = ["hatchling", "uv-dynamic-versioning"]
@@ -40,7 +54,7 @@ source = "uv-dynamic-versioning"
 
 [tool.uv-dynamic-versioning]
 vcs = "git"
-pattern = "(?P<base>\\d+\\.\\d+\\.\\d+)-keycardai-agents"
+pattern = "(?P<base>\\d+\\.\\d+\\.\\d+)-keycardai-crewai"
 style = "pep440"
 
 [tool.hatch.build.targets.wheel]
@@ -76,12 +90,12 @@ asyncio_default_fixture_loop_scope = "function"
 
 [tool.commitizen]
 name = "cz_customize"
-version = "0.2.0"
-tag_format = "${version}-keycardai-agents"
+version = "0.0.0"
+tag_format = "${version}-keycardai-crewai"
 ignored_tag_formats = ["${version}-*"]
 update_changelog_on_bump = true
-bump_message = "bump: keycardai-agents $current_version → $new_version"
+bump_message = "bump: keycardai-crewai $current_version → $new_version"
 major_version_zero = true
 
 [tool.commitizen.customize]
-changelog_pattern = "^(feat|fix|refactor|perf|test|build|ci|revert)\\(keycardai-agents\\)(!)?:"
+changelog_pattern = "^(feat|fix|refactor|perf|test|build|ci|revert)\\(keycardai-crewai\\)(!)?:"

@@ -1,24 +1,15 @@
-"""KeycardAI Agents (legacy package).
+"""KeycardAI Agents (legacy package, pending archive).
 
 This package previously housed three concerns. Per the KEP "Decompose
-keycardai-agents", they have moved to:
+keycardai-agents", they have all moved:
 
-- A2A delegation, agent service hosting, executor primitives, and service
-  discovery → ``keycardai-a2a`` (``from keycardai.a2a import ...``).
+- A2A delegation, agent service primitives, and service discovery →
+  ``keycardai-a2a`` (``from keycardai.a2a import ...``).
 - OAuth 2.0 PKCE user-login flow (``AgentClient``) → ``keycardai-oauth``
   (``from keycardai.oauth.pkce import authenticate``).
-- The CrewAI-over-A2A integration is the only remaining piece, accessible
-  via ``from keycardai.agents.integrations.crewai import ...``. It will
-  move to a dedicated ``keycardai-crewai`` package; this package will be
-  archived once that ships.
+- CrewAI-over-A2A integration (executor + delegation tools) →
+  ``keycardai-crewai`` (``from keycardai.crewai import ...``).
+
+This package now exposes no symbols. It will be archived once downstream
+references catch up (tracked in ACC-232).
 """
-
-# Integrations (optional)
-try:
-    from .integrations import crewai
-except ImportError:
-    crewai = None
-
-__all__ = [
-    "crewai",
-]

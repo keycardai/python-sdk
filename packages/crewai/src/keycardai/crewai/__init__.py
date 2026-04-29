@@ -6,7 +6,7 @@ This module provides:
 
 Usage with executor:
     >>> from keycardai.a2a import AgentServiceConfig
-    >>> from keycardai.agents.integrations.crewai import CrewAIExecutor
+    >>> from keycardai.crewai import CrewAIExecutor
     >>> from crewai import Agent, Crew, Task
     >>>
     >>> def create_my_crew():
@@ -16,13 +16,13 @@ Usage with executor:
     >>>
     >>> config = AgentServiceConfig(
     ...     service_name="My Service",
-    ...     agent_executor=CrewAIExecutor(create_my_crew),
     ...     # ... other config
     ... )
+    >>> executor = CrewAIExecutor(create_my_crew)
 
 Usage with delegation tools:
     >>> from keycardai.a2a import AgentServiceConfig
-    >>> from keycardai.agents.integrations.crewai import get_a2a_tools
+    >>> from keycardai.crewai import get_a2a_tools
     >>> from crewai import Agent, Crew
     >>>
     >>> # Create service config
@@ -52,9 +52,8 @@ import contextvars
 import logging
 from typing import Any, Callable
 
-from pydantic import BaseModel, Field
-
 from keycardai.a2a import AgentServiceConfig, DelegationClientSync, ServiceDiscovery
+from pydantic import BaseModel, Field
 
 # Context variable to store the current user's access token for delegation
 _current_user_token: contextvars.ContextVar[str | None] = contextvars.ContextVar(
@@ -66,7 +65,7 @@ try:
     from crewai.tools import BaseTool
 except ImportError:
     raise ImportError(
-        "CrewAI is not installed. Install it with: pip install 'keycardai-agents[crewai]'"
+        "CrewAI is not installed. Install it with: pip install keycardai-crewai"
     ) from None
 
 logger = logging.getLogger(__name__)
@@ -83,8 +82,8 @@ def set_delegation_token(access_token: str) -> None:
         access_token: The user's access token from the request
 
     Example:
-        >>> # In your server's invoke handler
-        >>> access_token = request.user.access_token
+        >>> # In your AgentExecutor.execute method
+        >>> access_token = context.call_context.state.get("access_token")
         >>> set_delegation_token(access_token)
         >>>
         >>> # Now crew tools can delegate with the user's context
@@ -97,12 +96,14 @@ def set_delegation_token(access_token: str) -> None:
 class CrewAIExecutor:
     """Executor adapter for CrewAI crews.
 
-    This executor implements the AgentExecutor protocol for CrewAI crews,
-    allowing them to be used in the generic agent service server.
+    Runs a CrewAI ``Crew`` factory and returns the result as a string.
+    Intended to be called from inside an ``a2a-sdk`` ``AgentExecutor.execute``
+    method (which is async); the crew itself runs synchronously via
+    ``crew.kickoff()``.
 
     The executor:
     1. Takes a crew factory callable
-    2. Sets delegation token context before execution
+    2. Sets delegation token context before execution (when ``set_token_context=True``)
     3. Calls crew.kickoff() with the task/inputs
     4. Returns the result as a string
 
@@ -411,3 +412,11 @@ async def create_a2a_tool_for_service(
 
     # Create and return tool
     return _create_delegation_tool(service_info, delegation_client)
+
+
+__all__ = [
+    "CrewAIExecutor",
+    "create_a2a_tool_for_service",
+    "get_a2a_tools",
+    "set_delegation_token",
+]

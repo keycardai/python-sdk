@@ -11,6 +11,7 @@ on:
       - '*-keycardai-fastmcp'
       - '*-keycardai-agents'
       - '*-keycardai-a2a'
+      - '*-keycardai-crewai'
 
 jobs:
   detect-package:
