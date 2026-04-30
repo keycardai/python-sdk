@@ -9,7 +9,6 @@ on:
       - '*-keycardai-mcp'
       - '*-keycardai-mcp-fastmcp'
       - '*-keycardai-fastmcp'
-      - '*-keycardai-agents'
       - '*-keycardai-a2a'
 
 jobs:

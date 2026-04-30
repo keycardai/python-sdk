@@ -119,4 +119,4 @@ For a runnable greenfield example (no existing app), see `examples/keycard_prote
 
 ## History
 
-This package was extracted from the original `keycardai-agents` package (KEP: Decompose keycardai-agents). The PKCE user-login client moved to `keycardai-oauth`; the CrewAI integration moves to a forthcoming `keycardai-crewai`; the `keycardai-agents` source directory is being archived.
+This package was extracted from the original `keycardai-agents` package (KEP: Decompose keycardai-agents). The PKCE user-login client moved to `keycardai-oauth`. The `keycardai-agents` package itself is archived.
