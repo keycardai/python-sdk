@@ -111,14 +111,23 @@ async def test_get_delegation_token_client_credentials(a2a_client):
 
 @pytest.mark.asyncio
 async def test_invoke_service_posts_jsonrpc_envelope(a2a_client):
-    """invoke_service sends a JSONRPC message/send to /a2a/jsonrpc."""
+    """invoke_service sends a 1.x SendMessage JSONRPC request to /a2a/jsonrpc.
+
+    The dispatcher requires a CamelCase method name and an A2A-Version
+    header; the message envelope must carry messageId and an enum-string
+    role. Any of these wrong and the dispatcher rejects the request before
+    the executor runs.
+    """
     mock_response = Mock()
     mock_response.json.return_value = {
         "jsonrpc": "2.0",
         "id": "1",
         "result": {
-            "role": "agent",
-            "parts": [{"text": "Task completed successfully"}],
+            "message": {
+                "messageId": "resp-1",
+                "role": "ROLE_AGENT",
+                "parts": [{"text": "Task completed successfully"}],
+            },
         },
     }
     mock_response.raise_for_status = Mock()
@@ -132,17 +141,21 @@ async def test_invoke_service_posts_jsonrpc_envelope(a2a_client):
             token="test_token_123",
         )
 
-    # The wrapper unwraps the JSONRPC result back to the legacy shape.
+    # The wrapper unwraps the SendMessageResponse.message.parts text.
     assert result["result"] == "Task completed successfully"
     assert result["delegation_chain"] == []
 
-    # Confirm the request was a JSONRPC envelope to /a2a/jsonrpc.
+    # Confirm the request matches the 1.x dispatcher contract.
     posted_url = mock_post.call_args[0][0]
     posted_body = mock_post.call_args[1]["json"]
+    posted_headers = mock_post.call_args[1]["headers"]
     assert posted_url == "https://target.example.com/a2a/jsonrpc"
     assert posted_body["jsonrpc"] == "2.0"
-    assert posted_body["method"] == "message/send"
+    assert posted_body["method"] == "SendMessage"
+    assert posted_body["params"]["message"]["role"] == "ROLE_USER"
     assert posted_body["params"]["message"]["parts"][0]["text"] == "Test task"
+    assert posted_body["params"]["message"]["messageId"]
+    assert posted_headers["A2A-Version"] == "1.0"
 
 
 @pytest.mark.asyncio
@@ -156,7 +169,13 @@ async def test_invoke_service_auto_token_exchange(a2a_client):
     mock_http_response.json.return_value = {
         "jsonrpc": "2.0",
         "id": "1",
-        "result": {"role": "agent", "parts": [{"text": "Success"}]},
+        "result": {
+            "message": {
+                "messageId": "resp-1",
+                "role": "ROLE_AGENT",
+                "parts": [{"text": "Success"}],
+            }
+        },
     }
     mock_http_response.raise_for_status = Mock()
 
@@ -183,7 +202,13 @@ async def test_invoke_service_string_task(a2a_client):
     mock_response.json.return_value = {
         "jsonrpc": "2.0",
         "id": "1",
-        "result": {"role": "agent", "parts": [{"text": "Done"}]},
+        "result": {
+            "message": {
+                "messageId": "resp-1",
+                "role": "ROLE_AGENT",
+                "parts": [{"text": "Done"}],
+            }
+        },
     }
     mock_response.raise_for_status = Mock()
 
