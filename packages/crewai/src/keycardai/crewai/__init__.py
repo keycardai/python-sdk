@@ -1,11 +1,19 @@
 """CrewAI integration for A2A (agent-to-agent) delegation.
 
-This module provides:
-1. CrewAIExecutor: Adapter for running CrewAI crews in the agent service server
-2. Delegation tools: CrewAI tools for calling other agent services
+Two halves:
+
+1. ``CrewAIExecutor``: an ``a2a-sdk`` 1.x ``AgentExecutor`` subclass that runs
+   a CrewAI ``Crew`` in response to incoming A2A messages. Pass it directly
+   to ``a2a.server.request_handlers.DefaultRequestHandler`` — no wrapper
+   needed.
+2. Delegation tools: ``crewai.tools.BaseTool`` instances that let a CrewAI
+   agent delegate work to other A2A services, exchanging the inbound user
+   token via Keycard.
 
 Usage with executor:
-    >>> from keycardai.a2a import AgentServiceConfig
+    >>> from a2a.server.request_handlers import DefaultRequestHandler
+    >>> from a2a.server.tasks import InMemoryTaskStore
+    >>> from keycardai.a2a import AgentServiceConfig, build_agent_card_from_config
     >>> from keycardai.crewai import CrewAIExecutor
     >>> from crewai import Agent, Crew, Task
     >>>
@@ -14,11 +22,13 @@ Usage with executor:
     ...     task = Task(description="{task}", agent=agent)
     ...     return Crew(agents=[agent], tasks=[task])
     >>>
-    >>> config = AgentServiceConfig(
-    ...     service_name="My Service",
-    ...     # ... other config
+    >>> config = AgentServiceConfig(service_name="My Service", ...)
+    >>> agent_card = build_agent_card_from_config(config)
+    >>> request_handler = DefaultRequestHandler(
+    ...     agent_executor=CrewAIExecutor(create_my_crew),
+    ...     task_store=InMemoryTaskStore(),
+    ...     agent_card=agent_card,
     ... )
-    >>> executor = CrewAIExecutor(create_my_crew)
 
 Usage with delegation tools:
     >>> from keycardai.a2a import AgentServiceConfig
@@ -48,25 +58,26 @@ Usage with delegation tools:
     >>> )
 """
 
+import asyncio
 import contextvars
 import logging
 from typing import Any, Callable
 
+from a2a.server.agent_execution import AgentExecutor
+from a2a.server.events.event_queue_v2 import EventQueue
+from a2a.types import Message, Part, Role
 from keycardai.a2a import AgentServiceConfig, DelegationClientSync, ServiceDiscovery
 from pydantic import BaseModel, Field
 
-# Context variable to store the current user's access token for delegation
+from crewai import Crew
+from crewai.tools import BaseTool
+
+# Context variable to store the current user's access token for delegation.
+# Read by ServiceDelegationTool._run; written by CrewAIExecutor.execute (or
+# manually via set_delegation_token).
 _current_user_token: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "current_user_token", default=None
 )
-
-try:
-    from crewai import Crew
-    from crewai.tools import BaseTool
-except ImportError:
-    raise ImportError(
-        "CrewAI is not installed. Install it with: pip install keycardai-crewai"
-    ) from None
 
 logger = logging.getLogger(__name__)
 
@@ -74,42 +85,47 @@ logger = logging.getLogger(__name__)
 def set_delegation_token(access_token: str) -> None:
     """Set the user's access token for delegation context.
 
-    This should be called before crew execution to provide the user's
-    token for service-to-service delegation. The token will be used
-    for token exchange when delegating to other services.
+    ``CrewAIExecutor`` calls this for you. Use it directly only when running
+    a crew outside the executor (e.g., from a custom AgentExecutor or a
+    test).
 
     Args:
         access_token: The user's access token from the request
 
     Example:
-        >>> # In your AgentExecutor.execute method
+        >>> # In a custom AgentExecutor.execute method
         >>> access_token = context.call_context.state.get("access_token")
-        >>> set_delegation_token(access_token)
-        >>>
-        >>> # Now crew tools can delegate with the user's context
-        >>> crew = create_my_crew()
-        >>> result = crew.kickoff()
+        >>> if access_token:
+        ...     set_delegation_token(access_token)
+        >>> result = my_crew.kickoff(...)
     """
     _current_user_token.set(access_token)
 
 
-class CrewAIExecutor:
-    """Executor adapter for CrewAI crews.
+class CrewAIExecutor(AgentExecutor):
+    """``a2a-sdk`` 1.x ``AgentExecutor`` that runs a CrewAI ``Crew``.
 
-    Runs a CrewAI ``Crew`` factory and returns the result as a string.
-    Intended to be called from inside an ``a2a-sdk`` ``AgentExecutor.execute``
-    method (which is async); the crew itself runs synchronously via
-    ``crew.kickoff()``.
+    Pass an instance directly to
+    ``a2a.server.request_handlers.DefaultRequestHandler(agent_executor=...)``;
+    no outer wrapper is needed. Subclasses ``a2a.server.agent_execution.AgentExecutor``
+    so it satisfies the wire-up contract that ``DefaultRequestHandler`` expects.
 
-    The executor:
-    1. Takes a crew factory callable
-    2. Sets delegation token context before execution (when ``set_token_context=True``)
-    3. Calls crew.kickoff() with the task/inputs
-    4. Returns the result as a string
+    On each call to ``execute``:
+
+    1. Reads ``context.call_context.state["access_token"]`` (populated by
+       ``keycardai.a2a.KeycardServerCallContextBuilder``) and sets the
+       delegation contextvar so synchronous CrewAI tools can pick it up.
+    2. Calls the ``crew_factory`` to build a fresh ``Crew``.
+    3. Runs ``crew.kickoff(inputs={"task": <user input>})`` on a worker thread
+       via ``asyncio.to_thread`` so the synchronous CrewAI runtime does not
+       starve uvicorn's event loop. ``asyncio.to_thread`` propagates the
+       contextvar via ``contextvars.copy_context``; do **not** swap this for a
+       raw ``ThreadPoolExecutor``, which would not, and would silently break
+       delegation.
+    4. Wraps the string result in an A2A ``Message`` and enqueues it.
 
     Args:
-        crew_factory: Callable that returns a Crew instance
-        set_token_context: If True, automatically set delegation token before execution
+        crew_factory: Callable that returns a fresh ``Crew`` for each request.
 
     Example:
         >>> from crewai import Agent, Crew, Task
@@ -120,68 +136,38 @@ class CrewAIExecutor:
         ...     return Crew(agents=[agent], tasks=[task])
         >>>
         >>> executor = CrewAIExecutor(create_my_crew)
-        >>> result = executor.execute("Hello world", {"name": "Alice"})
     """
 
-    def __init__(self, crew_factory: Callable[[], Crew], set_token_context: bool = True):
-        """Initialize CrewAI executor.
-
-        Args:
-            crew_factory: Callable that returns a Crew instance
-            set_token_context: If True, automatically set delegation token before execution
-        """
+    def __init__(self, crew_factory: Callable[[], Crew]):
         self.crew_factory = crew_factory
-        self.set_token_context = set_token_context
 
-    def execute(
-        self,
-        task: dict[str, Any] | str,
-        inputs: dict[str, Any] | None = None,
-    ) -> str:
-        """Execute crew with the given task and inputs.
-
-        Args:
-            task: Task description (string) or parameters (dict)
-            inputs: Optional additional inputs for the crew
-
-        Returns:
-            Result from crew execution as string
-
-        Raises:
-            Exception: If crew execution fails
-        """
-        # Create crew instance
-        crew = self.crew_factory()
-
-        # Prepare inputs for crew
-        if isinstance(task, dict):
-            crew_inputs = task
-        else:
-            crew_inputs = {"task": task}
-
-        # Merge additional inputs if provided
-        if inputs:
-            crew_inputs.update(inputs)
-
-        # Execute crew
-        # Note: crew.kickoff() is synchronous in CrewAI
-        logger.info(f"Executing CrewAI crew with inputs: {list(crew_inputs.keys())}")
-        result = crew.kickoff(inputs=crew_inputs)
-
-        # Return result as string
-        return str(result)
-
-    def set_token_for_delegation(self, access_token: str) -> None:
-        """Set access token for delegation context.
-
-        This is called by the server before execution to provide
-        the user's token for service-to-service delegation.
-
-        Args:
-            access_token: User's access token
-        """
-        if self.set_token_context:
+    async def execute(self, context: Any, event_queue: EventQueue) -> None:
+        call_ctx = getattr(context, "call_context", None)
+        access_token = call_ctx.state.get("access_token") if call_ctx else None
+        if access_token:
             set_delegation_token(access_token)
+        else:
+            logger.warning(
+                "No access_token in RequestContext.call_context.state; "
+                "delegation tools will run without a user token. Ensure the "
+                "JSONRPC mount uses keycardai.a2a.KeycardServerCallContextBuilder."
+            )
+
+        user_input = context.get_user_input()
+        crew = self.crew_factory()
+        crew_inputs = {"task": user_input}
+
+        logger.info("Executing CrewAI crew")
+        result = await asyncio.to_thread(crew.kickoff, inputs=crew_inputs)
+
+        message = Message(
+            role=Role.ROLE_AGENT,
+            parts=[Part(text=str(result))],
+        )
+        await event_queue.enqueue_event(message)
+
+    async def cancel(self, context: Any, event_queue: EventQueue) -> None:
+        return None
 
 
 async def get_a2a_tools(

@@ -1,17 +1,22 @@
 """Tests for CrewAI A2A delegation integration."""
 
-from unittest.mock import AsyncMock, patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 pytest.importorskip("crewai")
 
+from a2a.server.agent_execution import AgentExecutor
 from keycardai.a2a import AgentServiceConfig
 
 from keycardai.crewai import (
+    CrewAIExecutor,
     _create_delegation_tool,
+    _current_user_token,
     create_a2a_tool_for_service,
     get_a2a_tools,
+    set_delegation_token,
 )
 
 
@@ -404,3 +409,176 @@ class TestCreateA2AToolForService:
             # Tool name should be based on service name from agent card
             assert "echo" in tool.name.lower()
             assert "service" in tool.name.lower()
+
+
+def _make_request_context(*, user_input: str = "hello", access_token: str | None = None):
+    """Build a stand-in for a2a-sdk's RequestContext.
+
+    Only the attributes CrewAIExecutor.execute touches are populated:
+    ``get_user_input()`` and ``call_context.state``.
+    """
+    call_context = SimpleNamespace(
+        state={"access_token": access_token} if access_token is not None else {}
+    )
+    return SimpleNamespace(
+        get_user_input=lambda: user_input,
+        call_context=call_context,
+    )
+
+
+@pytest.fixture(autouse=True)
+def _reset_delegation_token():
+    """Each test starts with a clean contextvar."""
+    token = _current_user_token.set(None)
+    yield
+    _current_user_token.reset(token)
+
+
+class TestCrewAIExecutor:
+    """CrewAIExecutor wires a CrewAI Crew into a2a-sdk's AgentExecutor contract."""
+
+    def test_subclasses_a2a_agent_executor(self):
+        """The whole point of the wrap: instances pass DefaultRequestHandler's type check."""
+        executor = CrewAIExecutor(crew_factory=lambda: MagicMock())
+
+        assert isinstance(executor, AgentExecutor)
+
+    @pytest.mark.asyncio
+    async def test_execute_runs_crew_with_user_input(self):
+        """The user input from RequestContext lands in crew.kickoff(inputs={"task": ...})."""
+        crew = MagicMock()
+        crew.kickoff.return_value = "crew result"
+        executor = CrewAIExecutor(crew_factory=lambda: crew)
+
+        context = _make_request_context(user_input="analyze this")
+        event_queue = MagicMock()
+        event_queue.enqueue_event = AsyncMock()
+
+        await executor.execute(context, event_queue)
+
+        crew.kickoff.assert_called_once_with(inputs={"task": "analyze this"})
+
+    @pytest.mark.asyncio
+    async def test_execute_enqueues_message_with_crew_result(self):
+        """The string form of the crew result becomes the agent message."""
+        crew = MagicMock()
+        crew.kickoff.return_value = "the answer"
+        executor = CrewAIExecutor(crew_factory=lambda: crew)
+
+        context = _make_request_context(user_input="ask")
+        event_queue = MagicMock()
+        event_queue.enqueue_event = AsyncMock()
+
+        await executor.execute(context, event_queue)
+
+        event_queue.enqueue_event.assert_called_once()
+        message = event_queue.enqueue_event.call_args[0][0]
+        # The Message body should carry the crew result.
+        assert "the answer" in str(message)
+
+    @pytest.mark.asyncio
+    async def test_execute_propagates_access_token_to_contextvar(self):
+        """The bearer in call_context.state must reach _current_user_token by the time
+        crew.kickoff runs, since synchronous CrewAI tools read the contextvar there.
+
+        asyncio.to_thread inherits the calling task's context via copy_context, so the
+        contextvar set in execute() is visible inside the worker thread.
+        """
+        observed = {}
+
+        def crew_factory():
+            crew = MagicMock()
+
+            def kickoff(inputs):
+                observed["token"] = _current_user_token.get()
+                return "ok"
+
+            crew.kickoff.side_effect = kickoff
+            return crew
+
+        executor = CrewAIExecutor(crew_factory=crew_factory)
+
+        context = _make_request_context(access_token="bearer-abc")
+        event_queue = MagicMock()
+        event_queue.enqueue_event = AsyncMock()
+
+        await executor.execute(context, event_queue)
+
+        assert observed["token"] == "bearer-abc"
+
+    @pytest.mark.asyncio
+    async def test_execute_warns_when_access_token_missing(self, caplog):
+        """No token in state ⇒ log a warning so misconfigured deployments are visible."""
+        crew = MagicMock()
+        crew.kickoff.return_value = "ok"
+        executor = CrewAIExecutor(crew_factory=lambda: crew)
+
+        context = _make_request_context(access_token=None)
+        event_queue = MagicMock()
+        event_queue.enqueue_event = AsyncMock()
+
+        with caplog.at_level("WARNING", logger="keycardai.crewai"):
+            await executor.execute(context, event_queue)
+
+        assert any(
+            "access_token" in record.message
+            for record in caplog.records
+            if record.levelname == "WARNING"
+        )
+
+    @pytest.mark.asyncio
+    async def test_execute_does_not_block_event_loop(self):
+        """crew.kickoff must run on a worker thread, not on the event loop.
+
+        The probe records the running loop's policy at kickoff time. If kickoff
+        ran on the event loop directly, asyncio.get_running_loop() would succeed
+        in the same task; in a worker thread it raises RuntimeError.
+        """
+        observed = {}
+
+        def crew_factory():
+            crew = MagicMock()
+
+            def kickoff(inputs):
+                import asyncio
+
+                try:
+                    asyncio.get_running_loop()
+                    observed["on_loop"] = True
+                except RuntimeError:
+                    observed["on_loop"] = False
+                return "ok"
+
+            crew.kickoff.side_effect = kickoff
+            return crew
+
+        executor = CrewAIExecutor(crew_factory=crew_factory)
+
+        context = _make_request_context()
+        event_queue = MagicMock()
+        event_queue.enqueue_event = AsyncMock()
+
+        await executor.execute(context, event_queue)
+
+        assert observed["on_loop"] is False
+
+    @pytest.mark.asyncio
+    async def test_cancel_returns_none(self):
+        """Default cancel is a no-op; AgentExecutor.cancel must not raise."""
+        executor = CrewAIExecutor(crew_factory=lambda: MagicMock())
+
+        context = _make_request_context()
+        event_queue = MagicMock()
+
+        result = await executor.cancel(context, event_queue)
+
+        assert result is None
+
+
+class TestSetDelegationToken:
+    """set_delegation_token writes to the public contextvar."""
+
+    def test_set_delegation_token_updates_contextvar(self):
+        set_delegation_token("token-xyz")
+
+        assert _current_user_token.get() == "token-xyz"
