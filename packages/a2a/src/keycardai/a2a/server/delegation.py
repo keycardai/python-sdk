@@ -10,6 +10,7 @@ import uuid
 from typing import Any
 
 import httpx
+from a2a.utils import constants
 
 from keycardai.oauth import AsyncClient as AsyncOAuthClient
 from keycardai.oauth import Client as SyncOAuthClient
@@ -22,13 +23,16 @@ from ..config import AgentServiceConfig
 logger = logging.getLogger(__name__)
 
 
-def _build_jsonrpc_message_send(task: dict[str, Any] | str) -> dict[str, Any]:
-    """Wrap a task in an A2A JSONRPC ``message/send`` envelope.
+def _build_jsonrpc_send_message(task: dict[str, Any] | str) -> dict[str, Any]:
+    """Wrap a task in an A2A 1.x JSONRPC ``SendMessage`` envelope.
 
-    ``task`` may be a plain string, a dict carrying a ``"task"`` string under
-    that key (legacy shape preserved for the keycardai-agents CrewAI
-    integration), or any other dict (serialized to JSON for the message
+    ``task`` may be a plain string, a dict carrying a ``"task"`` string at the
+    ``"task"`` key, or any other dict (serialized to JSON for the message
     text).
+
+    The shape mirrors ``a2a.types.SendMessageRequest`` after JSON-marshalling
+    via ``google.protobuf.json_format``: a ``messageId`` (required by the
+    dispatcher), an enum-string ``role``, and ``parts`` carrying the text.
     """
     if isinstance(task, str):
         text = task
@@ -43,10 +47,11 @@ def _build_jsonrpc_message_send(task: dict[str, Any] | str) -> dict[str, Any]:
     return {
         "jsonrpc": "2.0",
         "id": str(uuid.uuid4()),
-        "method": "message/send",
+        "method": "SendMessage",
         "params": {
             "message": {
-                "role": "user",
+                "messageId": str(uuid.uuid4()),
+                "role": "ROLE_USER",
                 "parts": [{"text": text}],
             },
         },
@@ -54,16 +59,17 @@ def _build_jsonrpc_message_send(task: dict[str, Any] | str) -> dict[str, Any]:
 
 
 def _unwrap_jsonrpc_response(response_body: dict[str, Any]) -> dict[str, Any]:
-    """Unwrap an A2A JSONRPC response into the ``{result, delegation_chain}`` shape.
+    """Unwrap an A2A 1.x JSONRPC ``SendMessageResponse`` into a flat
+    ``{result, delegation_chain}`` dict.
 
-    Best-effort surface used by CrewAI delegation tools. If the JSONRPC
-    result is a ``Message`` (parts with ``text``), the text parts are
-    joined; otherwise the raw result is JSON-stringified.
+    ``SendMessageResponse`` is a oneof of ``message`` or ``task``. When the
+    remote executor enqueues a ``Message``, the text is read from
+    ``result.message.parts[].text`` and joined. When it produces a ``Task``,
+    the task is JSON-stringified into ``result``; callers needing the full
+    Task lifecycle should use ``a2a.client.create_client`` directly.
 
-    ``delegation_chain`` is returned empty: the legacy keycardai-agents
-    chain reconstruction read from ``request.state.keycardai_auth_info``
-    which never carried the claim, so it was always single-hop. Callers
-    that need multi-hop tracking should parse JWT claims directly.
+    ``delegation_chain`` is always empty here. Multi-hop chain tracking
+    requires parsing JWT claims directly.
 
     Raises:
         ValueError: if the response carries a JSONRPC ``error`` member.
@@ -78,18 +84,20 @@ def _unwrap_jsonrpc_response(response_body: dict[str, Any]) -> dict[str, Any]:
     if result is None:
         return {"result": "", "delegation_chain": []}
     if isinstance(result, dict):
-        parts = result.get("parts")
-        if isinstance(parts, list):
-            text_parts = [
-                p.get("text", "")
-                for p in parts
-                if isinstance(p, dict) and "text" in p
-            ]
-            if text_parts:
-                return {
-                    "result": "\n".join(text_parts),
-                    "delegation_chain": [],
-                }
+        message = result.get("message")
+        if isinstance(message, dict):
+            parts = message.get("parts")
+            if isinstance(parts, list):
+                text_parts = [
+                    p.get("text", "")
+                    for p in parts
+                    if isinstance(p, dict) and "text" in p
+                ]
+                if text_parts:
+                    return {
+                        "result": "\n".join(text_parts),
+                        "delegation_chain": [],
+                    }
     if isinstance(result, str):
         return {"result": result, "delegation_chain": []}
     return {"result": json.dumps(result), "delegation_chain": []}
@@ -278,11 +286,10 @@ class DelegationClient:
     ) -> dict[str, Any]:
         """Call another agent service over A2A JSONRPC with bearer auth.
 
-        Sends a ``message/send`` JSONRPC request to ``${service_url}/a2a/jsonrpc``
-        and returns ``{"result": <text>, "delegation_chain": []}`` for
-        compatibility with the legacy invocation surface. If you need the
-        full A2A protocol surface (Task lifecycle, streaming, status
-        updates), use ``a2a.client.create_client`` directly.
+        Sends a ``SendMessage`` JSONRPC request to ``${service_url}/a2a/jsonrpc``
+        and returns ``{"result": <text>, "delegation_chain": []}``. For the
+        full A2A protocol surface (Task lifecycle, streaming, status updates),
+        use ``a2a.client.create_client`` directly.
 
         Args:
             service_url: Base URL of the target service
@@ -311,13 +318,16 @@ class DelegationClient:
             token = await self.get_delegation_token(service_url, subject_token)
 
         jsonrpc_url = f"{service_url}/a2a/jsonrpc"
-        envelope = _build_jsonrpc_message_send(task)
+        envelope = _build_jsonrpc_send_message(task)
 
         try:
             response = await self.http_client.post(
                 jsonrpc_url,
                 json=envelope,
-                headers={"Authorization": f"Bearer {token}"},
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    constants.VERSION_HEADER: constants.PROTOCOL_VERSION_1_0,
+                },
             )
             response.raise_for_status()
             unwrapped = _unwrap_jsonrpc_response(response.json())
@@ -524,9 +534,10 @@ class DelegationClientSync:
     ) -> dict[str, Any]:
         """Call another agent service over A2A JSONRPC with bearer auth.
 
-        Sends a ``message/send`` JSONRPC request to ``${service_url}/a2a/jsonrpc``
-        and returns ``{"result": <text>, "delegation_chain": []}`` for
-        compatibility with the legacy invocation surface.
+        Sends a ``SendMessage`` JSONRPC request to ``${service_url}/a2a/jsonrpc``
+        and returns ``{"result": <text>, "delegation_chain": []}``. For the
+        full A2A protocol surface (Task lifecycle, streaming, status updates),
+        use ``a2a.client.create_client`` directly.
 
         Args:
             service_url: Base URL of the target service
@@ -547,13 +558,16 @@ class DelegationClientSync:
             token = self.get_delegation_token(service_url, subject_token)
 
         jsonrpc_url = f"{service_url}/a2a/jsonrpc"
-        envelope = _build_jsonrpc_message_send(task)
+        envelope = _build_jsonrpc_send_message(task)
 
         try:
             response = self.http_client.post(
                 jsonrpc_url,
                 json=envelope,
-                headers={"Authorization": f"Bearer {token}"},
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    constants.VERSION_HEADER: constants.PROTOCOL_VERSION_1_0,
+                },
             )
             response.raise_for_status()
             unwrapped = _unwrap_jsonrpc_response(response.json())
