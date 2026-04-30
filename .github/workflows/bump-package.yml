@@ -17,6 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      pull-requests: write
     environment: pypi-release
     steps:
       - name: Setup Python
@@ -37,5 +38,7 @@ jobs:
         run: uv tool install commitizen
 
       - name: Bump version for ${{ inputs.package_name }}
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_GITHUB_PAT }}
         run: |
           uv run python scripts/bump_package.py "${{ inputs.package_name }}" "${{ inputs.package_dir }}"
