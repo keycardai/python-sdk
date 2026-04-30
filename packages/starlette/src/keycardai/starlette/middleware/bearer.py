@@ -1,28 +1,16 @@
 """Standard Starlette authentication backend for Keycard bearer tokens.
 
-This module exposes two layers:
-
-1. The current API (used by ``AuthProvider.install``):
-   ``KeycardAuthBackend`` (a standard ``AuthenticationBackend``) that verifies
-   incoming bearer tokens via a ``TokenVerifier`` and populates
-   ``request.user`` (a ``KeycardUser``) and ``request.auth`` (a
-   ``KeycardAuthCredentials``). The on-error hook (``keycard_on_error``)
-   maps a ``KeycardAuthError`` raised by the backend into an RFC 6750
-   ``WWW-Authenticate`` challenge that includes the ``resource_metadata=``
-   URL required by RFC 9728.
-
-2. Deprecated legacy symbols (``BearerAuthMiddleware``, ``verify_bearer_token``,
-   ``_create_auth_challenge_response``) preserved for downstream packages
-   (``keycardai-mcp``, ``keycardai-agents``) until those callers migrate to
-   ``AuthenticationMiddleware(backend=KeycardAuthBackend(...),
-   on_error=keycard_on_error)``. They will be removed once the migration
-   is complete; do not use them in new code.
+``KeycardAuthBackend`` (a standard ``AuthenticationBackend``) verifies
+incoming bearer tokens via a ``TokenVerifier`` and populates ``request.user``
+(a ``KeycardUser``) and ``request.auth`` (a ``KeycardAuthCredentials``).
+The on-error hook (``keycard_on_error``) maps a ``KeycardAuthError`` raised
+by the backend into an RFC 6750 ``WWW-Authenticate`` challenge that
+includes the ``resource_metadata=`` URL required by RFC 9728.
 """
 
 from __future__ import annotations
 
-import warnings
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 
 from pydantic import AnyHttpUrl
 
@@ -33,10 +21,8 @@ from starlette.authentication import (
     AuthenticationError,
     BaseUser,
 )
-from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import HTTPConnection, Request
 from starlette.responses import Response
-from starlette.types import ASGIApp
 
 from ..shared.starlette import get_base_url
 
@@ -88,29 +74,6 @@ def _build_challenge_header(error: str, description: str, resource_metadata: str
         f'error_description="{description}", '
         f'resource_metadata="{resource_metadata}"'
     )
-
-
-def _create_auth_challenge_response(
-    error: str,
-    description: str,
-    request: Request,
-    status_code: int = 401,
-) -> Response:
-    """Create a standardized OAuth 2.0 Bearer challenge response (RFC 6750).
-
-    .. deprecated::
-        Kept for ``BearerAuthMiddleware`` and downstream callers. New code
-        should rely on ``keycard_on_error`` together with
-        ``KeycardAuthBackend``.
-    """
-    response = Response(
-        content="Unauthorized" if status_code == 401 else "Forbidden",
-        status_code=status_code,
-    )
-    response.headers["WWW-Authenticate"] = _build_challenge_header(
-        error, description, _get_oauth_protected_resource_url(request)
-    )
-    return response
 
 
 class KeycardAuthError(AuthenticationError):
@@ -310,125 +273,3 @@ def keycard_on_error(conn: HTTPConnection, exc: Exception) -> Response:
         conn,
         description=str(exc) or "Authentication failed",
     )
-
-
-# ---------------------------------------------------------------------------
-# Deprecated legacy surface
-# ---------------------------------------------------------------------------
-# Preserved so that ``keycardai-mcp`` and ``keycardai-agents`` continue to
-# import and use ``BearerAuthMiddleware`` / ``verify_bearer_token`` while a
-# follow-up migrates them to ``KeycardAuthBackend`` + ``AuthenticationMiddleware``.
-# Do not use these in new ``keycardai-starlette`` code.
-
-
-async def verify_bearer_token(
-    request: Request,
-    verifier: TokenVerifier,
-    *,
-    _from_middleware: bool = False,
-) -> dict[str, str | None] | Response:
-    """Verify the request's bearer token.
-
-    Returns an auth_info dict on success (suitable for assigning to
-    ``request.state.keycardai_auth_info``) or an RFC 6750 challenge
-    ``Response`` on failure.
-
-    .. deprecated::
-        Kept for ``BearerAuthMiddleware`` compatibility. New code should rely
-        on ``KeycardAuthBackend``.
-    """
-    if not _from_middleware:
-        warnings.warn(
-            "verify_bearer_token is deprecated and will be removed in a "
-            "future release. Use KeycardAuthBackend(verifier) wired to "
-            "starlette.middleware.authentication.AuthenticationMiddleware; "
-            "results are exposed via request.user / request.auth.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-    if not request.headers.get("Authorization"):
-        return _create_auth_challenge_response(
-            "invalid_token", "No bearer token provided", request
-        )
-    token = _get_bearer_token(request)
-    if token is None:
-        return _create_auth_challenge_response(
-            "invalid_token",
-            "Invalid Authorization header format",
-            request,
-            400,
-        )
-
-    zone_id = None
-    if verifier.enable_multi_zone:
-        zone_id = request.path_params.get("zone_id")
-        if zone_id is None:
-            return _create_auth_challenge_response(
-                "invalid_token", "Zone ID is required", request
-            )
-
-    if verifier.enable_multi_zone and zone_id:
-        access_token = await verifier.verify_token_for_zone(token, zone_id)
-    else:
-        access_token = await verifier.verify_token(token)
-    if access_token is None:
-        return _create_auth_challenge_response(
-            "invalid_token", "Token verification failed", request
-        )
-
-    resource_server_url = _get_oauth_protected_resource_url(request)
-    return {
-        "access_token": access_token.token,
-        "zone_id": zone_id,
-        "resource_client_id": resource_server_url,
-        "resource_server_url": resource_server_url,
-    }
-
-
-class BearerAuthMiddleware(BaseHTTPMiddleware):
-    """Starlette middleware that validates OAuth 2.0 bearer tokens.
-
-    On success, populates ``request.state.keycardai_auth_info`` with::
-
-        {
-            "access_token": "<verified token>",
-            "zone_id": "<zone_id or None>",
-            "resource_client_id": "<resource metadata URL>",
-            "resource_server_url": "<resource metadata URL>",
-        }
-
-    On failure, returns a ``WWW-Authenticate`` challenge per RFC 6750.
-
-    .. deprecated::
-        Use ``starlette.middleware.authentication.AuthenticationMiddleware``
-        wired to :class:`KeycardAuthBackend` with ``on_error=keycard_on_error``.
-        This class will be removed once ``keycardai-mcp`` and
-        ``keycardai-agents`` migrate.
-    """
-
-    def __init__(self, app: ASGIApp, verifier: TokenVerifier):
-        warnings.warn(
-            "BearerAuthMiddleware is deprecated and will be removed in a "
-            "future release. Use "
-            "starlette.middleware.authentication.AuthenticationMiddleware "
-            "with backend=KeycardAuthBackend(verifier) and "
-            "on_error=keycard_on_error.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        super().__init__(app)
-        self.verifier = verifier
-
-    async def dispatch(
-        self, request: Request, call_next: Callable
-    ) -> Response:
-        if _is_oauth_metadata_path(request.url.path):
-            return await call_next(request)
-
-        result = await verify_bearer_token(
-            request, self.verifier, _from_middleware=True
-        )
-        if isinstance(result, Response):
-            return result
-        request.state.keycardai_auth_info = result
-        return await call_next(request)
