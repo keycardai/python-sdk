@@ -49,6 +49,7 @@ jobs:
     needs: detect-changes
     permissions:
       contents: write
+      pull-requests: write
     strategy:
       matrix:
         package: ${{ fromJson(needs.detect-changes.outputs.changed-packages) }}
