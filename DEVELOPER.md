@@ -94,10 +94,13 @@ just build
 
 ### Adding a new package
 
-1. Create a new directory in `packages/`
-2. Initialize the package: `uv init packages/your-package-name`
-3. Update the package's `pyproject.toml` with appropriate metadata
-4. The package will automatically be included in the workspace
+1. Create the package directory in `packages/` and write its `pyproject.toml` before any source files.
+2. Register the package in the root `pyproject.toml`:
+   - Add `"packages/your-package-name"` to `[tool.uv.workspace] members`.
+   - Add `keycardai-your-package-name = { workspace = true }` under `[tool.uv.sources]`.
+3. Run `uv lock` to update the workspace lockfile.
+
+Workspace members are listed explicitly (no `packages/*` glob) so a half-bootstrapped or stray directory under `packages/` cannot accidentally enter the workspace.
 
 ## Package Structure
 

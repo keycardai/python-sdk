@@ -49,12 +49,17 @@ Repository = "https://github.com/keycardai/python-sdk"
 Issues = "https://github.com/keycardai/python-sdk/issues"
 
 [tool.uv.workspace]
+# Listed explicitly so stray or half-bootstrapped dirs under packages/ cannot leak in.
 members = [
     ".",
-    "packages/*",
-    "packages/*/examples/*"
+    "packages/oauth",
+    "packages/starlette",
+    "packages/mcp",
+    "packages/mcp-fastmcp",
+    "packages/fastmcp",
+    "packages/a2a",
+    "packages/*/examples/*",
 ]
-# Exclude any packages that shouldn't be part of the workspace
 exclude = []
 
 [tool.uv.sources]
