@@ -1,3 +1,9 @@
+## 0.4.0-keycardai-starlette (2026-05-01)
+
+
+- refactor(keycardai-starlette)!: remove deprecated BearerAuthMiddleware shims (ACC-237) (#109)
+- Removed deprecated BearerAuthMiddleware shims after all consumers migrated to AuthenticationMiddleware + KeycardAuthBackend, eliminating unused auth code. This is a breaking change—imports for BearerAuthMiddleware and verify_bearer_token now fail.
+
 ## 0.3.0-keycardai-starlette (2026-04-27)
 
 
