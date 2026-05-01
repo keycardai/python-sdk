@@ -1,3 +1,9 @@
+## 0.3.0-keycardai-a2a (2026-05-01)
+
+
+- fix(keycardai-a2a)!: align DelegationClient with a2a-sdk 1.x JSONRPC dispatcher (ACC-231) (#107)
+- DelegationClient was still speaking 0.x JSON-RPC (“message/send”, old envelope, no A2A-Version), so every call was rejected by real 1.x dispatchers before execution—breaking the entire keycardai-crewai delegation path. Fixed by upgrading to the 1.x contract (SendMessage, proper envelope + headers, new response shape) and adding a real dispatcher test to catch drift.
+
 ## 0.2.0-keycardai-a2a (2026-04-29)
 
 
