@@ -102,7 +102,7 @@ async def list_github_repos(access_ctx: AccessContext, ctx: Context, per_page: i
 
     Demonstrates:
     - Resource-specific error checking with has_resource_error()
-    - Getting resource-specific errors with get_resource_errors()
+    - Getting resource-specific errors with get_resource_error()
     - Parameterized API calls with AccessContext as first parameter
 
     Args:
@@ -115,7 +115,7 @@ async def list_github_repos(access_ctx: AccessContext, ctx: Context, per_page: i
     """
     # Check for resource-specific error (alternative to has_errors())
     if access_ctx.has_resource_error("https://api.github.com"):
-        resource_errors = access_ctx.get_resource_errors("https://api.github.com")
+        resource_errors = access_ctx.get_resource_error("https://api.github.com")
         return {
             "message": "Token exchange failed for GitHub API",
             "details": resource_errors,

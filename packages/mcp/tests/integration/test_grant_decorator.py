@@ -139,7 +139,7 @@ class TestGrantDecoratorExecution:
         def test_function(access_ctx: AccessContext, ctx: Context, user_id: str):
             # Check if there's a resource error
             if access_ctx.has_resource_error("https://api.example.com"):
-                error = access_ctx.get_resource_errors("https://api.example.com")
+                error = access_ctx.get_resource_error("https://api.example.com")
                 return {"error": error["message"], "isError": True}
             return {"error": "No error", "isError": False, "access_ctx": access_ctx}
 
@@ -287,7 +287,7 @@ class TestAccessContext:
         })
         assert access_context.has_resource_error("https://api1.com")
         assert access_context.get_status() == "partial_error"
-        assert access_context.get_resource_errors("https://api1.com")["message"] == "Resource failed"
+        assert access_context.get_resource_error("https://api1.com")["message"] == "Resource failed"
 
     def test_access_context_partial_success(self):
         """Test AccessContext with partial success scenario."""
