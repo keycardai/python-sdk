@@ -11,7 +11,7 @@
 | You want to... | Install | Guide |
 |---|---|---|
 | Add auth to MCP servers (using the `mcp` SDK) | `pip install keycardai-mcp` | [Quick Start](#quick-start-standard-mcp) |
-| Add auth to FastMCP servers | `pip install keycardai-mcp-fastmcp` | [Quick Start](#quick-start-fastmcp) |
+| Add auth to FastMCP servers | `pip install keycardai-fastmcp` | [Quick Start](#quick-start-fastmcp) |
 | Connect to MCP servers as a client | `pip install keycardai-mcp` | [MCP Client docs](packages/mcp/src/keycardai/mcp/client/) |
 | Build agent-to-agent (A2A) services | `pip install keycardai-agents` | [Agents docs](packages/agents/) |
 | Use the OAuth 2.0 client directly | `pip install keycardai-oauth` | [OAuth docs](packages/oauth/) |
@@ -29,7 +29,7 @@
 ### Current Limitations
 
 - **Alpha Status**: All packages are in early development (`Development Status :: 3 - Alpha`). APIs may change between minor versions.
-- **FastMCP 3.x Required**: The `keycardai-mcp-fastmcp` package requires FastMCP 3.0 or later. FastMCP 3.0 made `ctx.get_state()` and `ctx.set_state()` async; all tool functions using these calls must be `async def`.
+- **FastMCP 3.x Required**: The `keycardai-fastmcp` package requires FastMCP 3.0 or later. FastMCP 3.0 made `ctx.get_state()` and `ctx.set_state()` async; all tool functions using these calls must be `async def`.
 - **MCP Protocol Version**: Tested against MCP protocol version as implemented by `mcp>=1.13.1`. Newer MCP protocol versions may introduce incompatibilities.
 
 ### Non-Goals
@@ -54,7 +54,7 @@
 
 | Package | Dependency | Version Constraint | Rationale |
 |---------|------------|-------------------|-----------|
-| `keycardai-mcp-fastmcp` | `fastmcp` | `>=3.0.0` | FastMCP 3.0+ required. `ctx.get_state()`/`ctx.set_state()` are now async. |
+| `keycardai-fastmcp` | `fastmcp` | `>=3.0.0` | FastMCP 3.0+ required. `ctx.get_state()`/`ctx.set_state()` are now async. |
 | All packages | `pydantic` | `>=2.11.7` | No upper bound - Pydantic 2.x maintains backward compatibility. |
 | All packages | `httpx` | `>=0.27.2` | No upper bound - httpx follows semver. |
 | `keycardai-mcp` | `mcp` | `>=1.13.1` | No upper bound - API is protocol-defined. |
@@ -100,7 +100,7 @@ Packages will graduate to `1.0.0` when:
 3. **Commit messages** use `!` suffix (e.g., `feat!:`) for breaking changes
 4. **Release notes** highlight breaking changes prominently
 
-> **`mcp` vs `fastmcp`:** The `mcp` SDK includes a built-in `FastMCP` class (`from mcp.server.fastmcp import FastMCP`), while `fastmcp` is a separate standalone framework (`from fastmcp import FastMCP`). They're different libraries. `keycardai-mcp` wraps the former; `keycardai-mcp-fastmcp` wraps the latter.
+> **`mcp` vs `fastmcp`:** The `mcp` SDK includes a built-in `FastMCP` class (`from mcp.server.fastmcp import FastMCP`), while `fastmcp` is a separate standalone framework (`from fastmcp import FastMCP`). They're different libraries. `keycardai-mcp` wraps the former; `keycardai-fastmcp` wraps the latter.
 
 ## Prerequisites
 
@@ -111,12 +111,12 @@ Packages will graduate to `1.0.0` when:
 ## Quick Start: FastMCP
 
 ```bash
-uv add keycardai-mcp-fastmcp fastmcp
+uv add keycardai-fastmcp fastmcp
 ```
 
 ```python
 from fastmcp import FastMCP
-from keycardai.mcp.integrations.fastmcp import AuthProvider
+from keycardai.fastmcp import AuthProvider
 
 # Configure Keycard authentication
 auth_provider = AuthProvider(
@@ -138,7 +138,7 @@ if __name__ == "__main__":
     mcp.run(transport="streamable-http")
 ```
 
-See the [FastMCP examples](packages/mcp-fastmcp/examples/) for runnable projects.
+See the [FastMCP examples](packages/fastmcp/examples/) for runnable projects.
 
 ## Quick Start: Standard MCP
 
@@ -185,7 +185,7 @@ Delegated access lets your MCP tools call external APIs (Google Calendar, GitHub
 import os
 import httpx
 from fastmcp import FastMCP, Context
-from keycardai.mcp.integrations.fastmcp import AuthProvider, AccessContext, ClientSecret
+from keycardai.fastmcp import AuthProvider, AccessContext, ClientSecret
 
 auth_provider = AuthProvider(
     zone_id="your-zone-id",
@@ -262,10 +262,10 @@ async def get_calendar_events(access_ctx: AccessContext, ctx: Context) -> dict:
 app = auth_provider.app(mcp)
 ```
 
-> **Key difference:** In `keycardai-mcp`, the `@grant` decorator requires both `access_ctx: AccessContext` and `ctx: Context` as function parameters. In `keycardai-mcp-fastmcp`, `AccessContext` is retrieved from the FastMCP `Context` via `await ctx.get_state("keycardai")`.
+> **Key difference:** In `keycardai-mcp`, the `@grant` decorator requires both `access_ctx: AccessContext` and `ctx: Context` as function parameters. In `keycardai-fastmcp`, `AccessContext` is retrieved from the FastMCP `Context` via `await ctx.get_state("keycardai")`.
 
 For complete delegated access examples with error handling patterns, see:
-- [FastMCP delegated access example](packages/mcp-fastmcp/examples/delegated_access/)
+- [FastMCP delegated access example](packages/fastmcp/examples/delegated_access/)
 - [Standard MCP delegated access example](packages/mcp/examples/delegated_access/)
 
 ## Connecting Your AI Client
@@ -425,7 +425,7 @@ which will produce the following endpoints
 
 When testing your MCP server with the [modelcontextprotocol/inspector](https://github.com/modelcontextprotocol/inspector), you may need to configure CORS to allow the inspector's web interface to access your protected endpoints from localhost.
 
-**Note:** This applies specifically to `keycardai-mcp`. When using `keycardai-mcp-fastmcp`, no middleware is currently required as FastMCP permits access to metadata endpoints by default.
+**Note:** This applies specifically to `keycardai-mcp`. When using `keycardai-fastmcp`, no middleware is currently required as FastMCP permits access to metadata endpoints by default.
 
 ```python
 from starlette.middleware import Middleware
@@ -451,11 +451,11 @@ app = auth_provider.app(mcp, middleware=middleware)
 - [Full documentation](https://docs.keycard.ai) — API reference, tutorials, integration guides
 - **Package docs:**
   - [keycardai-mcp](packages/mcp/) — MCP server authentication
-  - [keycardai-mcp-fastmcp](packages/mcp-fastmcp/) — FastMCP integration
+  - [keycardai-fastmcp](packages/fastmcp/) — FastMCP integration
   - [keycardai-mcp client](packages/mcp/src/keycardai/mcp/client/) — MCP client (CLI, web apps, AI agent integrations)
   - [keycardai-agents](packages/agents/) — Agent-to-agent delegation (A2A)
   - [keycardai-oauth](packages/oauth/) — OAuth 2.0 client
-- **Examples:** [MCP](packages/mcp/examples/) · [FastMCP](packages/mcp-fastmcp/examples/) · [OAuth](packages/oauth/examples/) · [Agents](packages/agents/examples/)
+- **Examples:** [MCP](packages/mcp/examples/) · [FastMCP](packages/fastmcp/examples/) · [OAuth](packages/oauth/examples/) · [Agents](packages/agents/examples/)
 
 ## License
 
