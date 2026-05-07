@@ -1,0 +1,46 @@
+name: Socket Fix
+
+on:
+  schedule:
+    - cron: "17 6 * * 1,4" # Mon + Thu 6:17am UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate GitHub App token
+        id: generate-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.GH_REPO_ACCESS_APP_ID }}
+          private-key: ${{ secrets.GH_REPO_ACCESS_PRIVATE_KEY }}
+
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ steps.generate-token.outputs.token }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v4
+
+      - name: Install dependencies
+        run: uv sync --all-extras --all-packages
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Run Socket Fix
+        env:
+          SOCKET_CLI_GITHUB_TOKEN: ${{ steps.generate-token.outputs.token }}
+          SOCKET_CLI_API_TOKEN: ${{ secrets.SOCKET_API_TOKEN }}
+          SOCKET_CLI_GIT_USER_NAME: github-actions[bot]
+          SOCKET_CLI_GIT_USER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+        run: npx @socketsecurity/cli fix --autopilot
