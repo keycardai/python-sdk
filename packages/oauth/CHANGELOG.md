@@ -1,3 +1,11 @@
+## 0.12.0-keycardai-oauth (2026-05-07)
+
+
+- feat(keycardai-oauth)!: pass error context through AccessContext.access(), rename to get_resource_error (#114)
+- * feat(keycardai-oauth)!: pass error context through AccessContext.access(), rename to get_resource_error
+---------
+- Co-authored-by: GitHub Action <action@github.com>
+
 ## 0.11.0-keycardai-oauth (2026-04-28)
 
 
