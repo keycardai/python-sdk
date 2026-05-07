@@ -1,4 +1,6 @@
-# Keycard FastMCP Integration
+# keycardai-mcp-fastmcp (deprecated)
+
+> **This package is deprecated.** Use [`keycardai-fastmcp`](../fastmcp/) instead. This package re-exports the same classes from `keycardai-fastmcp` with a `DeprecationWarning` so existing code keeps working. Update your install command to `pip install keycardai-fastmcp` and your imports to `from keycardai.fastmcp import ...` when convenient.
 
 A Python package that provides seamless integration between Keycard and FastMCP servers, enabling secure token exchange and authentication for MCP tools.
 
