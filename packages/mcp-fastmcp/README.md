@@ -222,7 +222,7 @@ if access_context.has_error():
 
 # Check for specific resource errors
 if access_context.has_resource_error("https://api.example.com"):
-    resource_error = access_context.get_resource_errors("https://api.example.com")
+    resource_error = access_context.get_resource_error("https://api.example.com")
 
 # Get all errors (global + resource-specific)
 all_errors = access_context.get_errors()

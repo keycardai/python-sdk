@@ -307,7 +307,7 @@ class ResourceAccessError(OAuthServerError):
         details = {
             "requested_resource": resource or "unknown",
             "error_type": error_type or "unknown",
-            "available_resources": available_resources or [],
+            "available_resources": available_resources if error_type == "missing_token" else None,
             "error_details": error_details or {},
             "solution": (
                 "Fix authentication issues before accessing resources"

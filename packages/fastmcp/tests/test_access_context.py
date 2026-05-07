@@ -1,13 +1,15 @@
-"""Unit tests for AccessContext.
+"""Unit tests for the fastmcp provider AccessContext.
 
-Covers the rich-error context surfaced through `access()` and the
-get_resource_error getter.
+The fastmcp AccessContext.access() is an independent implementation in
+provider.py with the same three error paths as the oauth AccessContext.
+These tests mirror packages/oauth/tests/.../test_access_context.py and
+verify the rich-error contract holds for the fastmcp provider too.
 """
 
 import pytest
 
-from keycardai.oauth.server.access_context import AccessContext
-from keycardai.oauth.server.exceptions import ResourceAccessError
+from keycardai.fastmcp.provider import AccessContext
+from keycardai.mcp.server.exceptions import ResourceAccessError
 from keycardai.oauth.types.models import TokenResponse
 
 
