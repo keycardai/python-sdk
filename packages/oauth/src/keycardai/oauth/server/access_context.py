@@ -62,7 +62,7 @@ class AccessContext:
         """Get global error if any."""
         return self._error
 
-    def get_resource_errors(self, resource: str) -> dict[str, str] | None:
+    def get_resource_error(self, resource: str) -> dict[str, str] | None:
         """Get error for a specific resource."""
         return self._resource_errors.get(resource)
 
@@ -96,12 +96,24 @@ class AccessContext:
             ResourceAccessError: If resource was not granted or has an error
         """
         if self.has_error():
-            raise ResourceAccessError()
+            raise ResourceAccessError(
+                resource=resource,
+                error_type="global_error",
+                error_details=self.get_error(),
+            )
 
         if self.has_resource_error(resource):
-            raise ResourceAccessError()
+            raise ResourceAccessError(
+                resource=resource,
+                error_type="resource_error",
+                error_details=self.get_resource_error(resource),
+            )
 
         if resource not in self._access_tokens:
-            raise ResourceAccessError()
+            raise ResourceAccessError(
+                resource=resource,
+                error_type="missing_token",
+                available_resources=list(self._access_tokens.keys()),
+            )
 
         return self._access_tokens[resource]

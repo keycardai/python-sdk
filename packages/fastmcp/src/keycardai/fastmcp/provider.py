@@ -233,7 +233,7 @@ class AccessContext:
         """Get global error if any."""
         return self._error
 
-    def get_resource_errors(self, resource: str) -> dict[str, str] | None:
+    def get_resource_error(self, resource: str) -> dict[str, str] | None:
         """Get error for a specific resource."""
         return self._resource_errors.get(resource)
 
@@ -279,7 +279,7 @@ class AccessContext:
             raise ResourceAccessError(
                 resource=resource,
                 error_type="resource_error",
-                error_details=self.get_resource_errors(resource)
+                error_details=self.get_resource_error(resource)
             )
 
         # Check if token exists

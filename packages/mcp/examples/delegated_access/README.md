@@ -193,7 +193,7 @@ The example demonstrates comprehensive error handling patterns:
 | `has_errors()` | Check for any errors (global or resource-specific) |
 | `get_errors()` | Get all error details as a dictionary |
 | `has_resource_error(url)` | Check for errors on a specific resource |
-| `get_resource_errors(url)` | Get errors for a specific resource |
+| `get_resource_error(url)` | Get errors for a specific resource |
 | `has_error()` | Check for global errors only |
 | `get_error()` | Get global error details |
 
