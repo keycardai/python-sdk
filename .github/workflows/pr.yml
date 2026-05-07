@@ -12,6 +12,7 @@ permissions:
 jobs:
   validate-commits:
     runs-on: ubuntu-latest
+    if: github.event.pull_request.user.type != 'Bot'
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
