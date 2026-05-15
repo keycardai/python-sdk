@@ -13,7 +13,7 @@
 | Add auth to MCP servers (using the `mcp` SDK) | `pip install keycardai-mcp` | [Quick Start](#quick-start-standard-mcp) |
 | Add auth to FastMCP servers | `pip install keycardai-fastmcp` | [Quick Start](#quick-start-fastmcp) |
 | Connect to MCP servers as a client | `pip install keycardai-mcp` | [MCP Client docs](packages/mcp/src/keycardai/mcp/client/) |
-| Build agent-to-agent (A2A) services | `pip install keycardai-agents` | [Agents docs](packages/agents/) |
+| Build agent-to-agent (A2A) services | `pip install keycardai-a2a` | [A2A docs](packages/a2a/) |
 | Use the OAuth 2.0 client directly | `pip install keycardai-oauth` | [OAuth docs](packages/oauth/) |
 
 ## Key Concepts
@@ -453,9 +453,9 @@ app = auth_provider.app(mcp, middleware=middleware)
   - [keycardai-mcp](packages/mcp/) — MCP server authentication
   - [keycardai-fastmcp](packages/fastmcp/) — FastMCP integration
   - [keycardai-mcp client](packages/mcp/src/keycardai/mcp/client/) — MCP client (CLI, web apps, AI agent integrations)
-  - [keycardai-agents](packages/agents/) — Agent-to-agent delegation (A2A)
+  - [keycardai-a2a](packages/a2a/) — Agent-to-agent delegation (A2A)
   - [keycardai-oauth](packages/oauth/) — OAuth 2.0 client
-- **Examples:** [MCP](packages/mcp/examples/) · [FastMCP](packages/fastmcp/examples/) · [OAuth](packages/oauth/examples/) · [Agents](packages/agents/examples/)
+- **Examples:** [MCP](packages/mcp/examples/) · [FastMCP](packages/fastmcp/examples/) · [OAuth](packages/oauth/examples/) · [A2A](packages/a2a/examples/)
 
 ## License
 
