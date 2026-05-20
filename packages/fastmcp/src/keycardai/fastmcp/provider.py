@@ -733,9 +733,18 @@ class AuthProvider:
                         if self.application_credential:
                             logger.debug(f"Using application credential: {type(self.application_credential).__name__}")
                             # auth_info context is used by application credential implementation
-                            # to prepare correct assertions in the token exchange request
+                            # to prepare correct assertions in the token exchange request.
+                            # For WebIdentity, use the stable WIF key_id so the client assertion
+                            # JWT has a predictable `iss` that can be pre-registered in Keycard.
+                            # Falling back to the DCR client_id would produce an ephemeral `ua:...`
+                            # identifier that changes on every restart and cannot be pre-registered.
+                            _resource_client_id = (
+                                self.application_credential.identity_manager.key_id
+                                if hasattr(self.application_credential, "identity_manager")
+                                else self.client.config.client_id or ""
+                            )
                             _auth_info = {
-                                "resource_client_id": self.client.config.client_id or "",
+                                "resource_client_id": _resource_client_id,
                                 "resource_server_url": self.mcp_base_url,
                                 "zone_id": "",
                             }
