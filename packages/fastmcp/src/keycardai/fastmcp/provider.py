@@ -416,7 +416,9 @@ class AuthProvider:
         self.mcp_base_url = f"{parsed_url.scheme}://{parsed_url.netloc}/"
         # fastmcp automatically appends `/mcp` to the base_url when presenting Protected Resource to the clients.
         # we need to append `/mcp` to the mcp_base_url to ensure the audience is properly aligned with FastMCP JWTVerifier.
-        self.audience = f"{self.mcp_base_url}mcp"
+        # Also accept zone_url as a valid audience: Keycard PKCE access tokens carry aud=zone_url
+        # (the resource is in a separate `resource` claim), so we must accept both forms.
+        self.audience = [f"{self.mcp_base_url}mcp", self.zone_url]
         self.client_name = self.mcp_server_name or "Keycard Auth Client"
 
         self.client_factory = client_factory or DefaultClientFactory()
