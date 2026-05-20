@@ -1,3 +1,8 @@
+## 0.3.0-keycardai-fastmcp (2026-05-20)
+
+
+- fix(keycardai-fastmcp): trigger version bump for audience and wif key_id fixes
+
 ## 0.2.0-keycardai-fastmcp (2026-04-27)
 
 
