@@ -22,6 +22,10 @@ from .operations._authorize import (
     exchange_authorization_code as _exchange_authorization_code,
     exchange_authorization_code_async as _exchange_authorization_code_async,
 )
+from .operations._client_credentials import (
+    grant_client_credentials,
+    grant_client_credentials_async,
+)
 from .operations._discovery import (
     discover_server_metadata,
     discover_server_metadata_async,
@@ -726,23 +730,24 @@ class AsyncClient:
         self,
         *,
         user_identifier: str,
-        resource: str,
-        scope: str | None = None,
+        resource: str | None = None,
+        scopes: list[str] | None = None,
         timeout: float | None = None,
     ) -> TokenResponse:
         """Impersonate a user to obtain a resource token.
 
-        Performs an RFC 8693 token exchange using a substitute-user subject token.
-        The calling application must authenticate via client credentials and the
-        user must have previously established a delegated grant for the resource.
+        Performs an RFC 8693 token exchange where the actor token is derived
+        from the client's application credential (via a client_credentials
+        grant) and the subject token is an unsigned substitute-user JWT
+        carrying the target user identifier.
 
-        This is a privileged operation controlled by policy. Impersonation is
-        forbidden by default; an administrator must explicitly allow it.
+        Impersonation is a privileged operation controlled server-side by
+        Keycard policy and is forbidden by default.
 
         Args:
-            user_identifier: Stable user identifier (e.g. email, oid).
-            resource: Target resource URI (e.g. "https://graph.microsoft.com").
-            scope: Optional scope string for the requested token.
+            user_identifier: Target user (becomes ``sub`` in the issued token).
+            resource: Optional target resource URI for the issued token.
+            scopes: Optional list of scopes requested for the issued token.
             timeout: Optional request timeout override.
 
         Returns:
@@ -750,25 +755,11 @@ class AsyncClient:
 
         Raises:
             OAuthHttpError: If the token endpoint returns an HTTP error.
-            OAuthProtocolError: If the response contains an OAuth error.
-
-        Example:
-            async with AsyncClient(
-                "https://zone.keycard.cloud",
-                auth=BasicAuth("client_id", "client_secret"),
-            ) as client:
-                response = await client.impersonate(
-                    user_identifier="user@example.com",
-                    resource="https://graph.microsoft.com",
-                )
-                print(response.access_token)
+            OAuthProtocolError: If the response contains an OAuth error
+                (e.g. ``invalid_grant``, ``unauthorized_client``).
         """
-        request = TokenExchangeRequest(
-            subject_token=build_substitute_user_token(user_identifier),
-            subject_token_type=TokenType.SUBSTITUTE_USER,
-            resource=resource,
-            scope=scope,
-        )
+        if not user_identifier:
+            raise ValueError("user_identifier is required")
 
         endpoints = await self._get_current_endpoints()
 
@@ -779,6 +770,17 @@ class AsyncClient:
             user_agent=self.config.user_agent,
             custom_headers=self.config.custom_headers,
             timeout=timeout or self.config.timeout,
+        )
+
+        actor = await grant_client_credentials_async(ctx)
+
+        request = TokenExchangeRequest(
+            subject_token=build_substitute_user_token(user_identifier),
+            subject_token_type=TokenType.SUBSTITUTE_USER,
+            actor_token=actor.access_token,
+            actor_token_type=TokenType.ACCESS_TOKEN,
+            resource=resource,
+            scope=" ".join(scopes) if scopes else None,
         )
 
         return await exchange_token_async(request, ctx)
@@ -1301,23 +1303,24 @@ class Client:
         self,
         *,
         user_identifier: str,
-        resource: str,
-        scope: str | None = None,
+        resource: str | None = None,
+        scopes: list[str] | None = None,
         timeout: float | None = None,
     ) -> TokenResponse:
         """Impersonate a user to obtain a resource token.
 
-        Performs an RFC 8693 token exchange using a substitute-user subject token.
-        The calling application must authenticate via client credentials and the
-        user must have previously established a delegated grant for the resource.
+        Performs an RFC 8693 token exchange where the actor token is derived
+        from the client's application credential (via a client_credentials
+        grant) and the subject token is an unsigned substitute-user JWT
+        carrying the target user identifier.
 
-        This is a privileged operation controlled by policy. Impersonation is
-        forbidden by default; an administrator must explicitly allow it.
+        Impersonation is a privileged operation controlled server-side by
+        Keycard policy and is forbidden by default.
 
         Args:
-            user_identifier: Stable user identifier (e.g. email, oid).
-            resource: Target resource URI (e.g. "https://graph.microsoft.com").
-            scope: Optional scope string for the requested token.
+            user_identifier: Target user (becomes ``sub`` in the issued token).
+            resource: Optional target resource URI for the issued token.
+            scopes: Optional list of scopes requested for the issued token.
             timeout: Optional request timeout override.
 
         Returns:
@@ -1325,25 +1328,11 @@ class Client:
 
         Raises:
             OAuthHttpError: If the token endpoint returns an HTTP error.
-            OAuthProtocolError: If the response contains an OAuth error.
-
-        Example:
-            with Client(
-                "https://zone.keycard.cloud",
-                auth=BasicAuth("client_id", "client_secret"),
-            ) as client:
-                response = client.impersonate(
-                    user_identifier="user@example.com",
-                    resource="https://graph.microsoft.com",
-                )
-                print(response.access_token)
+            OAuthProtocolError: If the response contains an OAuth error
+                (e.g. ``invalid_grant``, ``unauthorized_client``).
         """
-        request = TokenExchangeRequest(
-            subject_token=build_substitute_user_token(user_identifier),
-            subject_token_type=TokenType.SUBSTITUTE_USER,
-            resource=resource,
-            scope=scope,
-        )
+        if not user_identifier:
+            raise ValueError("user_identifier is required")
 
         endpoints = self._get_current_endpoints()
 
@@ -1354,6 +1343,17 @@ class Client:
             user_agent=self.config.user_agent,
             custom_headers=self.config.custom_headers,
             timeout=timeout or self.config.timeout,
+        )
+
+        actor = grant_client_credentials(ctx)
+
+        request = TokenExchangeRequest(
+            subject_token=build_substitute_user_token(user_identifier),
+            subject_token_type=TokenType.SUBSTITUTE_USER,
+            actor_token=actor.access_token,
+            actor_token_type=TokenType.ACCESS_TOKEN,
+            resource=resource,
+            scope=" ".join(scopes) if scopes else None,
         )
 
         return exchange_token(request, ctx)
