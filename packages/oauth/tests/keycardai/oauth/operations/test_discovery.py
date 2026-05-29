@@ -84,6 +84,58 @@ class TestDiscoveryOperations:
         with pytest.raises(OAuthProtocolError, match="Invalid JSON"):
             parse_discovery_http_response(http_response)
 
+    def test_parse_discovery_http_response_issuer_mismatch(self):
+        """Issuer in the document must match the requested issuer (RFC 8414 Section 3.3)."""
+        http_response = HttpResponse(
+            status=200,
+            headers={"Content-Type": "application/json"},
+            body=b'{"issuer": "https://evil.example.com"}'
+        )
+
+        with pytest.raises(OAuthProtocolError, match="issuer"):
+            parse_discovery_http_response(
+                http_response, expected_issuer="https://auth.example.com"
+            )
+
+    def test_parse_discovery_http_response_issuer_match_ignores_trailing_slash(self):
+        """A trailing slash difference is not a mismatch."""
+        http_response = HttpResponse(
+            status=200,
+            headers={"Content-Type": "application/json"},
+            body=b'{"issuer": "https://auth.example.com"}'
+        )
+
+        result = parse_discovery_http_response(
+            http_response, expected_issuer="https://auth.example.com/"
+        )
+
+        assert result.issuer == "https://auth.example.com"
+
+    def test_discover_server_metadata_rejects_issuer_mismatch(self):
+        """The discovery operation validates the issuer against the request."""
+        mock_transport = Mock()
+        mock_transport.request_raw.return_value = HttpResponse(
+            status=200,
+            headers={"Content-Type": "application/json"},
+            body=b'{"issuer": "https://evil.example.com"}'
+        )
+
+        mock_auth = Mock()
+        mock_auth.apply_headers.return_value = {}
+
+        context = build_http_context(
+            endpoint="https://auth.example.com/.well-known/oauth-authorization-server",
+            transport=mock_transport,
+            auth=mock_auth,
+            user_agent="TestClient/1.0",
+            timeout=30.0
+        )
+
+        req = ServerMetadataRequest(base_url="https://auth.example.com")
+
+        with pytest.raises(OAuthProtocolError, match="issuer"):
+            discover_server_metadata(req, context)
+
     def test_discover_server_metadata_sync(self):
         """Test synchronous discovery operation."""
         mock_transport = Mock()
