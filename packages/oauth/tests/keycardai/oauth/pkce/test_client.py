@@ -120,7 +120,7 @@ async def test_authenticate_completes_full_flow(monkeypatch):
     )
     # AsyncClient was constructed against the discovered authorization server
     # with HTTP Basic auth (confidential client).
-    assert captured["base_url"] == "https://auth.example.com"
+    assert captured["issuer"] == "https://auth.example.com"
     assert isinstance(captured["auth"], BasicAuth)
     assert captured["auth"].client_id == "my-app"
     assert captured["auth"].client_secret == "secret"
@@ -208,9 +208,9 @@ def _async_client_factory(
     so tests can assert against them.
     """
 
-    def factory(base_url, *, auth, config):
+    def factory(issuer=None, *, auth, config):
         if capture is not None:
-            capture["base_url"] = base_url
+            capture["issuer"] = issuer
             capture["auth"] = auth
             capture["config"] = config
         instance = MagicMock()

@@ -2,6 +2,7 @@
 
 import asyncio
 import threading
+import warnings
 from typing import Any, overload
 
 from .exceptions import (
@@ -54,15 +55,53 @@ from .types.oauth import (
 from .utils.jwt import build_substitute_user_token
 
 
+def _resolve_issuer_arg(issuer: str | None, base_url: str | None) -> str:
+    """Resolve the canonical issuer from the ``issuer`` / deprecated ``base_url`` args.
+
+    Emits a ``DeprecationWarning`` when ``base_url`` is supplied. Raises
+    ``ConfigError`` if both are supplied or neither resolves to a value.
+    """
+    if base_url is not None:
+        warnings.warn(
+            "`base_url` is deprecated; use `issuer` instead.",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+        if issuer is not None:
+            raise ConfigError("Pass either `issuer` or `base_url`, not both.")
+        issuer = base_url
+    if not issuer:
+        raise ConfigError("issuer is required")
+    return issuer.rstrip("/")
+
+
+def _resolve_discovery_issuer(args: dict[str, Any], default_issuer: str) -> str:
+    """Resolve the issuer for a discovery call from its keyword args.
+
+    Accepts ``issuer`` (canonical) or ``base_url`` (deprecated), falling back to
+    the client's own issuer. Emits a ``DeprecationWarning`` for ``base_url``.
+    """
+    if "issuer" in args and "base_url" in args:
+        raise ConfigError("Pass either `issuer` or `base_url`, not both.")
+    if "base_url" in args:
+        warnings.warn(
+            "`base_url` is deprecated; use `issuer` instead.",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+        return args["base_url"]
+    return args.get("issuer", default_issuer)
+
+
 def resolve_endpoints(
-    base_url: str,
+    issuer: str,
     endpoint_overrides: Endpoints | None = None,
     discovered_metadata: "AuthorizationServerMetadata | None" = None,
 ) -> Endpoints:
     """Resolve final endpoint URLs with priority: overrides > discovered > defaults.
 
     Args:
-        base_url: Base URL for OAuth 2.0 server
+        issuer: Issuer URL for the OAuth 2.0 authorization server
         endpoint_overrides: Optional endpoint overrides (highest priority)
         discovered_metadata: Optional discovered server metadata (middle priority)
 
@@ -94,17 +133,17 @@ def resolve_endpoints(
             endpoints.authorize = discovered_metadata.authorization_endpoint
 
     if not endpoints.introspect:
-        endpoints.introspect = OAuth2DefaultEndpoints.construct_url(base_url, OAuth2DefaultEndpoints.INTROSPECTION)
+        endpoints.introspect = OAuth2DefaultEndpoints.construct_url(issuer, OAuth2DefaultEndpoints.INTROSPECTION)
     if not endpoints.token:
-        endpoints.token = OAuth2DefaultEndpoints.construct_url(base_url, OAuth2DefaultEndpoints.TOKEN)
+        endpoints.token = OAuth2DefaultEndpoints.construct_url(issuer, OAuth2DefaultEndpoints.TOKEN)
     if not endpoints.revoke:
-        endpoints.revoke = OAuth2DefaultEndpoints.construct_url(base_url, OAuth2DefaultEndpoints.REVOCATION)
+        endpoints.revoke = OAuth2DefaultEndpoints.construct_url(issuer, OAuth2DefaultEndpoints.REVOCATION)
     if not endpoints.register:
-        endpoints.register = OAuth2DefaultEndpoints.construct_url(base_url, OAuth2DefaultEndpoints.REGISTRATION)
+        endpoints.register = OAuth2DefaultEndpoints.construct_url(issuer, OAuth2DefaultEndpoints.REGISTRATION)
     if not endpoints.authorize:
-        endpoints.authorize = OAuth2DefaultEndpoints.construct_url(base_url, OAuth2DefaultEndpoints.AUTHORIZATION)
+        endpoints.authorize = OAuth2DefaultEndpoints.construct_url(issuer, OAuth2DefaultEndpoints.AUTHORIZATION)
     if not endpoints.par:
-        endpoints.par = OAuth2DefaultEndpoints.construct_url(base_url, OAuth2DefaultEndpoints.PUSHED_AUTHORIZATION)
+        endpoints.par = OAuth2DefaultEndpoints.construct_url(issuer, OAuth2DefaultEndpoints.PUSHED_AUTHORIZATION)
 
     return endpoints
 
@@ -230,8 +269,9 @@ class AsyncClient:
 
     def __init__(
         self,
-        base_url: str,
+        issuer: str | None = None,
         *,
+        base_url: str | None = None,
         auth: AuthStrategy | None = None,
         endpoints: Endpoints | None = None,
         transport: AsyncHTTPTransport | None = None,
@@ -240,16 +280,14 @@ class AsyncClient:
         """Initialize asynchronous OAuth 2.0 client.
 
         Args:
-            base_url: Base URL for OAuth 2.0 server
+            issuer: Issuer URL of the OAuth 2.0 authorization server (RFC 8414).
+            base_url: Deprecated alias for ``issuer``.
             auth: Authentication strategy (BasicAuth, BearerAuth, NoneAuth)
             endpoints: Endpoint overrides for multi-server deployments
             transport: Custom asynchronous HTTP transport
             config: Client configuration with timeouts, retries, etc.
         """
-        if not base_url:
-            raise ConfigError("base_url is required")
-
-        self.base_url = base_url.rstrip("/")
+        self.issuer = _resolve_issuer_arg(issuer, base_url)
         self.config = config or ClientConfig()
 
         self.auth_strategy = auth or NoneAuth()
@@ -265,7 +303,7 @@ class AsyncClient:
 
         self._endpoint_overrides = endpoints
 
-        self._endpoints = resolve_endpoints(self.base_url, endpoints)
+        self._endpoints = resolve_endpoints(self.issuer, endpoints)
 
         self._initialized = False
         self._init_lock: asyncio.Lock | None = None
@@ -273,6 +311,11 @@ class AsyncClient:
         self._client_id = None
         self._client_secret = None
         self._discovered_endpoints: Endpoints | None = None
+
+    @property
+    def base_url(self) -> str:
+        """Deprecated alias for :attr:`issuer`. Use ``issuer`` instead."""
+        return self.issuer
 
     async def _ensure_initialized(self) -> None:
         """Ensure client is fully initialized with discovery and registration.
@@ -298,13 +341,13 @@ class AsyncClient:
                 try:
                     metadata = await self.discover_server_metadata()
                     self._discovered_endpoints = resolve_endpoints(
-                        self.base_url,
+                        self.issuer,
                         self._endpoint_overrides,
                         metadata
                     )
                 except (OAuthHttpError, OAuthProtocolError, NetworkError, AuthenticationError):
                     self._discovered_endpoints = resolve_endpoints(
-                        self.base_url,
+                        self.issuer,
                         self._endpoint_overrides,
                         None
                     )
@@ -524,7 +567,7 @@ class AsyncClient:
         self,
         /,
         *,
-        base_url: str | None = None,
+        issuer: str | None = None,
     ) -> AuthorizationServerMetadata: ...
 
     async def discover_server_metadata(self, request: ServerMetadataRequest | None = None, /, **metadata_discovery_args) -> AuthorizationServerMetadata:
@@ -539,23 +582,24 @@ class AsyncClient:
 
         With keyword arguments:
             metadata = await client.discover_server_metadata(
-                base_url="https://custom.auth.example.com"
+                issuer="https://custom.auth.example.com"
             )
 
         Explicit request:
-            request = ServerMetadataRequest(base_url="https://auth.example.com")
+            request = ServerMetadataRequest(issuer="https://auth.example.com")
             metadata = await client.discover_server_metadata(request)
 
         Args:
-            request: Optional ServerMetadataRequest (defaults to client's base_url if not provided)
-            **metadata_discovery_args: Alternative to request - provide individual parameters
+            request: Optional ServerMetadataRequest (defaults to the client's issuer if not provided)
+            **metadata_discovery_args: Alternative to request - provide ``issuer``
+                (``base_url`` is accepted as a deprecated alias)
 
         Returns:
             AuthorizationServerMetadata with discovered server capabilities
 
         Raises:
             TypeError: If both request and metadata_discovery_args are provided
-            ConfigError: If base_url is empty
+            ConfigError: If issuer is empty
             OAuthHttpError: If discovery endpoint is unreachable
             OAuthProtocolError: If metadata format is invalid
             NetworkError: If network request fails
@@ -564,11 +608,11 @@ class AsyncClient:
             raise TypeError("Pass either `request` or keyword arguments, not both.")
 
         if request is None:
-            base_url = metadata_discovery_args.get("base_url", self.base_url)
-            request = ServerMetadataRequest(base_url=base_url)
+            issuer = _resolve_discovery_issuer(metadata_discovery_args, self.issuer)
+            request = ServerMetadataRequest(issuer=issuer)
 
         context = build_http_context(
-            endpoint=self.base_url,
+            endpoint=self.issuer,
             transport=self.transport,
             auth=self.auth_strategy,
             user_agent=self.config.user_agent,
@@ -839,8 +883,9 @@ class Client:
 
     def __init__(
         self,
-        base_url: str,
+        issuer: str | None = None,
         *,
+        base_url: str | None = None,
         auth: AuthStrategy | None = None,
         endpoints: Endpoints | None = None,
         transport: HTTPTransport | None = None,
@@ -849,16 +894,14 @@ class Client:
         """Initialize synchronous OAuth 2.0 client.
 
         Args:
-            base_url: Base URL for OAuth 2.0 server
+            issuer: Issuer URL of the OAuth 2.0 authorization server (RFC 8414).
+            base_url: Deprecated alias for ``issuer``.
             auth: Authentication strategy (BasicAuth, BearerAuth, NoneAuth)
             endpoints: Endpoint overrides for multi-server deployments
             transport: Custom synchronous HTTP transport
             config: Client configuration with timeouts, retries, etc.
         """
-        if not base_url:
-            raise ConfigError("base_url is required")
-
-        self.base_url = base_url.rstrip("/")
+        self.issuer = _resolve_issuer_arg(issuer, base_url)
         self.config = config or ClientConfig()
 
         self.auth_strategy = auth or NoneAuth()
@@ -874,7 +917,7 @@ class Client:
 
         self._endpoint_overrides = endpoints
 
-        self._endpoints = resolve_endpoints(self.base_url, endpoints)
+        self._endpoints = resolve_endpoints(self.issuer, endpoints)
 
         # Lazy initialization state (thread-safe)
         self._initialized = False
@@ -884,6 +927,11 @@ class Client:
         self._client_id = None
         self._client_secret = None
         self._discovered_endpoints: Endpoints | None = None
+
+    @property
+    def base_url(self) -> str:
+        """Deprecated alias for :attr:`issuer`. Use ``issuer`` instead."""
+        return self.issuer
 
     def _ensure_initialized(self) -> None:
         """Ensure client is fully initialized with discovery and registration.
@@ -909,14 +957,14 @@ class Client:
                 try:
                     metadata = self.discover_server_metadata()
                     self._discovered_endpoints = resolve_endpoints(
-                        self.base_url,
+                        self.issuer,
                         self._endpoint_overrides,
                         metadata
                     )
                 except (OAuthHttpError, OAuthProtocolError, NetworkError, AuthenticationError):
                     # Discovery failed, use defaults
                     self._discovered_endpoints = resolve_endpoints(
-                        self.base_url,
+                        self.issuer,
                         self._endpoint_overrides,
                         None
                     )
@@ -1102,7 +1150,7 @@ class Client:
         self,
         /,
         *,
-        base_url: str | None = None,
+        issuer: str | None = None,
     ) -> AuthorizationServerMetadata: ...
 
     def discover_server_metadata(self, request: ServerMetadataRequest | None = None, /, **metadata_discovery_args) -> AuthorizationServerMetadata:
@@ -1117,16 +1165,17 @@ class Client:
 
         With keyword arguments:
             metadata = client.discover_server_metadata(
-                base_url="https://custom.auth.example.com"
+                issuer="https://custom.auth.example.com"
             )
 
         Explicit request:
-            request = ServerMetadataRequest(base_url="https://auth.example.com")
+            request = ServerMetadataRequest(issuer="https://auth.example.com")
             metadata = client.discover_server_metadata(request)
 
         Args:
-            request: Optional ServerMetadataRequest (defaults to client's base_url if not provided)
-            **metadata_discovery_args: Alternative to request - provide individual parameters
+            request: Optional ServerMetadataRequest (defaults to the client's issuer if not provided)
+            **metadata_discovery_args: Alternative to request - provide ``issuer``
+                (``base_url`` is accepted as a deprecated alias)
 
         Returns:
             AuthorizationServerMetadata with discovered server capabilities
@@ -1141,11 +1190,11 @@ class Client:
             raise TypeError("Pass either `request` or keyword arguments, not both.")
 
         if request is None:
-            base_url = metadata_discovery_args.get("base_url", self.base_url)
-            request = ServerMetadataRequest(base_url=base_url)
+            issuer = _resolve_discovery_issuer(metadata_discovery_args, self.issuer)
+            request = ServerMetadataRequest(issuer=issuer)
 
         context = build_http_context(
-            endpoint=self.base_url,
+            endpoint=self.issuer,
             transport=self.transport,
             auth=self.auth_strategy,
             user_agent=self.config.user_agent,

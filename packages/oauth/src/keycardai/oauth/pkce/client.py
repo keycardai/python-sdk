@@ -118,7 +118,7 @@ async def authenticate(
     config = ClientConfig(enable_metadata_discovery=True, auto_register_client=False)
 
     async with AsyncClient(
-        base_url=auth_server_url, auth=auth_strategy, config=config
+        issuer=auth_server_url, auth=auth_strategy, config=config
     ) as oauth_client:
         endpoints = await oauth_client.get_endpoints()
         if not endpoints.authorize or not endpoints.token:
