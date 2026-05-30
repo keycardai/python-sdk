@@ -98,7 +98,11 @@ def parse_discovery_http_response(
         )
 
     if "issuer" not in data:
-        raise ValueError("Authorization server metadata must include 'issuer' field")
+        raise OAuthProtocolError(
+            error="invalid_response",
+            error_description="Authorization server metadata must include 'issuer' field",
+            operation="GET /.well-known/oauth-authorization-server",
+        )
 
     if expected_issuer is not None and data["issuer"].rstrip("/") != expected_issuer.rstrip("/"):
         raise OAuthProtocolError(

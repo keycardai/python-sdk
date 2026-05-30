@@ -84,6 +84,17 @@ class TestDiscoveryOperations:
         with pytest.raises(OAuthProtocolError, match="Invalid JSON"):
             parse_discovery_http_response(http_response)
 
+    def test_parse_discovery_http_response_missing_issuer(self):
+        """Missing issuer raises the typed protocol error, not a bare ValueError."""
+        http_response = HttpResponse(
+            status=200,
+            headers={"Content-Type": "application/json"},
+            body=b'{"token_endpoint": "https://auth.example.com/token"}'
+        )
+
+        with pytest.raises(OAuthProtocolError, match="issuer"):
+            parse_discovery_http_response(http_response)
+
     def test_parse_discovery_http_response_issuer_mismatch(self):
         """Issuer in the document must match the requested issuer (RFC 8414 Section 3.3)."""
         http_response = HttpResponse(
