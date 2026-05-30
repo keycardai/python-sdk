@@ -213,6 +213,19 @@ class JWKSDiscoveryError(OAuthServerError):
         super().__init__(message)
 
 
+class JWKSUriValidationError(OAuthServerError):
+    """The discovered jwks_uri is not same-origin with the issuer.
+
+    Guards against a tampered or misconfigured discovery document pointing key
+    resolution at an origin other than the issuer's.
+    """
+
+    def __init__(self, issuer: str, jwks_uri: str):
+        super().__init__(
+            f"Discovered jwks_uri '{jwks_uri}' is not same-origin with issuer '{issuer}'"
+        )
+
+
 class TokenValidationError(OAuthServerError):
     """Token validation failed due to invalid token format, signature, or claims."""
 

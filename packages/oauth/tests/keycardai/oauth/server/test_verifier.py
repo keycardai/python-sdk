@@ -9,10 +9,40 @@ from keycardai.oauth.exceptions import OAuthHttpError
 from keycardai.oauth.server._cache import JWKSKey
 from keycardai.oauth.server.exceptions import (
     JWKSDiscoveryError,
+    JWKSUriValidationError,
     VerifierConfigError,
 )
 from keycardai.oauth.server.verifier import AccessToken, TokenVerifier
 from keycardai.oauth.utils.jwt import JWTAccessToken
+
+
+class TestTokenVerifierJwksSameOrigin:
+    """A discovered jwks_uri must share the issuer's origin (security)."""
+
+    def _verifier_with_discovered_jwks(self, issuer: str, discovered_jwks_uri: str):
+        metadata = Mock()
+        metadata.jwks_uri = discovered_jwks_uri
+        client = Mock()
+        client.discover_server_metadata = Mock(return_value=metadata)
+        factory = Mock()
+        factory.create_client = Mock(return_value=client)
+        return TokenVerifier(issuer=issuer, client_factory=factory)
+
+    def test_cross_origin_discovered_jwks_uri_rejected(self):
+        verifier = self._verifier_with_discovered_jwks(
+            "https://example.com", "https://evil.example.net/.well-known/jwks.json"
+        )
+        with pytest.raises(JWKSUriValidationError):
+            verifier._discover_jwks_uri()
+
+    def test_same_origin_discovered_jwks_uri_accepted(self):
+        verifier = self._verifier_with_discovered_jwks(
+            "https://example.com", "https://example.com/.well-known/jwks.json"
+        )
+        assert (
+            verifier._discover_jwks_uri()
+            == "https://example.com/.well-known/jwks.json"
+        )
 
 
 class TestTokenVerifierVerifyToken:
