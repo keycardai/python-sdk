@@ -10,6 +10,7 @@ from keycardai.oauth.server._cache import JWKSKey
 from keycardai.oauth.server.exceptions import (
     JWKSDiscoveryError,
     JWKSUriValidationError,
+    TokenValidationError,
     VerifierConfigError,
 )
 from keycardai.oauth.server.verifier import AccessToken, TokenVerifier
@@ -43,6 +44,33 @@ class TestTokenVerifierJwksSameOrigin:
             verifier._discover_jwks_uri()
             == "https://example.com/.well-known/jwks.json"
         )
+
+
+class TestTokenVerifierKidRequired:
+    """A token with no `kid` header is rejected (parity with the TypeScript verifier)."""
+
+    def test_missing_kid_rejected(self):
+        verifier = TokenVerifier(
+            issuer="https://example.com",
+            jwks_uri="https://example.com/.well-known/jwks.json",
+        )
+        with patch(
+            "keycardai.oauth.server.verifier.get_header",
+            return_value={"alg": "RS256"},
+        ):
+            with pytest.raises(TokenValidationError, match="kid"):
+                verifier._get_kid_and_algorithm("token")
+
+    def test_present_kid_accepted(self):
+        verifier = TokenVerifier(
+            issuer="https://example.com",
+            jwks_uri="https://example.com/.well-known/jwks.json",
+        )
+        with patch(
+            "keycardai.oauth.server.verifier.get_header",
+            return_value={"alg": "RS256", "kid": "abc"},
+        ):
+            assert verifier._get_kid_and_algorithm("token") == ("abc", "RS256")
 
 
 class TestTokenVerifierVerifyToken:
