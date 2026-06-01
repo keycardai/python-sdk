@@ -250,7 +250,7 @@ class TestGrantDecoratorRequestScopes:
         auth_provider = AuthProvider(**auth_provider_config, client_factory=factory)
 
         @auth_provider.grant(
-            "https://api1.example.com", request_scopes="databricks:clusters:read"
+            "https://api1.example.com", request_scopes="read"
         )
         def tool(access_ctx: AccessContext, ctx: Context):
             return "ok"
@@ -259,7 +259,7 @@ class TestGrantDecoratorRequestScopes:
 
         assert (
             captured["exchange"]["https://api1.example.com"].scope
-            == "databricks:clusters:read"
+            == "read"
         )
 
     @pytest.mark.asyncio
@@ -315,7 +315,7 @@ class TestGrantDecoratorRequestScopes:
         @auth_provider.grant(
             "https://api1.example.com",
             user_identifier=lambda **kw: "user@example.com",
-            request_scopes="databricks:clusters:read",
+            request_scopes="read",
         )
         def tool(access_ctx: AccessContext, ctx: Context):
             return "ok"
@@ -326,7 +326,7 @@ class TestGrantDecoratorRequestScopes:
             {
                 "user_identifier": "user@example.com",
                 "resource": "https://api1.example.com",
-                "scope": "databricks:clusters:read",
+                "scope": "read",
             }
         ]
 
