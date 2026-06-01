@@ -323,7 +323,13 @@ class AuthProvider:
             client_factory=self.client_factory,
         )
 
-    def grant(self, resources: str | list[str], user_identifier: Callable[..., str] | None = None):
+    def grant(
+        self,
+        resources: str | list[str],
+        user_identifier: Callable[..., str] | None = None,
+        *,
+        request_scopes: str | list[str] | dict[str, str | list[str]] | None = None,
+    ):
         """Decorator for automatic delegated token exchange.
 
         This decorator automates the OAuth token exchange process for accessing
@@ -337,6 +343,18 @@ class AuthProvider:
                       Can be a single string or list of strings.
                       (e.g., "https://api.example.com" or
                        ["https://api.example.com", "https://other-api.com"])
+            request_scopes: Optional OAuth scope(s) to request during the token
+                      exchange (RFC 8693 ``scope`` parameter), forwarded to Keycard
+                      so scope-gated delegation policies can match. Accepts:
+                      - ``str``: a single (space-delimited) scope string applied to
+                        every resource.
+                      - ``list[str]``: joined with spaces and applied to every
+                        resource.
+                      - ``dict[str, str | list[str]]``: per-resource scopes keyed by
+                        resource URL; resources absent from the dict request no scope.
+                      Defaults to ``None`` (no scope sent). This is the *outbound*
+                      scope requested during exchange, distinct from
+                      ``required_scopes`` enforced on the *inbound* caller token.
 
         Usage:
             ```python
@@ -425,6 +443,19 @@ class AuthProvider:
                 if isinstance(value, Context):
                     return value
             return None
+
+        def _scope_for(resource: str) -> str | None:
+            """Resolve the RFC 8693 scope string to request for a resource."""
+            if request_scopes is None:
+                return None
+            value = (
+                request_scopes.get(resource)
+                if isinstance(request_scopes, dict)
+                else request_scopes
+            )
+            if value is None:
+                return None
+            return " ".join(value) if isinstance(value, list) else value
 
         """
         Return the RequestContext parameter from the function arguments.
@@ -565,11 +596,13 @@ class AuthProvider:
                 _access_tokens = {}
                 for resource in _resource_list:
                     try:
+                        _scope = _scope_for(resource)
                         if _resolved_user_id is not None:
                             # Impersonation path: use substitute-user token exchange
                             _token_response = await _client.impersonate(
                                 user_identifier=_resolved_user_id,
                                 resource=resource,
+                                scope=_scope,
                             )
                         elif self.application_credential:
                             # Prepare token exchange request using application identity provider
@@ -579,6 +612,8 @@ class AuthProvider:
                                 resource=resource,
                                 auth_info=_keycardai_auth_info,
                             )
+                            if _scope:
+                                _token_exchange_request.scope = _scope
                             _token_response = await _client.exchange_token(_token_exchange_request)
                         else:
                             # Basic token exchange without client authentication
@@ -587,6 +622,8 @@ class AuthProvider:
                                 resource=resource,
                                 subject_token_type="urn:ietf:params:oauth:token-type:access_token",
                             )
+                            if _scope:
+                                _token_exchange_request.scope = _scope
                             _token_response = await _client.exchange_token(_token_exchange_request)
 
                         _access_tokens[resource] = _token_response
