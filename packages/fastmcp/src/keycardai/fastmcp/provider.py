@@ -628,7 +628,7 @@ class AuthProvider:
                       exchange (RFC 8693 ``scope`` parameter), forwarded to Keycard
                       so scope-gated delegation policies can match. Accepts:
                       - ``str``: a single (space-delimited) scope string applied to
-                        every resource (e.g. ``"databricks:clusters:read"``).
+                        every resource (e.g. ``"read"``).
                       - ``list[str]``: joined with spaces and applied to every
                         resource.
                       - ``dict[str, str | list[str]]``: per-resource scopes keyed by
@@ -667,7 +667,7 @@ class AuthProvider:
             @mcp.tool()
             @auth_provider.grant(
                 "https://api.example.com",
-                request_scopes="databricks:clusters:read",
+                request_scopes="read",
             )
             async def scoped_tool(ctx: Context):
                 ...

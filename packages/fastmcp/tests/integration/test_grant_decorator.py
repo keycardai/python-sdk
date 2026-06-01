@@ -257,7 +257,7 @@ class TestGrantDecoratorRequestScopes:
         )
 
         @auth_provider.grant(
-            "https://api.example.com", request_scopes="databricks:clusters:read"
+            "https://api.example.com", request_scopes="read"
         )
         async def tool(ctx: Context):
             return "ok"
@@ -265,7 +265,7 @@ class TestGrantDecoratorRequestScopes:
         await tool(create_mock_context())
 
         assert (
-            captured["https://api.example.com"].scope == "databricks:clusters:read"
+            captured["https://api.example.com"].scope == "read"
         )
 
     @pytest.mark.asyncio
