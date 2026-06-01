@@ -17,7 +17,7 @@ from keycardai.fastmcp import (
     ResourceAccessError,
 )
 from keycardai.mcp.server.exceptions import MissingContextError
-from keycardai.oauth.types.models import TokenResponse
+from keycardai.oauth.types.models import TokenExchangeRequest, TokenResponse
 
 
 async def check_access_context_for_errors(ctx: Context, resource: str = None):
@@ -218,6 +218,121 @@ class TestGrantDecoratorExecution:
 
         # Verify function executed successfully with both tokens
         assert result == "Hello user123, token1: token_api1_123, token2: token_api2_456"
+
+
+class TestGrantDecoratorRequestScopes:
+    """Test that the grant decorator forwards request_scopes into the exchange."""
+
+    def _capturing_provider(self, auth_provider_config, mock_client_factory):
+        """Build an AuthProvider whose exchange_token captures the request."""
+        auth_provider = AuthProvider(
+            **auth_provider_config,
+            client_factory=mock_client_factory,
+        )
+        captured: dict[str, TokenExchangeRequest] = {}
+
+        async def capturing_exchange(request: TokenExchangeRequest):
+            captured[request.resource] = request
+            return TokenResponse(
+                access_token="exchanged",
+                token_type="Bearer",
+                expires_in=3600,
+            )
+
+        mock_client = AsyncMock()
+        mock_client.exchange_token.side_effect = capturing_exchange
+        auth_provider.client = mock_client
+        return auth_provider, captured
+
+    @pytest.mark.asyncio
+    @patch("keycardai.fastmcp.provider.get_access_token")
+    async def test_grant_forwards_string_scope(
+        self, mock_get_token, auth_provider_config, mock_client_factory
+    ):
+        mock_get_token.return_value = AccessToken(
+            token="t", client_id="c", scopes=["s"]
+        )
+        auth_provider, captured = self._capturing_provider(
+            auth_provider_config, mock_client_factory
+        )
+
+        @auth_provider.grant(
+            "https://api.example.com", request_scopes="databricks:clusters:read"
+        )
+        async def tool(ctx: Context):
+            return "ok"
+
+        await tool(create_mock_context())
+
+        assert (
+            captured["https://api.example.com"].scope == "databricks:clusters:read"
+        )
+
+    @pytest.mark.asyncio
+    @patch("keycardai.fastmcp.provider.get_access_token")
+    async def test_grant_forwards_list_scope(
+        self, mock_get_token, auth_provider_config, mock_client_factory
+    ):
+        mock_get_token.return_value = AccessToken(
+            token="t", client_id="c", scopes=["s"]
+        )
+        auth_provider, captured = self._capturing_provider(
+            auth_provider_config, mock_client_factory
+        )
+
+        @auth_provider.grant(
+            "https://api.example.com", request_scopes=["read", "write"]
+        )
+        async def tool(ctx: Context):
+            return "ok"
+
+        await tool(create_mock_context())
+
+        assert captured["https://api.example.com"].scope == "read write"
+
+    @pytest.mark.asyncio
+    @patch("keycardai.fastmcp.provider.get_access_token")
+    async def test_grant_per_resource_scopes_dict(
+        self, mock_get_token, auth_provider_config, mock_client_factory
+    ):
+        mock_get_token.return_value = AccessToken(
+            token="t", client_id="c", scopes=["s"]
+        )
+        auth_provider, captured = self._capturing_provider(
+            auth_provider_config, mock_client_factory
+        )
+
+        @auth_provider.grant(
+            ["https://api1.example.com", "https://api2.example.com"],
+            request_scopes={"https://api1.example.com": "read"},
+        )
+        async def tool(ctx: Context):
+            return "ok"
+
+        await tool(create_mock_context())
+
+        assert captured["https://api1.example.com"].scope == "read"
+        assert captured["https://api2.example.com"].scope is None
+
+    @pytest.mark.asyncio
+    @patch("keycardai.fastmcp.provider.get_access_token")
+    async def test_grant_no_scope_default(
+        self, mock_get_token, auth_provider_config, mock_client_factory
+    ):
+        mock_get_token.return_value = AccessToken(
+            token="t", client_id="c", scopes=["s"]
+        )
+        auth_provider, captured = self._capturing_provider(
+            auth_provider_config, mock_client_factory
+        )
+
+        @auth_provider.grant("https://api.example.com")
+        async def tool(ctx: Context):
+            return "ok"
+
+        await tool(create_mock_context())
+
+        assert captured["https://api.example.com"].scope is None
 
 
 class TestAccessContext:
