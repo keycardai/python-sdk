@@ -41,11 +41,11 @@ async def test_basic_exchange_forwards_string_scope():
         resources=["https://api.example.com"],
         subject_token="subject",
         access_context=AccessContext(),
-        request_scopes="databricks:clusters:read",
+        request_scopes="read",
     )
     assert (
         captured["exchange"]["https://api.example.com"].scope
-        == "databricks:clusters:read"
+        == "read"
     )
 
 
@@ -97,13 +97,13 @@ async def test_impersonation_forwards_scope():
         subject_token="subject",
         access_context=AccessContext(),
         user_identifier="user@example.com",
-        request_scopes="databricks:clusters:read",
+        request_scopes="read",
     )
     assert captured["impersonate"] == [
         {
             "user_identifier": "user@example.com",
             "resource": "https://api.example.com",
-            "scope": "databricks:clusters:read",
+            "scope": "read",
         }
     ]
 
