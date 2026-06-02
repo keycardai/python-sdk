@@ -1,3 +1,15 @@
+## 0.13.1-keycardai-oauth (2026-06-02)
+
+
+- fix(keycardai-oauth): require kid in TokenVerifier, matching the TypeScript verifier (#132)
+- The TS verifier rejects any token without a kid header; Python silently fell
+back to the single JWKS key. For cross-SDK parity (and since Keycard always
+issues a kid), Python now rejects a missing kid with TokenValidationError
+before key resolution. Removes the optional-in-one / required-in-the-other
+surprise.
+- Part of ECO-35.
+- Co-authored-by: GitHub Action <action@github.com>
+
 ## 0.13.0-keycardai-oauth (2026-06-02)
 
 
