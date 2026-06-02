@@ -455,7 +455,8 @@ class AuthProvider:
             )
             if value is None:
                 return None
-            return " ".join(value) if isinstance(value, list) else value
+            scope = " ".join(value) if isinstance(value, list) else value
+            return scope or None
 
         """
         Return the RequestContext parameter from the function arguments.

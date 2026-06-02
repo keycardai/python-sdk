@@ -66,7 +66,8 @@ async def exchange_tokens_for_resources(
         )
         if value is None:
             return None
-        return " ".join(value) if isinstance(value, list) else value
+        scope = " ".join(value) if isinstance(value, list) else value
+        return scope or None
 
     access_tokens: dict[str, TokenResponse] = {}
 

@@ -89,6 +89,41 @@ async def test_no_scope_default():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("empty_scope", ["", []])
+async def test_basic_exchange_treats_empty_scope_as_absent(empty_scope):
+    client, captured = _capturing_client()
+    await exchange_tokens_for_resources(
+        client=client,
+        resources=["https://api.example.com"],
+        subject_token="subject",
+        access_context=AccessContext(),
+        request_scopes=empty_scope,
+    )
+    assert captured["exchange"]["https://api.example.com"].scope is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("empty_scope", ["", []])
+async def test_impersonation_treats_empty_scope_as_absent(empty_scope):
+    client, captured = _capturing_client()
+    await exchange_tokens_for_resources(
+        client=client,
+        resources=["https://api.example.com"],
+        subject_token="subject",
+        access_context=AccessContext(),
+        user_identifier="user@example.com",
+        request_scopes=empty_scope,
+    )
+    assert captured["impersonate"] == [
+        {
+            "user_identifier": "user@example.com",
+            "resource": "https://api.example.com",
+            "scope": None,
+        }
+    ]
+
+
+@pytest.mark.asyncio
 async def test_impersonation_forwards_scope():
     client, captured = _capturing_client()
     await exchange_tokens_for_resources(

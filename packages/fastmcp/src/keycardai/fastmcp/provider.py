@@ -725,7 +725,8 @@ class AuthProvider:
             )
             if value is None:
                 return None
-            return " ".join(value) if isinstance(value, list) else value
+            scope = " ".join(value) if isinstance(value, list) else value
+            return scope or None
 
         async def _set_error(error: dict[str, str], resource: str | None, access_context: AccessContext, ctx: Context):
             """Helper to set error context and call function."""
