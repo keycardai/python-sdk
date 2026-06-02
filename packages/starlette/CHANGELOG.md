@@ -1,3 +1,15 @@
+## 0.5.0-keycardai-starlette (2026-06-02)
+
+
+- build(keycardai-starlette): require keycardai-oauth>=0.13.0 for request_scopes
+- The grant() decorator now passes request_scopes to
+exchange_tokens_for_resources, a parameter added in keycardai-oauth
+0.13.0, so raise the dependency floor accordingly.
+- feat(keycardai-starlette): thread request_scopes through grant()
+- Expose request_scopes on the grant decorator and pass it to
+exchange_tokens_for_resources so scope-gated delegation works for
+Starlette/FastAPI endpoints.
+
 ## 0.4.0-keycardai-starlette (2026-05-01)
 
 
