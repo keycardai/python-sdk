@@ -22,6 +22,7 @@ from .exceptions import (
     CacheError,
     JWKSDiscoveryError,
     JWKSUriValidationError,
+    TokenValidationError,
     UnsupportedAlgorithmError,
     VerifierConfigError,
 )
@@ -137,6 +138,8 @@ class TokenVerifier:
         algorithm = header.get("alg")
         if algorithm not in self.allowed_algorithms:
             raise UnsupportedAlgorithmError(algorithm)
+        if not kid:
+            raise TokenValidationError("JWT missing key id (kid) header")
         return (kid, algorithm)
 
     def _get_zone_jwks_uri(self, jwks_uri: str, zone_id: str) -> str:
