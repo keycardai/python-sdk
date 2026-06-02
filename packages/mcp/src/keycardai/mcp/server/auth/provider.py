@@ -66,7 +66,9 @@ class AuthProvider:
             application_credential=client_secret
         )
 
-        # Multi-zone support with zone-specific credentials
+        # Multi-zone support with zone-specific credentials.
+        # Passing a multi-zone ClientSecret enables multi-zone automatically;
+        # pass enable_multi_zone=True/False only to override.
         client_secret = ClientSecret({
             "zone1": ("client_id_1", "client_secret_1"),
             "zone2": ("client_id_2", "client_secret_2"),
@@ -75,7 +77,6 @@ class AuthProvider:
             zone_url="https://keycard.cloud",
             mcp_server_name="My MCP Server",
             application_credential=client_secret,
-            enable_multi_zone=True
         )
 
         @provider.grant("https://api.example.com")
@@ -93,7 +94,7 @@ class AuthProvider:
         required_scopes: list[str] | None = None,
         audience: str | dict[str, str] | None = None,
         mcp_server_url: AnyHttpUrl | str | None = None,
-        enable_multi_zone: bool = False,
+        enable_multi_zone: bool | None = None,
         base_url: str | None = None,
         client_factory: ClientFactory | None = None,
         enable_dynamic_client_registration: bool | None = None,
@@ -113,7 +114,9 @@ class AuthProvider:
                      - None: Skip audience validation (not recommended for production)
             mcp_server_url: Resource server URL (defaults to server URL)
             enable_multi_zone: Enable multi-zone support where zone_url is the top-level domain
-                              and zone_id is extracted from request context
+                              and zone_id is extracted from request context. When left unset
+                              (None), it is inferred from the credential: a multi-zone
+                              ClientSecret turns it on automatically. Pass True/False to override.
             base_url: Base URL for Keycard (default: https://keycard.cloud)
             client_factory: Client factory for creating OAuth clients. Defaults to DefaultClientFactory
             enable_dynamic_client_registration: Override automatic client registration behavior
@@ -128,6 +131,15 @@ class AuthProvider:
         mcp_server_url = mcp_server_url or os.getenv("MCP_SERVER_URL")
 
         self.base_url = base_url or "https://keycard.cloud"
+
+        # Infer multi-zone from a multi-zone ClientSecret unless explicitly set.
+        # Env-discovered credentials are always single-zone, so the passed
+        # argument is the only source that can imply multi-zone.
+        if enable_multi_zone is None:
+            enable_multi_zone = (
+                isinstance(application_credential, ClientSecret)
+                and application_credential.is_multi_zone
+            )
 
         if zone_url is None and not enable_multi_zone:
             if zone_id is None:

@@ -111,6 +111,11 @@ class ClientSecret:
                 credentials_type=type(credentials).__name__
             )
 
+    @property
+    def is_multi_zone(self) -> bool:
+        """Whether this credential holds per-zone credentials."""
+        return isinstance(self.auth, MultiZoneBasicAuth)
+
     def get_http_client_auth(self) -> AuthStrategy:
         return self.auth
 

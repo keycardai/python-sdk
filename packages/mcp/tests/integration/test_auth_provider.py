@@ -72,6 +72,47 @@ class TestAuthProviderInitialization:
         assert isinstance(auth_provider.auth, BasicAuth)
         assert isinstance(auth_provider.application_credential, ClientSecret)
 
+    def test_multi_zone_inferred_from_credential(self, mock_client_factory):
+        """A multi-zone ClientSecret turns on multi-zone without an explicit flag."""
+        credential = ClientSecret({
+            "zone1": ("client_id_1", "client_secret_1"),
+            "zone2": ("client_id_2", "client_secret_2"),
+        })
+        auth_provider = AuthProvider(
+            zone_url="https://keycard.cloud",
+            mcp_server_url="http://localhost:8000",
+            application_credential=credential,
+            client_factory=mock_client_factory,
+        )
+
+        assert auth_provider.enable_multi_zone is True
+
+    def test_single_zone_credential_does_not_infer_multi_zone(self, mock_client_factory):
+        """A single-zone ClientSecret leaves multi-zone off."""
+        auth_provider = AuthProvider(
+            zone_id=mock_zone_id,
+            mcp_server_url="http://localhost:8000",
+            application_credential=ClientSecret(("client_id", "client_secret")),
+            client_factory=mock_client_factory,
+        )
+
+        assert auth_provider.enable_multi_zone is False
+
+    def test_explicit_enable_multi_zone_overrides_inference(self, mock_client_factory):
+        """An explicit enable_multi_zone value is respected over inference."""
+        credential = ClientSecret({
+            "zone1": ("client_id_1", "client_secret_1"),
+        })
+        auth_provider = AuthProvider(
+            zone_id=mock_zone_id,
+            mcp_server_url="http://localhost:8000",
+            application_credential=credential,
+            enable_multi_zone=False,
+            client_factory=mock_client_factory,
+        )
+
+        assert auth_provider.enable_multi_zone is False
+
     def test_auth_provider_init_with_required_scopes(self, mock_client_factory):
         """Test AuthProvider initialization with required scopes."""
         auth_provider = AuthProvider(
