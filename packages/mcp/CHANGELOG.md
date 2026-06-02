@@ -1,3 +1,14 @@
+## 0.24.0-keycardai-mcp (2026-06-02)
+
+
+- test(keycardai-mcp): use generic scope in grant request_scopes tests
+- Replace the databricks-specific scope with a generic "read".
+- feat(keycardai-mcp): add request_scopes to grant()
+- Forward an optional per-resource OAuth scope into the token exchange,
+including the impersonation branch (client.impersonate(scope=...)) plus
+the application-credential and basic branches. Accepts a str, list[str],
+or per-resource dict; distinct from inbound required_scopes.
+
 ## 0.23.0-keycardai-mcp (2026-04-28)
 
 
