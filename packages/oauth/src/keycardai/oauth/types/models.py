@@ -12,7 +12,7 @@ OAuth 2.0 operations, providing comprehensive support for:
 from dataclasses import dataclass, field
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 from .oauth import (
     GrantType,
@@ -218,7 +218,19 @@ class ServerMetadataRequest(BaseModel):
     Reference: https://datatracker.ietf.org/doc/html/rfc8414#section-3
     """
 
-    base_url: str = Field(..., min_length=1, description="Base URL of the OAuth 2.0 authorization server.")
+    model_config = ConfigDict(populate_by_name=True)
+
+    issuer: str = Field(
+        ...,
+        min_length=1,
+        validation_alias=AliasChoices("issuer", "base_url"),
+        description="Issuer URL of the OAuth 2.0 authorization server (RFC 8414).",
+    )
+
+    @property
+    def base_url(self) -> str:
+        """Deprecated alias for :attr:`issuer`. Use ``issuer`` instead."""
+        return self.issuer
 
 
 @dataclass

@@ -31,7 +31,7 @@ def build_discovery_http_request(
     # Construct discovery URL according to RFC 8414 Section 3
     # Format: {issuer}/.well-known/oauth-authorization-server
     discovery_url = WellKnownEndpoint.construct_url(
-        request.base_url,
+        request.issuer,
         WellKnownEndpoint.OAUTH_AUTHORIZATION_SERVER
     )
 
@@ -184,7 +184,7 @@ def discover_server_metadata(
     """
     http_req = build_discovery_http_request(request, context)
     http_res = context.transport.request_raw(http_req, timeout=context.timeout)
-    return parse_discovery_http_response(http_res, expected_issuer=request.base_url)
+    return parse_discovery_http_response(http_res, expected_issuer=request.issuer)
 
 
 async def discover_server_metadata_async(
@@ -213,4 +213,4 @@ async def discover_server_metadata_async(
     """
     http_req = build_discovery_http_request(request, context)
     http_res = await context.transport.request_raw(http_req, timeout=context.timeout)
-    return parse_discovery_http_response(http_res, expected_issuer=request.base_url)
+    return parse_discovery_http_response(http_res, expected_issuer=request.issuer)

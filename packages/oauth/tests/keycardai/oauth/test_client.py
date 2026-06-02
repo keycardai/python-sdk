@@ -6,6 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from keycardai.oauth import AsyncClient, Client, ClientConfig
+from keycardai.oauth.exceptions import ConfigError
 from keycardai.oauth.types.models import (
     AuthorizationServerMetadata,
     ClientRegistrationRequest,
@@ -115,6 +116,40 @@ class TestAsyncClientContextManager:
             async with client:
                 # Verify _ensure_initialized was called during context entry
                 mock_init.assert_called_once()
+
+
+class TestIssuerArgument:
+    """The canonical constructor parameter is `issuer`; `base_url` is a deprecated alias."""
+
+    @pytest.mark.parametrize("client_cls", [Client, AsyncClient])
+    def test_issuer_positional_and_keyword(self, client_cls):
+        config = ClientConfig(enable_metadata_discovery=False, auto_register_client=False)
+
+        positional = client_cls("https://test.example.com", config=config)
+        keyword = client_cls(issuer="https://test.example.com", config=config)
+
+        assert positional.issuer == "https://test.example.com"
+        assert keyword.issuer == "https://test.example.com"
+
+    @pytest.mark.parametrize("client_cls", [Client, AsyncClient])
+    def test_base_url_is_deprecated_alias(self, client_cls):
+        config = ClientConfig(enable_metadata_discovery=False, auto_register_client=False)
+
+        with pytest.warns(DeprecationWarning):
+            client = client_cls(base_url="https://test.example.com", config=config)
+
+        assert client.issuer == "https://test.example.com"
+        assert client.base_url == "https://test.example.com"
+
+    @pytest.mark.parametrize("client_cls", [Client, AsyncClient])
+    def test_issuer_and_base_url_together_is_an_error(self, client_cls):
+        with pytest.raises(ConfigError):
+            client_cls(issuer="https://a.example.com", base_url="https://b.example.com")
+
+    @pytest.mark.parametrize("client_cls", [Client, AsyncClient])
+    def test_missing_issuer_is_an_error(self, client_cls):
+        with pytest.raises(ConfigError):
+            client_cls()
 
 
 class TestClientInitializationParity:
