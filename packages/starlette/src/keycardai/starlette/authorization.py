@@ -151,6 +151,8 @@ def grant(
     provider: AuthProvider,
     resources: str | list[str],
     user_identifier: Callable[..., str] | None = None,
+    *,
+    request_scopes: str | list[str] | dict[str, str | list[str]] | None = None,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Decorator factory for delegated OAuth 2.0 token exchange (RFC 8693).
 
@@ -171,6 +173,14 @@ def grant(
             keyword arguments, returns the user identifier to impersonate
             (RFC 8693 substitute-user exchange). When set, the exchange
             uses ``client.impersonate(...)``.
+        request_scopes: Optional OAuth scope(s) to request during the exchange
+            (RFC 8693 ``scope`` parameter). Accepts a ``str`` (applied to every
+            resource), a ``list[str]`` (space-joined, applied to every
+            resource), or a ``dict[str, str | list[str]]`` mapping resource URL
+            to scope(s); resources absent from the dict request no scope. This
+            is the *outbound* scope requested during exchange, distinct from
+            ``required_scopes`` enforced on the *inbound* caller token. Defaults
+            to ``None``.
 
     The decorated function must declare an ``AccessContext``-typed parameter;
     otherwise ``MissingAccessContextError`` is raised at decoration time.
@@ -266,6 +276,7 @@ def grant(
                 application_credential=provider.application_credential,
                 auth_info=auth_info,
                 user_identifier=resolved_user_id,
+                request_scopes=request_scopes,
             )
 
             return await _invoke(func, is_async, args, kwargs)

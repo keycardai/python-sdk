@@ -17,7 +17,7 @@ from keycardai.mcp.server.auth import (
     MissingContextError,
     ResourceAccessError,
 )
-from keycardai.oauth.types.models import TokenResponse
+from keycardai.oauth.types.models import TokenExchangeRequest, TokenResponse
 
 
 def check_access_context_for_errors(access_ctx: AccessContext, resource: str = None):
@@ -213,6 +213,122 @@ class TestGrantDecoratorExecution:
 
         # Verify function executed successfully with both tokens
         assert result == "Hello user123, token1: token_api1_123, token2: token_api2_456"
+
+
+class TestGrantDecoratorRequestScopes:
+    """Test that the grant decorator forwards request_scopes into the exchange."""
+
+    def _capturing_factory(self):
+        """Build a client factory whose exchange_token/impersonate capture calls."""
+        captured: dict[str, object] = {"exchange": {}, "impersonate": []}
+
+        def capturing_exchange(request: TokenExchangeRequest | None = None, **kwargs):
+            captured["exchange"][request.resource] = request
+            return TokenResponse(
+                access_token="exchanged", token_type="Bearer", expires_in=3600
+            )
+
+        def capturing_impersonate(*, user_identifier, resource, scope=None, **kwargs):
+            captured["impersonate"].append(
+                {"user_identifier": user_identifier, "resource": resource, "scope": scope}
+            )
+            return TokenResponse(
+                access_token="impersonated", token_type="Bearer", expires_in=3600
+            )
+
+        mock_client = AsyncMock()
+        mock_client.exchange_token.side_effect = capturing_exchange
+        mock_client.impersonate.side_effect = capturing_impersonate
+
+        factory = Mock()
+        factory.create_async_client.return_value = mock_client
+        return factory, captured
+
+    @pytest.mark.asyncio
+    async def test_grant_forwards_string_scope(self, auth_provider_config):
+        factory, captured = self._capturing_factory()
+        auth_provider = AuthProvider(**auth_provider_config, client_factory=factory)
+
+        @auth_provider.grant(
+            "https://api1.example.com", request_scopes="read"
+        )
+        def tool(access_ctx: AccessContext, ctx: Context):
+            return "ok"
+
+        await tool(ctx=create_mock_context())
+
+        assert (
+            captured["exchange"]["https://api1.example.com"].scope
+            == "read"
+        )
+
+    @pytest.mark.asyncio
+    async def test_grant_forwards_list_scope(self, auth_provider_config):
+        factory, captured = self._capturing_factory()
+        auth_provider = AuthProvider(**auth_provider_config, client_factory=factory)
+
+        @auth_provider.grant(
+            "https://api1.example.com", request_scopes=["read", "write"]
+        )
+        def tool(access_ctx: AccessContext, ctx: Context):
+            return "ok"
+
+        await tool(ctx=create_mock_context())
+
+        assert captured["exchange"]["https://api1.example.com"].scope == "read write"
+
+    @pytest.mark.asyncio
+    async def test_grant_per_resource_scopes_dict(self, auth_provider_config):
+        factory, captured = self._capturing_factory()
+        auth_provider = AuthProvider(**auth_provider_config, client_factory=factory)
+
+        @auth_provider.grant(
+            ["https://api1.example.com", "https://api2.example.com"],
+            request_scopes={"https://api1.example.com": "read"},
+        )
+        def tool(access_ctx: AccessContext, ctx: Context):
+            return "ok"
+
+        await tool(ctx=create_mock_context())
+
+        assert captured["exchange"]["https://api1.example.com"].scope == "read"
+        assert captured["exchange"]["https://api2.example.com"].scope is None
+
+    @pytest.mark.asyncio
+    async def test_grant_no_scope_default(self, auth_provider_config):
+        factory, captured = self._capturing_factory()
+        auth_provider = AuthProvider(**auth_provider_config, client_factory=factory)
+
+        @auth_provider.grant("https://api1.example.com")
+        def tool(access_ctx: AccessContext, ctx: Context):
+            return "ok"
+
+        await tool(ctx=create_mock_context())
+
+        assert captured["exchange"]["https://api1.example.com"].scope is None
+
+    @pytest.mark.asyncio
+    async def test_grant_impersonation_scope(self, auth_provider_config):
+        factory, captured = self._capturing_factory()
+        auth_provider = AuthProvider(**auth_provider_config, client_factory=factory)
+
+        @auth_provider.grant(
+            "https://api1.example.com",
+            user_identifier=lambda **kw: "user@example.com",
+            request_scopes="read",
+        )
+        def tool(access_ctx: AccessContext, ctx: Context):
+            return "ok"
+
+        await tool(ctx=create_mock_context())
+
+        assert captured["impersonate"] == [
+            {
+                "user_identifier": "user@example.com",
+                "resource": "https://api1.example.com",
+                "scope": "read",
+            }
+        ]
 
 
 class TestAccessContext:

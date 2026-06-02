@@ -21,6 +21,7 @@ async def exchange_tokens_for_resources(
     application_credential: ApplicationCredential | None = None,
     auth_info: dict[str, str] | None = None,
     user_identifier: str | None = None,
+    request_scopes: str | list[str] | dict[str, str | list[str]] | None = None,
 ) -> AccessContext:
     """Exchange a subject token for access tokens targeting one or more resources.
 
@@ -43,18 +44,41 @@ async def exchange_tokens_for_resources(
         application_credential: Optional credential provider for authenticated exchange.
         auth_info: Optional authentication context (zone_id, client_id, etc.).
         user_identifier: If set, use impersonation (substitute-user) exchange.
+        request_scopes: Optional OAuth scope(s) to request during the exchange
+            (RFC 8693 ``scope`` parameter). Accepts a ``str`` (applied to every
+            resource), a ``list[str]`` (space-joined, applied to every resource),
+            or a ``dict[str, str | list[str]]`` mapping resource URL to scope(s);
+            resources absent from the dict request no scope. This is the
+            *outbound* scope requested during exchange, distinct from any
+            *inbound* scope enforced on the caller token. Defaults to ``None``.
 
     Returns:
         The same AccessContext, populated with tokens and/or per-resource errors.
     """
+    def _scope_for(resource: str) -> str | None:
+        """Resolve the RFC 8693 scope string to request for a resource."""
+        if request_scopes is None:
+            return None
+        value = (
+            request_scopes.get(resource)
+            if isinstance(request_scopes, dict)
+            else request_scopes
+        )
+        if value is None:
+            return None
+        scope = " ".join(value) if isinstance(value, list) else value
+        return scope or None
+
     access_tokens: dict[str, TokenResponse] = {}
 
     for resource in resources:
         try:
+            scope = _scope_for(resource)
             if user_identifier is not None:
                 token_response = await client.impersonate(
                     user_identifier=user_identifier,
                     resource=resource,
+                    scope=scope,
                 )
             elif application_credential:
                 token_exchange_request = (
@@ -65,12 +89,15 @@ async def exchange_tokens_for_resources(
                         auth_info=auth_info,
                     )
                 )
+                if scope:
+                    token_exchange_request.scope = scope
                 token_response = await client.exchange_token(token_exchange_request)
             else:
                 token_exchange_request = TokenExchangeRequest(
                     subject_token=subject_token,
                     resource=resource,
                     subject_token_type="urn:ietf:params:oauth:token-type:access_token",
+                    scope=scope,
                 )
                 token_response = await client.exchange_token(token_exchange_request)
 

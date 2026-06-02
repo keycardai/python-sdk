@@ -603,7 +603,12 @@ class AuthProvider:
             resource_name=self.mcp_server_name,
         )
 
-    def grant(self, resources: str | list[str]):
+    def grant(
+        self,
+        resources: str | list[str],
+        *,
+        request_scopes: str | list[str] | dict[str, str | list[str]] | None = None,
+    ):
         """Decorator for automatic delegated token exchange.
 
         This decorator automates the OAuth token exchange process for accessing
@@ -619,6 +624,21 @@ class AuthProvider:
                       Can be a single string or list of strings.
                       (e.g., "https://api.example.com" or
                        ["https://api.example.com", "https://other-api.com"])
+            request_scopes: Optional OAuth scope(s) to request during the token
+                      exchange (RFC 8693 ``scope`` parameter), forwarded to Keycard
+                      so scope-gated delegation policies can match. Accepts:
+                      - ``str``: a single (space-delimited) scope string applied to
+                        every resource (e.g. ``"read"``).
+                      - ``list[str]``: joined with spaces and applied to every
+                        resource.
+                      - ``dict[str, str | list[str]]``: per-resource scopes keyed by
+                        resource URL; resources absent from the dict request no scope.
+                      Defaults to ``None`` (no scope sent).
+
+                      Note: ``request_scopes`` is the *outbound* scope requested
+                      during exchange. It is distinct from ``required_scopes`` on
+                      ``AuthProvider``, which the ``JWTVerifier`` enforces on the
+                      *inbound* caller token.
 
         Usage:
             ```python
@@ -642,6 +662,27 @@ class AuthProvider:
                 headers = {"Authorization": f"Bearer {token}"}
                 # Use headers to call external API
                 return f"Data for {user_id}"
+
+            # Request a scope for a single resource
+            @mcp.tool()
+            @auth_provider.grant(
+                "https://api.example.com",
+                request_scopes="read",
+            )
+            async def scoped_tool(ctx: Context):
+                ...
+
+            # Per-resource scopes when exchanging for multiple resources
+            @mcp.tool()
+            @auth_provider.grant(
+                ["https://api1.example.com", "https://api2.example.com"],
+                request_scopes={
+                    "https://api1.example.com": "read",
+                    "https://api2.example.com": ["read", "write"],
+                },
+            )
+            async def multi_tool(ctx: Context):
+                ...
             ```
 
         The decorated function must:
@@ -672,6 +713,20 @@ class AuthProvider:
                 if isinstance(value, Context):
                     return value
             return None
+
+        def _scope_for(resource: str) -> str | None:
+            """Resolve the RFC 8693 scope string to request for a resource."""
+            if request_scopes is None:
+                return None
+            value = (
+                request_scopes.get(resource)
+                if isinstance(request_scopes, dict)
+                else request_scopes
+            )
+            if value is None:
+                return None
+            scope = " ".join(value) if isinstance(value, list) else value
+            return scope or None
 
         async def _set_error(error: dict[str, str], resource: str | None, access_context: AccessContext, ctx: Context):
             """Helper to set error context and call function."""
@@ -760,6 +815,10 @@ class AuthProvider:
                                 resource=resource,
                                 subject_token_type="urn:ietf:params:oauth:token-type:access_token",
                             )
+
+                        _scope = _scope_for(resource)
+                        if _scope:
+                            _token_exchange_request.scope = _scope
 
                         _token_response = await self.client.exchange_token(_token_exchange_request)
 
