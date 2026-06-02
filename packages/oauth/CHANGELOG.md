@@ -1,3 +1,15 @@
+## 0.13.0-keycardai-oauth (2026-06-02)
+
+
+- fix(keycardai-oauth): enforce jwks_uri same-origin with issuer in TokenVerifier (#131)
+- A discovered jwks_uri must share the issuer origin before any key is fetched,
+matching the TypeScript keyring (assertSameOrigin). This guards against a
+tampered or misconfigured discovery document pointing key resolution at an
+attacker-controlled origin. Explicit jwks_uri (trusted config) is unaffected.
+- Adds JWKSUriValidationError, raised on mismatch.
+- Closes ECO-34.
+- Co-authored-by: GitHub Action <action@github.com>
+
 ## 0.12.0-keycardai-oauth (2026-05-07)
 
 
