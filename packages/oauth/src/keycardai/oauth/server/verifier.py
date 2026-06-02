@@ -21,6 +21,7 @@ from .client_factory import ClientFactory, DefaultClientFactory
 from .exceptions import (
     CacheError,
     JWKSDiscoveryError,
+    JWKSUriValidationError,
     UnsupportedAlgorithmError,
     VerifierConfigError,
 )
@@ -91,15 +92,28 @@ class TokenVerifier:
             client = self.client_factory.create_client(discovery_issuer)
             server_metadata = client.discover_server_metadata()
             discovered_uri = server_metadata.jwks_uri
-
-            if not discovered_uri:
-                raise JWKSDiscoveryError(discovery_issuer, zone_id)
-
-            self._discovered_jwks_uris[cache_key] = discovered_uri
-            return discovered_uri
-
         except Exception as e:
             raise JWKSDiscoveryError(discovery_issuer, zone_id, cause=e) from e
+
+        if not discovered_uri:
+            raise JWKSDiscoveryError(discovery_issuer, zone_id)
+
+        # Security: a discovered jwks_uri must share the issuer's origin, so a
+        # tampered discovery document cannot point key resolution elsewhere.
+        self._assert_same_origin(discovery_issuer, discovered_uri)
+
+        self._discovered_jwks_uris[cache_key] = discovered_uri
+        return discovered_uri
+
+    def _assert_same_origin(self, issuer: str, jwks_uri: str) -> None:
+        issuer_url = AnyHttpUrl(issuer)
+        jwks_url = AnyHttpUrl(jwks_uri)
+        if (
+            issuer_url.scheme != jwks_url.scheme
+            or issuer_url.host != jwks_url.host
+            or issuer_url.port != jwks_url.port
+        ):
+            raise JWKSUriValidationError(issuer, jwks_uri)
 
     def _create_zone_scoped_url(self, base_url: str, zone_id: str) -> str:
         """Create zone-scoped URL by prepending zone_id to the host."""
