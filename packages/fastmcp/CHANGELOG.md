@@ -1,3 +1,16 @@
+## 0.4.0-keycardai-fastmcp (2026-06-02)
+
+
+- refactor(keycardai-fastmcp): use generic scope in request_scopes examples
+- Replace the databricks-specific scope with a generic "read" in the
+grant() docstring and tests so the example is not tied to one provider.
+- feat(keycardai-fastmcp): add request_scopes to grant()
+- Forward an optional per-resource OAuth scope into the RFC 8693 token
+exchange so scope-gated Keycard delegation policies can match. Accepts a
+str, list[str], or per-resource dict; distinct from inbound
+required_scopes. Sets scope on the request in both the application
+credential and basic branches.
+
 ## 0.3.0-keycardai-fastmcp (2026-05-20)
 
 
