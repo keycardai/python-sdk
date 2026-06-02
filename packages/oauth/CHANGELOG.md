@@ -1,3 +1,14 @@
+## 0.14.0-keycardai-oauth (2026-06-02)
+
+
+- test(keycardai-oauth): use generic scope in exchange request_scopes tests
+- Replace the databricks-specific scope with a generic "read".
+- feat(keycardai-oauth): add request_scopes to exchange_tokens_for_resources
+- Accept an optional per-resource OAuth scope and apply it across all three
+exchange paths: impersonation (client.impersonate(scope=...)), the
+application-credential request, and the basic RFC 8693 request. Accepts a
+str, list[str], or per-resource dict.
+
 ## 0.13.1-keycardai-oauth (2026-06-02)
 
 
