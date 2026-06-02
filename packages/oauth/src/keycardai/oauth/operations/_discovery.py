@@ -52,18 +52,23 @@ def build_discovery_http_request(
     )
 
 
-def parse_discovery_http_response(res: HttpResponse) -> AuthorizationServerMetadata:
+def parse_discovery_http_response(
+    res: HttpResponse, expected_issuer: str | None = None
+) -> AuthorizationServerMetadata:
     """Parse HTTP response from server metadata discovery.
 
     Args:
         res: HTTP response from discovery endpoint
+        expected_issuer: The issuer the request was built from. When provided,
+            the response ``issuer`` must match it (RFC 8414 Section 3.3); a
+            trailing slash is ignored on both sides.
 
     Returns:
         AuthorizationServerMetadata with discovered server capabilities
 
     Raises:
         OAuthHttpError: If HTTP error status
-        OAuthProtocolError: If invalid response format
+        OAuthProtocolError: If invalid response format or issuer mismatch
     """
     # TODO: Handle errors more granularly
     if res.status >= 400:
@@ -93,7 +98,21 @@ def parse_discovery_http_response(res: HttpResponse) -> AuthorizationServerMetad
         )
 
     if "issuer" not in data:
-        raise ValueError("Authorization server metadata must include 'issuer' field")
+        raise OAuthProtocolError(
+            error="invalid_response",
+            error_description="Authorization server metadata must include 'issuer' field",
+            operation="GET /.well-known/oauth-authorization-server",
+        )
+
+    if expected_issuer is not None and data["issuer"].rstrip("/") != expected_issuer.rstrip("/"):
+        raise OAuthProtocolError(
+            error="issuer_mismatch",
+            error_description=(
+                f"Discovery document issuer '{data['issuer']}' does not match "
+                f"the requested issuer '{expected_issuer}'"
+            ),
+            operation="GET /.well-known/oauth-authorization-server",
+        )
 
     def normalize_array_field(field_name: str) -> list[str] | None:
         value = data.get(field_name)
@@ -165,7 +184,7 @@ def discover_server_metadata(
     """
     http_req = build_discovery_http_request(request, context)
     http_res = context.transport.request_raw(http_req, timeout=context.timeout)
-    return parse_discovery_http_response(http_res)
+    return parse_discovery_http_response(http_res, expected_issuer=request.base_url)
 
 
 async def discover_server_metadata_async(
@@ -194,4 +213,4 @@ async def discover_server_metadata_async(
     """
     http_req = build_discovery_http_request(request, context)
     http_res = await context.transport.request_raw(http_req, timeout=context.timeout)
-    return parse_discovery_http_response(http_res)
+    return parse_discovery_http_response(http_res, expected_issuer=request.base_url)
