@@ -1,3 +1,8 @@
+## 0.6.0-keycardai-starlette (2026-06-03)
+
+
+- feat(keycardai-starlette): add require_authentication to protected_router
+
 ## 0.5.0-keycardai-starlette (2026-06-02)
 
 
