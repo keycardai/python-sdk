@@ -483,9 +483,11 @@ class AuthProvider:
             return None
 
         """
-        The auth info object is set by the bearer token middleware during authorization.
-        This helper extracts the auth info from the request context from either the RequestContext or the Context parameter.
-        Required to support both FastMCP and lowlevel server implementations.
+        The authenticated user is set on the request by KeycardAuthBackend
+        (Starlette's AuthenticationMiddleware) during authorization. This helper
+        extracts the auth info from the request context from either the
+        RequestContext or the Context parameter. Required to support both FastMCP
+        and lowlevel server implementations.
         """
         def _extract_auth_info_from_context(
             *args, **kwargs
@@ -499,7 +501,20 @@ class AuthProvider:
             if _request_context is None:
                 return None
             try:
-                return _request_context.request.state.keycardai_auth_info
+                # KeycardAuthBackend populates request.user with a KeycardUser on
+                # success and an UnauthenticatedUser otherwise. Re-shape it into
+                # the dict the exchange paths below expect (mirroring the
+                # auth_info contract of the removed BearerAuthMiddleware).
+                _user = _request_context.request.user
+                if _user is None or not getattr(_user, "is_authenticated", False):
+                    return None
+                _resource_server_url = getattr(_user, "resource_server_url", None)
+                return {
+                    "access_token": getattr(_user, "access_token", None),
+                    "zone_id": getattr(_user, "zone_id", None),
+                    "resource_client_id": _resource_server_url,
+                    "resource_server_url": _resource_server_url,
+                }
             except Exception:
                 return None
 

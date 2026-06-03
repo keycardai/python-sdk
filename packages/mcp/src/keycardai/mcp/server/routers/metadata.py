@@ -32,6 +32,11 @@ def protected_mcp_router(
     """Backward-compatible wrapper that accepts ``mcp_app`` kwarg.
 
     Delegates to ``protected_router(app=...)`` from keycardai-starlette.
+
+    The MCP streamable-HTTP app is an opaque ASGI sub-app with no per-route
+    ``@requires("authenticated")`` gate, so authentication is enforced at the
+    mount with ``require_authentication=True``: tokenless requests receive an
+    RFC 6750 challenge instead of reaching the dispatcher anonymously.
     """
     return protected_router(
         issuer=issuer,
@@ -39,6 +44,7 @@ def protected_mcp_router(
         verifier=verifier,
         enable_multi_zone=enable_multi_zone,
         jwks=jwks,
+        require_authentication=True,
     )
 
 
