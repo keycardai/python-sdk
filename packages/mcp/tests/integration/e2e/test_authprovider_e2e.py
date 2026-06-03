@@ -26,12 +26,12 @@ def create_mock_context_with_auth_info(
     mock_context = Mock(spec=Context)
     mock_context.request_context = Mock()
     mock_context.request_context.request = Mock()
-    mock_context.request_context.request.state.keycardai_auth_info = {
-        "access_token": access_token,
-        "zone_id": zone_id,
-        "resource_client_id": resource_client_id,
-        "resource_server_url": resource_server_url,
-    }
+    mock_context.request_context.request.user = Mock(
+        is_authenticated=True,
+        access_token=access_token,
+        zone_id=zone_id,
+        resource_server_url=resource_server_url,
+    )
     return mock_context
 
 

@@ -25,12 +25,12 @@ class TestWebIdentity:
         mock_context = Mock(spec=Context)
         mock_context.request_context = Mock()
         mock_context.request_context.request = Mock()
-        mock_context.request_context.request.state.keycardai_auth_info = {
-            "access_token": "test_token",
-            "zone_id": zone_id,
-            "resource_client_id": "https://mcp.example.com",
-            "resource_server_url": "https://mcp.example.com"
-        }
+        mock_context.request_context.request.user = Mock(
+            is_authenticated=True,
+            access_token="test_token",
+            zone_id=zone_id,
+            resource_server_url="https://mcp.example.com",
+        )
         return mock_context
 
     @pytest.mark.asyncio

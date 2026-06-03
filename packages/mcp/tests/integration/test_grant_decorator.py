@@ -47,24 +47,21 @@ def create_missing_auth_info_context():
     mock_context = Mock(spec=Context)
     mock_context.request_context = Mock()
     mock_context.request_context.request = Mock()
-    mock_context.request_context.request.state = {}
+    mock_context.request_context.request.user = Mock(is_authenticated=False)
     return mock_context
 
 def create_mock_context():
     """Helper function to create a mock Context with proper state management."""
     mock_context = Mock(spec=Context)
 
-    # Create a state storage for the mock context
-    context_state = {
-        "access_token": "test_token",
-        "zone_id": "test123",
-        "resource_client_id": "https://api.example.com",
-        "resource_server_url": "https://api.example.com"
-    }
-
     mock_context.request_context = Mock()
     mock_context.request_context.request = Mock()
-    mock_context.request_context.request.state.keycardai_auth_info = context_state
+    mock_context.request_context.request.user = Mock(
+        is_authenticated=True,
+        access_token="test_token",
+        zone_id="test123",
+        resource_server_url="https://api.example.com",
+    )
 
     return mock_context
 

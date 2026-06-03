@@ -23,12 +23,12 @@ def create_mock_context_with_auth():
     mock_context = Mock(spec=Context)
     mock_context.request_context = Mock()
     mock_context.request_context.request = Mock()
-    mock_context.request_context.request.state.keycardai_auth_info = {
-        "access_token": "user_token",
-        "zone_id": "e2e-test",
-        "resource_client_id": "",
-        "resource_server_url": "http://localhost:8000/",
-    }
+    mock_context.request_context.request.user = Mock(
+        is_authenticated=True,
+        access_token="user_token",
+        zone_id="e2e-test",
+        resource_server_url="http://localhost:8000/",
+    )
     return mock_context
 
 
@@ -195,7 +195,7 @@ class TestGrantDecoratorE2E:
         mock_context = Mock(spec=Context)
         mock_context.request_context = Mock()
         mock_context.request_context.request = Mock()
-        mock_context.request_context.request.state = {}
+        mock_context.request_context.request.user = Mock(is_authenticated=False)
 
         result = await test_tool(ctx=mock_context)
 

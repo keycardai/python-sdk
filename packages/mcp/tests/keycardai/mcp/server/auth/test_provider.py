@@ -94,12 +94,12 @@ class TestGrantDecoratorParameterHandling:
         mock_context = Mock(spec=Context)
         mock_context.request_context = Mock()
         mock_context.request_context.request = Mock()
-        mock_context.request_context.request.state.keycardai_auth_info = {
-            "access_token": "test_token",
-            "zone_id": "test123",
-            "resource_client_id": "https://api.example.com",
-            "resource_server_url": "https://api.example.com"
-        }
+        mock_context.request_context.request.user = Mock(
+            is_authenticated=True,
+            access_token="test_token",
+            zone_id="test123",
+            resource_server_url="https://api.example.com",
+        )
         return mock_context
 
     def create_mock_context_without_auth(self):
@@ -107,7 +107,7 @@ class TestGrantDecoratorParameterHandling:
         mock_context = Mock(spec=Context)
         mock_context.request_context = Mock()
         mock_context.request_context.request = Mock()
-        mock_context.request_context.request.state = {}
+        mock_context.request_context.request.user = Mock(is_authenticated=False)
         return mock_context
 
     @pytest.mark.asyncio
@@ -279,19 +279,19 @@ class TestGrantDecoratorContextExtraction:
         """Helper to create a mock RequestContext with authentication info."""
         mock_request_context = Mock(spec=RequestContext)
         mock_request_context.request = Mock()
-        mock_request_context.request.state.keycardai_auth_info = {
-            "access_token": "test_token",
-            "zone_id": "test123",
-            "resource_client_id": "https://api.example.com",
-            "resource_server_url": "https://api.example.com"
-        }
+        mock_request_context.request.user = Mock(
+            is_authenticated=True,
+            access_token="test_token",
+            zone_id="test123",
+            resource_server_url="https://api.example.com",
+        )
         return mock_request_context
 
     def create_mock_request_context_without_auth(self):
         """Helper to create a mock RequestContext without authentication info."""
         mock_request_context = Mock(spec=RequestContext)
         mock_request_context.request = Mock()
-        mock_request_context.request.state = {}
+        mock_request_context.request.user = Mock(is_authenticated=False)
         return mock_request_context
 
     @pytest.mark.asyncio
@@ -373,12 +373,12 @@ class TestGrantDecoratorParameterInjection:
         mock_context = Mock(spec=Context)
         mock_context.request_context = Mock()
         mock_context.request_context.request = Mock()
-        mock_context.request_context.request.state.keycardai_auth_info = {
-            "access_token": "test_token",
-            "zone_id": "test123",
-            "resource_client_id": "https://api.example.com",
-            "resource_server_url": "https://api.example.com"
-        }
+        mock_context.request_context.request.user = Mock(
+            is_authenticated=True,
+            access_token="test_token",
+            zone_id="test123",
+            resource_server_url="https://api.example.com",
+        )
         return mock_context
 
     @pytest.mark.asyncio
@@ -521,12 +521,12 @@ class TestGrantDecoratorEdgeCases:
         mock_context = Mock(spec=Context)
         mock_context.request_context = Mock()
         mock_context.request_context.request = Mock()
-        mock_context.request_context.request.state.keycardai_auth_info = {
-            "access_token": "test_token",
-            "zone_id": "test123",
-            "resource_client_id": "https://api.example.com",
-            "resource_server_url": "https://api.example.com"
-        }
+        mock_context.request_context.request.user = Mock(
+            is_authenticated=True,
+            access_token="test_token",
+            zone_id="test123",
+            resource_server_url="https://api.example.com",
+        )
         return mock_context
 
     @pytest.mark.asyncio
