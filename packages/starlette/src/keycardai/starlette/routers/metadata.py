@@ -150,6 +150,7 @@ def protected_router(
     verifier: TokenVerifier,
     enable_multi_zone: bool = False,
     jwks: JsonWebKeySet | None = None,
+    require_authentication: bool = False,
 ) -> Sequence[Route]:
     """Create a protected router with OAuth metadata and bearer auth middleware.
 
@@ -163,6 +164,12 @@ def protected_router(
         verifier: Token verifier for bearer token validation.
         enable_multi_zone: When True, mount the app at ``/{zone_id:str}``.
         jwks: Optional JWKS to expose at ``/.well-known/jwks.json``.
+        require_authentication: When True, a request to the mounted app without
+            an ``Authorization`` header is rejected with an RFC 6750 challenge
+            instead of falling through anonymously. Use this for opaque ASGI
+            sub-apps (e.g. an MCP JSONRPC dispatcher) that have no per-route
+            ``@requires("authenticated")`` gate of their own. Defaults to False
+            to preserve the mixed-route behavior.
 
     Returns:
         Sequence of routes including metadata mount and protected app mount.
@@ -188,7 +195,9 @@ def protected_router(
 
     auth_middleware = Middleware(
         AuthenticationMiddleware,
-        backend=KeycardAuthBackend(verifier),
+        backend=KeycardAuthBackend(
+            verifier, require_authentication=require_authentication
+        ),
         on_error=keycard_on_error,
     )
 

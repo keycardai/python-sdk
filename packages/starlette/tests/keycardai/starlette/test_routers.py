@@ -8,11 +8,14 @@ from unittest.mock import Mock, patch
 
 import pytest
 from starlette.applications import Starlette
+from starlette.responses import PlainTextResponse
 from starlette.testclient import TestClient
 
+from keycardai.oauth.server.verifier import TokenVerifier
 from keycardai.oauth.types import JsonWebKey, JsonWebKeySet
 from keycardai.starlette.routers.metadata import (
     auth_metadata_mount,
+    protected_router,
     well_known_metadata_mount,
 )
 
@@ -142,5 +145,44 @@ class TestAuthMetadataMount:
         app = Starlette(routes=[auth_metadata_mount(issuer=issuer)])
         response = TestClient(app).get(
             "/.well-known/oauth-protected-resource/any/path"
+        )
+        assert response.status_code == 200
+
+
+class TestProtectedRouterRequireAuthentication:
+    """Tokenless requests on an opaque mounted app must be challenged when
+    ``require_authentication=True`` (the contract used by protected_mcp_router).
+    """
+
+    async def _ok_app(self, scope, receive, send):
+        await PlainTextResponse("ok")(scope, receive, send)
+
+    def _client(self, issuer, *, require_authentication):
+        verifier = TokenVerifier(issuer=issuer)
+        app = Starlette(
+            routes=protected_router(
+                issuer=issuer,
+                app=self._ok_app,
+                verifier=verifier,
+                require_authentication=require_authentication,
+            )
+        )
+        return TestClient(app)
+
+    def test_tokenless_request_is_challenged_when_required(self, issuer):
+        response = self._client(issuer, require_authentication=True).get("/anything")
+        assert response.status_code == 401
+        assert "WWW-Authenticate" in response.headers
+        assert response.headers["WWW-Authenticate"].startswith("Bearer")
+        assert "resource_metadata=" in response.headers["WWW-Authenticate"]
+
+    def test_tokenless_request_passes_through_by_default(self, issuer):
+        response = self._client(issuer, require_authentication=False).get("/anything")
+        assert response.status_code == 200
+        assert response.text == "ok"
+
+    def test_oauth_metadata_remains_public_when_required(self, issuer):
+        response = self._client(issuer, require_authentication=True).get(
+            "/.well-known/oauth-protected-resource"
         )
         assert response.status_code == 200
