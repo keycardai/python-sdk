@@ -1,3 +1,10 @@
+## 0.25.0-keycardai-mcp (2026-06-03)
+
+
+- fix(keycardai-mcp)!: enforce authentication on the MCP mount
+- build(keycardai-mcp): require keycardai-starlette>=0.6.0 for require_authentication
+- fix(keycardai-mcp): read delegated auth info from request.user
+
 ## 0.24.0-keycardai-mcp (2026-06-02)
 
 
