@@ -1,3 +1,14 @@
+## 0.15.1-keycardai-oauth (2026-06-09)
+
+
+- fix(keycardai-oauth): evict oldest JWKS key on overflow instead of clearing the cache (#145)
+- The key cache cleared all entries when it hit max_size (10), so a verifier
+serving more than 10 kids would thrash. It now evicts the single oldest entry
+and the bound is raised to 256. Closes the remaining mechanical ECO-35 row on
+key-cache eviction (bounded plus partial eviction; exact order is
+implementation-defined per the spec).
+- Co-authored-by: GitHub Action <action@github.com>
+
 ## 0.15.0-keycardai-oauth (2026-06-09)
 
 
