@@ -83,7 +83,7 @@ class TokenVerifier:
         self.discovery_ttl = discovery_ttl
         self.fetch_timeout = fetch_timeout
 
-        self._jwks_cache = JWKSCache(ttl=key_ttl, max_size=10)
+        self._jwks_cache = JWKSCache(ttl=key_ttl, max_size=256)
         # Discovered jwks_uri per zone, with a discovery_ttl expiry:
         # cache_key -> (jwks_uri, cached_at).
         self._discovered_jwks_uris: dict[str, tuple[str, float]] = {}
