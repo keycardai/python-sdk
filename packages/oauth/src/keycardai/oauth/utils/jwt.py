@@ -513,12 +513,16 @@ async def get_verification_key(token: str, jwks_uri: str) -> str:
         raise ValueError(f"Failed to extract key ID from token: {e}") from e
 
 
-async def get_jwks_key(kid: str | None, jwks_uri: str) -> str:
+async def get_jwks_key(
+    kid: str | None, jwks_uri: str, timeout: float | None = None
+) -> str:
     """Fetch key from JWKS endpoint.
 
     Args:
         kid: Key ID from JWT header (optional)
         jwks_uri: JWKS endpoint URL
+        timeout: Timeout in seconds for the JWKS fetch. Falls back to the
+            transport default when not provided.
 
     Returns:
         Public key for verification (PEM format)
@@ -534,7 +538,7 @@ async def get_jwks_key(kid: str | None, jwks_uri: str) -> str:
 
         request = HttpRequest(method="GET", url=jwks_uri, headers={}, body=b"")
 
-        response = await transport.request_raw(request)
+        response = await transport.request_raw(request, timeout=timeout)
 
         if response.status != 200:
             raise ValueError(f"JWKS endpoint returned status {response.status}")

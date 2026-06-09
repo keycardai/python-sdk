@@ -1,5 +1,6 @@
 """Tests for TokenVerifier.verify_token method."""
 
+import asyncio
 import time
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -681,3 +682,100 @@ class TestTokenVerifierVerifyToken:
             assert result.token == "test.jwt.token"
             assert result.client_id == "test-client"
             mock_get_key.assert_called_once_with("test.jwt.token", "zone1")
+
+
+class TestTokenVerifierCacheKnobs:
+    """Cache knobs (key_ttl / discovery_ttl / fetch_timeout) and the cache_ttl alias."""
+
+    def test_default_knobs(self):
+        verifier = TokenVerifier(issuer="https://example.com")
+        assert verifier.key_ttl == 300
+        assert verifier.discovery_ttl == 3600
+        assert verifier.fetch_timeout == 10.0
+
+    def test_custom_knobs(self):
+        verifier = TokenVerifier(
+            issuer="https://example.com",
+            key_ttl=60,
+            discovery_ttl=120,
+            fetch_timeout=2.5,
+        )
+        assert verifier.key_ttl == 60
+        assert verifier.discovery_ttl == 120
+        assert verifier.fetch_timeout == 2.5
+
+    def test_cache_ttl_is_deprecated_alias_for_key_ttl(self):
+        with pytest.warns(DeprecationWarning, match="cache_ttl"):
+            verifier = TokenVerifier(issuer="https://example.com", cache_ttl=42)
+        assert verifier.key_ttl == 42
+        assert verifier.cache_ttl == 42
+
+
+class TestTokenVerifierDiscoveryTtl:
+    """The discovered jwks_uri is cached, then re-discovered after discovery_ttl."""
+
+    def _verifier(self, discovery_ttl: int):
+        metadata = Mock()
+        metadata.jwks_uri = "https://example.com/.well-known/jwks.json"
+        client = Mock()
+        client.discover_server_metadata = Mock(return_value=metadata)
+        factory = Mock()
+        factory.create_client = Mock(return_value=client)
+        verifier = TokenVerifier(
+            issuer="https://example.com",
+            client_factory=factory,
+            discovery_ttl=discovery_ttl,
+        )
+        return verifier, client
+
+    def test_cached_within_ttl(self):
+        verifier, client = self._verifier(discovery_ttl=3600)
+        with patch("keycardai.oauth.server.verifier.time.time", return_value=1000.0):
+            verifier._discover_jwks_uri()
+            verifier._discover_jwks_uri()
+        assert client.discover_server_metadata.call_count == 1
+
+    def test_rediscovers_after_ttl(self):
+        verifier, client = self._verifier(discovery_ttl=100)
+        with patch("keycardai.oauth.server.verifier.time.time") as mock_time:
+            mock_time.return_value = 1000.0
+            verifier._discover_jwks_uri()
+            mock_time.return_value = 1101.0
+            verifier._discover_jwks_uri()
+        assert client.discover_server_metadata.call_count == 2
+
+
+class TestTokenVerifierInflightDedup:
+    """Concurrent cold-cache lookups for the same kid share one JWKS fetch."""
+
+    @pytest.mark.asyncio
+    async def test_concurrent_fetches_share_one_fetch(self):
+        verifier = TokenVerifier(
+            issuer="https://example.com",
+            jwks_uri="https://example.com/.well-known/jwks.json",
+        )
+
+        call_count = 0
+
+        async def slow_get_jwks_key(kid, jwks_uri, timeout=None):
+            nonlocal call_count
+            call_count += 1
+            await asyncio.sleep(0.05)
+            return "mock-public-key"
+
+        with patch(
+            "keycardai.oauth.server.verifier.get_header",
+            return_value={"alg": "RS256", "kid": "abc"},
+        ), patch(
+            "keycardai.oauth.server.verifier.get_jwks_key",
+            side_effect=slow_get_jwks_key,
+        ):
+            results = await asyncio.gather(
+                verifier._get_verification_key("t1"),
+                verifier._get_verification_key("t2"),
+                verifier._get_verification_key("t3"),
+            )
+
+        assert call_count == 1
+        assert all(r.key == "mock-public-key" for r in results)
+        assert all(r.algorithm == "RS256" for r in results)

@@ -5,11 +5,14 @@ and audience/scope validation. It replaces the MCP-dependent verifier with a
 framework-free implementation.
 """
 
+import asyncio
 import time
+import warnings
 from typing import Any
 
 from pydantic import AnyHttpUrl, BaseModel
 
+from keycardai.oauth.types.models import ClientConfig
 from keycardai.oauth.utils.jwt import (
     get_header,
     get_jwks_key,
@@ -52,45 +55,75 @@ class TokenVerifier:
         required_scopes: list[str] | None = None,
         jwks_uri: str | None = None,
         allowed_algorithms: list[str] = None,
-        cache_ttl: int = 300,
+        key_ttl: int = 300,
         enable_multi_zone: bool = False,
         audience: str | dict[str, str] | None = None,
         client_factory: ClientFactory | None = None,
+        *,
+        discovery_ttl: int = 3600,
+        fetch_timeout: float = 10.0,
+        cache_ttl: int | None = None,
     ):
         if not issuer:
             raise VerifierConfigError("Issuer is required for token verification")
         if allowed_algorithms is None:
             allowed_algorithms = ["RS256"]
+        if cache_ttl is not None:
+            warnings.warn(
+                "cache_ttl is deprecated; use key_ttl instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            key_ttl = cache_ttl
         self.issuer = issuer
         self.required_scopes = required_scopes or []
         self.jwks_uri = jwks_uri
         self.allowed_algorithms = allowed_algorithms
-        self.cache_ttl = cache_ttl
+        self.key_ttl = key_ttl
+        self.discovery_ttl = discovery_ttl
+        self.fetch_timeout = fetch_timeout
 
-        self._jwks_cache = JWKSCache(ttl=cache_ttl, max_size=10)
-        self._discovered_jwks_uri: str | None = None
-        self._discovered_jwks_uris: dict[str, str] = {}
+        self._jwks_cache = JWKSCache(ttl=key_ttl, max_size=10)
+        # Discovered jwks_uri per zone, with a discovery_ttl expiry:
+        # cache_key -> (jwks_uri, cached_at).
+        self._discovered_jwks_uris: dict[str, tuple[str, float]] = {}
+        # De-duplicate concurrent cold-cache key fetches (asyncio, one event loop).
+        self._key_inflight: dict[str, asyncio.Future] = {}
 
         self.enable_multi_zone = enable_multi_zone
         self.audience = audience
         self.client_factory = client_factory or DefaultClientFactory()
 
-    def _discover_jwks_uri(self, zone_id: str | None = None) -> str:
-        cache_key = f"{zone_id or 'default'}"
-        cached_uri = self._discovered_jwks_uris.get(cache_key)
-        if cached_uri is not None:
-            return cached_uri
+    @property
+    def cache_ttl(self) -> int:
+        """Deprecated alias for ``key_ttl``."""
+        return self.key_ttl
 
+    def _discover_jwks_uri(self, zone_id: str | None = None) -> str:
+        # An explicitly configured jwks_uri is static and bypasses discovery.
         if self.jwks_uri:
-            self._discovered_jwks_uris[cache_key] = self.jwks_uri
             return self.jwks_uri
+
+        cache_key = f"{zone_id or 'default'}"
+        cached = self._discovered_jwks_uris.get(cache_key)
+        if cached is not None:
+            cached_uri, cached_at = cached
+            if time.time() - cached_at < self.discovery_ttl:
+                return cached_uri
 
         discovery_issuer = self.issuer
         if self.enable_multi_zone and zone_id:
             discovery_issuer = self._create_zone_scoped_url(self.issuer, zone_id)
 
         try:
-            client = self.client_factory.create_client(discovery_issuer)
+            client = self.client_factory.create_client(
+                discovery_issuer,
+                config=ClientConfig(
+                    enable_metadata_discovery=True,
+                    auto_register_client=False,
+                    timeout=self.fetch_timeout,
+                ),
+            )
             server_metadata = client.discover_server_metadata()
             discovered_uri = server_metadata.jwks_uri
         except Exception as e:
@@ -103,7 +136,7 @@ class TokenVerifier:
         # tampered discovery document cannot point key resolution elsewhere.
         self._assert_same_origin(discovery_issuer, discovered_uri)
 
-        self._discovered_jwks_uris[cache_key] = discovered_uri
+        self._discovered_jwks_uris[cache_key] = (discovered_uri, time.time())
         return discovered_uri
 
     def _assert_same_origin(self, issuer: str, jwks_uri: str) -> None:
@@ -153,13 +186,36 @@ class TokenVerifier:
     async def _get_verification_key(
         self, token: str, zone_id: str | None = None
     ) -> JWKSKey:
-        """Get the verification key for the token with caching."""
+        """Get the verification key for the token, with caching and de-dup.
+
+        Concurrent cold-cache lookups for the same ``(zone, kid)`` share a
+        single in-flight resolution, so a burst of requests triggers one
+        discovery and one JWKS fetch rather than a thundering herd.
+        """
         kid, algorithm = self._get_kid_and_algorithm(token)
 
         cached_key = self._jwks_cache.get_key(kid)
         if cached_key is not None:
             return cached_key
 
+        inflight_key = f"{zone_id or 'default'}:{kid}"
+        existing = self._key_inflight.get(inflight_key)
+        if existing is not None:
+            return await existing
+
+        future = asyncio.ensure_future(
+            self._resolve_and_cache_key(kid, algorithm, zone_id)
+        )
+        self._key_inflight[inflight_key] = future
+        try:
+            return await future
+        finally:
+            self._key_inflight.pop(inflight_key, None)
+
+    async def _resolve_and_cache_key(
+        self, kid: str, algorithm: str, zone_id: str | None = None
+    ) -> JWKSKey:
+        """Discover the jwks_uri, fetch the key for ``kid``, and cache it."""
         if self.enable_multi_zone and zone_id:
             jwks_uri = self._discover_jwks_uri(zone_id)
         else:
@@ -167,7 +223,9 @@ class TokenVerifier:
             if zone_id:
                 jwks_uri = self._get_zone_jwks_uri(jwks_uri, zone_id)
 
-        verification_key = await get_jwks_key(kid, jwks_uri)
+        verification_key = await get_jwks_key(
+            kid, jwks_uri, timeout=self.fetch_timeout
+        )
 
         self._jwks_cache.set_key(kid, verification_key, algorithm)
         cached_key = self._jwks_cache.get_key(kid)
