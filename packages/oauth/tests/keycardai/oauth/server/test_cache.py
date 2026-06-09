@@ -15,7 +15,7 @@ class TestJWKSCache:
         # Default initialization
         cache = JWKSCache()
         assert cache.ttl == 300
-        assert cache.max_size == 10
+        assert cache.max_size == 256
         assert cache.size() == 0
 
         # Custom initialization
@@ -97,26 +97,28 @@ class TestJWKSCache:
         mock_time.return_value = 1301.0
         assert cache.get_key("key1") is None
 
-    def test_cache_size_limit(self):
-        """Test that cache clears when max size is reached."""
+    def test_cache_size_limit_evicts_oldest(self):
+        """When full, the cache evicts the oldest entry, not the whole cache."""
         cache = JWKSCache(max_size=3)
 
-        # Fill cache to max size
-        cache.set_key("key1", "value1", "RS256")
-        cache.set_key("key2", "value2", "ES256")
-        cache.set_key("key3", "value3", "PS256")
-        assert cache.size() == 3
+        with patch("keycardai.oauth.server._cache.time.time") as mock_time:
+            mock_time.return_value = 1000.0
+            cache.set_key("key1", "value1", "RS256")
+            mock_time.return_value = 1001.0
+            cache.set_key("key2", "value2", "ES256")
+            mock_time.return_value = 1002.0
+            cache.set_key("key3", "value3", "PS256")
+            assert cache.size() == 3
 
-        # Adding another item should clear the cache first
-        cache.set_key("key4", "value4", "RS256")
-        assert cache.size() == 1
-        cached_key = cache.get_key("key4")
-        assert cached_key is not None
-        assert cached_key.key == "value4"
-        # Previous keys should be gone
-        assert cache.get_key("key1") is None
-        assert cache.get_key("key2") is None
-        assert cache.get_key("key3") is None
+            # Adding a 4th key evicts the oldest (key1), not all keys.
+            mock_time.return_value = 1003.0
+            cache.set_key("key4", "value4", "RS256")
+
+            assert cache.size() == 3
+            assert cache.get_key("key1") is None
+            assert cache.get_key("key2") is not None
+            assert cache.get_key("key3") is not None
+            assert cache.get_key("key4") is not None
 
     def test_cache_size_limit_existing_key(self):
         """Test that updating existing key doesn't trigger size limit."""

@@ -18,12 +18,13 @@ class JWKSKey:
 class JWKSCache:
     """Thread-safe time-to-live cache for JWKS verification keys."""
 
-    def __init__(self, ttl: int = 300, max_size: int = 10):
+    def __init__(self, ttl: int = 300, max_size: int = 256):
         """Initialize the JWKS cache.
 
         Args:
             ttl: Time-to-live in seconds (default 300 = 5 minutes)
-            max_size: Maximum cache size before clearing (default 10)
+            max_size: Maximum number of cached keys; when full, the oldest
+                entry is evicted to make room (default 256)
         """
         self.ttl = ttl
         self.max_size = max_size
@@ -68,7 +69,13 @@ class JWKSCache:
 
         with self._lock:
             if len(self._cache) >= self.max_size and cache_key not in self._cache:
-                self._cache.clear()
+                # Evict the oldest entry (smallest timestamp) rather than
+                # clearing the whole cache, so a verifier serving many keys
+                # does not thrash.
+                oldest_key = min(
+                    self._cache, key=lambda k: self._cache[k].timestamp
+                )
+                del self._cache[oldest_key]
 
             self._cache[cache_key] = JWKSKey(key, current_time, algorithm)
 
