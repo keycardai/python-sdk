@@ -1,3 +1,20 @@
+## 0.15.0-keycardai-oauth (2026-06-09)
+
+
+- feat(keycardai-oauth): converge JWKS caching to spec (discovery TTL, fetch timeout, inflight de-dup) (#143)
+- Converges TokenVerifier JWKS caching to specs/jwt-jwks/jwks-caching.md (ECO-35):
+- - discovery_ttl knob (default 1h): the discovered jwks_uri is cached with a
+  TTL and re-discovered after expiry, not for the verifier lifetime.
+- fetch_timeout knob (default 10s): bounds discovery and JWKS fetches;
+  get_jwks_key gained an optional timeout argument.
+- inflight de-duplication: concurrent cold-cache lookups for the same
+  (zone, kid) share one discovery and one JWKS fetch.
+- key_ttl: per-key TTL knob renamed to the canonical key_ttl; cache_ttl
+  kept as a deprecated keyword alias.
+- Key-cache eviction policy and error taxonomy (the remaining ECO-35 rows)
+need a canonical decision and are left for a follow-up.
+- Co-authored-by: GitHub Action <action@github.com>
+
 ## 0.14.0-keycardai-oauth (2026-06-02)
 
 
