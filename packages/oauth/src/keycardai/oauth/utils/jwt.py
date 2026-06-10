@@ -37,6 +37,7 @@ from typing import Any
 from authlib.jose import JsonWebKey, JsonWebToken
 from pydantic import BaseModel
 
+from ..exceptions import JWKSError, JWKSFetchError, JWKSKeyNotFoundError
 from ..http._transports import HttpxAsyncTransport
 from ..http._wire import HttpRequest
 from ..types.models import ClientConfig
@@ -528,7 +529,8 @@ async def get_jwks_key(
         Public key for verification (PEM format)
 
     Raises:
-        ValueError: If JWKS cannot be fetched or key not found
+        JWKSFetchError: If the JWKS endpoint cannot be reached or returns non-2xx.
+        JWKSKeyNotFoundError: If the requested key is not present in the JWKS.
     """
 
     try:
@@ -541,28 +543,30 @@ async def get_jwks_key(
         response = await transport.request_raw(request, timeout=timeout)
 
         if response.status != 200:
-            raise ValueError(f"JWKS endpoint returned status {response.status}")
+            raise JWKSFetchError(f"JWKS endpoint returned status {response.status}")
 
         jwks_data = json.loads(response.body.decode("utf-8"))
 
         keys = jwks_data.get("keys", [])
         if not keys:
-            raise ValueError("No keys found in JWKS")
+            raise JWKSKeyNotFoundError("No keys found in JWKS")
 
         if kid:
             for key_data in keys:
                 if key_data.get("kid") == kid:
                     jwk = JsonWebKey.import_key(key_data)
                     return jwk.get_public_key()  # type: ignore
-            raise ValueError(f"Key ID '{kid}' not found")
+            raise JWKSKeyNotFoundError(f"Key ID '{kid}' not found")
         else:
             if len(keys) == 1:
                 jwk = JsonWebKey.import_key(keys[0])
                 return jwk.get_public_key()  # type: ignore
             elif len(keys) > 1:
-                raise ValueError("Multiple keys in JWKS but no key ID (kid) in token")
+                raise JWKSKeyNotFoundError("Multiple keys in JWKS but no key ID (kid) in token")
             else:
-                raise ValueError("No keys found in JWKS")
+                raise JWKSKeyNotFoundError("No keys found in JWKS")
 
+    except JWKSError:
+        raise
     except Exception as e:
-        raise ValueError(f"Failed to fetch JWKS: {e}") from e
+        raise JWKSFetchError(f"Failed to fetch JWKS: {e}") from e

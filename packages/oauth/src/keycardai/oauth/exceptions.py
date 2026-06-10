@@ -164,3 +164,19 @@ class TokenExchangeError(OAuthProtocolError):
     ):
         super().__init__(error, error_description, error_uri, operation)
 
+
+class JWKSError(OAuthError):
+    """Base class for JWKS key-resolution failures (fetch and key lookup).
+
+    Raised by the low-level JWKS helper. Catch this to handle any JWKS
+    resolution failure, or a subclass for a single category.
+    """
+
+
+class JWKSFetchError(JWKSError):
+    """The JWKS endpoint could not be fetched or returned a non-2xx response."""
+
+
+class JWKSKeyNotFoundError(JWKSError):
+    """The requested key (`kid`) was not present in the fetched JWKS."""
+
