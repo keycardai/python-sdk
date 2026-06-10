@@ -273,6 +273,13 @@ class ResourceAccessError(OAuthServerError):
         available_resources: list[str] | None = None,
         error_details: dict | None = None,
     ):
+        # Exposed as instance attributes so handlers can inspect the error
+        # context directly without unpacking `details`.
+        self.resource = resource
+        self.error_type = error_type
+        self.available_resources = available_resources
+        self.error_details = error_details
+
         if message is None:
             resource_info = f"'{resource}'" if resource else "resource"
 
