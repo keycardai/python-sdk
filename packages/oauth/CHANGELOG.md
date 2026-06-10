@@ -1,3 +1,19 @@
+## 0.15.2-keycardai-oauth (2026-06-10)
+
+
+- fix(keycardai-oauth): raise typed JWKS errors from get_jwks_key (#147)
+- get_jwks_key raised bare ValueError, and its outer except flattened every
+failure into one generic "Failed to fetch JWKS" ValueError. It now raises
+typed, catchable errors: JWKSFetchError (endpoint unreachable or non-2xx)
+and JWKSKeyNotFoundError (kid absent from the set), under a JWKSError base
+in keycardai.oauth.exceptions (exported from the package root). Unexpected
+errors are wrapped as JWKSFetchError; typed errors propagate unchanged.
+- Defined in the top-level exceptions module so the utils layer can import
+them without the server-package circular import. Matches the canonical
+error model and the TS typed JWKS errors.
+- Part of the SDK parity effort (ECO-35 / ECO-32).
+- Co-authored-by: GitHub Action <action@github.com>
+
 ## 0.15.1-keycardai-oauth (2026-06-09)
 
 
