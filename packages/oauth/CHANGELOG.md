@@ -1,3 +1,15 @@
+## 0.15.3-keycardai-oauth (2026-06-10)
+
+
+- fix(keycardai-oauth): expose ResourceAccessError context attributes (#149)
+- ResourceAccessError now stores resource / error_type / available_resources /
+error_details as direct instance attributes, alongside the existing details
+dict, so handlers can inspect the error context without unpacking details.
+AccessContext.get_errors is annotated dict[str, Any] since it always returns a
+dict, never None.
+- Closes the access-context net-new gaps surfaced by the parity verification.
+- Co-authored-by: GitHub Action <action@github.com>
+
 ## 0.15.2-keycardai-oauth (2026-06-10)
 
 
