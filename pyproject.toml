@@ -58,9 +58,10 @@ members = [
     "packages/mcp-fastmcp",
     "packages/fastmcp",
     "packages/a2a",
-    "packages/*/examples/*",
 ]
-exclude = []
+# Examples are standalone projects with their own lockfiles: each pins its parent
+# package via a path source and resolves the rest from the index.
+exclude = ["packages/*/examples/*"]
 
 [tool.uv.sources]
 # Workspace sources will be defined here as packages are added

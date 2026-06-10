@@ -10,7 +10,7 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-keycardai-mcp = { workspace = true }
+keycardai-mcp = { path = "../../", editable = true }
 
 [project.scripts]
 hello-world-server = "main:main"
