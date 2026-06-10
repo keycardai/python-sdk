@@ -11,7 +11,7 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-keycardai-fastmcp = { workspace = true }
+keycardai-fastmcp = { path = "../../", editable = true }
 
 [project.scripts]
 delegated-access-server = "main:main"
