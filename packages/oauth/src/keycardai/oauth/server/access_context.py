@@ -54,8 +54,8 @@ class AccessContext:
         """Check if there are any errors (global or resource-specific)."""
         return self.has_error() or len(self._resource_errors) > 0
 
-    def get_errors(self) -> dict[str, Any] | None:
-        """Get global errors if any."""
+    def get_errors(self) -> dict[str, Any]:
+        """Get a snapshot of all errors: the per-resource map and the global error."""
         return {"resources": self._resource_errors.copy(), "error": self._error}
 
     def get_error(self) -> dict[str, str] | None:
