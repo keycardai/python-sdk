@@ -8,7 +8,7 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-keycardai-oauth = { path = "../../", editable = true }
+keycardai-oauth = { workspace = true }
 
 [project.scripts]
 dcr-demo = "main:main"

@@ -9,4 +9,4 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-keycardai-oauth = { path = "../../", editable = true }
+keycardai-oauth = { workspace = true }

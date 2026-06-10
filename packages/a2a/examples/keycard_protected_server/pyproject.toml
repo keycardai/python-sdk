@@ -10,7 +10,7 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-keycardai-a2a = { path = "../../", editable = true }
+keycardai-a2a = { workspace = true }
 
 [project.scripts]
 keycard-protected-server = "main:run"
