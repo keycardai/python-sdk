@@ -10,6 +10,7 @@ from authlib.jose import JsonWebKey, JsonWebSignature
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
+from keycardai.oauth.exceptions import JWKSFetchError, JWKSKeyNotFoundError
 from keycardai.oauth.utils.jwt import (
     JWTAccessToken,
     _decode_jwt_part,
@@ -483,7 +484,7 @@ class TestJWKSKeyFetching:
         mock_transport.request_raw.return_value = mock_response
         mock_transport_class.return_value = mock_transport
 
-        with pytest.raises(ValueError, match="Key ID 'key1' not found"):
+        with pytest.raises(JWKSKeyNotFoundError, match="Key ID 'key1' not found"):
             await get_jwks_key("key1", "https://example.com/.well-known/jwks.json")
 
     @pytest.mark.asyncio
@@ -500,7 +501,7 @@ class TestJWKSKeyFetching:
         mock_transport.request_raw.return_value = mock_response
         mock_transport_class.return_value = mock_transport
 
-        with pytest.raises(ValueError, match="JWKS endpoint returned status 404"):
+        with pytest.raises(JWKSFetchError, match="JWKS endpoint returned status 404"):
             await get_jwks_key("key1", "https://example.com/.well-known/jwks.json")
 
     @pytest.mark.asyncio
@@ -547,7 +548,7 @@ class TestJWKSKeyFetching:
         mock_transport.request_raw.return_value = mock_response
         mock_transport_class.return_value = mock_transport
 
-        with pytest.raises(ValueError, match="Multiple keys in JWKS but no key ID"):
+        with pytest.raises(JWKSKeyNotFoundError, match="Multiple keys in JWKS but no key ID"):
             await get_jwks_key(None, "https://example.com/.well-known/jwks.json")
 
     @pytest.mark.asyncio
@@ -565,7 +566,7 @@ class TestJWKSKeyFetching:
         mock_transport.request_raw.return_value = mock_response
         mock_transport_class.return_value = mock_transport
 
-        with pytest.raises(ValueError, match="No keys found in JWKS"):
+        with pytest.raises(JWKSKeyNotFoundError, match="No keys found in JWKS"):
             await get_jwks_key("key1", "https://example.com/.well-known/jwks.json")
 
 
