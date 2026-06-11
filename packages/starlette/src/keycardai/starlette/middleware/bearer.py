@@ -14,6 +14,7 @@ from collections.abc import Sequence
 
 from pydantic import AnyHttpUrl
 
+from keycardai.oauth.exceptions import InvalidTokenError
 from keycardai.oauth.server.verifier import TokenVerifier
 from starlette.authentication import (
     AuthCredentials,
@@ -211,13 +212,17 @@ class KeycardAuthBackend(AuthenticationBackend):
             if zone_id is None:
                 raise KeycardAuthError("invalid_token", "Zone ID is required")
 
-        if self.verifier.enable_multi_zone and zone_id:
-            access_token = await self.verifier.verify_token_for_zone(token, zone_id)
-        else:
-            access_token = await self.verifier.verify_token(token)
-
-        if access_token is None:
-            raise KeycardAuthError("invalid_token", "Token verification failed")
+        try:
+            if self.verifier.enable_multi_zone and zone_id:
+                access_token = await self.verifier.verify_token_for_zone(
+                    token, zone_id
+                )
+            else:
+                access_token = await self.verifier.verify_token(token)
+        except InvalidTokenError as e:
+            raise KeycardAuthError(
+                "invalid_token", "Token verification failed"
+            ) from e
 
         resource_server_url = _get_oauth_protected_resource_url(conn)
         user = KeycardUser(
