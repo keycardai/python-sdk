@@ -180,3 +180,15 @@ class JWKSFetchError(JWKSError):
 class JWKSKeyNotFoundError(JWKSError):
     """The requested key (`kid`) was not present in the fetched JWKS."""
 
+
+class InvalidTokenError(OAuthError):
+    """A presented token failed verification.
+
+    Raised by the verify surface for any token-validity failure: an
+    unsupported algorithm, a missing ``kid`` header, an untrusted or missing
+    issuer, an expired token, an audience or scope mismatch, or a bad
+    signature. Carries the RFC 6750 ``invalid_token`` error code.
+    """
+
+    error_code = "invalid_token"
+

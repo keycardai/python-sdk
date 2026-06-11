@@ -9,6 +9,7 @@ from starlette.middleware.authentication import AuthenticationMiddleware
 from starlette.requests import HTTPConnection, Request
 from starlette.testclient import TestClient
 
+from keycardai.oauth.exceptions import InvalidTokenError
 from keycardai.oauth.server import AccessContext
 from keycardai.oauth.server.credentials import ClientSecret
 from keycardai.oauth.server.exceptions import (
@@ -229,7 +230,9 @@ class TestKeycardAuthBackend:
         """
         verifier = MagicMock(
             enable_multi_zone=False,
-            verify_token=AsyncMock(return_value=None),
+            verify_token=AsyncMock(
+                side_effect=InvalidTokenError("Token verification failed")
+            ),
         )
         backend = KeycardAuthBackend(verifier)
         scope = {
@@ -270,7 +273,9 @@ class TestKeycardAuthBackend:
         )
         verifier = MagicMock(
             enable_multi_zone=False,
-            verify_token=AsyncMock(return_value=None),
+            verify_token=AsyncMock(
+                side_effect=InvalidTokenError("Token verification failed")
+            ),
         )
         provider.get_token_verifier = MagicMock(return_value=verifier)  # type: ignore[method-assign]
 

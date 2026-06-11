@@ -34,6 +34,7 @@ from .client import AsyncClient, Client
 from .exceptions import (
     AuthenticationError,
     ConfigError,
+    InvalidTokenError,
     JWKSError,
     JWKSFetchError,
     JWKSKeyNotFoundError,
@@ -81,6 +82,7 @@ __all__ = [
     "JWKSError",
     "JWKSFetchError",
     "JWKSKeyNotFoundError",
+    "InvalidTokenError",
     # === Data Models ===
     "TokenResponse",
     "ClientRegistrationResponse",
