@@ -438,28 +438,14 @@ class TestOverloadEquivalence:
 class TestClientValidation:
     """Test client validation behavior with Pydantic models."""
 
-    def test_register_client_empty_client_name_validation(self):
-        """Test that register_client rejects empty client_name with TypeError."""
+    def test_register_client_empty_client_name_accepted(self):
+        """client_name is optional (RFC-minimal): an empty client_name passes client-level validation and reaches the register call."""
         client = Client("https://test.keycard.cloud", config=ClientConfig(enable_metadata_discovery=False, auto_register_client=False))
 
-        # Test that empty string client_name raises TypeError (client-level validation)
-        with pytest.raises(TypeError) as exc_info:
+        with patch('keycardai.oauth.client.register_client') as mock_register:
+            mock_register.return_value = Mock()
             client.register_client(client_name="")
-
-        # Verify the error message
-        assert "client_name is required" in str(exc_info.value)
-
-    @pytest.mark.asyncio
-    async def test_async_register_client_empty_client_name_validation(self):
-        """Test that async register_client rejects empty client_name with TypeError."""
-        async_client = AsyncClient("https://test.keycard.cloud", config=ClientConfig(enable_metadata_discovery=False, auto_register_client=False))
-
-        # Test that empty string client_name raises TypeError (client-level validation)
-        with pytest.raises(TypeError) as exc_info:
-            await async_client.register_client(client_name="")
-
-        # Verify the error message
-        assert "client_name is required" in str(exc_info.value)
+            mock_register.assert_called_once()
 
     def test_register_client_whitespace_only_client_name_validation(self):
         """Test that register_client accepts whitespace-only client_name (passes client validation but may fail at server)."""
@@ -473,18 +459,14 @@ class TestClientValidation:
             # If we get here, client validation passed
             mock_register.assert_called_once()
 
-    def test_pydantic_model_empty_client_name_validation(self):
-        """Test that ClientRegistrationRequest model directly validates empty client_name."""
-        # Test Pydantic validation directly on the model
-        with pytest.raises(ValidationError) as exc_info:
-            ClientRegistrationRequest(client_name="")
+    def test_pydantic_model_client_name_optional(self):
+        """ClientRegistrationRequest is RFC-minimal: client_name is optional.
 
-        # Verify the error is about string length
-        error = exc_info.value
-        assert len(error.errors()) == 1
-        assert error.errors()[0]["type"] == "string_too_short"
-        assert error.errors()[0]["loc"] == ("client_name",)
-        assert "at least 1 character" in str(error.errors()[0]["msg"])
+        Per RFC 7591 all client metadata is optional, so the model accepts an
+        empty string or an omitted client_name without raising.
+        """
+        assert ClientRegistrationRequest(client_name="").client_name == ""
+        assert ClientRegistrationRequest().client_name is None
 
     def test_token_exchange_request_validation(self):
         """Test that TokenExchangeRequest model validates required fields and handles kwargs correctly."""

@@ -146,19 +146,11 @@ class ClientRegistrationRequest(OAuthClientMetadata):
     """Dynamic Client Registration Request as defined in RFC 7591 Section 2.
 
     Reference: https://datatracker.ietf.org/doc/html/rfc7591#section-2
+
+    Per RFC 7591 all client metadata is optional and is inherited from
+    OAuthClientMetadata. The request sends only the fields the caller sets and
+    injects no defaults.
     """
-    # Override with required field
-    client_name: str = Field(..., min_length=1, description="Human-readable name of the client application.")
-
-    # Override with defaults for registration
-    token_endpoint_auth_method: TokenEndpointAuthMethod = (
-        TokenEndpointAuthMethod.CLIENT_SECRET_BASIC
-    )
-    redirect_uris: list[str] | None = Field(default_factory=lambda: ["http://localhost:8080/callback"])
-    grant_types: list[GrantType] | None = Field(default_factory=lambda: [GrantType.TOKEN_EXCHANGE, GrantType.CLIENT_CREDENTIALS])
-    response_types: list[ResponseType] | None = Field(default_factory=lambda: [ResponseType.CODE])
-    scope: str | None = "read write"
-
     # Request-specific fields
     client_id: str | None = None
     timeout: float | None = None

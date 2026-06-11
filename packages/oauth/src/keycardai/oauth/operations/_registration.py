@@ -29,6 +29,21 @@ def parse_client_registration_http_response(res: HttpResponse) -> ClientRegistra
     """Parse HTTP response from OAuth 2.0 Dynamic Client Registration endpoint."""
     # TODO: Handle errors more granularly
     if res.status >= 400:
+        # RFC 7591 §3.2.2: a registration error is HTTP 400 with a JSON body
+        # carrying an `error` code. Surface it as a typed protocol error so a
+        # caller can branch on the code; fall back to the raw HTTP error when
+        # the body is not a structured OAuth error.
+        try:
+            error_data = json.loads(res.body.decode("utf-8"))
+        except Exception:
+            error_data = None
+        if isinstance(error_data, dict) and "error" in error_data:
+            raise OAuthProtocolError(
+                error=error_data["error"],
+                error_description=error_data.get("error_description"),
+                error_uri=error_data.get("error_uri"),
+                operation="POST /register",
+            )
         response_body = res.body[:512].decode("utf-8", "ignore")
         raise OAuthHttpError(
             status_code=res.status,

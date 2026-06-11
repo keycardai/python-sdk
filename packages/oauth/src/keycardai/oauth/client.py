@@ -530,7 +530,7 @@ class AsyncClient:
             ClientRegistrationResponse with client credentials and metadata
 
         Raises:
-            TypeError: If both request and client_registration_args are provided, or client_name is empty
+            TypeError: If both request and client_registration_args are provided
             ValidationError: If request model validation fails (e.g., empty required fields)
             OAuthHttpError: If registration endpoint returns HTTP error (4xx/5xx)
             OAuthProtocolError: If registration response is invalid or contains OAuth errors
@@ -539,8 +539,6 @@ class AsyncClient:
             raise TypeError("Pass either `request` or keyword arguments, not both.")
 
         if request is None:
-            if not client_registration_args.get("client_name"):
-                raise TypeError("client_name is required when not using a request object")
             request = ClientRegistrationRequest(**client_registration_args)
 
         endpoints = await self._get_current_endpoints()
@@ -1113,7 +1111,7 @@ class Client:
             ClientRegistrationResponse with client credentials and metadata
 
         Raises:
-            TypeError: If both request and client_registration_args are provided, or client_name is empty
+            TypeError: If both request and client_registration_args are provided
             ValidationError: If request model validation fails (e.g., empty required fields)
             OAuthHttpError: If registration endpoint returns HTTP error (4xx/5xx)
             OAuthProtocolError: If registration response is invalid or contains OAuth errors
@@ -1122,8 +1120,6 @@ class Client:
             raise TypeError("Pass either `request` or keyword arguments, not both.")
 
         if request is None:
-            if not client_registration_args.get("client_name"):
-                raise TypeError("client_name is required when not using a request object")
             request = ClientRegistrationRequest(**client_registration_args)
 
         endpoints = self._get_current_endpoints()
