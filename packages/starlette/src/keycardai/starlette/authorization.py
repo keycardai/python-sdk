@@ -28,7 +28,6 @@ from keycardai.oauth.server.exceptions import MissingAccessContextError
 from keycardai.oauth.server.token_exchange import exchange_tokens_for_resources
 from starlette._utils import is_async_callable
 from starlette.authentication import has_required_scope
-from starlette.exceptions import HTTPException
 from starlette.requests import Request
 
 from .middleware.bearer import (
@@ -63,8 +62,9 @@ def requires(
       that includes the ``resource_metadata=`` URL (RFC 9728) computed from
       the current request, instead of stock ``HTTPException(403)``.
     - If the user is authenticated but missing one of the required scopes,
-      raises ``HTTPException(status_code)`` (default 403), matching the
-      stock decorator's "authenticated but unauthorized" behavior.
+      returns a 403 (configurable via ``status_code``) carrying an RFC 6750
+      ``WWW-Authenticate: Bearer error="insufficient_scope"`` challenge with
+      the ``resource_metadata=`` URL (RFC 9728).
 
     The ``redirect`` argument from stock ``requires`` is intentionally
     omitted - browser redirects do not apply to OAuth 2.0 protected
@@ -101,7 +101,12 @@ def requires(
                 if not request.user.is_authenticated:
                     return _build_unauthorized_response(request)
                 if not has_required_scope(request, scopes_list):
-                    raise HTTPException(status_code=status_code)
+                    return _build_unauthorized_response(
+                        request,
+                        error="insufficient_scope",
+                        description="Insufficient scope",
+                        status_code=status_code,
+                    )
                 return await func(*args, **kwargs)
 
             return async_wrapper
@@ -120,7 +125,12 @@ def requires(
             if not request.user.is_authenticated:
                 return _build_unauthorized_response(request)
             if not has_required_scope(request, scopes_list):
-                raise HTTPException(status_code=status_code)
+                return _build_unauthorized_response(
+                    request,
+                    error="insufficient_scope",
+                    description="Insufficient scope",
+                    status_code=status_code,
+                )
             return func(*args, **kwargs)
 
         return sync_wrapper

@@ -377,6 +377,10 @@ class TestRequires:
             "/api/admin", headers={"Authorization": "Bearer some-token"}
         )
         assert response.status_code == 403
+        challenge = response.headers.get("WWW-Authenticate", "")
+        assert challenge.startswith("Bearer")
+        assert 'error="insufficient_scope"' in challenge
+        assert "resource_metadata=" in challenge
 
 
 class TestGrant:
