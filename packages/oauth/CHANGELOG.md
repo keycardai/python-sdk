@@ -1,3 +1,21 @@
+## 0.17.0-keycardai-oauth (2026-06-11)
+
+
+- feat(keycardai-oauth)!: RFC-minimal client registration and typed registration errors (#156)
+- ClientRegistrationRequest no longer injects opinionated defaults
+(token_endpoint_auth_method, redirect_uris, grant_types, response_types,
+scope) and no longer requires client_name. Per RFC 7591 all client metadata
+is optional, so the request sends only the fields the caller sets, matching
+the RFC-minimal TypeScript registerClient.
+- Registration errors are now typed: on an RFC 7591 section 3.2.2 error (HTTP
+4xx with a JSON error body) registration raises OAuthProtocolError carrying
+the error code so a caller can branch on it, instead of an opaque
+OAuthHttpError with only the raw body. A non-structured 4xx still raises
+OAuthHttpError.
+- Resolves the request-defaults, client_name-requiredness, and error-surfacing
+rows of the dynamic-client-registration spec (ECO-44).
+- Co-authored-by: GitHub Action <action@github.com>
+
 ## 0.16.0-keycardai-oauth (2026-06-11)
 
 
