@@ -1,3 +1,15 @@
+## 0.18.0-keycardai-oauth (2026-06-11)
+
+
+- feat(keycardai-oauth): expose get_client_jwks_url on the WebIdentity credential (#160)
+- WebIdentity exposed only get_jwks(); the client JWKS URL helper lived on the
+internal key manager, not the credential. Add get_client_jwks_url(resource_server_url)
+to the credential, delegating to the key manager, so the public JWKS getter and
+the JWKS-URL helper are both on the credential, matching the TS getClientJwksUrl
+and Go ClientJWKSURL accessors.
+- Part of the web-identity spec JWKS-accessor-surface row (ECO-39).
+- Co-authored-by: GitHub Action <action@github.com>
+
 ## 0.17.0-keycardai-oauth (2026-06-11)
 
 
