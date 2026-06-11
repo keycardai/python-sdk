@@ -1,3 +1,16 @@
+## 0.7.0-keycardai-starlette (2026-06-11)
+
+
+- fix(keycardai-starlette): emit RFC 6750 insufficient_scope challenge from requires (#158)
+- The `requires` decorator raised a bare HTTPException(403) on scope failure,
+with no WWW-Authenticate header. It now returns a 403 carrying an RFC 6750
+`Bearer error="insufficient_scope"` challenge with the resource_metadata URL
+(RFC 9728), matching the 401 anonymous path and the TS/Go route gates. The
+status_code argument still controls the failure status (default 403).
+- Resolves the scope-failure response-shape row of the route-level-auth-gating
+spec (ECO-78).
+- Co-authored-by: GitHub Action <action@github.com>
+
 ## 0.6.0-keycardai-starlette (2026-06-03)
 
 
