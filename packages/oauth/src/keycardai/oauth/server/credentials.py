@@ -233,6 +233,14 @@ class WebIdentity:
     def get_jwks(self) -> JsonWebKeySet:
         return self.identity_manager.get_jwks()
 
+    def get_client_jwks_url(self, resource_server_url: str) -> str:
+        """Return the client's published JWKS URL for the given resource server.
+
+        The authorization server fetches this URL to obtain the public key that
+        verifies the ``private_key_jwt`` client assertions this credential signs.
+        """
+        return self.identity_manager.get_client_jwks_url(resource_server_url)
+
     async def prepare_token_exchange_request(
         self,
         client: AsyncClient,
