@@ -1,3 +1,32 @@
+## 0.16.0-keycardai-oauth (2026-06-11)
+
+
+- feat(keycardai-oauth)!: raise typed InvalidTokenError and enforce issuer allowlist before key resolution (#154)
+- * feat(keycardai-oauth)!: raise typed InvalidTokenError and enforce issuer allowlist before key resolution
+- The verify surface is now fail-closed and typed. `verify_token` and
+`verify_token_for_zone` return an `AccessToken` and raise the new
+`InvalidTokenError` (RFC 6750 `invalid_token`) on any verification failure;
+they no longer return `None`.
+- Cheap policy checks (trusted issuer, expiration) now run on the unverified
+payload before any network key resolution, so a token with an untrusted `iss`
+is rejected without triggering JWKS discovery or fetch. The issuer is checked
+against a trusted allowlist: `issuer` now accepts `str | list[str]`. JWKS keys
+are cached per `(issuer, kid)` so distinct issuers cannot collide on a shared
+`kid`, and discovery resolves keys for the validated token issuer.
+- Infra failures (JWKS discovery/fetch) now propagate as their typed errors
+instead of being collapsed into a generic failure, so a JWKS outage surfaces
+as a server error rather than a misleading invalid-token result.
+- Resolves the verify-contract, ordering, and issuer-allowlist rows of the
+jwt-signing-and-verification spec (ECO-36).
+- * fix(keycardai-starlette): catch InvalidTokenError from token verification
+- The bearer backend relied on `verify_token` returning `None` on failure. The
+verifier now raises `InvalidTokenError`, so the backend catches it and maps it
+to the RFC 6750 `invalid_token` 401 challenge. JWKS infrastructure errors are
+no longer caught here, so a key-resolution outage surfaces as a server error
+rather than a 401.
+- ---------
+- Co-authored-by: GitHub Action <action@github.com>
+
 ## 0.15.3-keycardai-oauth (2026-06-10)
 
 
