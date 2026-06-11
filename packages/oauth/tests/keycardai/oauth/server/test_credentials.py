@@ -164,6 +164,18 @@ class TestWebIdentity:
             assert jwks is not None
             assert len(jwks.keys) == 1
 
+    def test_get_client_jwks_url(self):
+        """WebIdentity exposes the client JWKS URL helper on the credential."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            provider = WebIdentity(
+                mcp_server_name="Test Server",
+                storage_dir=tmpdir,
+            )
+            assert (
+                provider.get_client_jwks_url("https://api.example.com")
+                == "https://api.example.com/.well-known/jwks.json"
+            )
+
     @pytest.mark.asyncio
     async def test_prepare_token_exchange_request(self, mock_client):
         """Test JWT client assertion generation."""
