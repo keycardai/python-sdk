@@ -1,3 +1,20 @@
+## 0.18.1-keycardai-oauth (2026-06-12)
+
+
+- fix(keycardai-oauth): add client_assertion kwargs to sync exchange_token overload (#162)
+- * fix(keycardai-oauth): add client_assertion kwargs to sync exchange_token overload
+- The sync exchange_token kwargs overload was missing the client_assertion
+and client_assertion_type parameters that the async overload declares.
+The runtime path already accepted them via **token_exchange_args; this
+aligns the typed surface so type checkers and IDEs accept the kwargs on
+the sync client too. ECO-41.
+- * fix(keycardai-oauth): make subject_token_type optional in exchange_token kwargs overloads
+- TokenExchangeRequest defaults subject_token_type to the access-token
+type, but both kwargs overloads declared it required. The overloads now
+mark it optional so the typed surface matches the model default.
+- ---------
+- Co-authored-by: GitHub Action <action@github.com>
+
 ## 0.18.0-keycardai-oauth (2026-06-11)
 
 
