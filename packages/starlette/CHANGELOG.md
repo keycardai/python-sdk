@@ -1,3 +1,20 @@
+## 0.8.0-keycardai-starlette (2026-06-12)
+
+
+- feat(keycardai-starlette)!: align metadata endpoints with the RFC 9728 contract (#168)
+- The protected-resource document no longer carries the OAuth client
+registration fields (client_id, client_name, token_endpoint_auth_method,
+grant_types); it now exposes the standard optional inputs
+scopes_supported, resource_name, and resource_documentation, and emits
+jwks_uri only when a JWKS is configured. The authorization-server proxy
+appends resource=<origin> to the upstream authorization_endpoint.
+Metadata and JWKS responses carry Access-Control-Allow-Origin: * and
+answer OPTIONS preflight. The upstream metadata fetch timeout is
+configurable (as_metadata_timeout, default 10s; was fixed 5s).
+- BREAKING CHANGE: the protected-resource document drops the four client
+registration fields and jwks_uri is conditional on a configured JWKS.
+- Co-authored-by: GitHub Action <action@github.com>
+
 ## 0.7.0-keycardai-starlette (2026-06-11)
 
 
