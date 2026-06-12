@@ -79,6 +79,35 @@ class TestAuthProviderConstruction:
         provider = AuthProvider(zone_id="test-zone")
         assert isinstance(provider.application_credential, ClientSecret)
 
+    def test_multi_zone_inferred_from_credential(self):
+        """A multi-zone ClientSecret turns on multi-zone without an explicit flag."""
+        provider = AuthProvider(
+            application_credential=ClientSecret({
+                "https://zone1.keycard.cloud": ("cid1", "csec1"),
+                "https://zone2.keycard.cloud": ("cid2", "csec2"),
+            }),
+        )
+        assert provider.enable_multi_zone is True
+
+    def test_single_zone_credential_does_not_infer_multi_zone(self):
+        """A single-zone ClientSecret leaves multi-zone off."""
+        provider = AuthProvider(
+            zone_id="test-zone",
+            application_credential=ClientSecret(("cid", "csec")),
+        )
+        assert provider.enable_multi_zone is False
+
+    def test_explicit_enable_multi_zone_overrides_inference(self):
+        """An explicit enable_multi_zone value is respected over inference."""
+        provider = AuthProvider(
+            zone_id="test-zone",
+            application_credential=ClientSecret({
+                "https://test-zone.keycard.cloud": ("cid", "csec"),
+            }),
+            enable_multi_zone=False,
+        )
+        assert provider.enable_multi_zone is False
+
 
 class TestAuthProviderInstall:
     @pytest.fixture
