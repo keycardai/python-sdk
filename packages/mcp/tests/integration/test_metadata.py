@@ -5,6 +5,7 @@ from the OAuth metadata endpoints.
 """
 
 from unittest.mock import Mock, patch
+from urllib.parse import quote
 
 import pytest
 from starlette.applications import Starlette
@@ -59,37 +60,40 @@ class TestProtectedResourceMetadata:
         assert "resource" in data
         assert "testserver" in data["resource"]
 
-    def test_contains_jwks_uri(self, client):
-        """Test that response contains jwks_uri field."""
+    def test_omits_jwks_uri_when_no_jwks_configured(self, client):
+        """Test that jwks_uri is absent when no JWKS is configured."""
         response = client.get("/.well-known/oauth-protected-resource")
         data = response.json()
 
-        assert "jwks_uri" in data
-        assert "/.well-known/jwks.json" in data["jwks_uri"]
+        assert "jwks_uri" not in data
 
-    def test_contains_client_id(self, client):
-        """Test that response contains client_id matching resource."""
+    def test_omits_client_id(self, client):
+        """Test that the document does not contain client_id."""
         response = client.get("/.well-known/oauth-protected-resource")
         data = response.json()
 
-        assert "client_id" in data
-        assert data["client_id"] == data["resource"]
+        assert "client_id" not in data
 
-    def test_contains_grant_types(self, client):
-        """Test that response contains grant_types with client_credentials."""
+    def test_omits_grant_types(self, client):
+        """Test that the document does not contain grant_types."""
         response = client.get("/.well-known/oauth-protected-resource")
         data = response.json()
 
-        assert "grant_types" in data
-        assert "client_credentials" in data["grant_types"]
+        assert "grant_types" not in data
 
-    def test_contains_token_endpoint_auth_method(self, client):
-        """Test that token_endpoint_auth_method is private_key_jwt."""
+    def test_omits_client_name(self, client):
+        """Test that the document does not contain client_name."""
         response = client.get("/.well-known/oauth-protected-resource")
         data = response.json()
 
-        assert "token_endpoint_auth_method" in data
-        assert data["token_endpoint_auth_method"] == "private_key_jwt"
+        assert "client_name" not in data
+
+    def test_omits_token_endpoint_auth_method(self, client):
+        """Test that the document does not contain token_endpoint_auth_method."""
+        response = client.get("/.well-known/oauth-protected-resource")
+        data = response.json()
+
+        assert "token_endpoint_auth_method" not in data
 
 
 class TestAuthorizationServerMetadata:
@@ -155,7 +159,9 @@ class TestAuthorizationServerMetadata:
         data = response.json()
 
         assert data["issuer"] == issuer
-        assert data["authorization_endpoint"] == f"{issuer}/oauth/authorize"
+        assert data["authorization_endpoint"] == (
+            f"{issuer}/oauth/authorize?resource={quote('http://testserver', safe='')}"
+        )
         assert data["token_endpoint"] == f"{issuer}/oauth/token"
 
     @patch("httpx.Client")
@@ -329,6 +335,14 @@ class TestAuthMetadataMount:
 
         assert data["keys"][0]["kid"] == "mount-test-key"
 
+    def test_protected_resource_contains_jwks_uri(self, client):
+        """Test that jwks_uri is advertised when a JWKS is configured."""
+        response = client.get("/.well-known/oauth-protected-resource")
+        data = response.json()
+
+        assert "jwks_uri" in data
+        assert "/.well-known/jwks.json" in data["jwks_uri"]
+
     def test_protected_resource_has_correct_issuer(self, issuer, client):
         """Test that protected resource points to correct authorization server."""
         response = client.get("/.well-known/oauth-protected-resource")
@@ -396,14 +410,12 @@ class TestDynamicResourcePaths:
             "The full path suffix should be reflected in the resource URL."
         )
 
-    def test_protected_resource_client_id_matches_resource(self, client):
-        """Test that client_id matches the resource URL including path suffix."""
+    def test_protected_resource_omits_client_id(self, client):
+        """Test that the document does not contain client_id for suffixed paths."""
         response = client.get("/.well-known/oauth-protected-resource/my-service")
         data = response.json()
 
-        assert data["client_id"] == data["resource"], (
-            "client_id should equal resource URL including the path suffix."
-        )
+        assert "client_id" not in data
 
     def test_base_path_still_works(self, client):
         """Test that the base path without suffix still works."""
