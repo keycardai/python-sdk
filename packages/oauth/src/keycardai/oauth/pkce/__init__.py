@@ -3,10 +3,11 @@
 Builds on the lower-level PKCE primitives in :mod:`keycardai.oauth.utils.pkce`
 and reuses :class:`keycardai.oauth.AsyncClient` for the OAuth-server-facing
 operations (server metadata discovery, code exchange). This package owns the
-user-flow orchestration on top: discovery from a ``WWW-Authenticate``
-challenge (RFC 9728), local callback server (RFC 8252), and browser launch.
+user-flow orchestration on top: issuer resolution (directly via ``issuer``
+or from a ``WWW-Authenticate`` challenge per RFC 9728), local callback
+server (RFC 8252), and browser launch.
 
-Example::
+Example (challenge-driven)::
 
     from keycardai.oauth.pkce import authenticate
 
@@ -16,9 +17,16 @@ Example::
         www_authenticate_header=resp.headers["WWW-Authenticate"],
     )
     print(token.access_token)
+
+Example (issuer-direct)::
+
+    token = await authenticate(
+        client_id="my-app",
+        issuer="https://auth.example.com",
+    )
 """
 
 from .callback import OAuthCallbackServer
-from .client import authenticate
+from .client import authenticate, resolve_issuer_from_challenge
 
-__all__ = ["OAuthCallbackServer", "authenticate"]
+__all__ = ["OAuthCallbackServer", "authenticate", "resolve_issuer_from_challenge"]

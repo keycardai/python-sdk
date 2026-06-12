@@ -9,8 +9,13 @@ from unittest.mock import AsyncMock, MagicMock
 import httpx
 import pytest
 
+from keycardai.oauth.exceptions import ConfigError
 from keycardai.oauth.http.auth import BasicAuth, NoneAuth
-from keycardai.oauth.pkce import OAuthCallbackServer, authenticate
+from keycardai.oauth.pkce import (
+    OAuthCallbackServer,
+    authenticate,
+    resolve_issuer_from_challenge,
+)
 from keycardai.oauth.pkce.client import _extract_resource_metadata_url
 from keycardai.oauth.types.models import TokenResponse
 
@@ -158,6 +163,105 @@ async def test_authenticate_uses_none_auth_for_public_client(monkeypatch):
     )
 
     assert isinstance(captured["auth"], NoneAuth)
+
+
+@pytest.mark.asyncio
+async def test_authenticate_raises_when_neither_issuer_nor_header():
+    with pytest.raises(ConfigError, match="exactly one"):
+        await authenticate(client_id="cid")
+
+
+@pytest.mark.asyncio
+async def test_authenticate_raises_when_both_issuer_and_header():
+    with pytest.raises(ConfigError, match="exactly one"):
+        await authenticate(
+            client_id="cid",
+            issuer="https://auth.example.com",
+            www_authenticate_header=WWW_AUTHENTICATE,
+        )
+
+
+@pytest.mark.asyncio
+async def test_authenticate_raises_when_challenge_mode_missing_resource_url():
+    with pytest.raises(ConfigError, match="resource_url"):
+        await authenticate(
+            client_id="cid",
+            www_authenticate_header=WWW_AUTHENTICATE,
+        )
+
+
+@pytest.mark.asyncio
+async def test_authenticate_issuer_direct_skips_metadata_fetch(monkeypatch):
+    """Issuer mode drives the flow without any protected resource metadata request."""
+    _patch_callback_and_browser(monkeypatch, code="auth-code-456")
+    token_response = TokenResponse(
+        access_token="tok", token_type="Bearer", expires_in=3600
+    )
+    captured = {}
+    fake_async_client = _async_client_factory(
+        endpoints=MagicMock(
+            authorize="https://auth.example.com/authorize",
+            token="https://auth.example.com/token",
+        ),
+        exchange_response=token_response,
+        capture=captured,
+    )
+    monkeypatch.setattr(
+        "keycardai.oauth.pkce.client.AsyncClient", fake_async_client
+    )
+    http_mock = _http_client_mock([])
+
+    result = await authenticate(
+        client_id="my-app",
+        issuer="https://auth.example.com/",
+        resource_url="https://api.example.com",
+        http_client=http_mock,
+    )
+
+    assert result is token_response
+    # No protected resource metadata request was made.
+    http_mock.get.assert_not_awaited()
+    # AsyncClient was constructed against the issuer (trailing slash stripped).
+    assert captured["issuer"] == "https://auth.example.com"
+    # The RFC 8707 resource indicator was still passed to the token exchange.
+    assert captured["exchange_kwargs"]["resource"] == "https://api.example.com"
+
+
+@pytest.mark.asyncio
+async def test_authenticate_issuer_direct_without_resource_url(monkeypatch):
+    _patch_callback_and_browser(monkeypatch, code="code")
+    captured = {}
+    fake_async_client = _async_client_factory(
+        endpoints=MagicMock(
+            authorize="https://auth.example.com/authorize",
+            token="https://auth.example.com/token",
+        ),
+        exchange_response=TokenResponse(access_token="tok", token_type="Bearer"),
+        capture=captured,
+    )
+    monkeypatch.setattr(
+        "keycardai.oauth.pkce.client.AsyncClient", fake_async_client
+    )
+
+    await authenticate(client_id="public-app", issuer="https://auth.example.com")
+
+    assert captured["exchange_kwargs"]["resource"] is None
+
+
+@pytest.mark.asyncio
+async def test_resolve_issuer_from_challenge_resolves_issuer():
+    http_mock = _http_client_mock(
+        [{"authorization_servers": ["https://auth.example.com/"]}]
+    )
+
+    issuer = await resolve_issuer_from_challenge(
+        WWW_AUTHENTICATE, http_client=http_mock
+    )
+
+    assert issuer == "https://auth.example.com"
+    http_mock.get.assert_awaited_once_with(
+        "https://api.example.com/.well-known/oauth-protected-resource"
+    )
 
 
 # ---------------------------------------------------------------------------
