@@ -250,4 +250,4 @@ class TestOAuthMetadataEndpoints:
         response = client.get("/.well-known/oauth-authorization-server")
         # The endpoint proxies to the auth server which is unreachable in
         # tests; accept any non-error response shape.
-        assert response.status_code in (200, 302, 307, 503)
+        assert response.status_code in (200, 302, 307, 502)

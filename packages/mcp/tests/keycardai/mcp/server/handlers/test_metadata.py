@@ -643,7 +643,7 @@ class TestAuthorizationServerMetadata:
         response = handler(request)
 
         # Verify error response
-        assert response.status_code == 404
+        assert response.status_code == 502
         response_data = json.loads(response.body)
         assert response_data["error"] == "Upstream authorization server returned 404: Not Found"
         assert response_data["type"] == "upstream_error"
@@ -665,10 +665,10 @@ class TestAuthorizationServerMetadata:
         response = handler(request)
 
         # Verify error response
-        assert response.status_code == 503
+        assert response.status_code == 502
         response_data = json.loads(response.body)
-        assert "Unable to connect to authorization server" in response_data["error"]
-        assert response_data["type"] == "connectivity_error"
+        assert "Unable to fetch authorization server metadata" in response_data["error"]
+        assert response_data["type"] == "upstream_error"
         assert response_data["url"] == "https://auth.example.com/.well-known/oauth-authorization-server"
 
     @patch("httpx.Client")
@@ -687,10 +687,10 @@ class TestAuthorizationServerMetadata:
         response = handler(request)
 
         # Verify error response
-        assert response.status_code == 503
+        assert response.status_code == 502
         response_data = json.loads(response.body)
-        assert "Unable to connect to authorization server" in response_data["error"]
-        assert response_data["type"] == "connectivity_error"
+        assert "Unable to fetch authorization server metadata" in response_data["error"]
+        assert response_data["type"] == "upstream_error"
 
     @patch("httpx.Client")
     def test_general_exception_handling(self, mock_client_class):

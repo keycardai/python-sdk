@@ -158,7 +158,7 @@ class TestAuthorizationServerMetadata:
             assert response.status_code == 200
             assert response.json()["issuer"] == issuer
 
-    def test_upstream_503_on_connect_error(self, client):
+    def test_upstream_502_on_connect_error(self, client):
         import httpx
 
         with patch("httpx.Client") as mock_client_cls:
@@ -166,7 +166,31 @@ class TestAuthorizationServerMetadata:
                 httpx.ConnectError("connection refused")
             )
             response = client.get("/.well-known/oauth-authorization-server")
-            assert response.status_code == 503
+            assert response.status_code == 502
+
+    def test_upstream_502_on_upstream_http_error(self, client):
+        import httpx
+
+        with patch("httpx.Client") as mock_client_cls:
+            mock_response = Mock()
+            mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
+                "server error",
+                request=httpx.Request(
+                    "GET", "https://zone.example.com/.well-known/oauth-authorization-server"
+                ),
+                response=httpx.Response(
+                    500,
+                    request=httpx.Request(
+                        "GET",
+                        "https://zone.example.com/.well-known/oauth-authorization-server",
+                    ),
+                ),
+            )
+            mock_client_cls.return_value.__enter__.return_value.get.return_value = (
+                mock_response
+            )
+            response = client.get("/.well-known/oauth-authorization-server")
+            assert response.status_code == 502
 
     def test_authorization_endpoint_gains_resource_param(self, client, issuer):
         upstream = {
