@@ -1225,6 +1225,8 @@ class Client:
         actor_token_type: str | None = None,
         timeout: float | None = None,
         client_id: str | None = None,
+        client_assertion_type: str | None = None,
+        client_assertion: str | None = None,
     ) -> TokenResponse: ...
 
     def exchange_token(self, request: TokenExchangeRequest | None = None, /, **token_exchange_args) -> TokenResponse:
