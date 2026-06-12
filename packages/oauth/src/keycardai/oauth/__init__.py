@@ -50,6 +50,7 @@ from .types.models import (
     PKCE,
     AuthorizationServerMetadata,
     ClientConfig,
+    ClientCredentialsRequest,
     ClientRegistrationRequest,
     ClientRegistrationResponse,
     Endpoints,
@@ -90,6 +91,7 @@ __all__ = [
     "Endpoints",
     "ClientConfig",
     "ClientRegistrationRequest",
+    "ClientCredentialsRequest",
     "TokenExchangeRequest",
     "AuthorizationServerMetadata",
     # === Authorization ===
