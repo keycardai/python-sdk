@@ -1,3 +1,13 @@
+## 0.18.2-keycardai-oauth (2026-06-12)
+
+
+- fix(keycardai-oauth): discover KEYCARD_EKS_WORKLOAD_IDENTITY_TOKEN_FILE in EKS workload identity (#164)
+- EKSWorkloadIdentity documents KEYCARD_EKS_WORKLOAD_IDENTITY_TOKEN_FILE
+as the first env var checked during token-file discovery, but the
+default list only contained the two AWS variables. The variable is now
+searched first, matching the docstring and the TS and Go SDKs. ECO-40.
+- Co-authored-by: GitHub Action <action@github.com>
+
 ## 0.18.1-keycardai-oauth (2026-06-12)
 
 
