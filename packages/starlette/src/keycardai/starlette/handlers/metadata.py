@@ -228,16 +228,16 @@ def authorization_server_metadata(
                     "type": "upstream_error",
                     "url": str(e.request.url),
                 },
-                status_code=e.response.status_code,
+                status_code=502,
             )
-        except (httpx.ConnectError, httpx.TimeoutException) as e:
+        except httpx.HTTPError as e:
             return JSONResponse(
                 content={
-                    "error": f"Unable to connect to authorization server: {str(e)}",
-                    "type": "connectivity_error",
+                    "error": f"Unable to fetch authorization server metadata: {str(e)}",
+                    "type": "upstream_error",
                     "url": f"{actual_issuer}/.well-known/oauth-authorization-server",
                 },
-                status_code=503,
+                status_code=502,
             )
         except Exception as e:
             return JSONResponse(
