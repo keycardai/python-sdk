@@ -291,6 +291,7 @@ class EKSWorkloadIdentity:
     """
 
     default_env_var_names = [
+        "KEYCARD_EKS_WORKLOAD_IDENTITY_TOKEN_FILE",
         "AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE",
         "AWS_WEB_IDENTITY_TOKEN_FILE",
     ]

@@ -340,6 +340,25 @@ class TestEKSWorkloadIdentity:
                 os.environ.pop("AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE", None)
 
     @pytest.mark.asyncio
+    async def test_initialization_with_keycard_env_var(self):
+        """Test EKSWorkloadIdentity discovers KEYCARD_EKS_WORKLOAD_IDENTITY_TOKEN_FILE ahead of the AWS variables."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            keycard_file = Path(tmpdir) / "keycard-token"
+            keycard_file.write_text("eks-test-token-keycard")
+            aws_file = Path(tmpdir) / "aws-token"
+            aws_file.write_text("eks-test-token-aws")
+
+            os.environ["KEYCARD_EKS_WORKLOAD_IDENTITY_TOKEN_FILE"] = str(keycard_file)
+            os.environ["AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE"] = str(aws_file)
+            try:
+                provider = EKSWorkloadIdentity()
+                assert provider.token_file_path == str(keycard_file)
+                assert provider.env_var_name == "KEYCARD_EKS_WORKLOAD_IDENTITY_TOKEN_FILE"
+            finally:
+                os.environ.pop("KEYCARD_EKS_WORKLOAD_IDENTITY_TOKEN_FILE", None)
+                os.environ.pop("AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE", None)
+
+    @pytest.mark.asyncio
     async def test_initialization_with_custom_env_var(self):
         """Test EKSWorkloadIdentity initialization with custom environment variable."""
         with tempfile.TemporaryDirectory() as tmpdir:
