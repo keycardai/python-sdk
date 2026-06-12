@@ -22,7 +22,7 @@ def build_client_registration_http_request(
     if context and context.headers:
         headers.update(context.headers)
     if context and context.auth:
-        headers.update(dict(context.auth.apply_headers()))
+        headers.update(dict(context.auth.apply_headers(context.issuer)))
     return HttpRequest(method="POST", url=context.endpoint, headers=headers, body=body)
 
 def parse_client_registration_http_response(res: HttpResponse) -> ClientRegistrationResponse:

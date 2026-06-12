@@ -20,7 +20,9 @@ def build_client_credentials_http_request(
 
     Args:
         request: Client credentials grant request parameters
-        context: HTTP context with endpoint and auth strategy
+        context: HTTP context with endpoint, auth strategy, and optional
+            issuer selector. The issuer is passed to the auth strategy so
+            zone-aware strategies apply the credentials for that issuer.
 
     Returns:
         HttpRequest for the token endpoint
@@ -37,7 +39,7 @@ def build_client_credentials_http_request(
     }
 
     if context.auth:
-        headers.update(dict(context.auth.apply_headers()))
+        headers.update(dict(context.auth.apply_headers(context.issuer)))
 
     # Convert to properly URL-encoded form data as required by OAuth 2.0 RFC 6749
     form_data = urlencode(payload).encode("utf-8")

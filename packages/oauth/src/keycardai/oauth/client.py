@@ -364,6 +364,7 @@ class AsyncClient:
                     endpoint=self._discovered_endpoints.register,
                     transport=self.transport,
                     auth=self.auth_strategy,
+                    issuer=self.issuer,
                     user_agent=self.config.user_agent,
                     custom_headers=self.config.custom_headers,
                     timeout=self.config.timeout,
@@ -552,6 +553,7 @@ class AsyncClient:
             endpoint=endpoints.register,
             transport=self.transport,
             auth=self.auth_strategy,
+            issuer=self.issuer,
             user_agent=self.config.user_agent,
             custom_headers=self.config.custom_headers,
             timeout=client_registration_args.get("timeout", self.config.timeout),
@@ -618,6 +620,7 @@ class AsyncClient:
             endpoint=self.issuer,
             transport=self.transport,
             auth=self.auth_strategy,
+            issuer=self.issuer,
             user_agent=self.config.user_agent,
             custom_headers=self.config.custom_headers,
             timeout=self.config.timeout,
@@ -632,6 +635,8 @@ class AsyncClient:
     async def exchange_token(
         self,
         request: TokenExchangeRequest,
+        *,
+        issuer: str | None = None,
     ) -> TokenResponse: ...
 
     @overload
@@ -639,6 +644,7 @@ class AsyncClient:
         self,
         /,
         *,
+        issuer: str | None = None,
         subject_token: str,
         subject_token_type: str = ...,
         grant_type: str | None = None,
@@ -689,6 +695,10 @@ class AsyncClient:
 
         Args:
             request: TokenExchangeRequest with all exchange parameters
+            issuer: Issuer URL selecting which credentials a zone-aware auth
+                strategy (e.g. MultiZoneBasicAuth) applies for this call.
+                Defaults to the client's issuer. Single-credential strategies
+                ignore it. May be combined with either calling form.
             **token_exchange_args: Alternative to request - provide individual parameters
 
         Returns:
@@ -697,6 +707,7 @@ class AsyncClient:
         Raises:
             TypeError: If both request and token_exchange_args are provided
         """
+        issuer = token_exchange_args.pop("issuer", None)
         if request is not None and token_exchange_args:
             raise TypeError("Pass either `request` or keyword arguments, not both.")
 
@@ -709,6 +720,7 @@ class AsyncClient:
             endpoint=endpoints.token,
             transport=self.transport,
             auth=self.auth_strategy,
+            issuer=issuer if issuer is not None else self.issuer,
             user_agent=self.config.user_agent,
             custom_headers=self.config.custom_headers,
             timeout=token_exchange_args.get("timeout", self.config.timeout),
@@ -720,6 +732,8 @@ class AsyncClient:
     async def client_credentials_grant(
         self,
         request: ClientCredentialsRequest,
+        *,
+        issuer: str | None = None,
     ) -> TokenResponse: ...
 
     @overload
@@ -727,6 +741,7 @@ class AsyncClient:
         self,
         /,
         *,
+        issuer: str | None = None,
         resource: str | None = None,
         scope: str | None = None,
         client_assertion: str | None = None,
@@ -755,6 +770,10 @@ class AsyncClient:
 
         Args:
             request: ClientCredentialsRequest with all grant parameters
+            issuer: Issuer URL selecting which credentials a zone-aware auth
+                strategy (e.g. MultiZoneBasicAuth) applies for this call.
+                Defaults to the client's issuer. Single-credential strategies
+                ignore it. May be combined with either calling form.
             **client_credentials_args: Alternative to request - provide individual parameters
 
         Returns:
@@ -763,6 +782,7 @@ class AsyncClient:
         Raises:
             TypeError: If both request and client_credentials_args are provided
         """
+        issuer = client_credentials_args.pop("issuer", None)
         if request is not None and client_credentials_args:
             raise TypeError("Pass either `request` or keyword arguments, not both.")
 
@@ -775,6 +795,7 @@ class AsyncClient:
             endpoint=endpoints.token,
             transport=self.transport,
             auth=self.auth_strategy,
+            issuer=issuer if issuer is not None else self.issuer,
             user_agent=self.config.user_agent,
             custom_headers=self.config.custom_headers,
             timeout=client_credentials_args.get("timeout", self.config.timeout),
@@ -821,6 +842,7 @@ class AsyncClient:
             endpoint=endpoints.token,
             transport=self.transport,
             auth=self.auth_strategy,
+            issuer=self.issuer,
             user_agent=self.config.user_agent,
             custom_headers=self.config.custom_headers,
             timeout=timeout or self.config.timeout,
@@ -889,6 +911,7 @@ class AsyncClient:
             endpoint=endpoints.token,
             transport=self.transport,
             auth=self.auth_strategy,
+            issuer=self.issuer,
             user_agent=self.config.user_agent,
             custom_headers=self.config.custom_headers,
             timeout=timeout or self.config.timeout,
@@ -1048,6 +1071,7 @@ class Client:
                     endpoint=self._discovered_endpoints.register,
                     transport=self.transport,
                     auth=self.auth_strategy,
+                    issuer=self.issuer,
                     user_agent=self.config.user_agent,
                     custom_headers=self.config.custom_headers,
                     timeout=self.config.timeout,
@@ -1199,6 +1223,7 @@ class Client:
             endpoint=endpoints.register,
             transport=self.transport,
             auth=self.auth_strategy,
+            issuer=self.issuer,
             user_agent=self.config.user_agent,
             custom_headers=self.config.custom_headers,
             timeout=client_registration_args.get("timeout", self.config.timeout),
@@ -1264,6 +1289,7 @@ class Client:
             endpoint=self.issuer,
             transport=self.transport,
             auth=self.auth_strategy,
+            issuer=self.issuer,
             user_agent=self.config.user_agent,
             custom_headers=self.config.custom_headers,
             timeout=self.config.timeout,
@@ -1278,6 +1304,8 @@ class Client:
     def exchange_token(
         self,
         request: TokenExchangeRequest,
+        *,
+        issuer: str | None = None,
     ) -> TokenResponse: ...
 
     @overload
@@ -1285,6 +1313,7 @@ class Client:
         self,
         /,
         *,
+        issuer: str | None = None,
         subject_token: str,
         subject_token_type: str = ...,
         grant_type: str | None = None,
@@ -1335,6 +1364,10 @@ class Client:
 
         Args:
             request: TokenExchangeRequest with all exchange parameters
+            issuer: Issuer URL selecting which credentials a zone-aware auth
+                strategy (e.g. MultiZoneBasicAuth) applies for this call.
+                Defaults to the client's issuer. Single-credential strategies
+                ignore it. May be combined with either calling form.
             **token_exchange_args: Alternative to request - provide individual parameters
 
         Returns:
@@ -1343,6 +1376,7 @@ class Client:
         Raises:
             TypeError: If both request and token_exchange_args are provided
         """
+        issuer = token_exchange_args.pop("issuer", None)
         if request is not None and token_exchange_args:
             raise TypeError("Pass either `request` or keyword arguments, not both.")
 
@@ -1355,6 +1389,7 @@ class Client:
             endpoint=endpoints.token,
             transport=self.transport,
             auth=self.auth_strategy,
+            issuer=issuer if issuer is not None else self.issuer,
             user_agent=self.config.user_agent,
             custom_headers=self.config.custom_headers,
             timeout=token_exchange_args.get("timeout", self.config.timeout),
@@ -1366,6 +1401,8 @@ class Client:
     def client_credentials_grant(
         self,
         request: ClientCredentialsRequest,
+        *,
+        issuer: str | None = None,
     ) -> TokenResponse: ...
 
     @overload
@@ -1373,6 +1410,7 @@ class Client:
         self,
         /,
         *,
+        issuer: str | None = None,
         resource: str | None = None,
         scope: str | None = None,
         client_assertion: str | None = None,
@@ -1401,6 +1439,10 @@ class Client:
 
         Args:
             request: ClientCredentialsRequest with all grant parameters
+            issuer: Issuer URL selecting which credentials a zone-aware auth
+                strategy (e.g. MultiZoneBasicAuth) applies for this call.
+                Defaults to the client's issuer. Single-credential strategies
+                ignore it. May be combined with either calling form.
             **client_credentials_args: Alternative to request - provide individual parameters
 
         Returns:
@@ -1409,6 +1451,7 @@ class Client:
         Raises:
             TypeError: If both request and client_credentials_args are provided
         """
+        issuer = client_credentials_args.pop("issuer", None)
         if request is not None and client_credentials_args:
             raise TypeError("Pass either `request` or keyword arguments, not both.")
 
@@ -1421,6 +1464,7 @@ class Client:
             endpoint=endpoints.token,
             transport=self.transport,
             auth=self.auth_strategy,
+            issuer=issuer if issuer is not None else self.issuer,
             user_agent=self.config.user_agent,
             custom_headers=self.config.custom_headers,
             timeout=client_credentials_args.get("timeout", self.config.timeout),
@@ -1467,6 +1511,7 @@ class Client:
             endpoint=endpoints.token,
             transport=self.transport,
             auth=self.auth_strategy,
+            issuer=self.issuer,
             user_agent=self.config.user_agent,
             custom_headers=self.config.custom_headers,
             timeout=timeout or self.config.timeout,
@@ -1535,6 +1580,7 @@ class Client:
             endpoint=endpoints.token,
             transport=self.transport,
             auth=self.auth_strategy,
+            issuer=self.issuer,
             user_agent=self.config.user_agent,
             custom_headers=self.config.custom_headers,
             timeout=timeout or self.config.timeout,

@@ -42,7 +42,7 @@ def build_discovery_http_request(
         headers.update(context.headers)
 
     if context.auth:
-        headers.update(dict(context.auth.apply_headers()))
+        headers.update(dict(context.auth.apply_headers(context.issuer)))
 
     return HttpRequest(
         method="GET",

@@ -74,14 +74,14 @@ class TestClientSecret:
     async def test_initialization_with_dict(self):
         """Test ClientSecret initialization with credential dict."""
         provider = ClientSecret({
-            "zone1": ("client_id_1", "client_secret_1"),
-            "zone2": ("client_id_2", "client_secret_2"),
+            "https://zone1.keycard.cloud": ("client_id_1", "client_secret_1"),
+            "https://zone2.keycard.cloud": ("client_id_2", "client_secret_2"),
         })
 
         # Should construct MultiZoneBasicAuth internally
         assert isinstance(provider.auth, MultiZoneBasicAuth)
-        assert provider.auth.has_zone("zone1")
-        assert provider.auth.has_zone("zone2")
+        assert provider.auth.has_issuer("https://zone1.keycard.cloud")
+        assert provider.auth.has_issuer("https://zone2.keycard.cloud")
 
     @pytest.mark.asyncio
     async def test_prepare_token_exchange_request(self, mock_client):

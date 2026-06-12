@@ -278,28 +278,35 @@ with Client("https://oauth.example.com", auth=auth) as client:
 
 ### MultiZoneBasicAuth
 
-For multi-zone deployments with different credentials per zone:
+For multi-zone deployments with different credentials per zone, keyed by
+each zone's issuer URL:
 
 ```python
-from keycardai.oauth import MultiZoneBasicAuth
+from keycardai.oauth import Client, MultiZoneBasicAuth
 
-# Configure credentials for multiple zones
+# Configure credentials per zone issuer
 auth = MultiZoneBasicAuth({
-    "production": ("prod_client_id", "prod_client_secret"),
-    "staging": ("staging_client_id", "staging_client_secret"),
-    "development": ("dev_client_id", "dev_client_secret"),
+    "https://prod.keycard.cloud": ("prod_client_id", "prod_client_secret"),
+    "https://staging.keycard.cloud": ("staging_client_id", "staging_client_secret"),
 })
 
-# Check available zones
-print(auth.get_configured_zones())  # ['production', 'staging', 'development']
+# Check configured issuers
+print(auth.get_configured_issuers())
 
-# Check if a zone exists
-if auth.has_zone("production"):
-    # Get headers for a specific zone
-    headers = auth.get_headers_for_zone("production")
+# Check if an issuer is configured
+if auth.has_issuer("https://prod.keycard.cloud"):
+    # Get headers for a specific issuer
+    headers = auth.apply_headers("https://prod.keycard.cloud")
 
-    # Or get the BasicAuth instance for a zone
-    prod_auth = auth.get_auth_for_zone("production")
+    # Or get the BasicAuth instance for an issuer
+    prod_auth = auth.get_auth_for_issuer("https://prod.keycard.cloud")
+
+# Token operations select credentials per call with issuer=...
+with Client("https://prod.keycard.cloud", auth=auth) as client:
+    response = client.exchange_token(
+        subject_token="token",
+        issuer="https://prod.keycard.cloud",
+    )
 ```
 
 ## Operations
