@@ -5,6 +5,7 @@ These tests focus on URL handling and slash character edge cases.
 
 import json
 from unittest.mock import Mock, patch
+from urllib.parse import quote
 
 import httpx
 import pytest
@@ -533,9 +534,11 @@ class TestAuthorizationServerMetadata:
         assert response.status_code == 200
         response_data = json.loads(response.body)
 
-        # The authorization_endpoint should be exactly as returned by the upstream server
-        # without any base_url prepending
-        assert response_data["authorization_endpoint"] == "https://auth.example.com/oauth/authorize"
+        # The authorization_endpoint carries a resource parameter pointing at
+        # this resource server's origin
+        assert response_data["authorization_endpoint"] == (
+            f"https://auth.example.com/oauth/authorize?resource={quote('https://example.com', safe='')}"
+        )
         assert response_data["token_endpoint"] == "https://auth.example.com/oauth/token"
         assert response_data["issuer"] == "https://auth.example.com"
 
@@ -570,8 +573,11 @@ class TestAuthorizationServerMetadata:
         assert response.status_code == 200
         response_data = json.loads(response.body)
 
-        # The authorization_endpoint should be exactly as returned by the upstream server
-        assert response_data["authorization_endpoint"] == "https://zone123.keycard.cloud/oauth/authorize"
+        # The authorization_endpoint carries a resource parameter pointing at
+        # this resource server's origin
+        assert response_data["authorization_endpoint"] == (
+            f"https://zone123.keycard.cloud/oauth/authorize?resource={quote('https://example.com', safe='')}"
+        )
         assert response_data["token_endpoint"] == "https://zone123.keycard.cloud/oauth/token"
         assert response_data["issuer"] == "https://zone123.keycard.cloud"
 
@@ -607,7 +613,9 @@ class TestAuthorizationServerMetadata:
         response_data = json.loads(response.body)
 
         # Should use original issuer since no zone ID
-        assert response_data["authorization_endpoint"] == "https://keycard.cloud/oauth/authorize"
+        assert response_data["authorization_endpoint"] == (
+            f"https://keycard.cloud/oauth/authorize?resource={quote('https://example.com', safe='')}"
+        )
 
         # Verify the original URL was called
         mock_client.get.assert_called_once_with("https://keycard.cloud/.well-known/oauth-authorization-server")
@@ -707,7 +715,7 @@ class TestAuthorizationServerMetadata:
 
     @patch("httpx.Client")
     def test_authorization_endpoint_preservation(self, mock_client_class):
-        """Test that authorization_endpoint is preserved exactly as returned by upstream."""
+        """Test that upstream authorization_endpoint URLs gain a resource parameter."""
         # Mock response with various URL formats
         test_cases = [
             "https://auth.example.com/oauth/authorize",
@@ -735,10 +743,13 @@ class TestAuthorizationServerMetadata:
             # Execute handler
             response = handler(request)
 
-            # Verify the authorization_endpoint is preserved exactly
+            # Verify the upstream endpoint is preserved with the resource
+            # parameter appended
             assert response.status_code == 200
             response_data = json.loads(response.body)
-            assert response_data["authorization_endpoint"] == auth_endpoint
+            assert response_data["authorization_endpoint"] == (
+                f"{auth_endpoint}?resource={quote('https://example.com', safe='')}"
+            )
 
     @patch("httpx.Client")
     def test_response_json_format(self, mock_client_class):

@@ -4,7 +4,9 @@ from collections.abc import Callable
 
 from keycardai.oauth.types import JsonWebKeySet
 from starlette.requests import Request
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, Response
+
+from .metadata import CORS_HEADERS, _preflight_response
 
 
 def jwks_endpoint(jwks: JsonWebKeySet) -> Callable:
@@ -17,11 +19,14 @@ def jwks_endpoint(jwks: JsonWebKeySet) -> Callable:
         Callable endpoint that serves the JWKS data
     """
 
-    def wrapper(request: Request) -> JSONResponse:
+    def wrapper(request: Request) -> Response:
+        if request.method == "OPTIONS":
+            return _preflight_response()
+
         return JSONResponse(
             content=jwks.model_dump(exclude_none=True),
             status_code=200,
-            headers={"Content-Type": "application/json"},
+            headers={"Content-Type": "application/json", **CORS_HEADERS},
         )
 
     return wrapper

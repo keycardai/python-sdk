@@ -5,15 +5,27 @@ Implements RFC 9728 (OAuth Protected Resource Metadata) and RFC 8414
 """
 
 from collections.abc import Callable
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
 from pydantic import AnyHttpUrl, BaseModel, Field
 
-from keycardai.oauth.types.oauth import GrantType, TokenEndpointAuthMethod
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 from ..shared.starlette import get_base_url
+
+CORS_HEADERS = {"Access-Control-Allow-Origin": "*"}
+
+PREFLIGHT_HEADERS = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, MCP-Protocol-Version",
+}
+
+
+def _preflight_response() -> Response:
+    return Response(status_code=204, headers=PREFLIGHT_HEADERS)
 
 
 class ProtectedResourceMetadata(BaseModel):
@@ -35,14 +47,7 @@ class ProtectedResourceMetadata(BaseModel):
     resource_documentation: AnyHttpUrl | None = None
     resource_policy_uri: AnyHttpUrl | None = None
     resource_tos_uri: AnyHttpUrl | None = None
-    # Extended fields for OAuth client registration context
-    client_id: str | None = Field(default=None)
-    client_name: str | None = Field(default=None)
     redirect_uris: list[AnyHttpUrl] | None = Field(default=None)
-    token_endpoint_auth_method: TokenEndpointAuthMethod | None = Field(
-        default=None
-    )
-    grant_types: list[GrantType] | None = Field(default=None)
 
 
 # ---------------------------------------------------------------------------
@@ -109,10 +114,23 @@ def _remove_authorization_server_prefix(path: str) -> str:
 def protected_resource_metadata(
     metadata: ProtectedResourceMetadata,
     enable_multi_zone: bool = False,
+    include_jwks_uri: bool = True,
 ) -> Callable:
-    """Create a Starlette handler that serves OAuth Protected Resource Metadata (RFC 9728)."""
+    """Create a Starlette handler that serves OAuth Protected Resource Metadata (RFC 9728).
+
+    Args:
+        metadata: Base metadata document; per-request fields (``resource``,
+            ``jwks_uri``) are derived from the incoming request.
+        enable_multi_zone: When True, rewrite the authorization server host
+            with the zone id taken from the request path.
+        include_jwks_uri: When True, advertise a ``jwks_uri`` pointing at the
+            server's ``/.well-known/jwks.json`` endpoint.
+    """
 
     def wrapper(request: Request) -> Response:
+        if request.method == "OPTIONS":
+            return _preflight_response()
+
         request_metadata = metadata.model_copy(deep=True)
         path = _remove_well_known_prefix(request.url.path)
 
@@ -128,28 +146,50 @@ def protected_resource_metadata(
                 ]
 
         request_metadata.resource = _create_resource_url(base_url, path)
-        request_metadata.jwks_uri = _create_jwks_uri(base_url)
-        request_metadata.client_id = str(request_metadata.resource)
-        request_metadata.client_name = "OAuth Resource Server"
-        request_metadata.token_endpoint_auth_method = (
-            TokenEndpointAuthMethod.PRIVATE_KEY_JWT
-        )
-        request_metadata.grant_types = [GrantType.CLIENT_CREDENTIALS]
+        if include_jwks_uri:
+            request_metadata.jwks_uri = _create_jwks_uri(base_url)
 
         return JSONResponse(
             content=request_metadata.model_dump(mode="json", exclude_none=True),
+            headers=CORS_HEADERS,
         )
 
     return wrapper
 
 
+def _append_resource_param(endpoint: str, resource: str) -> str:
+    """Append a ``resource`` query parameter to an endpoint URL.
+
+    Existing query parameters are preserved.
+    """
+    parts = urlsplit(endpoint)
+    query = parse_qsl(parts.query, keep_blank_values=True)
+    query.append(("resource", resource))
+    return urlunsplit(parts._replace(query=urlencode(query)))
+
+
 def authorization_server_metadata(
     issuer: str,
     enable_multi_zone: bool = False,
+    timeout: float = 10.0,
 ) -> Callable:
-    """Create a Starlette handler that proxies OAuth Authorization Server Metadata (RFC 8414)."""
+    """Create a Starlette handler that proxies OAuth Authorization Server Metadata (RFC 8414).
+
+    The upstream document's ``authorization_endpoint``, when present, gains a
+    ``resource`` query parameter set to this resource server's origin so the
+    authorization server can associate the request with this resource.
+
+    Args:
+        issuer: Authorization server issuer URL to proxy metadata from.
+        enable_multi_zone: When True, rewrite the issuer host with the zone id
+            taken from the request path.
+        timeout: Timeout in seconds for the upstream metadata fetch.
+    """
 
     def wrapper(request: Request) -> Response:
+        if request.method == "OPTIONS":
+            return _preflight_response()
+
         actual_issuer = issuer
         try:
             path = _remove_authorization_server_prefix(request.url.path)
@@ -167,12 +207,20 @@ def authorization_server_metadata(
             # Explicit timeout so a slow upstream cannot pin a Starlette threadpool
             # worker indefinitely. Sync httpx.Client is fine here because Starlette
             # dispatches sync handlers to a threadpool, not the event loop.
-            with httpx.Client(timeout=httpx.Timeout(5.0)) as client:
+            with httpx.Client(timeout=httpx.Timeout(timeout)) as client:
                 resp = client.get(
                     f"{issuer_url}/.well-known/oauth-authorization-server"
                 )
                 resp.raise_for_status()
-                return JSONResponse(content=resp.json())
+                content = resp.json()
+                if isinstance(content, dict) and content.get(
+                    "authorization_endpoint"
+                ):
+                    content["authorization_endpoint"] = _append_resource_param(
+                        content["authorization_endpoint"],
+                        get_base_url(request),
+                    )
+                return JSONResponse(content=content, headers=CORS_HEADERS)
         except httpx.HTTPStatusError as e:
             return JSONResponse(
                 content={
