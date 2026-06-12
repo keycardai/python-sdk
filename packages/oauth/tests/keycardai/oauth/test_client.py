@@ -9,6 +9,7 @@ from keycardai.oauth import AsyncClient, Client, ClientConfig
 from keycardai.oauth.exceptions import ConfigError
 from keycardai.oauth.types.models import (
     AuthorizationServerMetadata,
+    ClientCredentialsRequest,
     ClientRegistrationRequest,
     ServerMetadataRequest,
     TokenExchangeRequest,
@@ -334,6 +335,70 @@ class TestOverloadEquivalence:
 
             assert dict1 == dict2, f"Async exchange token requests differ: {dict1} != {dict2}"
 
+    def test_client_credentials_grant_overload_equivalence(self):
+        """Test that client_credentials_grant overloads create equivalent calls."""
+        test_data = {
+            "resource": "https://api.company.com/data",
+            "scope": "read write",
+            "timeout": 15.0,
+        }
+
+        request_obj = ClientCredentialsRequest(**test_data)
+
+        with patch('keycardai.oauth.client.client_credentials_grant') as mock_grant:
+            mock_grant.return_value = Mock()
+            client = Client("https://test.keycard.cloud")
+
+            # Method 1: Using request object
+            client.client_credentials_grant(request_obj)
+            call1_args = mock_grant.call_args
+
+            # Method 2: Using kwargs
+            mock_grant.reset_mock()
+            client.client_credentials_grant(**test_data)
+            call2_args = mock_grant.call_args
+
+            # Compare the requests
+            request1 = call1_args[0][0]
+            request2 = call2_args[0][0]
+
+            dict1 = request1.model_dump(exclude_none=True)
+            dict2 = request2.model_dump(exclude_none=True)
+
+            assert dict1 == dict2, f"Client credentials requests differ: {dict1} != {dict2}"
+
+    @pytest.mark.asyncio
+    async def test_async_client_credentials_grant_overload_equivalence(self):
+        """Test that async client_credentials_grant overloads create equivalent calls."""
+        test_data = {
+            "resource": "https://api.company.com/data",
+            "scope": "read write",
+        }
+
+        request_obj = ClientCredentialsRequest(**test_data)
+
+        with patch('keycardai.oauth.client.client_credentials_grant_async') as mock_grant_async:
+            mock_grant_async.return_value = Mock()
+            async_client = AsyncClient("https://test.keycard.cloud")
+
+            # Method 1: Using request object
+            await async_client.client_credentials_grant(request_obj)
+            call1_args = mock_grant_async.call_args
+
+            # Method 2: Using kwargs
+            mock_grant_async.reset_mock()
+            await async_client.client_credentials_grant(**test_data)
+            call2_args = mock_grant_async.call_args
+
+            # Compare the requests
+            request1 = call1_args[0][0]
+            request2 = call2_args[0][0]
+
+            dict1 = request1.model_dump(exclude_none=True)
+            dict2 = request2.model_dump(exclude_none=True)
+
+            assert dict1 == dict2, f"Async client credentials requests differ: {dict1} != {dict2}"
+
     def test_discover_server_metadata_overload_equivalence(self):
         """Test that discover_server_metadata overloads create equivalent calls."""
         test_base_url = "https://custom.auth.server.com"
@@ -406,6 +471,11 @@ class TestOverloadEquivalence:
         with pytest.raises(TypeError, match="both"):
             client.exchange_token(request, subject_token="another")
 
+        # Test client_credentials_grant error handling
+        request = ClientCredentialsRequest(scope="read")
+        with pytest.raises(TypeError, match="both"):
+            client.client_credentials_grant(request, scope="write")
+
         # Test discover_server_metadata error handling
         request = ServerMetadataRequest(base_url="https://test.com")
         with pytest.raises(TypeError, match="both"):
@@ -428,6 +498,11 @@ class TestOverloadEquivalence:
         )
         with pytest.raises(TypeError, match="both"):
             await async_client.exchange_token(request, subject_token="another")
+
+        # Test async client_credentials_grant error handling
+        request = ClientCredentialsRequest(scope="read")
+        with pytest.raises(TypeError, match="both"):
+            await async_client.client_credentials_grant(request, scope="write")
 
         # Test async discover_server_metadata error handling
         request = ServerMetadataRequest(base_url="https://test.com")

@@ -4,6 +4,7 @@ from .models import (
     PKCE,
     AuthorizationServerMetadata,
     ClientConfig,
+    ClientCredentialsRequest,
     ClientRegistrationRequest,
     ClientRegistrationResponse,
     Endpoints,
@@ -31,6 +32,7 @@ __all__ = [
     # Models
     "AuthorizationServerMetadata",
     "ClientConfig",
+    "ClientCredentialsRequest",
     "ClientRegistrationRequest",
     "ClientRegistrationResponse",
     "Endpoints",

@@ -23,6 +23,10 @@ from .operations._authorize import (
     exchange_authorization_code as _exchange_authorization_code,
     exchange_authorization_code_async as _exchange_authorization_code_async,
 )
+from .operations._client_credentials import (
+    client_credentials_grant,
+    client_credentials_grant_async,
+)
 from .operations._discovery import (
     discover_server_metadata,
     discover_server_metadata_async,
@@ -38,6 +42,7 @@ from .operations._token_exchange import (
 from .types.models import (
     AuthorizationServerMetadata,
     ClientConfig,
+    ClientCredentialsRequest,
     ClientRegistrationRequest,
     ClientRegistrationResponse,
     Endpoints,
@@ -711,6 +716,72 @@ class AsyncClient:
 
         return await exchange_token_async(request, ctx)
 
+    @overload
+    async def client_credentials_grant(
+        self,
+        request: ClientCredentialsRequest,
+    ) -> TokenResponse: ...
+
+    @overload
+    async def client_credentials_grant(
+        self,
+        /,
+        *,
+        resource: str | None = None,
+        scope: str | None = None,
+        client_assertion: str | None = None,
+        client_assertion_type: str | None = None,
+        timeout: float | None = None,
+    ) -> TokenResponse: ...
+
+    async def client_credentials_grant(self, request: ClientCredentialsRequest | None = None, /, **client_credentials_args) -> TokenResponse:
+        """Perform OAuth 2.0 Client Credentials Grant.
+
+        Either pass a fully-formed ClientCredentialsRequest *or* call with
+        keyword args for common cases.
+
+        Simple usage:
+            response = await client.client_credentials_grant(
+                resource="https://api.company.com/data",
+                scope="read write"
+            )
+
+        Or with a request object:
+            request = ClientCredentialsRequest(
+                resource="https://api.company.com/data",
+                scope="read write"
+            )
+            response = await client.client_credentials_grant(request)
+
+        Args:
+            request: ClientCredentialsRequest with all grant parameters
+            **client_credentials_args: Alternative to request - provide individual parameters
+
+        Returns:
+            TokenResponse with the issued token and metadata
+
+        Raises:
+            TypeError: If both request and client_credentials_args are provided
+        """
+        if request is not None and client_credentials_args:
+            raise TypeError("Pass either `request` or keyword arguments, not both.")
+
+        if request is None:
+            request = ClientCredentialsRequest(**client_credentials_args)
+
+        endpoints = await self._get_current_endpoints()
+
+        ctx = build_http_context(
+            endpoint=endpoints.token,
+            transport=self.transport,
+            auth=self.auth_strategy,
+            user_agent=self.config.user_agent,
+            custom_headers=self.config.custom_headers,
+            timeout=client_credentials_args.get("timeout", self.config.timeout),
+        )
+
+        return await client_credentials_grant_async(request, ctx)
+
     async def exchange_authorization_code(
         self,
         *,
@@ -1290,6 +1361,72 @@ class Client:
         )
 
         return exchange_token(request, ctx)
+
+    @overload
+    def client_credentials_grant(
+        self,
+        request: ClientCredentialsRequest,
+    ) -> TokenResponse: ...
+
+    @overload
+    def client_credentials_grant(
+        self,
+        /,
+        *,
+        resource: str | None = None,
+        scope: str | None = None,
+        client_assertion: str | None = None,
+        client_assertion_type: str | None = None,
+        timeout: float | None = None,
+    ) -> TokenResponse: ...
+
+    def client_credentials_grant(self, request: ClientCredentialsRequest | None = None, /, **client_credentials_args) -> TokenResponse:
+        """Perform OAuth 2.0 Client Credentials Grant.
+
+        Either pass a fully-formed ClientCredentialsRequest *or* call with
+        keyword args for common cases.
+
+        Simple usage:
+            response = client.client_credentials_grant(
+                resource="https://api.company.com/data",
+                scope="read write"
+            )
+
+        Or with a request object:
+            request = ClientCredentialsRequest(
+                resource="https://api.company.com/data",
+                scope="read write"
+            )
+            response = client.client_credentials_grant(request)
+
+        Args:
+            request: ClientCredentialsRequest with all grant parameters
+            **client_credentials_args: Alternative to request - provide individual parameters
+
+        Returns:
+            TokenResponse with the issued token and metadata
+
+        Raises:
+            TypeError: If both request and client_credentials_args are provided
+        """
+        if request is not None and client_credentials_args:
+            raise TypeError("Pass either `request` or keyword arguments, not both.")
+
+        if request is None:
+            request = ClientCredentialsRequest(**client_credentials_args)
+
+        endpoints = self._get_current_endpoints()
+
+        ctx = build_http_context(
+            endpoint=endpoints.token,
+            transport=self.transport,
+            auth=self.auth_strategy,
+            user_agent=self.config.user_agent,
+            custom_headers=self.config.custom_headers,
+            timeout=client_credentials_args.get("timeout", self.config.timeout),
+        )
+
+        return client_credentials_grant(request, ctx)
 
     def exchange_authorization_code(
         self,

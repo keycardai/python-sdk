@@ -49,6 +49,24 @@ class TokenExchangeRequest(BaseModel):
     client_assertion: str | None = None
 
 
+# =============================================================================
+# Client Credentials Grant (RFC 6749 Section 4.4)
+# =============================================================================
+
+class ClientCredentialsRequest(BaseModel):
+    """OAuth 2.0 Client Credentials Grant Request as defined in RFC 6749 Section 4.4.
+
+    Reference: https://datatracker.ietf.org/doc/html/rfc6749#section-4.4
+    """
+
+    grant_type: str = "client_credentials"
+    resource: str | None = Field(default=None, description="The target resource for the requested token.")
+    scope: str | None = Field(default=None, description="Space-delimited scope of the access request.")
+    client_assertion: str | None = None
+    client_assertion_type: str | None = None
+    timeout: float | None = None
+
+
 @dataclass
 class TokenResponse:
     """RFC 8693 Token Exchange Response + RFC 6749 Token Response.
