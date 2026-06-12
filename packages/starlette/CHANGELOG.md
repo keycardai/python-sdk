@@ -1,3 +1,17 @@
+## 0.9.0-keycardai-starlette (2026-06-12)
+
+
+- fix(keycardai-starlette): return 502 when the upstream AS metadata fetch fails (#170)
+- * fix(keycardai-starlette): return 502 when the upstream AS metadata fetch fails
+- The authorization-server metadata proxy previously passed the upstream
+HTTP status through and mapped connect/timeout errors to 503. All
+upstream failures (HTTP error status or any transport error) now respond
+502 Bad Gateway with an upstream_error body. Unexpected exceptions still
+map to 500.
+- * test(keycardai-a2a): expect 502 from the AS metadata proxy on upstream failure
+- ---------
+- Co-authored-by: GitHub Action <action@github.com>
+
 ## 0.8.0-keycardai-starlette (2026-06-12)
 
 
