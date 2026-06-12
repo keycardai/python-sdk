@@ -1,3 +1,16 @@
+## 0.19.0-keycardai-oauth (2026-06-12)
+
+
+- feat(keycardai-oauth): add client_credentials_grant operation (#166)
+- Adds an RFC 6749 section 4.4 client credentials grant to the general
+client. New ClientCredentialsRequest model (resource, scope,
+client_assertion, client_assertion_type), a client_credentials operation
+module mirroring the token-exchange transport contract, and a
+client_credentials_grant method on both Client and AsyncClient that
+accepts a request object or keyword arguments and authenticates via the
+client's configured credential. ECO-43.
+- Co-authored-by: GitHub Action <action@github.com>
+
 ## 0.18.2-keycardai-oauth (2026-06-12)
 
 
