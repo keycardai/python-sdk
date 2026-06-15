@@ -1,3 +1,11 @@
+## 0.10.0-keycardai-starlette (2026-06-15)
+
+
+- feat(keycardai-starlette): infer multi-zone from the application credential
+- enable_multi_zone defaults to None and is inferred from a multi-zone
+ClientSecret; an explicit value overrides. Per-zone credential lookup
+uses the zone-scoped issuer URL.
+
 ## 0.9.0-keycardai-starlette (2026-06-12)
 
 
