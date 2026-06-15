@@ -1,3 +1,27 @@
+## 0.20.0-keycardai-oauth (2026-06-15)
+
+
+- feat(keycardai-oauth)!: key multi-zone credentials by issuer and add a per-call issuer selector
+- Multi-zone ClientSecret dicts and MultiZoneBasicAuth are now keyed by
+the zone issuer URL (trailing slashes normalized), with accessors
+has_issuer, get_configured_issuers, and get_auth_for_issuer.
+AuthStrategy.apply_headers accepts an optional issuer selector:
+single-zone strategies ignore it, MultiZoneBasicAuth resolves that
+issuer fail-closed and raises when called without one. The selector
+threads through the HTTP context and all operation builders, defaulting
+to the client issuer, and exchange_token / client_credentials_grant
+accept a per-call issuer keyword.
+- BREAKING CHANGE: multi-zone credential maps are keyed by issuer URL
+instead of zone id; zone-keyed accessors are renamed to issuer terms and
+get_headers_for_zone is removed.
+- feat(keycardai-oauth): add issuer-direct entry to the PKCE authenticate flow (#171)
+- authenticate accepts either issuer (used directly, no metadata fetch) or
+www_authenticate_header (the RFC 9728 challenge-driven path); exactly
+one must be provided. resource_url is now optional overall and required
+only in challenge mode. The challenge-to-issuer resolution is exposed as
+resolve_issuer_from_challenge in keycardai.oauth.pkce.
+- Co-authored-by: GitHub Action <action@github.com>
+
 ## 0.19.0-keycardai-oauth (2026-06-12)
 
 
