@@ -1,3 +1,10 @@
+## 0.26.0-keycardai-mcp (2026-06-15)
+
+
+- feat(keycardai-mcp): resolve multi-zone credentials by zone issuer URL
+- The provider looks up per-zone credentials with the zone-scoped issuer
+URL it already constructs for the zone client.
+
 ## 0.25.0-keycardai-mcp (2026-06-03)
 
 
