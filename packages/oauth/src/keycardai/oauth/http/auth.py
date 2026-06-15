@@ -2,10 +2,20 @@
 
 This module implements HTTP Authorization header strategies for OAuth 2.0
 client authentication with a clean protocol-based design.
+
+Strategies receive an optional ``issuer`` selector when headers are applied.
+Single-credential strategies (NoneAuth, BasicAuth, BearerAuth) ignore it.
+MultiZoneBasicAuth uses it to select the credentials for that issuer and
+fails closed when the issuer is missing or not configured.
 """
 
 import base64
 from typing import Protocol
+
+
+def _normalize_issuer(issuer: str) -> str:
+    """Normalize an issuer URL for credential map keys and lookups."""
+    return issuer.rstrip("/")
 
 
 class AuthStrategy(Protocol):
@@ -15,8 +25,13 @@ class AuthStrategy(Protocol):
     All authentication strategies must implement this protocol.
     """
 
-    def apply_headers(self) -> dict[str, str]:
+    def apply_headers(self, issuer: str | None = None) -> dict[str, str]:
         """Apply authentication headers to HTTP request.
+
+        Args:
+            issuer: Optional issuer URL selecting which credentials to use.
+                Strategies holding a single credential ignore it; zone-aware
+                strategies require it to resolve per-issuer credentials.
 
         Returns:
             Dictionary containing Authorization header and any other auth headers
@@ -31,8 +46,8 @@ class NoneAuth:
     dynamic client registration).
     """
 
-    def apply_headers(self) -> dict[str, str]:
-        """Apply no authentication headers."""
+    def apply_headers(self, issuer: str | None = None) -> dict[str, str]:
+        """Apply no authentication headers. The issuer selector is ignored."""
         return {}
 
 
@@ -57,8 +72,8 @@ class BasicAuth:
         self.client_id = client_id
         self.client_secret = client_secret
 
-    def apply_headers(self) -> dict[str, str]:
-        """Apply HTTP Basic authentication header."""
+    def apply_headers(self, issuer: str | None = None) -> dict[str, str]:
+        """Apply HTTP Basic authentication header. The issuer selector is ignored."""
         credentials = f"{self.client_id}:{self.client_secret}"
         encoded_credentials = base64.b64encode(credentials.encode()).decode()
         return {"Authorization": f"Basic {encoded_credentials}"}
@@ -81,112 +96,119 @@ class BearerAuth:
 
         self.access_token = access_token
 
-    def apply_headers(self) -> dict[str, str]:
-        """Apply Bearer token authentication header."""
+    def apply_headers(self, issuer: str | None = None) -> dict[str, str]:
+        """Apply Bearer token authentication header. The issuer selector is ignored."""
         return {"Authorization": f"Bearer {self.access_token}"}
 
 
 class MultiZoneBasicAuth:
     """Multi-zone HTTP Basic authentication strategy.
 
-    Implements HTTP Basic authentication for multi-zone scenarios where different
-    zones require different client credentials. This strategy maintains a mapping
-    of zone IDs to their respective client credentials.
+    Implements HTTP Basic authentication for multi-zone scenarios where each
+    zone requires its own client credentials. Credentials are keyed by the
+    zone's issuer URL, which is canonical and self-describing. Trailing
+    slashes on issuer URLs are ignored for both storage and lookup.
+
+    Lookups fail closed: requesting credentials for an issuer that is not
+    configured raises KeyError, and applying headers without an issuer
+    selector raises ValueError. No request is ever sent unauthenticated.
 
     Example:
         ```python
         auth = MultiZoneBasicAuth({
-            "zone1": ("client_id_1", "client_secret_1"),
-            "zone2": ("client_id_2", "client_secret_2"),
+            "https://zone1.keycard.cloud": ("client_id_1", "client_secret_1"),
+            "https://zone2.keycard.cloud": ("client_id_2", "client_secret_2"),
         })
 
-        # Get auth headers for specific zone
-        headers = auth.get_headers_for_zone("zone1")
+        # Get auth headers for a specific zone issuer
+        headers = auth.apply_headers("https://zone1.keycard.cloud")
         ```
     """
 
-    def __init__(self, zone_credentials: dict[str, tuple[str, str]]):
+    def __init__(self, issuer_credentials: dict[str, tuple[str, str]]):
         """Initialize multi-zone Basic authentication.
 
         Args:
-            zone_credentials: Dictionary mapping zone IDs to (client_id, client_secret) tuples
+            issuer_credentials: Dictionary mapping zone issuer URLs to
+                (client_id, client_secret) tuples
 
         Raises:
-            ValueError: If zone_credentials is empty or contains invalid credentials
+            ValueError: If issuer_credentials is empty or contains invalid credentials
         """
-        if not zone_credentials:
-            raise ValueError("zone_credentials cannot be empty")
+        if not issuer_credentials:
+            raise ValueError("issuer_credentials cannot be empty")
 
-        self.zone_credentials = {}
-        for zone_id, (client_id, client_secret) in zone_credentials.items():
-            if not zone_id:
-                raise ValueError("zone_id cannot be empty")
+        self.issuer_credentials: dict[str, BasicAuth] = {}
+        for issuer, (client_id, client_secret) in issuer_credentials.items():
+            if not issuer:
+                raise ValueError("issuer cannot be empty")
             if not client_id:
-                raise ValueError(f"client_id is required for zone '{zone_id}'")
+                raise ValueError(f"client_id is required for issuer '{issuer}'")
             if not client_secret:
-                raise ValueError(f"client_secret is required for zone '{zone_id}'")
+                raise ValueError(f"client_secret is required for issuer '{issuer}'")
 
-            self.zone_credentials[zone_id] = BasicAuth(client_id, client_secret)
+            self.issuer_credentials[_normalize_issuer(issuer)] = BasicAuth(
+                client_id, client_secret
+            )
 
-    def apply_headers(self) -> dict[str, str]:
-        """Apply default authentication headers.
-
-        Note: For multi-zone authentication, use get_headers_for_zone() instead.
-        This method returns empty headers as zone-specific credentials are required.
-        """
-        return {}
-
-    def get_headers_for_zone(self, zone_id: str) -> dict[str, str]:
-        """Get authentication headers for a specific zone.
+    def apply_headers(self, issuer: str | None = None) -> dict[str, str]:
+        """Apply HTTP Basic authentication headers for the given issuer.
 
         Args:
-            zone_id: The zone ID to get credentials for
+            issuer: The zone issuer URL selecting which credentials to use
 
         Returns:
-            Dictionary containing Authorization header for the zone
+            Dictionary containing the Authorization header for the issuer
 
         Raises:
-            KeyError: If zone_id is not configured
+            ValueError: If issuer is None; multi-zone credentials cannot be
+                applied without an issuer selector
+            KeyError: If the issuer is not configured
         """
-        if zone_id not in self.zone_credentials:
-            available_zones = list(self.zone_credentials.keys())
-            raise KeyError(f"Zone '{zone_id}' not configured. Available zones: {available_zones}")
+        if issuer is None:
+            raise ValueError(
+                "MultiZoneBasicAuth requires an issuer to select credentials. "
+                "Pass issuer=... on the operation, or use a single-zone "
+                "credential strategy."
+            )
+        return self.get_auth_for_issuer(issuer).apply_headers()
 
-        return self.zone_credentials[zone_id].apply_headers()
-
-    def has_zone(self, zone_id: str) -> bool:
-        """Check if credentials are configured for a zone.
+    def has_issuer(self, issuer: str) -> bool:
+        """Check if credentials are configured for an issuer.
 
         Args:
-            zone_id: The zone ID to check
+            issuer: The zone issuer URL to check
 
         Returns:
-            True if credentials are configured for the zone, False otherwise
+            True if credentials are configured for the issuer, False otherwise
         """
-        return zone_id in self.zone_credentials
+        return _normalize_issuer(issuer) in self.issuer_credentials
 
-    def get_configured_zones(self) -> list[str]:
-        """Get list of configured zone IDs.
+    def get_configured_issuers(self) -> list[str]:
+        """Get list of configured zone issuer URLs.
 
         Returns:
-            List of zone IDs that have credentials configured
+            List of issuer URLs that have credentials configured
         """
-        return list(self.zone_credentials.keys())
+        return list(self.issuer_credentials.keys())
 
-    def get_auth_for_zone(self, zone_id: str) -> "BasicAuth":
-        """Get BasicAuth instance for a specific zone.
+    def get_auth_for_issuer(self, issuer: str) -> "BasicAuth":
+        """Get BasicAuth instance for a specific zone issuer.
 
         Args:
-            zone_id: The zone ID to get authentication for
+            issuer: The zone issuer URL to get authentication for
 
         Returns:
-            BasicAuth instance for the zone
+            BasicAuth instance for the issuer
 
         Raises:
-            KeyError: If zone_id is not configured
+            KeyError: If the issuer is not configured
         """
-        if zone_id not in self.zone_credentials:
-            available_zones = list(self.zone_credentials.keys())
-            raise KeyError(f"Zone '{zone_id}' not configured. Available zones: {available_zones}")
+        normalized = _normalize_issuer(issuer)
+        if normalized not in self.issuer_credentials:
+            available_issuers = list(self.issuer_credentials.keys())
+            raise KeyError(
+                f"Issuer '{issuer}' not configured. Available issuers: {available_issuers}"
+            )
 
-        return self.zone_credentials[zone_id]
+        return self.issuer_credentials[normalized]

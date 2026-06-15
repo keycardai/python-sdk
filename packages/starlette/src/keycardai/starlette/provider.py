@@ -92,7 +92,7 @@ class AuthProvider:
         required_scopes: list[str] | None = None,
         audience: str | dict[str, str] | None = None,
         server_url: str | None = None,
-        enable_multi_zone: bool = False,
+        enable_multi_zone: bool | None = None,
         base_url: str | None = None,
         client_factory: ClientFactory | None = None,
         enable_dynamic_client_registration: bool | None = None,
@@ -108,7 +108,11 @@ class AuthProvider:
             required_scopes: Required scopes for token validation.
             audience: Expected token audience for verification.
             server_url: Resource server URL.
-            enable_multi_zone: Enable multi-zone support.
+            enable_multi_zone: Enable multi-zone support where zone_url is the
+                top-level domain and the zone is extracted from request
+                context. When left unset (None), it is inferred from the
+                credential: a multi-zone ClientSecret turns it on
+                automatically. Pass True/False to override.
             base_url: Base URL for Keycard (default: https://keycard.cloud).
             client_factory: Client factory for creating OAuth clients.
             enable_dynamic_client_registration: Override automatic registration.
@@ -120,6 +124,15 @@ class AuthProvider:
         server_url = server_url or os.getenv("SERVER_URL") or os.getenv("MCP_SERVER_URL")
 
         self.base_url = base_url or "https://keycard.cloud"
+
+        # Infer multi-zone from a multi-zone ClientSecret unless explicitly set.
+        # Env-discovered credentials are always single-zone, so the passed
+        # argument is the only source that can imply multi-zone.
+        if enable_multi_zone is None:
+            enable_multi_zone = (
+                isinstance(application_credential, ClientSecret)
+                and application_credential.is_multi_zone
+            )
 
         if zone_url is None and not enable_multi_zone:
             if zone_id is None:
@@ -250,11 +263,12 @@ class AuthProvider:
                 if isinstance(self.auth, MultiZoneBasicAuth) and auth_info[
                     "zone_id"
                 ]:
-                    if not self.auth.has_zone(auth_info["zone_id"]):
+                    # Multi-zone credentials are keyed by the zone's issuer
+                    # URL, which is the same zone-scoped URL the client is
+                    # created against.
+                    if not self.auth.has_issuer(base_url):
                         raise AuthProviderConfigurationError()
-                    auth_strategy = self.auth.get_auth_for_zone(
-                        auth_info["zone_id"]
-                    )
+                    auth_strategy = self.auth.get_auth_for_issuer(base_url)
 
                 if self.enable_dynamic_client_registration is not None:
                     client_config.auto_register_client = (

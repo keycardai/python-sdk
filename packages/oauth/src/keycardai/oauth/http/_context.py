@@ -39,6 +39,7 @@ class HTTPContext:
     timeout: float | None = None
     retries: int = 0
     headers: dict[str, str] | None = None
+    issuer: str | None = None
 
 
 def build_http_context(
@@ -49,6 +50,7 @@ def build_http_context(
     custom_headers: dict[str, str] | None = None,
     timeout: float | None = None,
     additional_headers: dict[str, str] | None = None,
+    issuer: str | None = None,
 ) -> HTTPContext:
     """Build HTTPContext with headers from configuration.
 
@@ -63,6 +65,8 @@ def build_http_context(
         custom_headers: Custom headers from configuration (optional)
         timeout: Optional timeout override
         additional_headers: Optional additional headers to merge
+        issuer: Optional issuer URL selecting which credentials a zone-aware
+            auth strategy applies for this operation
 
     Returns:
         HTTPContext configured with headers from config
@@ -94,4 +98,5 @@ def build_http_context(
         auth=auth,
         timeout=timeout,
         headers=headers,
+        issuer=issuer,
     )

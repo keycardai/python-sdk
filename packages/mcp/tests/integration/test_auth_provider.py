@@ -75,8 +75,8 @@ class TestAuthProviderInitialization:
     def test_multi_zone_inferred_from_credential(self, mock_client_factory):
         """A multi-zone ClientSecret turns on multi-zone without an explicit flag."""
         credential = ClientSecret({
-            "zone1": ("client_id_1", "client_secret_1"),
-            "zone2": ("client_id_2", "client_secret_2"),
+            "https://zone1.keycard.cloud": ("client_id_1", "client_secret_1"),
+            "https://zone2.keycard.cloud": ("client_id_2", "client_secret_2"),
         })
         auth_provider = AuthProvider(
             zone_url="https://keycard.cloud",
@@ -101,7 +101,7 @@ class TestAuthProviderInitialization:
     def test_explicit_enable_multi_zone_overrides_inference(self, mock_client_factory):
         """An explicit enable_multi_zone value is respected over inference."""
         credential = ClientSecret({
-            "zone1": ("client_id_1", "client_secret_1"),
+            "https://zone1.keycard.cloud": ("client_id_1", "client_secret_1"),
         })
         auth_provider = AuthProvider(
             zone_id=mock_zone_id,

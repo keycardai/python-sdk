@@ -70,8 +70,8 @@ class AuthProvider:
         # Passing a multi-zone ClientSecret enables multi-zone automatically;
         # pass enable_multi_zone=True/False only to override.
         client_secret = ClientSecret({
-            "zone1": ("client_id_1", "client_secret_1"),
-            "zone2": ("client_id_2", "client_secret_2"),
+            "https://zone1.keycard.cloud": ("client_id_1", "client_secret_1"),
+            "https://zone2.keycard.cloud": ("client_id_2", "client_secret_2"),
         })
         provider = AuthProvider(
             zone_url="https://keycard.cloud",
@@ -276,9 +276,12 @@ class AuthProvider:
 
                 auth_strategy = self.auth
                 if isinstance(self.auth, MultiZoneBasicAuth) and auth_info['zone_id']:
-                    if not self.auth.has_zone(auth_info['zone_id']):
+                    # Multi-zone credentials are keyed by the zone's issuer
+                    # URL, which is the same zone-scoped URL the client is
+                    # created against.
+                    if not self.auth.has_issuer(base_url):
                         raise AuthProviderConfigurationError()
-                    auth_strategy = self.auth.get_auth_for_zone(auth_info['zone_id'])
+                    auth_strategy = self.auth.get_auth_for_issuer(base_url)
 
                 # Configure dynamic client registration
                 # Priority: explicit config > identity provider defaults

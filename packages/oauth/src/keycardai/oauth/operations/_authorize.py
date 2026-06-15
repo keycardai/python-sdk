@@ -104,7 +104,7 @@ def build_authorization_code_http_request(
         "Content-Type": "application/x-www-form-urlencoded",
     }
     if context.auth:
-        headers.update(dict(context.auth.apply_headers()))
+        headers.update(dict(context.auth.apply_headers(context.issuer)))
 
     form_data = urlencode(payload).encode("utf-8")
 

@@ -20,8 +20,9 @@ def build_token_exchange_http_request(
 
     Args:
         request: Token exchange request parameters
-        endpoint: Token exchange endpoint URL
-        auth_headers: Authentication headers from auth strategy
+        context: HTTP context with endpoint, auth strategy, and optional
+            issuer selector. The issuer is passed to the auth strategy so
+            zone-aware strategies apply the credentials for that issuer.
 
     Returns:
         HttpRequest for the token exchange endpoint
@@ -38,7 +39,7 @@ def build_token_exchange_http_request(
     }
 
     if context.auth:
-        headers.update(dict(context.auth.apply_headers()))
+        headers.update(dict(context.auth.apply_headers(context.issuer)))
 
     # Convert to properly URL-encoded form data as required by OAuth 2.0 RFC 8693
     form_data = urlencode(payload).encode("utf-8")

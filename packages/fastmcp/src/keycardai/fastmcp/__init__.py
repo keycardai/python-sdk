@@ -70,8 +70,8 @@ Advanced Configuration:
         zone_url="https://keycard.cloud",
         mcp_base_url="https://my-server.com",
         application_credential=ClientSecret({
-            "zone1": ("id1", "secret1"),
-            "zone2": ("id2", "secret2"),
+            "https://zone1.keycard.cloud": ("id1", "secret1"),
+            "https://zone2.keycard.cloud": ("id2", "secret2"),
         })
     )
 """

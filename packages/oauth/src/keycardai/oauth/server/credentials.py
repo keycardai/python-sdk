@@ -90,10 +90,11 @@ class ClientSecret:
             ("client_id_from_keycard", "client_secret_from_keycard")
         )
 
-        # Multi-zone with different credentials per zone
+        # Multi-zone with different credentials per zone, keyed by the
+        # zone's issuer URL
         provider = ClientSecret({
-            "zone1": ("client_id_1", "client_secret_1"),
-            "zone2": ("client_id_2", "client_secret_2"),
+            "https://zone1.keycard.cloud": ("client_id_1", "client_secret_1"),
+            "https://zone2.keycard.cloud": ("client_id_2", "client_secret_2"),
         })
     """
 
@@ -105,7 +106,7 @@ class ClientSecret:
             client_id, client_secret = credentials
             self.auth = BasicAuth(client_id=client_id, client_secret=client_secret)
         elif isinstance(credentials, dict):
-            self.auth = MultiZoneBasicAuth(zone_credentials=credentials)
+            self.auth = MultiZoneBasicAuth(issuer_credentials=credentials)
         else:
             raise ClientSecretConfigurationError(
                 credentials_type=type(credentials).__name__
