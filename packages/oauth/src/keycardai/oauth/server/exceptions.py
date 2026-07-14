@@ -469,8 +469,58 @@ class ClientInitializationError(OAuthServerError):
         super().__init__(message)
 
 
-class EKSWorkloadIdentityConfigurationError(OAuthServerError):
-    """Raised when EKS Workload Identity is misconfigured at initialization."""
+class WorkloadIdentityConfigurationError(OAuthServerError):
+    """Raised when a workload identity credential or token source is misconfigured.
+
+    Raised at construction: a missing or empty token file, no discovery
+    environment variable set, a missing required audience, or an invalid
+    source.
+
+    Attributes:
+        source: Identifies the token source ("file", "gcp-metadata", "fly");
+            None when the fault is in the credential itself.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        source: str | None = None,
+        details: dict | None = None,
+    ):
+        self.source = source
+        super().__init__(message, details=details)
+
+
+class WorkloadIdentityRuntimeError(OAuthServerError):
+    """Raised when the subject token cannot be obtained at request time.
+
+    Distinct from WorkloadIdentityConfigurationError, which is a
+    construction-time fault. Examples: the token file was rotated away or
+    emptied after construction, or the platform endpoint was unreachable.
+
+    Attributes:
+        source: Identifies the token source ("file", "gcp-metadata", "fly",
+            or "custom" for a source whose error is not one of this module's
+            typed errors).
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        source: str | None = None,
+        details: dict | None = None,
+    ):
+        self.source = source
+        super().__init__(message, details=details)
+
+
+class EKSWorkloadIdentityConfigurationError(WorkloadIdentityConfigurationError):
+    """Raised when EKS Workload Identity is misconfigured at initialization.
+
+    Deprecated: catch WorkloadIdentityConfigurationError instead.
+    """
 
     def __init__(
         self,
@@ -517,11 +567,14 @@ class EKSWorkloadIdentityConfigurationError(OAuthServerError):
             "solution": "Verify EKS workload identity configuration and token file accessibility",
         }
 
-        super().__init__(message, details=details)
+        super().__init__(message, source="file", details=details)
 
 
-class EKSWorkloadIdentityRuntimeError(OAuthServerError):
-    """Raised when EKS Workload Identity token cannot be read at runtime."""
+class EKSWorkloadIdentityRuntimeError(WorkloadIdentityRuntimeError):
+    """Raised when EKS Workload Identity token cannot be read at runtime.
+
+    Deprecated: catch WorkloadIdentityRuntimeError instead.
+    """
 
     def __init__(
         self,
@@ -563,7 +616,7 @@ class EKSWorkloadIdentityRuntimeError(OAuthServerError):
             "solution": "Verify token file is accessible and not corrupted. Check token rotation if applicable.",
         }
 
-        super().__init__(message, details=details)
+        super().__init__(message, source="file", details=details)
 
 
 class ClientSecretConfigurationError(OAuthServerError):
