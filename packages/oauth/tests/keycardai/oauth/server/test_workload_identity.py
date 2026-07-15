@@ -166,7 +166,7 @@ class TestFileTokenSource:
 
         source = FileTokenSource(token_file_path=str(token_file))
 
-        assert await source.subject_token() == "projected-token"
+        assert await source.identity_token() == "projected-token"
 
     def test_configuration_error_on_missing_file(self, tmp_path):
         with pytest.raises(WorkloadIdentityConfigurationError) as exc_info:
@@ -184,7 +184,7 @@ class TestFileTokenSource:
             monkeypatch.setenv(env_name, str(token_file))
 
             source = FileTokenSource()
-            assert await source.subject_token() == "discovered-token", (
+            assert await source.identity_token() == "discovered-token", (
                 f"{env_name} must be discovered"
             )
 
@@ -202,7 +202,7 @@ class TestFileTokenSource:
         )
 
         source = FileTokenSource(env_var_name="CUSTOM_TOKEN_FILE")
-        assert await source.subject_token() == "custom-token"
+        assert await source.identity_token() == "custom-token"
 
     def test_configuration_error_without_path_or_env(self, monkeypatch):
         self._clear_discovery_env(monkeypatch)
@@ -218,7 +218,7 @@ class TestFileTokenSource:
 
         token_file.write_text("rotated-token")
 
-        assert await source.subject_token() == "rotated-token"
+        assert await source.identity_token() == "rotated-token"
 
     @pytest.mark.asyncio
     async def test_runtime_error_after_construction(self, tmp_path):
@@ -229,7 +229,7 @@ class TestFileTokenSource:
         os.remove(token_file)
 
         with pytest.raises(WorkloadIdentityRuntimeError) as exc_info:
-            await source.subject_token()
+            await source.identity_token()
         assert exc_info.value.source == "file"
 
 
@@ -281,7 +281,7 @@ class TestGCPMetadataTokenSource:
             _transport=httpx.MockTransport(handler),
         )
 
-        token = await source.subject_token()
+        token = await source.identity_token()
 
         assert token == "gcp-identity-token"
         assert seen["path"] == (
@@ -307,7 +307,7 @@ class TestGCPMetadataTokenSource:
         )
 
         with pytest.raises(WorkloadIdentityRuntimeError) as exc_info:
-            await source.subject_token()
+            await source.identity_token()
         assert exc_info.value.source == "gcp-metadata"
 
     @pytest.mark.asyncio
@@ -321,7 +321,7 @@ class TestGCPMetadataTokenSource:
         )
 
         with pytest.raises(WorkloadIdentityRuntimeError) as exc_info:
-            await source.subject_token()
+            await source.identity_token()
         assert exc_info.value.__cause__ is not None
 
 
@@ -342,7 +342,7 @@ class TestFlyTokenSource:
             _transport=httpx.MockTransport(handler),
         )
 
-        token = await source.subject_token()
+        token = await source.identity_token()
 
         assert token == "fly-oidc-token"
         assert seen["method"] == "POST"
@@ -360,7 +360,7 @@ class TestFlyTokenSource:
 
         source = FlyTokenSource(_transport=httpx.MockTransport(handler))
 
-        await source.subject_token()
+        await source.identity_token()
 
         assert seen["body"] == "{}"
 
@@ -373,7 +373,7 @@ class TestFlyTokenSource:
         )
 
         with pytest.raises(WorkloadIdentityRuntimeError) as exc_info:
-            await source.subject_token()
+            await source.identity_token()
         assert exc_info.value.source == "fly"
 
     @pytest.mark.asyncio
@@ -381,7 +381,7 @@ class TestFlyTokenSource:
         source = FlyTokenSource(socket_path=str(tmp_path / "no-such.sock"))
 
         with pytest.raises(WorkloadIdentityRuntimeError) as exc_info:
-            await source.subject_token()
+            await source.identity_token()
         assert exc_info.value.__cause__ is not None
 
     @pytest.mark.asyncio
@@ -409,7 +409,7 @@ class TestFlyTokenSource:
         server = await asyncio.start_unix_server(serve, path=socket_path)
         try:
             source = FlyTokenSource(socket_path=socket_path)
-            assert await source.subject_token() == "fly-oidc-token"
+            assert await source.identity_token() == "fly-oidc-token"
         finally:
             server.close()
             await server.wait_closed()

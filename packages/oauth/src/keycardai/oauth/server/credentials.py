@@ -8,7 +8,7 @@ authentication method.
 Credential Providers:
 - ClientSecret: Uses client credentials (BasicAuth) for token exchange
 - WebIdentity: Private key JWT client assertion (RFC 7523)
-- WorkloadIdentity: Platform-signed OIDC token from a pluggable SubjectTokenSource
+- WorkloadIdentity: Platform-signed OIDC token from a pluggable IdentityTokenSource
 - EKSWorkloadIdentity: Deprecated alias for WorkloadIdentity with a FileTokenSource
 """
 
@@ -284,7 +284,7 @@ WORKLOAD_IDENTITY_SOURCE_FLY = "fly"
 WORKLOAD_IDENTITY_SOURCE_CUSTOM = "custom"
 
 
-class SubjectTokenSource(Protocol):
+class IdentityTokenSource(Protocol):
     """Supplies a platform-signed OIDC token for use as a client assertion.
 
     The only per-platform piece of a workload identity credential:
@@ -294,12 +294,12 @@ class SubjectTokenSource(Protocol):
     Cloud Run), FlyTokenSource covers Fly Machines, and any bare callable
     returning the token (sync or async) is accepted as a source.
 
-    subject_token is called on every token exchange. Implementations must
+    identity_token is called on every token exchange. Implementations must
     return the current token; platforms rotate these tokens, so returning a
     stale cached value risks an expired assertion.
     """
 
-    async def subject_token(self) -> str:
+    async def identity_token(self) -> str:
         """Return the current platform-signed OIDC token."""
         ...
 
@@ -367,7 +367,7 @@ class FileTokenSource:
             )
         return token
 
-    async def subject_token(self) -> str:
+    async def identity_token(self) -> str:
         """Re-read the token file and return its stripped contents."""
         return self._read(WorkloadIdentityRuntimeError)
 
@@ -398,7 +398,7 @@ class GCPMetadataTokenSource:
         self.timeout = timeout
         self._transport = _transport
 
-    async def subject_token(self) -> str:
+    async def identity_token(self) -> str:
         """Request a GCP-signed OIDC JWT from the metadata server."""
         try:
             async with httpx.AsyncClient(
@@ -451,7 +451,7 @@ class FlyTokenSource:
         self.socket_path = socket_path
         self._transport = _transport
 
-    async def subject_token(self) -> str:
+    async def identity_token(self) -> str:
         """Request a Fly-signed OIDC JWT from the Machines API."""
         transport = self._transport or httpx.AsyncHTTPTransport(uds=self.socket_path)
         payload = {"aud": self.audience} if self.audience else {}
@@ -501,7 +501,7 @@ class WorkloadIdentity:
         provider = WorkloadIdentity(my_async_fetch)
 
     Args:
-        source: A SubjectTokenSource, or a bare callable (sync or async)
+        source: A IdentityTokenSource, or a bare callable (sync or async)
             returning the token.
         client_id: Optional ID of the Keycard application credential this
             workload authenticates as, sent as the client_id form parameter
@@ -513,24 +513,24 @@ class WorkloadIdentity:
 
     def __init__(
         self,
-        source: "SubjectTokenSource | Callable[[], Awaitable[str] | str]",
+        source: "IdentityTokenSource | Callable[[], Awaitable[str] | str]",
         client_id: str | None = None,
     ):
         if source is None:
             raise WorkloadIdentityConfigurationError(
-                "subject token source must not be None"
+                "identity token source must not be None"
             )
-        if not callable(getattr(source, "subject_token", None)) and not callable(
+        if not callable(getattr(source, "identity_token", None)) and not callable(
             source
         ):
             raise WorkloadIdentityConfigurationError(
-                "subject token source must provide subject_token() or be callable"
+                "identity token source must provide identity_token() or be callable"
             )
         self._source = source
         self.client_id = client_id
 
-    async def _fetch_subject_token(self) -> str:
-        fetch = getattr(self._source, "subject_token", None)
+    async def _fetch_identity_token(self) -> str:
+        fetch = getattr(self._source, "identity_token", None)
         if not callable(fetch):
             fetch = self._source
         try:
@@ -540,12 +540,12 @@ class WorkloadIdentity:
             raise
         except Exception as err:
             raise WorkloadIdentityRuntimeError(
-                "Error fetching subject token",
+                "Error fetching identity token",
                 source=WORKLOAD_IDENTITY_SOURCE_CUSTOM,
             ) from err
         if not isinstance(token, str) or not token.strip():
             raise WorkloadIdentityRuntimeError(
-                "Subject token source returned an empty token",
+                "Identity token source returned an empty token",
                 source=WORKLOAD_IDENTITY_SOURCE_CUSTOM,
             )
         return token
@@ -567,7 +567,7 @@ class WorkloadIdentity:
         resource: str,
         auth_info: dict[str, str] | None = None,
     ) -> TokenExchangeRequest:
-        assertion = await self._fetch_subject_token()
+        assertion = await self._fetch_identity_token()
 
         return TokenExchangeRequest(
             subject_token=subject_token,

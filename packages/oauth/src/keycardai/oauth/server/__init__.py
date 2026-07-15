@@ -13,7 +13,7 @@ Credential Providers:
     ApplicationCredential: Protocol for credential providers
     ClientSecret: Client credentials (BasicAuth) for token exchange
     WebIdentity: Private key JWT client assertion (RFC 7523)
-    WorkloadIdentity: Platform-signed OIDC token from a pluggable SubjectTokenSource
+    WorkloadIdentity: Platform-signed OIDC token from a pluggable IdentityTokenSource
     FileTokenSource, GCPMetadataTokenSource, FlyTokenSource: Built-in token sources
     EKSWorkloadIdentity: Deprecated alias for WorkloadIdentity with a FileTokenSource
 
@@ -31,7 +31,7 @@ from .credentials import (
     FileTokenSource,
     FlyTokenSource,
     GCPMetadataTokenSource,
-    SubjectTokenSource,
+    IdentityTokenSource,
     WebIdentity,
     WorkloadIdentity,
 )
@@ -52,7 +52,7 @@ __all__ = [
     "FileTokenSource",
     "FlyTokenSource",
     "GCPMetadataTokenSource",
-    "SubjectTokenSource",
+    "IdentityTokenSource",
     "WebIdentity",
     "WorkloadIdentity",
 ]
