@@ -502,7 +502,8 @@ class WorkloadIdentity:
 
     Args:
         source: A IdentityTokenSource, or a bare callable (sync or async)
-            returning the token.
+            returning the token. A synchronous callable runs directly on the
+            event loop, so it must not perform blocking I/O.
         client_id: Optional ID of the Keycard application credential this
             workload authenticates as, sent as the client_id form parameter
             alongside the assertion. Token-federation application credentials
