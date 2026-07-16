@@ -1,3 +1,431 @@
+## 0.22.0-keycardai-oauth (2026-07-16)
+
+
+- feat(keycardai-oauth): add WorkloadIdentity credential with pluggable subject token sources (#191)
+- * feat(keycardai-oauth): add WorkloadIdentity credential with pluggable subject token sources
+- One generic WorkloadIdentity credential owns the exchange contract
+(jwt-bearer client assertion, no basic auth, fresh fetch per exchange,
+no caching). A one-method SubjectTokenSource protocol is the only
+per-platform code: FileTokenSource (EKS, AKS, Kubernetes projected
+tokens), GCPMetadataTokenSource (GKE, GCE, Cloud Run), FlyTokenSource
+(Fly Machines), or any bare callable.
+- The optional client_id constructor argument is sent as the client_id
+form parameter alongside the assertion; token-federation application
+credentials (KEP 108) are resolved by it.
+- EKSWorkloadIdentity becomes a deprecated subclass wrapping its existing
+discovery and read logic as a source, with unchanged signature,
+EKS-only env discovery, and unchanged error types, which are now
+subclasses of the new WorkloadIdentity{Configuration,Runtime}Error.
+- Implements the workload-identity spec (keycard-sdk-spec#39). ECO-110.
+- * refactor(keycardai-oauth): rename IdentityTokenSource from SubjectTokenSource
+- The source returns the platform-issued OIDC identity token, which the
+credential attaches as the client assertion. Naming it a subject token
+collided with TokenExchangeRequest.subject_token, which carries the
+inbound user token on the RFC 8693 exchange.
+- * docs(keycardai-oauth): note that sync identity token sources must not block
+- ---------
+- Co-authored-by: GitHub Action <action@github.com>
+
+## 0.20.0-keycardai-oauth (2026-06-15)
+
+
+- feat(keycardai-oauth)!: key multi-zone credentials by issuer and add a per-call issuer selector
+- Multi-zone ClientSecret dicts and MultiZoneBasicAuth are now keyed by
+the zone issuer URL (trailing slashes normalized), with accessors
+has_issuer, get_configured_issuers, and get_auth_for_issuer.
+AuthStrategy.apply_headers accepts an optional issuer selector:
+single-zone strategies ignore it, MultiZoneBasicAuth resolves that
+issuer fail-closed and raises when called without one. The selector
+threads through the HTTP context and all operation builders, defaulting
+to the client issuer, and exchange_token / client_credentials_grant
+accept a per-call issuer keyword.
+- BREAKING CHANGE: multi-zone credential maps are keyed by issuer URL
+instead of zone id; zone-keyed accessors are renamed to issuer terms and
+get_headers_for_zone is removed.
+- feat(keycardai-oauth): add issuer-direct entry to the PKCE authenticate flow (#171)
+- authenticate accepts either issuer (used directly, no metadata fetch) or
+www_authenticate_header (the RFC 9728 challenge-driven path); exactly
+one must be provided. resource_url is now optional overall and required
+only in challenge mode. The challenge-to-issuer resolution is exposed as
+resolve_issuer_from_challenge in keycardai.oauth.pkce.
+- Co-authored-by: GitHub Action <action@github.com>
+
+## 0.19.0-keycardai-oauth (2026-06-12)
+
+
+- feat(keycardai-oauth): add client_credentials_grant operation (#166)
+- Adds an RFC 6749 section 4.4 client credentials grant to the general
+client. New ClientCredentialsRequest model (resource, scope,
+client_assertion, client_assertion_type), a client_credentials operation
+module mirroring the token-exchange transport contract, and a
+client_credentials_grant method on both Client and AsyncClient that
+accepts a request object or keyword arguments and authenticates via the
+client's configured credential. ECO-43.
+- Co-authored-by: GitHub Action <action@github.com>
+
+## 0.18.2-keycardai-oauth (2026-06-12)
+
+
+- fix(keycardai-oauth): discover KEYCARD_EKS_WORKLOAD_IDENTITY_TOKEN_FILE in EKS workload identity (#164)
+- EKSWorkloadIdentity documents KEYCARD_EKS_WORKLOAD_IDENTITY_TOKEN_FILE
+as the first env var checked during token-file discovery, but the
+default list only contained the two AWS variables. The variable is now
+searched first, matching the docstring and the TS and Go SDKs. ECO-40.
+- Co-authored-by: GitHub Action <action@github.com>
+
+## 0.18.1-keycardai-oauth (2026-06-12)
+
+
+- fix(keycardai-oauth): add client_assertion kwargs to sync exchange_token overload (#162)
+- * fix(keycardai-oauth): add client_assertion kwargs to sync exchange_token overload
+- The sync exchange_token kwargs overload was missing the client_assertion
+and client_assertion_type parameters that the async overload declares.
+The runtime path already accepted them via **token_exchange_args; this
+aligns the typed surface so type checkers and IDEs accept the kwargs on
+the sync client too. ECO-41.
+- * fix(keycardai-oauth): make subject_token_type optional in exchange_token kwargs overloads
+- TokenExchangeRequest defaults subject_token_type to the access-token
+type, but both kwargs overloads declared it required. The overloads now
+mark it optional so the typed surface matches the model default.
+- ---------
+- Co-authored-by: GitHub Action <action@github.com>
+
+## 0.18.0-keycardai-oauth (2026-06-11)
+
+
+- feat(keycardai-oauth): expose get_client_jwks_url on the WebIdentity credential (#160)
+- WebIdentity exposed only get_jwks(); the client JWKS URL helper lived on the
+internal key manager, not the credential. Add get_client_jwks_url(resource_server_url)
+to the credential, delegating to the key manager, so the public JWKS getter and
+the JWKS-URL helper are both on the credential, matching the TS getClientJwksUrl
+and Go ClientJWKSURL accessors.
+- Part of the web-identity spec JWKS-accessor-surface row (ECO-39).
+- Co-authored-by: GitHub Action <action@github.com>
+
+## 0.17.0-keycardai-oauth (2026-06-11)
+
+
+- feat(keycardai-oauth)!: RFC-minimal client registration and typed registration errors (#156)
+- ClientRegistrationRequest no longer injects opinionated defaults
+(token_endpoint_auth_method, redirect_uris, grant_types, response_types,
+scope) and no longer requires client_name. Per RFC 7591 all client metadata
+is optional, so the request sends only the fields the caller sets, matching
+the RFC-minimal TypeScript registerClient.
+- Registration errors are now typed: on an RFC 7591 section 3.2.2 error (HTTP
+4xx with a JSON error body) registration raises OAuthProtocolError carrying
+the error code so a caller can branch on it, instead of an opaque
+OAuthHttpError with only the raw body. A non-structured 4xx still raises
+OAuthHttpError.
+- Resolves the request-defaults, client_name-requiredness, and error-surfacing
+rows of the dynamic-client-registration spec (ECO-44).
+- Co-authored-by: GitHub Action <action@github.com>
+
+## 0.16.0-keycardai-oauth (2026-06-11)
+
+
+- feat(keycardai-oauth)!: raise typed InvalidTokenError and enforce issuer allowlist before key resolution (#154)
+- * feat(keycardai-oauth)!: raise typed InvalidTokenError and enforce issuer allowlist before key resolution
+- The verify surface is now fail-closed and typed. `verify_token` and
+`verify_token_for_zone` return an `AccessToken` and raise the new
+`InvalidTokenError` (RFC 6750 `invalid_token`) on any verification failure;
+they no longer return `None`.
+- Cheap policy checks (trusted issuer, expiration) now run on the unverified
+payload before any network key resolution, so a token with an untrusted `iss`
+is rejected without triggering JWKS discovery or fetch. The issuer is checked
+against a trusted allowlist: `issuer` now accepts `str | list[str]`. JWKS keys
+are cached per `(issuer, kid)` so distinct issuers cannot collide on a shared
+`kid`, and discovery resolves keys for the validated token issuer.
+- Infra failures (JWKS discovery/fetch) now propagate as their typed errors
+instead of being collapsed into a generic failure, so a JWKS outage surfaces
+as a server error rather than a misleading invalid-token result.
+- Resolves the verify-contract, ordering, and issuer-allowlist rows of the
+jwt-signing-and-verification spec (ECO-36).
+- * fix(keycardai-starlette): catch InvalidTokenError from token verification
+- The bearer backend relied on `verify_token` returning `None` on failure. The
+verifier now raises `InvalidTokenError`, so the backend catches it and maps it
+to the RFC 6750 `invalid_token` 401 challenge. JWKS infrastructure errors are
+no longer caught here, so a key-resolution outage surfaces as a server error
+rather than a 401.
+- ---------
+- Co-authored-by: GitHub Action <action@github.com>
+
+## 0.15.3-keycardai-oauth (2026-06-10)
+
+
+- fix(keycardai-oauth): expose ResourceAccessError context attributes (#149)
+- ResourceAccessError now stores resource / error_type / available_resources /
+error_details as direct instance attributes, alongside the existing details
+dict, so handlers can inspect the error context without unpacking details.
+AccessContext.get_errors is annotated dict[str, Any] since it always returns a
+dict, never None.
+- Closes the access-context net-new gaps surfaced by the parity verification.
+- Co-authored-by: GitHub Action <action@github.com>
+
+## 0.15.2-keycardai-oauth (2026-06-10)
+
+
+- fix(keycardai-oauth): raise typed JWKS errors from get_jwks_key (#147)
+- get_jwks_key raised bare ValueError, and its outer except flattened every
+failure into one generic "Failed to fetch JWKS" ValueError. It now raises
+typed, catchable errors: JWKSFetchError (endpoint unreachable or non-2xx)
+and JWKSKeyNotFoundError (kid absent from the set), under a JWKSError base
+in keycardai.oauth.exceptions (exported from the package root). Unexpected
+errors are wrapped as JWKSFetchError; typed errors propagate unchanged.
+- Defined in the top-level exceptions module so the utils layer can import
+them without the server-package circular import. Matches the canonical
+error model and the TS typed JWKS errors.
+- Part of the SDK parity effort (ECO-35 / ECO-32).
+- Co-authored-by: GitHub Action <action@github.com>
+
+## 0.15.1-keycardai-oauth (2026-06-09)
+
+
+- fix(keycardai-oauth): evict oldest JWKS key on overflow instead of clearing the cache (#145)
+- The key cache cleared all entries when it hit max_size (10), so a verifier
+serving more than 10 kids would thrash. It now evicts the single oldest entry
+and the bound is raised to 256. Closes the remaining mechanical ECO-35 row on
+key-cache eviction (bounded plus partial eviction; exact order is
+implementation-defined per the spec).
+- Co-authored-by: GitHub Action <action@github.com>
+
+## 0.15.0-keycardai-oauth (2026-06-09)
+
+
+- feat(keycardai-oauth): converge JWKS caching to spec (discovery TTL, fetch timeout, inflight de-dup) (#143)
+- Converges TokenVerifier JWKS caching to specs/jwt-jwks/jwks-caching.md (ECO-35):
+- - discovery_ttl knob (default 1h): the discovered jwks_uri is cached with a
+  TTL and re-discovered after expiry, not for the verifier lifetime.
+- fetch_timeout knob (default 10s): bounds discovery and JWKS fetches;
+  get_jwks_key gained an optional timeout argument.
+- inflight de-duplication: concurrent cold-cache lookups for the same
+  (zone, kid) share one discovery and one JWKS fetch.
+- key_ttl: per-key TTL knob renamed to the canonical key_ttl; cache_ttl
+  kept as a deprecated keyword alias.
+- Key-cache eviction policy and error taxonomy (the remaining ECO-35 rows)
+need a canonical decision and are left for a follow-up.
+- Co-authored-by: GitHub Action <action@github.com>
+
+## 0.14.0-keycardai-oauth (2026-06-02)
+
+
+- test(keycardai-oauth): use generic scope in exchange request_scopes tests
+- Replace the databricks-specific scope with a generic "read".
+- feat(keycardai-oauth): add request_scopes to exchange_tokens_for_resources
+- Accept an optional per-resource OAuth scope and apply it across all three
+exchange paths: impersonation (client.impersonate(scope=...)), the
+application-credential request, and the basic RFC 8693 request. Accepts a
+str, list[str], or per-resource dict.
+
+## 0.13.1-keycardai-oauth (2026-06-02)
+
+
+- fix(keycardai-oauth): require kid in TokenVerifier, matching the TypeScript verifier (#132)
+- The TS verifier rejects any token without a kid header; Python silently fell
+back to the single JWKS key. For cross-SDK parity (and since Keycard always
+issues a kid), Python now rejects a missing kid with TokenValidationError
+before key resolution. Removes the optional-in-one / required-in-the-other
+surprise.
+- Part of ECO-35.
+- Co-authored-by: GitHub Action <action@github.com>
+
+## 0.13.0-keycardai-oauth (2026-06-02)
+
+
+- fix(keycardai-oauth): enforce jwks_uri same-origin with issuer in TokenVerifier (#131)
+- A discovered jwks_uri must share the issuer origin before any key is fetched,
+matching the TypeScript keyring (assertSameOrigin). This guards against a
+tampered or misconfigured discovery document pointing key resolution at an
+attacker-controlled origin. Explicit jwks_uri (trusted config) is unaffected.
+- Adds JWKSUriValidationError, raised on mismatch.
+- Closes ECO-34.
+- Co-authored-by: GitHub Action <action@github.com>
+
+## 0.12.0-keycardai-oauth (2026-05-07)
+
+
+- feat(keycardai-oauth)!: pass error context through AccessContext.access(), rename to get_resource_error (#114)
+- * feat(keycardai-oauth)!: pass error context through AccessContext.access(), rename to get_resource_error
+---------
+- Co-authored-by: GitHub Action <action@github.com>
+
+## 0.11.0-keycardai-oauth (2026-04-28)
+
+
+- feat(keycardai-oauth): add high-level PKCE user-login flow (ACC-229) (#101)
+- * feat(keycardai-oauth): add high-level PKCE flow client (ACC-229)
+- First step of the keycardai-agents decomposition (ACC-229..232). Per the
+revised KEP, the OAuth PKCE user-login flow is generic OAuth code with no
+agents-specific concerns and belongs in keycardai-oauth next to the rest
+of the OAuth client primitives.
+- New module keycardai.oauth.pkce:
+- - PKCEClient orchestrates the full authorization-code-with-PKCE flow:
+  parse the WWW-Authenticate challenge (RFC 9728), fetch protected resource
+  and authorization server metadata (RFC 8414), open the browser at the
+  authorize endpoint, capture the redirect via a local callback server,
+  and exchange the code at the token endpoint. Returns the token endpoint
+  response dict directly.
+- OAuthCallbackServer is the loopback redirect catcher (RFC 8252) used by
+  PKCEClient; exported separately so callers running their own flow on top
+  of the lower-level PKCEGenerator + build_authorize_url primitives can
+  reuse the callback machinery.
+- 7 new tests cover header parsing, discovery error paths, the happy-path
+  flow, and confidential vs public client auth on the token endpoint.
+- keycardai-agents changes:
+- - AgentClient now composes PKCEClient instead of carrying its own copy of
+  the auth flow. AgentClient.authenticate(...) is preserved as a thin shim
+  that returns the access_token string and updates the per-service token
+  cache, so existing /invoke retry-on-401 behavior is unchanged.
+- AgentClient drops ~370 lines of duplicated PKCE/discovery/callback code.
+- keycardai.agents.client.oauth re-exports OAuthCallbackServer through a
+  module __getattr__ that emits a DeprecationWarning pointing at the new
+  canonical import path.
+- Stale tests in test_agent_client_oauth.py that exercised AgentClient
+  private methods (_extract_resource_metadata_url, _fetch_resource_metadata,
+  _fetch_authorization_server_metadata) removed; equivalent contracts now
+  live in the keycardai-oauth PKCE test suite.
+- Verified: oauth 215/215 (was 208 + 7 new), agents 81/81 (was 85 - 4 removed
+implementation tests), mcp 560/560, starlette 49/49, ruff clean.
+- Stacked on #100 (ACC-236 a2a-sdk pin) so the agents test suite can run
+during validation.
+- * fix(keycardai-oauth): address review findings on PKCE move
+- Three small fixes from the review of #101:
+- 1. PKCEClient now accepts an optional injected httpx.AsyncClient. AgentClient
+   passes its existing http_client through, so a single connection pool covers
+   both the agent service calls and the OAuth flow. close() only closes the
+   client it owns. Restores the one-pool-per-AgentClient behavior from main.
+- 2. Drop the no-op rstrip("/") + "/" round-trip in PKCEClient.authenticate
+   when building the authorization server discovery URL.
+- 3. Assert the discovery URL path in test_authenticate_completes_full_flow.
+   The previous test stubbed http_mock.get with side_effects but never
+   verified what URLs were passed; a typo from oauth-authorization-server
+   to openid-configuration would have gone unnoticed.
+- * refactor(keycardai-oauth): collapse PKCEClient into a flow function on AsyncClient
+- Per Kamil review feedback (#101): a separate PKCEClient sitting next to
+AsyncClient invited "which client do I use?" The OAuth-server-facing
+operations belong on the existing AsyncClient.
+- Changes:
+- - keycardai.oauth.pkce.PKCEClient (class) -> keycardai.oauth.pkce.authenticate
+  (module-level async function). One-shot per user login, no state worth
+  preserving across calls.
+- The function uses AsyncClient internally for server metadata discovery
+  (RFC 8414) and code exchange. AsyncClient is now the only thing in
+  keycardai.oauth that talks to OAuth servers as a client.
+- AsyncClient.exchange_authorization_code (and Client + the underlying
+  operations._authorize helpers) gain an optional resource= parameter so
+  RFC 8707 tokens still work through the canonical path.
+- The pkce module retains the user-flow concerns: RFC 9728 challenge
+  parsing, resource metadata fetch (paired with the protected resource,
+  not the OAuth server), browser launch, and the loopback callback server
+  (RFC 8252).
+- AgentClient drops the cached _pkce instance and just calls the function
+  per /invoke retry, passing its own httpx.AsyncClient through for the
+  resource metadata fetch.
+- Tests rewritten for the function shape: 7/7 passing, same coverage
+  (header parsing, discovery error paths, happy path with resource
+  indicator, public vs confidential auth on the token endpoint).
+- Verified: oauth 215/215, agents 81/81, mcp 560/560, starlette 49/49.
+ruff clean.
+
+## 0.10.0-keycardai-oauth (2026-04-24)
+
+
+- fix(keycardai-oauth): fall back to legacy ./mcp_keys dir with deprecation warning
+- Switch WebIdentity default storage_dir back to ./server_keys (aligning
+with the protocol-agnostic naming from this PR), but transparently fall
+back to ./mcp_keys when no storage_dir is passed, ./server_keys does not
+exist, and ./mcp_keys does. The fallback emits a DeprecationWarning
+pointing at the explicit configuration or migration paths.
+- This preserves zero-config upgrades for existing keycardai-mcp services
+(they keep finding their existing keys) while giving new installs the
+new default. The fallback will be removed in a future release.
+- Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+- fix(keycardai-oauth): preserve mcp storage defaults, move server tests
+- Address PR #95 review comments from cmars:
+- 1. Revert WebIdentity default storage_dir to "./mcp_keys" and key_id
+   prefix to "mcp-server-". Changing these would silently break existing
+   keycardai-mcp services on upgrade: they would look for keys in a new
+   empty directory and regenerate identity, losing their registered client
+   identity with Keycard.
+- 2. Move oauth-server-specific tests (test_verifier, test_cache,
+   test_application_identity -> test_credentials) from packages/mcp/tests
+   to packages/oauth/tests/keycardai/oauth/server/ so coverage lives
+   with the canonical oauth.server modules.
+- Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+- fix(keycardai-oauth): address PR review findings
+- - Add token_exchange module with exchange_tokens_for_resources()
+  orchestration (KEP Tier 1 gap)
+- Rename WebIdentity param mcp_server_name -> server_name with
+  backward-compatible alias; default storage dir ./mcp_keys -> ./server_keys
+- Add mcp_server_url/missing_mcp_server_url backward-compat aliases
+  to AuthProviderConfigurationError (prevents breaking fastmcp callers)
+- Fix _get_kid_and_algorithm returning list instead of tuple
+- feat(keycardai-oauth): add server subpackage with framework-free primitives
+- Extract protocol-agnostic server components from keycardai-mcp into
+keycardai.oauth.server per the Protocol-Agnostic SDK KEP (Tier 1).
+- New keycardai.oauth.server modules:
+- access_context: AccessContext for non-throwing token access
+- credentials: ApplicationCredential, ClientSecret, WebIdentity, EKSWorkloadIdentity
+- verifier: TokenVerifier with local AccessToken model (no MCP dependency)
+- exceptions: OAuthServerError base + all framework-free exceptions
+- _cache: JWKSCache/JWKSKey for JWKS key caching
+- client_factory: ClientFactory protocol + DefaultClientFactory
+- private_key: PrivateKeyManager, FilePrivateKeyStorage
+- keycardai-mcp changes:
+- Server auth modules now re-export from keycardai.oauth.server
+- MCPServerError is an alias for OAuthServerError
+- MissingContextError stays MCP-specific (references FastMCP Context)
+- All existing imports continue to work (no breaking changes)
+- Tests updated to patch canonical module paths
+
+## 0.9.0-keycardai-oauth (2026-04-02)
+
+
+- feat(keycardai-oauth): support for impersonation token exchange
+- - Add substitute-user token type and unsigned JWT builder
+- Add impersonate method to Client and AsyncClient
+- Add user_identifier callback to MCP grant decorator
+- Add impersonation token exchange example
+
+## 0.8.0-keycardai-oauth (2026-04-02)
+
+
+- feat(keycardai-oauth): add authorization code exchange and PKCE support
+- - Implement PKCE code verifier, challenge generation, and validation
+- Add authorization code exchange operation (sync and async)
+- Add build_authorize_url for constructing OAuth authorize URLs
+- Add exchange_authorization_code to Client and AsyncClient
+- Add get_endpoints/endpoints property to expose resolved endpoints
+- Add id_token field to TokenResponse
+
+## 0.7.0-keycardai-oauth (2026-03-06)
+
+
+- fix(keycardai-oauth): update test to expect OAuthProtocolError for structured error bodies
+- feat(keycardai-oauth)!: detailed error reporting
+- BREAKING CHANGE: Token exchange HTTP 4xx errors with structured JSON bodies now raise OAuthProtocolError instead of OAuthHttpError. Callers catching OAuthHttpError for these responses must update to catch OAuthProtocolError.
+
+## 0.6.0-keycardai-oauth (2025-11-17)
+
+
+- feat(keycardai-oauth): client metadata updates
+
+## 0.5.0-keycardai-oauth (2025-09-22)
+
+
+- feat(keycardai-oauth): client assertion support
+- feat(keycardai-oauth): JWKS type support
+
+## 0.4.1-keycardai-oauth (2025-09-17)
+
+
+- fix(keycardai-oauth): audience checks
+
+## 0.4.0-keycardai-oauth (2025-09-16)
+
+
+- feat(keycardai-oauth): multi-zone authentication strategy
+- feat(keycardai-oauth): jwt capabilities
+
 ## 0.21.0-keycardai-oauth (2026-07-16)
 
 
