@@ -13,7 +13,9 @@ Credential Providers:
     ApplicationCredential: Protocol for credential providers
     ClientSecret: Client credentials (BasicAuth) for token exchange
     WebIdentity: Private key JWT client assertion (RFC 7523)
-    EKSWorkloadIdentity: EKS workload identity with mounted tokens
+    WorkloadIdentity: Platform-signed OIDC token from a pluggable IdentityTokenSource
+    FileTokenSource, GCPMetadataTokenSource, FlyTokenSource: Built-in token sources
+    EKSWorkloadIdentity: Deprecated alias for WorkloadIdentity with a FileTokenSource
 
 Infrastructure:
     ClientFactory, DefaultClientFactory: OAuth client creation
@@ -26,7 +28,12 @@ from .credentials import (
     ApplicationCredential,
     ClientSecret,
     EKSWorkloadIdentity,
+    FileTokenSource,
+    FlyTokenSource,
+    GCPMetadataTokenSource,
+    IdentityTokenSource,
     WebIdentity,
+    WorkloadIdentity,
 )
 from .token_exchange import exchange_tokens_for_resources
 from .verifier import AccessToken, TokenVerifier
@@ -42,5 +49,10 @@ __all__ = [
     "ApplicationCredential",
     "ClientSecret",
     "EKSWorkloadIdentity",
+    "FileTokenSource",
+    "FlyTokenSource",
+    "GCPMetadataTokenSource",
+    "IdentityTokenSource",
     "WebIdentity",
+    "WorkloadIdentity",
 ]
