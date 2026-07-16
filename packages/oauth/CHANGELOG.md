@@ -1,3 +1,31 @@
+## 0.21.0-keycardai-oauth (2026-07-16)
+
+
+- feat(keycardai-oauth): add WorkloadIdentity credential with pluggable subject token sources (#191)
+- * feat(keycardai-oauth): add WorkloadIdentity credential with pluggable subject token sources
+- One generic WorkloadIdentity credential owns the exchange contract
+(jwt-bearer client assertion, no basic auth, fresh fetch per exchange,
+no caching). A one-method SubjectTokenSource protocol is the only
+per-platform code: FileTokenSource (EKS, AKS, Kubernetes projected
+tokens), GCPMetadataTokenSource (GKE, GCE, Cloud Run), FlyTokenSource
+(Fly Machines), or any bare callable.
+- The optional client_id constructor argument is sent as the client_id
+form parameter alongside the assertion; token-federation application
+credentials (KEP 108) are resolved by it.
+- EKSWorkloadIdentity becomes a deprecated subclass wrapping its existing
+discovery and read logic as a source, with unchanged signature,
+EKS-only env discovery, and unchanged error types, which are now
+subclasses of the new WorkloadIdentity{Configuration,Runtime}Error.
+- Implements the workload-identity spec (keycard-sdk-spec#39). ECO-110.
+- * refactor(keycardai-oauth): rename IdentityTokenSource from SubjectTokenSource
+- The source returns the platform-issued OIDC identity token, which the
+credential attaches as the client assertion. Naming it a subject token
+collided with TokenExchangeRequest.subject_token, which carries the
+inbound user token on the RFC 8693 exchange.
+- * docs(keycardai-oauth): note that sync identity token sources must not block
+- ---------
+- Co-authored-by: GitHub Action <action@github.com>
+
 ## 0.20.0-keycardai-oauth (2026-06-15)
 
 
