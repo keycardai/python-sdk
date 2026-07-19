@@ -705,6 +705,13 @@ class TestJWTCryptographicIntegration:
         with pytest.raises(ValueError, match="JWT verification failed"):
             decode_and_verify_jwt(token, wrong_public_pem, "RS256")
 
+    def test_unsupported_algorithm_rejected(self, rsa_key_pair, jwt_token_factory):
+        """Unknown algorithms are rejected, not silently mapped to a key type."""
+        token = jwt_token_factory({}, kid=rsa_key_pair["kid"])
+
+        with pytest.raises(ValueError, match="JWT verification failed"):
+            decode_and_verify_jwt(token, rsa_key_pair["public_pem"], "FOO256")
+
 
     def test_parse_jwt_access_token_integration(self, rsa_key_pair, jwt_token_factory):
         """Test the complete parse_jwt_access_token flow with real crypto."""

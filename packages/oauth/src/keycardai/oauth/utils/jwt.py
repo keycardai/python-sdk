@@ -57,7 +57,10 @@ _ALG_KEY_TYPE = {
 
 
 def _key_type_for_algorithm(algorithm: str) -> str:
-    return _ALG_KEY_TYPE.get(algorithm[:2], "RSA")
+    key_type = _ALG_KEY_TYPE.get(algorithm[:2])
+    if key_type is None:
+        raise ValueError(f"Unsupported JWT algorithm: {algorithm}")
+    return key_type
 
 
 def build_substitute_user_token(identifier: str) -> str:
