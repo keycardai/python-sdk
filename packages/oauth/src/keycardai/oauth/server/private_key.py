@@ -22,10 +22,11 @@ import uuid
 from pathlib import Path
 from typing import Any, Protocol
 
-from authlib.jose import JsonWebKey, JsonWebToken
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.serialization import PublicFormat
+from joserfc import jwt as jose_jwt
+from joserfc.jwk import import_key
 from pydantic import AnyHttpUrl, BaseModel
 
 from keycardai.oauth.types.models import (
@@ -209,7 +210,7 @@ class PrivateKeyManager:
             format=PublicFormat.SubjectPublicKeyInfo,
         )
 
-        jwk = JsonWebKey.import_key(public_key_pem)
+        jwk = import_key(public_key_pem, "RSA")
         public_key_jwk = jwk.as_dict()
 
         public_key_jwk["kid"] = self.key_id
@@ -289,12 +290,9 @@ class PrivateKeyManager:
 
         header = {"alg": "RS256", "typ": "JWT", "kid": self.key_id}
 
-        jwt = JsonWebToken(["RS256"])
-        private_key = serialization.load_pem_private_key(
-            self._private_key_pem.encode("utf-8"), password=None
-        )
+        private_key = import_key(self._private_key_pem, "RSA")
 
-        return jwt.encode(header, payload, private_key)
+        return jose_jwt.encode(header, payload, private_key)
 
     def get_client_id(self) -> str:
         return self.key_id
