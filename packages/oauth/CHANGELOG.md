@@ -1,3 +1,41 @@
+## 0.21.1-keycardai-oauth (2026-07-20)
+
+
+- fix(keycardai-oauth): migrate JOSE handling from authlib to joserfc (#195)
+- * fix(keycardai-oauth): migrate JOSE handling from authlib to joserfc
+- authlib.jose is deprecated and emits an AuthlibDeprecationWarning on
+import, surfacing to every SDK user. Migrate JWT signing/verification and
+JWK handling to joserfc (authlib 's recommended replacement, already in
+the dependency tree).
+- - decode_and_verify_jwt: import key via joserfc, decode with explicit
+  algorithms, return .claims
+- get_jwks_key: return import_key(jwk).as_pem()
+- create_client_assertion / key export: joserfc encode + import_key
+- derive key type from the JWS algorithm so PEM imports do not emit
+  joserfc's implicit-key SecurityWarning
+- drop the direct authlib dependency (remains transitively via fastmcp)
+- * fix(keycardai-oauth): reject unknown JWT algorithms; minimize lockfile diff
+- Address review feedback on the joserfc migration:
+- _key_type_for_algorithm now raises on an unrecognized algorithm instead
+  of silently defaulting to RSA (a genuine mismatch previously failed later
+  at key import / the algorithms=[...] gate; now it fails explicitly).
+- Hand-restore uv.lock to a minimal authlib->joserfc swap. Regenerating
+  under a newer uv had added unrelated python_full_version markers to
+  transitive deps (aiologic, onnxruntime deps, sympy). joserfc was already
+  present transitively, so only the oauth entry changes. Verified
+  consistent with uv sync --frozen.
+- * fix(keycardai-oauth): pin joserfc>=1.6.8 to clear GHSA advisories
+- This PR promotes joserfc to a first-class dependency, so it must not ship
+on a vulnerable floor. joserfc 1.6.4 is affected by:
+- GHSA-gg9x-qcx2-xmrh (HIGH): HS256/384/512 verify accepts empty/nil HMAC key
+- GHSA-wphv-vfrh-23q5 (MODERATE): b64=false RFC7797 JWS payload-size bypass
+- 1.6.8 fixes both (superset of the two Socket bot PRs #189/#190, which
+target 1.6.7 and 1.6.8). Root uv.lock resolves to 1.6.8; tests pass.
+Neither advisory affects our own code path (we verify RS256), but a
+correct floor matters for downstream consumers.
+- ---------
+- Co-authored-by: GitHub Action <action@github.com>
+
 ## 0.21.0-keycardai-oauth (2026-07-16)
 
 
