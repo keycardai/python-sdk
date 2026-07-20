@@ -2368,7 +2368,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.11.7" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=8.4.1" },
     { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=1.1.0" },
-    { name = "starlette", specifier = ">=0.47.3" },
+    { name = "starlette", specifier = ">=1.0.1" },
 ]
 provides-extras = ["test"]
 
