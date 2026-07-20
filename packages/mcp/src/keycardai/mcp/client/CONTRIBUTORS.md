@@ -1408,7 +1408,7 @@ Clear boundaries help maintain clean architecture.
 - Discovery and dynamic client registration
 - PKCE flow with state validation
 - Stores PKCE params in storage (works across processes)
-- Adapts cleanup behavior based on `coordinator.requires_synchronous_cleanup`
+- Cleans up flow state synchronously before the completion result is returned
 - Works with both LocalAuthCoordinator and StarletteAuthCoordinator
 
 **ApiKeyStrategy** (subclass):

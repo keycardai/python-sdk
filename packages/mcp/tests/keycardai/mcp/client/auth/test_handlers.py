@@ -169,6 +169,179 @@ class TestBuiltInCompletionHandlers:
             )
 
 
+def _token_client_factory():
+    """Client factory returning a mock client whose POST yields a token response."""
+    response = MagicMock()
+    response.status_code = 200
+    response.json = MagicMock(
+        return_value={"access_token": "access_xyz", "expires_in": 3600}
+    )
+
+    client = MagicMock()
+    client.__aenter__ = AsyncMock(return_value=client)
+    client.__aexit__ = AsyncMock(return_value=None)
+    client.post = AsyncMock(return_value=response)
+    return client
+
+
+async def _seed_pkce_state(storage: NamespacedStorage, state: str) -> None:
+    """Store the PKCE state the completion handler expects."""
+    await storage.set(
+        f"_pkce_state:{state}",
+        {
+            "code_verifier": "verifier",
+            "redirect_uri": "http://localhost:8080/callback",
+            "client_id": "client_123",
+            "token_endpoint": "https://auth.example.com/token",
+            "server_name": "test_server",
+        },
+    )
+
+
+class TestOAuthCompletionCleanup:
+    """Test that OAuth completion cleanup is synchronous and failure-tolerant."""
+
+    @pytest.mark.asyncio
+    async def test_cleanup_runs_before_handler_returns(self):
+        """PKCE state and pending auth are cleared before the handler returns.
+
+        The assertions on the coordinator mock run synchronously after the
+        await, without yielding to the event loop, so they fail if cleanup
+        were deferred to a fire-and-forget task.
+        """
+        coordinator = AsyncMock()
+        backend = InMemoryBackend()
+        storage = NamespacedStorage(
+            backend, "client:test_user:server:test_server:connection:oauth"
+        )
+        state = "state_sync_cleanup"
+        await _seed_pkce_state(storage, state)
+
+        result = await oauth_completion_handler(
+            coordinator,
+            storage,
+            {"code": "auth_code", "state": state},
+            client_factory=_token_client_factory,
+        )
+
+        assert result["success"] is True
+        coordinator.clear_auth_pending.assert_awaited_once_with(
+            context_id="test_user", server_name="test_server"
+        )
+
+        assert await storage.get(f"_pkce_state:{state}") is None
+        tokens = await storage.get("tokens")
+        assert tokens is not None
+        assert tokens["access_token"] == "access_xyz"
+
+    @pytest.mark.asyncio
+    async def test_pkce_delete_failure_still_clears_auth_pending(self):
+        """A failure deleting PKCE state must not skip clearing pending auth."""
+        coordinator = AsyncMock()
+        backend = InMemoryBackend()
+        storage = NamespacedStorage(
+            backend, "client:test_user:server:test_server:connection:oauth"
+        )
+        state = "state_pkce_failure"
+        await _seed_pkce_state(storage, state)
+
+        storage.delete = AsyncMock(side_effect=RuntimeError("storage down"))
+
+        result = await oauth_completion_handler(
+            coordinator,
+            storage,
+            {"code": "auth_code", "state": state},
+            client_factory=_token_client_factory,
+        )
+
+        assert result["success"] is True
+        storage.delete.assert_awaited_once_with(f"_pkce_state:{state}")
+        coordinator.clear_auth_pending.assert_awaited_once_with(
+            context_id="test_user", server_name="test_server"
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("legacy_value", [True, False])
+    async def test_run_cleanup_in_background_is_deprecated_and_ignored(
+        self, legacy_value
+    ):
+        """Passing run_cleanup_in_background warns and cleanup stays synchronous."""
+        coordinator = AsyncMock()
+        backend = InMemoryBackend()
+        storage = NamespacedStorage(
+            backend, "client:test_user:server:test_server:connection:oauth"
+        )
+        state = f"state_deprecated_{legacy_value}"
+        await _seed_pkce_state(storage, state)
+
+        with pytest.warns(DeprecationWarning, match="run_cleanup_in_background"):
+            result = await oauth_completion_handler(
+                coordinator,
+                storage,
+                {"code": "auth_code", "state": state},
+                client_factory=_token_client_factory,
+                run_cleanup_in_background=legacy_value,
+            )
+
+        assert result["success"] is True
+        coordinator.clear_auth_pending.assert_awaited_once_with(
+            context_id="test_user", server_name="test_server"
+        )
+        assert await storage.get(f"_pkce_state:{state}") is None
+
+
+class TestCompletionRouterCleanup:
+    """Test that CompletionRouter cleans up routing metadata synchronously."""
+
+    @pytest.mark.asyncio
+    async def test_route_metadata_deleted_before_completion_returns(self):
+        """The completion route is deleted before handle_completion returns."""
+        from keycardai.mcp.client.auth.coordinators.base import AuthCoordinator
+
+        class TestCoordinator(AuthCoordinator):
+            @property
+            def endpoint_type(self) -> str:
+                return "test"
+
+        registry = CompletionHandlerRegistry()
+
+        @registry.register("stub_completion")
+        async def stub_completion(coordinator, storage, params, **kwargs):
+            return {"success": True}
+
+        coordinator = TestCoordinator(
+            backend=InMemoryBackend(), handler_registry=registry
+        )
+
+        state = "state_router_cleanup"
+        await coordinator.register_completion_route(
+            routing_key=state,
+            handler_name="stub_completion",
+            storage_namespace="client:test_user:server:test_server:connection:oauth",
+            context_id="test_user",
+            server_name="test_server",
+        )
+
+        state_storage = coordinator.completion_router.state_storage
+        deleted_routes: list[str] = []
+        original_delete = state_storage.delete_completion_route
+
+        async def recording_delete(routing_key: str) -> None:
+            deleted_routes.append(routing_key)
+            await original_delete(routing_key)
+
+        state_storage.delete_completion_route = recording_delete
+
+        result = await coordinator.handle_completion(
+            {"code": "auth_code", "state": state}
+        )
+
+        assert result["success"] is True
+        # Synchronous assertion, no event loop yield: the delete already ran
+        assert deleted_routes == [state]
+        assert await state_storage.get_completion_route(state) is None
+
+
 class TestClientFactoryManagement:
     """Test client factory management in the registry."""
 
