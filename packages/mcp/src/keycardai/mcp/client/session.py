@@ -489,11 +489,32 @@ class Session:
         An auth challenge is created by the auth strategy when authentication
         is required but not yet complete (e.g., waiting for OAuth callback).
 
+        A connected session has no pending challenge by definition, so this
+        returns None when the session status is CONNECTED. Any record still
+        stored for this session at that point is stale (e.g. completion
+        cleanup did not run) and is cleared lazily.
+
         Returns:
             Dict with challenge details (strategy-specific) or None if no pending challenge.
             For OAuth: {'authorization_url': str, 'state': str}
             For other strategies: may contain different fields
         """
+        if self.status == SessionStatus.CONNECTED:
+            stale_challenge = await self.coordinator.get_auth_pending(
+                context_id=self.context.id,
+                server_name=self.server_name
+            )
+            if stale_challenge:
+                logger.debug(
+                    f"Session {self.server_name}: Clearing stale auth challenge "
+                    f"for connected session"
+                )
+                await self.coordinator.clear_auth_pending(
+                    context_id=self.context.id,
+                    server_name=self.server_name
+                )
+            return None
+
         # Auth challenge is stored in coordinator
         return await self.coordinator.get_auth_pending(
             context_id=self.context.id,

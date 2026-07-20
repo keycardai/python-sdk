@@ -1016,6 +1016,45 @@ class TestClientGetAuthChallenges:
         assert challenges[0]["state"] == "abc123"
         assert challenges[0]["other_field"] == "value"
 
+    @pytest.mark.asyncio
+    async def test_get_auth_challenges_empty_for_connected_session_with_stale_record(self):
+        """Test that a connected session's stale pending-auth record is not surfaced.
+
+        Simulates a completed authorization and auto-reconnect where the
+        completion cleanup task was dropped before running: the pending-auth
+        record is still in coordinator storage, but the session is CONNECTED.
+        get_auth_challenges() must return an empty list without any
+        consumer-side filtering.
+        """
+        servers = {"test_server": {"url": "http://localhost:3000"}}
+        mock_coordinator = MockAuthCoordinator()
+
+        client = Client(servers=servers, auth_coordinator=mock_coordinator)
+
+        # Real Session (not a mock) so the CONNECTED short-circuit is exercised
+        session = client.sessions["test_server"]
+
+        # Stale record left behind by a dropped cleanup task
+        await mock_coordinator.set_auth_pending(
+            context_id=client.context.id,
+            server_name="test_server",
+            auth_metadata={
+                "authorization_url": "http://auth.example.com",
+                "state": "state123"
+            }
+        )
+        session.status = SessionStatus.CONNECTED
+
+        challenges = await client.get_auth_challenges()
+
+        assert challenges == []
+        # The stale record was cleared lazily
+        stored = await mock_coordinator.get_auth_pending(
+            context_id=client.context.id,
+            server_name="test_server"
+        )
+        assert stored is None
+
 
 class TestClientIdGeneration:
     """Test Client ID generation."""

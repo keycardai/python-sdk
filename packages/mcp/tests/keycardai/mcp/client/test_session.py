@@ -867,6 +867,90 @@ class TestSessionGetAuthChallenge:
         result = await session.get_auth_challenge()
         assert result == custom_challenge
 
+    @pytest.mark.asyncio
+    async def test_get_auth_challenge_returns_challenge_when_auth_pending_status(self):
+        """Test that a session in AUTH_PENDING status surfaces the stored challenge."""
+        storage = InMemoryBackend()
+        coordinator = MockAuthCoordinator(storage)
+        context = coordinator.create_context("user:alice")
+
+        server_config = {"url": "http://localhost:3000"}
+        session = Session("test_server", server_config, context, coordinator)
+        session.status = SessionStatus.AUTH_PENDING
+
+        challenge = {
+            "authorization_url": "http://auth.example.com",
+            "state": "state123"
+        }
+        await coordinator.set_auth_pending(
+            context_id=context.id,
+            server_name="test_server",
+            auth_metadata=challenge
+        )
+
+        result = await session.get_auth_challenge()
+
+        assert result == challenge
+
+    @pytest.mark.asyncio
+    async def test_get_auth_challenge_returns_none_when_connected(self):
+        """Test that a connected session never advertises an auth challenge.
+
+        Simulates a completed authorization whose cleanup task was dropped or
+        cancelled: the pending-auth record is still in storage, but the session
+        is CONNECTED, so no challenge is returned and the stale record is
+        cleared lazily.
+        """
+        storage = InMemoryBackend()
+        coordinator = MockAuthCoordinator(storage)
+        context = coordinator.create_context("user:alice")
+
+        server_config = {"url": "http://localhost:3000"}
+        session = Session("test_server", server_config, context, coordinator)
+
+        # Stale record left behind by a dropped cleanup task
+        await coordinator.set_auth_pending(
+            context_id=context.id,
+            server_name="test_server",
+            auth_metadata={
+                "authorization_url": "http://auth.example.com",
+                "state": "state123"
+            }
+        )
+        session.status = SessionStatus.CONNECTED
+
+        result = await session.get_auth_challenge()
+
+        assert result is None
+        # The stale record was cleared from storage
+        stored = await coordinator.get_auth_pending(
+            context_id=context.id,
+            server_name="test_server"
+        )
+        assert stored is None
+
+    @pytest.mark.asyncio
+    async def test_requires_auth_returns_false_when_connected_with_stale_record(self):
+        """Test that requires_auth is False for a connected session with a stale record."""
+        storage = InMemoryBackend()
+        coordinator = MockAuthCoordinator(storage)
+        context = coordinator.create_context("user:alice")
+
+        server_config = {"url": "http://localhost:3000"}
+        session = Session("test_server", server_config, context, coordinator)
+
+        await coordinator.set_auth_pending(
+            context_id=context.id,
+            server_name="test_server",
+            auth_metadata={
+                "authorization_url": "http://auth.example.com",
+                "state": "state123"
+            }
+        )
+        session.status = SessionStatus.CONNECTED
+
+        assert await session.requires_auth() is False
+
 
 class TestSessionStorageIsolation:
     """Test Session storage isolation between different sessions."""
