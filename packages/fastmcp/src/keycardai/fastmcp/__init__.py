@@ -6,13 +6,16 @@ and FastMCP servers, enabling secure authentication and authorization.
 Components:
 - AuthProvider: Keycard authentication provider with RemoteAuthProvider creation and grant dependency
 - AccessContext: Typed context object for accessing delegated tokens, injected into tool parameters
-- GrantDependency: Injectable dependency returned by AuthProvider.grant() (also usable as a decorator)
-- override_access_context: Public testing seam for faking delegated access in tests
 - Application credentials: ClientSecret, WebIdentity, EKSWorkloadIdentity for different authentication scenarios
 - Auth strategies: BasicAuth, MultiZoneBasicAuth, NoneAuth for HTTP client authentication
 
+GrantDependency is the return type of AuthProvider.grant(); it is exported for
+type annotations only and is never constructed directly. Testing seams live in
+keycardai.fastmcp.testing (mock_access_context is also re-exported here for
+backward compatibility).
+
 Re-export Guide:
-    Local definitions (primary API): AuthProvider, AccessContext, GrantDependency, override_access_context
+    Local definitions (primary API): AuthProvider, AccessContext
     From keycardai.mcp.server.auth: ApplicationCredential, ClientSecret, EKSWorkloadIdentity, WebIdentity
     From keycardai.mcp.server.auth.client_factory: ClientFactory, DefaultClientFactory
     From keycardai.oauth.http.auth: AuthStrategy, BasicAuth, MultiZoneBasicAuth, NoneAuth
@@ -118,7 +121,6 @@ from .provider import (
     AccessContext,
     AuthProvider,
     GrantDependency,
-    override_access_context,
 )
 from .testing import mock_access_context
 
@@ -126,6 +128,8 @@ __all__ = [
     # === Primary API (Local Definitions) ===
     "AuthProvider",
     "AccessContext",
+    # === Typing Support ===
+    # Return type of AuthProvider.grant(); exported for annotations, never constructed directly
     "GrantDependency",
     # === Application Credentials (re-exported from keycardai.mcp.server.auth) ===
     "ApplicationCredential",
@@ -161,5 +165,4 @@ __all__ = [
     "MetadataDiscoveryError",
     # === Testing Utilities ===
     "mock_access_context",
-    "override_access_context",
 ]
