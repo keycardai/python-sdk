@@ -244,6 +244,12 @@ class KeycardAuthBackend(AuthenticationBackend):
             # complete for a server-side reason (unreachable zone, non-2xx
             # JWKS, cross-origin jwks_uri). Signal a retryable 503 rather than
             # letting the exception escape to a 500 with a stack trace.
+            #
+            # This bucket intentionally lists the named discovery/fetch classes,
+            # not the OAuthServerError base. Config and cache faults
+            # (VerifierConfigError, CacheError) are not per-request failures, so
+            # they stay on the unexpected-error path (500) instead of a 503 that
+            # would falsely advertise the fault as transient.
             raise KeycardAuthError(
                 "temporarily_unavailable",
                 "Unable to reach the authorization server to verify the token",
