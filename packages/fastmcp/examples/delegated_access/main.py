@@ -1,20 +1,20 @@
 """GitHub API Integration with Keycard Delegated Access.
 
-This example demonstrates how to use the @grant decorator to request
-token exchange for accessing external APIs (GitHub) on behalf of
+This example demonstrates how to declare a grant as a typed tool parameter
+to request token exchange for accessing external APIs (GitHub) on behalf of
 authenticated users.
 
 Key concepts demonstrated:
 - AuthProvider setup with ClientSecret credentials
-- @grant decorator for requesting token exchange
-- AccessContext for accessing exchanged tokens
+- auth_provider.grant(...) as a typed parameter default for token exchange
+- AccessContext injected into the tool, hidden from the tool's input schema
 - Comprehensive error handling patterns
 """
 
 import os
 
 import httpx
-from fastmcp import Context, FastMCP
+from fastmcp import FastMCP
 
 from keycardai.fastmcp import AccessContext, AuthProvider, ClientSecret
 
@@ -41,31 +41,29 @@ mcp = FastMCP("GitHub API Server", auth=auth)
 
 
 @mcp.tool()
-@auth_provider.grant("https://api.github.com")
-async def get_github_user(ctx: Context) -> dict:
+async def get_github_user(
+    access: AccessContext = auth_provider.grant("https://api.github.com"),
+) -> dict:
     """Get the authenticated GitHub user's profile.
 
     Demonstrates:
-    - Basic @grant decorator usage
+    - Basic grant-as-parameter usage
     - Error checking with has_errors()
-    - Token access via AccessContext
+    - Token access via the injected AccessContext
 
     Args:
-        ctx: FastMCP context with Keycard authentication state
+        access: Injected access context holding the exchanged GitHub token
 
     Returns:
         User profile data or error details
     """
-    # Get access context from FastMCP context namespace
-    access_context: AccessContext = await ctx.get_state("keycardai")
-
     # Check for any errors (global or resource-specific)
-    if access_context.has_errors():
-        errors = access_context.get_errors()
+    if access.has_errors():
+        errors = access.get_errors()
         return {"error": "Token exchange failed", "details": errors}
 
     # Get the exchanged token for GitHub API
-    token = access_context.access("https://api.github.com").access_token
+    token = access.access("https://api.github.com").access_token
 
     # Call GitHub API with delegated token
     async with httpx.AsyncClient() as client:
@@ -94,37 +92,37 @@ async def get_github_user(ctx: Context) -> dict:
 
 
 @mcp.tool()
-@auth_provider.grant("https://api.github.com")
-async def list_github_repos(ctx: Context, per_page: int = 5) -> dict:
+async def list_github_repos(
+    per_page: int = 5,
+    access: AccessContext = auth_provider.grant("https://api.github.com"),
+) -> dict:
     """List the authenticated user's GitHub repositories.
 
     Demonstrates:
     - Resource-specific error checking with has_resource_error()
     - Getting resource-specific errors with get_resource_error()
-    - Parameterized API calls
+    - Mixing regular tool parameters with an injected grant
 
     Args:
-        ctx: FastMCP context with Keycard authentication state
         per_page: Number of repositories to return (default: 5)
+        access: Injected access context holding the exchanged GitHub token
 
     Returns:
         List of repositories or error details
     """
-    access_context: AccessContext = await ctx.get_state("keycardai")
-
     # Check for resource-specific error (alternative to has_errors())
-    if access_context.has_resource_error("https://api.github.com"):
-        resource_errors = access_context.get_resource_error("https://api.github.com")
+    if access.has_resource_error("https://api.github.com"):
+        resource_errors = access.get_resource_error("https://api.github.com")
         return {
             "message": "Token exchange failed for GitHub API",
             "details": resource_errors,
         }
 
     # Check for global errors (e.g., no auth token available)
-    if access_context.has_error():
-        return {"error": "Global token error", "details": access_context.get_error()}
+    if access.has_error():
+        return {"error": "Global token error", "details": access.get_error()}
 
-    token = access_context.access("https://api.github.com").access_token
+    token = access.access("https://api.github.com").access_token
 
     async with httpx.AsyncClient() as client:
         response = await client.get(
