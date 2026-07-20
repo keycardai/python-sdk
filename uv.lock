@@ -2310,9 +2310,9 @@ dev = [{ name = "pytest-cov", specifier = ">=6.2.1" }]
 name = "keycardai-oauth"
 source = { editable = "packages/oauth" }
 dependencies = [
-    { name = "authlib" },
     { name = "cryptography" },
     { name = "httpx" },
+    { name = "joserfc" },
     { name = "pydantic" },
 ]
 
@@ -2329,9 +2329,9 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "authlib", specifier = ">=1.6.3" },
     { name = "cryptography", specifier = ">=45.0.7" },
     { name = "httpx", specifier = ">=0.28.1" },
+    { name = "joserfc", specifier = ">=1.6.8" },
     { name = "pydantic", specifier = ">=2.11.7" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=8.4.1" },
     { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=1.1.0" },

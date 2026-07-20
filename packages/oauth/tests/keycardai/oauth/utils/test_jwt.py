@@ -6,9 +6,10 @@ import time
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
-from authlib.jose import JsonWebKey, JsonWebSignature
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
+from joserfc import jwt as jose_jwt
+from joserfc.jwk import import_key
 
 from keycardai.oauth.exceptions import JWKSFetchError, JWKSKeyNotFoundError
 from keycardai.oauth.utils.jwt import (
@@ -321,25 +322,27 @@ class TestJWTAccessToken:
 class TestJWTVerification:
     """Test JWT verification functionality."""
 
-    @patch("keycardai.oauth.utils.jwt.JsonWebToken")
-    def test_decode_and_verify_jwt_success(self, mock_jwt_class):
+    @patch("keycardai.oauth.utils.jwt.import_key")
+    @patch("keycardai.oauth.utils.jwt.jose_jwt")
+    def test_decode_and_verify_jwt_success(self, mock_jwt, mock_import_key):
         """Test successful JWT verification."""
-        mock_jwt = Mock()
-        mock_jwt.decode.return_value = {"sub": "user123", "iss": "example.com"}
-        mock_jwt_class.return_value = mock_jwt
+        mock_token = Mock()
+        mock_token.claims = {"sub": "user123", "iss": "example.com"}
+        mock_jwt.decode.return_value = mock_token
 
         result = decode_and_verify_jwt("token", "key", "RS256")
 
         assert result == {"sub": "user123", "iss": "example.com"}
-        mock_jwt_class.assert_called_once_with(["RS256"])
-        mock_jwt.decode.assert_called_once_with("token", "key")
+        mock_import_key.assert_called_once_with("key", "RSA")
+        mock_jwt.decode.assert_called_once_with(
+            "token", mock_import_key.return_value, algorithms=["RS256"]
+        )
 
-    @patch("keycardai.oauth.utils.jwt.JsonWebToken")
-    def test_decode_and_verify_jwt_failure(self, mock_jwt_class):
+    @patch("keycardai.oauth.utils.jwt.import_key")
+    @patch("keycardai.oauth.utils.jwt.jose_jwt")
+    def test_decode_and_verify_jwt_failure(self, mock_jwt, mock_import_key):
         """Test JWT verification failure."""
-        mock_jwt = Mock()
         mock_jwt.decode.side_effect = Exception("Invalid signature")
-        mock_jwt_class.return_value = mock_jwt
 
         with pytest.raises(ValueError, match="JWT verification failed"):
             decode_and_verify_jwt("token", "key", "RS256")
@@ -433,9 +436,9 @@ class TestJWKSKeyFetching:
     @pytest.mark.asyncio
     @patch("keycardai.oauth.utils.jwt.HttpxAsyncTransport")
     @patch("keycardai.oauth.utils.jwt.ClientConfig")
-    @patch("keycardai.oauth.utils.jwt.JsonWebKey")
+    @patch("keycardai.oauth.utils.jwt.import_key")
     async def test_get_jwks_key_with_kid(
-        self, mock_jwk_class, mock_config_class, mock_transport_class
+        self, mock_import_key, mock_config_class, mock_transport_class
     ):
         """Test JWKS key fetching with specific key ID."""
         # Mock response
@@ -457,13 +460,13 @@ class TestJWKSKeyFetching:
 
         # Mock JWK
         mock_jwk = Mock()
-        mock_jwk.get_public_key.return_value = "public_key_pem"
-        mock_jwk_class.import_key.return_value = mock_jwk
+        mock_jwk.as_pem.return_value = b"public_key_pem"
+        mock_import_key.return_value = mock_jwk
 
         key = await get_jwks_key("key1", "https://example.com/.well-known/jwks.json")
 
         assert key == "public_key_pem"
-        mock_jwk_class.import_key.assert_called_once_with(
+        mock_import_key.assert_called_once_with(
             {"kid": "key1", "kty": "RSA", "use": "sig"}
         )
 
@@ -507,9 +510,9 @@ class TestJWKSKeyFetching:
     @pytest.mark.asyncio
     @patch("keycardai.oauth.utils.jwt.HttpxAsyncTransport")
     @patch("keycardai.oauth.utils.jwt.ClientConfig")
-    @patch("keycardai.oauth.utils.jwt.JsonWebKey")
+    @patch("keycardai.oauth.utils.jwt.import_key")
     async def test_get_jwks_key_single_key_no_kid(
-        self, mock_jwk_class, mock_config_class, mock_transport_class
+        self, mock_import_key, mock_config_class, mock_transport_class
     ):
         """Test JWKS key fetching with single key and no kid parameter."""
         mock_response = Mock()
@@ -523,13 +526,13 @@ class TestJWKSKeyFetching:
         mock_transport_class.return_value = mock_transport
 
         mock_jwk = Mock()
-        mock_jwk.get_public_key.return_value = "public_key_pem"
-        mock_jwk_class.import_key.return_value = mock_jwk
+        mock_jwk.as_pem.return_value = b"public_key_pem"
+        mock_import_key.return_value = mock_jwk
 
         key = await get_jwks_key(None, "https://example.com/.well-known/jwks.json")
 
         assert key == "public_key_pem"
-        mock_jwk_class.import_key.assert_called_once_with({"kty": "RSA", "use": "sig"})
+        mock_import_key.assert_called_once_with({"kty": "RSA", "use": "sig"})
 
     @pytest.mark.asyncio
     @patch("keycardai.oauth.utils.jwt.HttpxAsyncTransport")
@@ -623,12 +626,8 @@ def jwt_token_factory(rsa_key_pair):
 
         final_claims = {**default_claims, **claims}
 
-        jws = JsonWebSignature()
-        jwk = JsonWebKey.import_key(rsa_key_pair["private_pem"])
-
-        payload_json = json.dumps(final_claims)
-
-        token = jws.serialize_compact(header, payload_json, jwk)
+        private_key = import_key(rsa_key_pair["private_pem"], "RSA")
+        token = jose_jwt.encode(header, final_claims, private_key)
         return token.decode('utf-8') if isinstance(token, bytes) else token
 
     return create_token
@@ -705,6 +704,13 @@ class TestJWTCryptographicIntegration:
 
         with pytest.raises(ValueError, match="JWT verification failed"):
             decode_and_verify_jwt(token, wrong_public_pem, "RS256")
+
+    def test_unsupported_algorithm_rejected(self, rsa_key_pair, jwt_token_factory):
+        """Unknown algorithms are rejected, not silently mapped to a key type."""
+        token = jwt_token_factory({}, kid=rsa_key_pair["kid"])
+
+        with pytest.raises(ValueError, match="JWT verification failed"):
+            decode_and_verify_jwt(token, rsa_key_pair["public_pem"], "FOO256")
 
 
     def test_parse_jwt_access_token_integration(self, rsa_key_pair, jwt_token_factory):

@@ -34,13 +34,33 @@ import base64
 import json
 from typing import Any
 
-from authlib.jose import JsonWebKey, JsonWebToken
+from joserfc import jwt as jose_jwt
+from joserfc.jwk import import_key
 from pydantic import BaseModel
 
 from ..exceptions import JWKSError, JWKSFetchError, JWKSKeyNotFoundError
 from ..http._transports import HttpxAsyncTransport
 from ..http._wire import HttpRequest
 from ..types.models import ClientConfig
+
+# joserfc requires an explicit key type when importing a PEM/DER key, otherwise
+# it emits a SecurityWarning about implicit key types. Derive the key type from
+# the JWS algorithm so PEM imports stay quiet and unambiguous. Importing from a
+# JWK dict does not need this since the dict carries its own "kty".
+_ALG_KEY_TYPE = {
+    "RS": "RSA",
+    "PS": "RSA",
+    "ES": "EC",
+    "Ed": "OKP",
+    "HS": "oct",
+}
+
+
+def _key_type_for_algorithm(algorithm: str) -> str:
+    key_type = _ALG_KEY_TYPE.get(algorithm[:2])
+    if key_type is None:
+        raise ValueError(f"Unsupported JWT algorithm: {algorithm}")
+    return key_type
 
 
 def build_substitute_user_token(identifier: str) -> str:
@@ -398,7 +418,7 @@ class JWTAccessToken(BaseModel):
 def decode_and_verify_jwt(
     jwt_token: str, verification_key: str, algorithm: str = "RS256"
 ) -> dict:
-    """Decode and verify JWT token signature using authlib.
+    """Decode and verify JWT token signature using joserfc.
 
     Args:
         jwt_token: JWT token string (without Bearer prefix)
@@ -412,9 +432,9 @@ def decode_and_verify_jwt(
         ValueError: If token is invalid, malformed, or signature verification fails
     """
     try:
-        jwt = JsonWebToken([algorithm])
-        claims = jwt.decode(jwt_token, verification_key)
-        return claims
+        key = import_key(verification_key, _key_type_for_algorithm(algorithm))
+        token = jose_jwt.decode(jwt_token, key, algorithms=[algorithm])
+        return token.claims
     except Exception as e:
         raise ValueError(f"JWT verification failed: {e}") from e
 
@@ -554,13 +574,13 @@ async def get_jwks_key(
         if kid:
             for key_data in keys:
                 if key_data.get("kid") == kid:
-                    jwk = JsonWebKey.import_key(key_data)
-                    return jwk.get_public_key()  # type: ignore
+                    jwk = import_key(key_data)
+                    return jwk.as_pem().decode("utf-8")
             raise JWKSKeyNotFoundError(f"Key ID '{kid}' not found")
         else:
             if len(keys) == 1:
-                jwk = JsonWebKey.import_key(keys[0])
-                return jwk.get_public_key()  # type: ignore
+                jwk = import_key(keys[0])
+                return jwk.as_pem().decode("utf-8")
             elif len(keys) > 1:
                 raise JWKSKeyNotFoundError("Multiple keys in JWKS but no key ID (kid) in token")
             else:

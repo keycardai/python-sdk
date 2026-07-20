@@ -1,7 +1,7 @@
 """Keycard OAuth Server Primitives.
 
 Framework-free server components for protecting any HTTP API with Keycard.
-These components depend only on pydantic, httpx, authlib, and cryptography —
+These components depend only on pydantic, httpx, joserfc, and cryptography —
 no MCP, Starlette, or other framework dependencies.
 
 Core Components:
