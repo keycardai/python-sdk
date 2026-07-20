@@ -1,3 +1,35 @@
+## 0.11.0-keycardai-starlette (2026-07-20)
+
+
+- fix(keycardai-starlette): return 401/503 (not 500) for JWKS errors (#196)
+- * fix(keycardai-starlette): return 401/503 (not 500) for JWKS errors
+- KeycardAuthBackend.authenticate() caught only InvalidTokenError. JWKS
+errors are a separate tree (JWKSError/JWKSKeyNotFoundError extend
+OAuthError(Exception); JWKSDiscoveryError/JWKSUriValidationError extend
+OAuthServerError(Exception)), none of which is InvalidTokenError or a
+Starlette AuthenticationError. They escaped AuthenticationMiddleware to
+ServerErrorMiddleware, yielding HTTP 500 with no WWW-Authenticate.
+- So a token whose kid is absent from the JWKS (forged, or rotated out),
+or an unreachable/non-2xx JWKS or discovery endpoint, returned 500
+instead of a 401 (client should re-auth) or 503 (transient). This is the
+Python-side of the same bug reported against the TypeScript SDK (#119).
+- Map the JWKS error classes at the auth boundary:
+- JWKSKeyNotFoundError -> KeycardAuthError invalid_token (401 + challenge)
+- JWKSError / JWKSDiscoveryError / JWKSUriValidationError -> 503
+- _build_unauthorized_response now emits a bare 503 body with no
+WWW-Authenticate header for 5xx, since that challenge is not one a client
+can satisfy by re-authenticating.
+- Refs keycardai/typescript-sdk#119
+- * docs(keycardai-starlette): note the 503 bucket is intentionally narrow
+- The 503 except clause lists the named JWKS discovery/fetch classes rather
+than the OAuthServerError base on purpose: config and cache faults
+(VerifierConfigError, CacheError) are not per-request failures and must
+stay on the unexpected-error path (500), not be advertised as a
+transient 503.
+- Comment only, no behavior change.
+- ---------
+- Co-authored-by: GitHub Action <action@github.com>
+
 ## 0.10.0-keycardai-starlette (2026-06-15)
 
 
