@@ -280,6 +280,41 @@ class TestFromContext:
         assert "No Keycard access context" in access.get_error()["message"]
 
 
+class TestEndToEndWithFastMCPServer:
+    """Full round trip through a real FastMCP server and in-memory client."""
+
+    @pytest.mark.asyncio
+    async def test_injected_param_through_real_server(self, auth_provider):
+        from fastmcp import Client, FastMCP
+
+        mcp = FastMCP("test-server")
+
+        @mcp.tool()
+        async def get_data(
+            user_id: str,
+            access: AccessContext = auth_provider.grant("https://api.example.com"),
+        ) -> str:
+            token = access.access("https://api.example.com").access_token
+            return f"{user_id}:{token}"
+
+        fake = AccessContext()
+        fake.set_token(
+            "https://api.example.com",
+            TokenResponse(access_token="e2e_token", token_type="Bearer"),
+        )
+
+        with override_access_context(fake):
+            async with Client(mcp) as client:
+                tools = await client.list_tools()
+                schema_props = tools[0].inputSchema.get("properties", {})
+                assert list(schema_props.keys()) == ["user_id"], (
+                    "AccessContext parameter must not appear in the tool input schema"
+                )
+
+                result = await client.call_tool("get_data", {"user_id": "user123"})
+                assert result.content[0].text == "user123:e2e_token"
+
+
 class TestOverrideAccessContextSeam:
     """override_access_context() bypasses token acquisition and exchange."""
 
