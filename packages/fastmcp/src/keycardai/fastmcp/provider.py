@@ -245,6 +245,9 @@ def _annotation_matches(annotation: Any, target: type) -> bool:
         return True
     if isinstance(annotation, str):
         # Unresolvable forward reference: match on the bare class name.
+        # Reached only when get_type_hints failed for the whole function, so a
+        # same-named unrelated class can false-positive here; the tradeoff is
+        # accepted to keep TYPE_CHECKING-only imports working.
         parts = [part.strip() for part in annotation.split("|")]
         return any(part.split(".")[-1] == target.__name__ for part in parts)
     origin = get_origin(annotation)
@@ -491,7 +494,10 @@ class GrantDependency(Dependency[AccessContext]):
       ``await ctx.get_state("keycardai")``.
 
     Errors are recorded on the returned AccessContext, never raised
-    (see :meth:`AccessContext.get_errors`).
+    (see :meth:`AccessContext.get_errors`). Multi-resource grants are
+    all-or-nothing: if any exchange fails, the AccessContext carries the
+    failing resource's error and no tokens, including tokens for resources
+    that exchanged successfully before the failure.
 
     Instances are stateless between calls: all per-request state lives on the
     AccessContext produced by each resolution, so a single instance is safe to
@@ -1024,6 +1030,9 @@ class AuthProvider:
 
         Never raises: failures are recorded on the returned AccessContext as
         a global error (token acquisition) or a resource error (exchange).
+        Multi-resource grants are all-or-nothing: the first failed exchange
+        stops the loop and no tokens are populated, including ones already
+        exchanged successfully.
         Honors the override_access_context() testing seam.
         """
         override = _access_context_override.get()

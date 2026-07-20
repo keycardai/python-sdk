@@ -32,6 +32,9 @@ class _MockAccessContext(AccessContext):
         try:
             return super().access(resource)
         except Exception:
+            # Recording the miss on a read path is test-double behavior only:
+            # it keeps has_errors() observable after a failed lookup, which
+            # tests written against the original mock rely on.
             if not self.has_error() and not self.has_resource_error(resource):
                 self.set_resource_error(
                     resource, {"message": f"Resource not granted: {resource}"}
@@ -59,6 +62,13 @@ def mock_access_context(
         resource_tokens: Dict mapping resource URLs to specific access tokens (dict[str, str])
         has_errors: Whether the access context should report errors (bool)
         error_message: Error message to return when has_errors=True (str)
+
+    Note:
+        The bare ``access_token`` form answers for **any** resource, including
+        ones the tool never granted, so it cannot catch a mistyped resource URL
+        in an ``access(...)`` call; in production that raises
+        :class:`ResourceAccessError`. Use ``resource_tokens={...}`` when the
+        test should enforce which resources the tool reads.
 
     Examples:
         # 1. Default - always returns access token
