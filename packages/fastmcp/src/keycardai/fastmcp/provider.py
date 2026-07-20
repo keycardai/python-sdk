@@ -11,17 +11,22 @@ from __future__ import annotations
 import inspect
 import logging
 import os
+import warnings
 from collections.abc import Callable
+from contextlib import contextmanager
+from contextvars import ContextVar
 from functools import wraps
-from typing import Any
+from types import UnionType
+from typing import Annotated, Any, Union, get_args, get_origin, get_type_hints
 from urllib.parse import urlparse
 
 from pydantic import AnyHttpUrl
 
 from fastmcp import Context
+from fastmcp.dependencies import Dependency
 from fastmcp.server.auth import RemoteAuthProvider
 from fastmcp.server.auth.providers.jwt import JWTVerifier
-from fastmcp.server.dependencies import get_access_token
+from fastmcp.server.dependencies import get_access_token, get_context
 from keycardai.mcp.server.auth import (
     ApplicationCredential,
     ClientSecret,
@@ -60,6 +65,7 @@ __all__ = [
     "Context",
     "DefaultClientFactory",
     "EKSWorkloadIdentity",
+    "GrantDependency",
     "JWTVerifier",
     "MissingContextError",
     "NoneAuth",
@@ -73,6 +79,7 @@ __all__ = [
     "get_claims",
     "get_token_debug_info",
     "introspect",
+    "override_access_context",
 ]
 
 logger = logging.getLogger(__name__)
@@ -174,6 +181,140 @@ def get_token_debug_info(access_token: str) -> dict[str, Any]:
 
     except Exception:
         return {"error": "Failed to parse token"}
+
+
+# FastMCP context state key under which the AccessContext is stored.
+# Reading it via ctx.get_state(KEYCARD_STATE_KEY) is deprecated in favor of
+# declaring an AccessContext parameter; the key remains written during the
+# deprecation window and for AccessContext.from_context().
+KEYCARD_STATE_KEY = "keycardai"
+
+# Testing seam: when set, grant() skips token acquisition and exchange and
+# yields this AccessContext instead. Set via override_access_context().
+_access_context_override: ContextVar[AccessContext | None] = ContextVar(
+    "keycardai_access_context_override", default=None
+)
+
+
+@contextmanager
+def override_access_context(access_context: AccessContext):
+    """Force Keycard grants to resolve to the given AccessContext.
+
+    Public testing seam: while the context manager is active, every grant
+    resolution (injected-parameter or decorator form) skips caller-token
+    lookup and RFC 8693 exchange and produces ``access_context`` instead.
+    This is the supported way to fake delegated access in tests without
+    patching module internals.
+
+    Args:
+        access_context: The AccessContext instance to inject into tools.
+
+    Example:
+        ```python
+        from keycardai.fastmcp import AccessContext, override_access_context
+        from keycardai.oauth.types.models import TokenResponse
+
+        access = AccessContext()
+        access.set_token("https://api.example.com", TokenResponse(
+            access_token="fake", token_type="Bearer",
+        ))
+        with override_access_context(access):
+            result = await my_tool.run(...)
+        ```
+    """
+    token = _access_context_override.set(access_context)
+    try:
+        yield access_context
+    finally:
+        _access_context_override.reset(token)
+
+
+def _annotation_matches(annotation: Any, target: type) -> bool:
+    """Check whether a parameter annotation refers to ``target``.
+
+    Handles resolved classes, subclasses, ``X | None`` / Optional unions,
+    ``Annotated[X, ...]``, and unresolved string annotations (as produced by
+    ``from __future__ import annotations`` when get_type_hints cannot resolve
+    them).
+    """
+    if annotation is inspect.Parameter.empty or annotation is None:
+        return False
+    if annotation is target:
+        return True
+    if inspect.isclass(annotation) and issubclass(annotation, target):
+        return True
+    if isinstance(annotation, str):
+        # Unresolvable forward reference: match on the bare class name.
+        parts = [part.strip() for part in annotation.split("|")]
+        return any(part.split(".")[-1] == target.__name__ for part in parts)
+    origin = get_origin(annotation)
+    if origin is Annotated:
+        return _annotation_matches(get_args(annotation)[0], target)
+    if origin is Union or origin is UnionType or isinstance(annotation, UnionType):
+        return any(_annotation_matches(arg, target) for arg in get_args(annotation))
+    return False
+
+
+def _find_param_of_type(func: Callable, target: type) -> str | None:
+    """Find the first parameter of ``func`` annotated with ``target``.
+
+    Resolves string annotations via get_type_hints so functions defined in
+    modules using ``from __future__ import annotations`` are handled
+    correctly.
+    """
+    signature = inspect.signature(func)
+    try:
+        hints = get_type_hints(func, include_extras=True)
+    except Exception:
+        hints = {}
+    for name, parameter in signature.parameters.items():
+        annotation = hints.get(name, parameter.annotation)
+        if _annotation_matches(annotation, target):
+            return name
+    return None
+
+
+def _get_context(*args, **kwargs) -> Context | None:
+    """Find a FastMCP Context instance in a call's arguments."""
+    for value in args:
+        if isinstance(value, Context):
+            return value
+    for value in kwargs.values():
+        if isinstance(value, Context):
+            return value
+    return None
+
+
+def _current_context_or_none() -> Context | None:
+    """Return the active FastMCP request context, or None outside a request."""
+    try:
+        return get_context()
+    except RuntimeError:
+        return None
+
+
+async def _call_func(is_async_func: bool, func: Callable, *args, **kwargs):
+    if is_async_func:
+        return await func(*args, **kwargs)
+    return func(*args, **kwargs)
+
+
+def _scope_for(
+    request_scopes: str | list[str] | dict[str, str | list[str]] | None,
+    resource: str,
+) -> str | None:
+    """Resolve the RFC 8693 scope string to request for a resource."""
+    if request_scopes is None:
+        return None
+    value = (
+        request_scopes.get(resource)
+        if isinstance(request_scopes, dict)
+        else request_scopes
+    )
+    if value is None:
+        return None
+    scope = " ".join(value) if isinstance(value, list) else value
+    return scope or None
 
 
 class AccessContext:
@@ -292,6 +433,169 @@ class AccessContext:
 
         return self._access_tokens[resource]
 
+    @classmethod
+    async def from_context(cls, ctx: Context) -> AccessContext:
+        """Read the AccessContext stored on a FastMCP Context.
+
+        Escape hatch for helpers called from inside tools that receive the
+        FastMCP ``Context`` but not the injected ``AccessContext`` parameter.
+        Prefer declaring the parameter directly on the tool:
+        ``access: AccessContext = auth_provider.grant(...)``.
+
+        Args:
+            ctx: The FastMCP request context.
+
+        Returns:
+            The AccessContext written by a grant for this request. If no
+            grant ran, returns an AccessContext with a global error recorded
+            (this method never raises).
+        """
+        state = await ctx.get_state(KEYCARD_STATE_KEY)
+        if isinstance(state, AccessContext):
+            return state
+        access_context = cls()
+        access_context.set_error({
+            "message": (
+                "No Keycard access context is available on this request. "
+                "Declare an AccessContext parameter with auth_provider.grant(...) "
+                "or apply the grant decorator to the tool."
+            ),
+        })
+        return access_context
+
+
+class GrantDependency(Dependency[AccessContext]):
+    """Injectable dependency that performs delegated token exchange.
+
+    Returned by :meth:`AuthProvider.grant`. One object supports both idioms:
+
+    - **Injected parameter (preferred)**: used as a parameter default, FastMCP
+      resolves it per request via ``fastmcp.dependencies`` and injects the
+      populated :class:`AccessContext`. The parameter is excluded from the
+      tool's input schema.
+
+      ```python
+      @mcp.tool()
+      async def get_github_user(
+          access: AccessContext = auth_provider.grant("https://api.github.com"),
+      ) -> dict:
+          token = access.access("https://api.github.com").access_token
+          ...
+      ```
+
+    - **Decorator (deprecated result access via get_state)**: applied with
+      ``@auth_provider.grant(...)``, the same object wraps the function. If
+      the function declares an :class:`AccessContext` parameter it is
+      injected there; otherwise a :class:`DeprecationWarning` is emitted at
+      decoration time and the result must be read via
+      ``await ctx.get_state("keycardai")``.
+
+    Errors are recorded on the returned AccessContext, never raised
+    (see :meth:`AccessContext.get_errors`).
+
+    Instances are stateless between calls: all per-request state lives on the
+    AccessContext produced by each resolution, so a single instance is safe to
+    share across concurrent requests.
+    """
+
+    def __init__(
+        self,
+        provider: AuthProvider,
+        resources: str | list[str],
+        request_scopes: str | list[str] | dict[str, str | list[str]] | None = None,
+    ):
+        self._provider = provider
+        self._resources = [resources] if isinstance(resources, str) else list(resources)
+        self._request_scopes = request_scopes
+
+    async def __aenter__(self) -> AccessContext:
+        access_context = await self._provider._build_access_context(
+            self._resources, self._request_scopes
+        )
+        # Dual-write to FastMCP context state while ctx.get_state("keycardai")
+        # remains supported; also backs AccessContext.from_context().
+        ctx = _current_context_or_none()
+        if ctx is not None:
+            await ctx.set_state(KEYCARD_STATE_KEY, access_context, serializable=False)
+        return access_context
+
+    def __call__(self, func: Callable) -> Callable:
+        """Apply as a decorator, preserving the ``@auth_provider.grant(...)`` spelling.
+
+        The decorated function must declare an :class:`AccessContext`
+        parameter (injected, hidden from the tool schema) or a FastMCP
+        ``Context`` parameter (deprecated: result read via
+        ``ctx.get_state("keycardai")``).
+
+        Raises:
+            MissingContextError: If the function declares neither an
+                AccessContext parameter nor a Context parameter, or if no
+                Context can be found at call time on the deprecated path.
+        """
+        provider = self._provider
+        resources = self._resources
+        request_scopes = self._request_scopes
+
+        access_param = _find_param_of_type(func, AccessContext)
+        ctx_param = _find_param_of_type(func, Context)
+        if access_param is None and ctx_param is None:
+            raise MissingContextError(
+                function_name=func.__name__,
+                parameters=list(inspect.signature(func).parameters.keys())
+            )
+        if access_param is None:
+            warnings.warn(
+                f"Tool '{func.__name__}' uses the grant decorator without declaring "
+                "an AccessContext parameter; reading the result via "
+                'ctx.get_state("keycardai") is deprecated. Declare a parameter '
+                "like `access: AccessContext = auth_provider.grant(...)` instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+
+        is_async_func = inspect.iscoroutinefunction(func)
+
+        @wraps(func)
+        async def wrapper(*args, **kwargs) -> Any:
+            _ctx = _get_context(*args, **kwargs) or _current_context_or_none()
+            if _ctx is None and access_param is None:
+                raise MissingContextError(
+                    function_name=func.__name__,
+                    parameters=[type(arg).__name__ for arg in args] + list(kwargs.keys()),
+                    runtime_context=True
+                )
+
+            _access_context = await provider._build_access_context(
+                resources, request_scopes
+            )
+            if _ctx is not None:
+                # Dual-write during the get_state deprecation window.
+                await _ctx.set_state(KEYCARD_STATE_KEY, _access_context, serializable=False)
+            if access_param is not None:
+                kwargs[access_param] = _access_context
+
+            logger.debug(f"Executing decorated function: {func.__name__}")
+            return await _call_func(is_async_func, func, *args, **kwargs)
+
+        if access_param is not None:
+            # Hide the injected AccessContext parameter from the wrapper's
+            # public signature so FastMCP excludes it from the tool schema
+            # and never treats it as a user-supplied argument.
+            signature = inspect.signature(func)
+            wrapper.__signature__ = signature.replace(
+                parameters=[
+                    parameter
+                    for name, parameter in signature.parameters.items()
+                    if name != access_param
+                ]
+            )
+            wrapper.__annotations__ = {
+                name: annotation
+                for name, annotation in wrapper.__annotations__.items()
+                if name != access_param
+            }
+        return wrapper
+
 
 class AuthProvider:
     """Keycard authentication provider for FastMCP.
@@ -303,7 +607,7 @@ class AuthProvider:
 
     Example:
         ```python
-        from fastmcp import FastMCP, Context
+        from fastmcp import FastMCP
         from keycardai.fastmcp import AuthProvider, AccessContext
 
         # Using zone_id (recommended)
@@ -337,18 +641,19 @@ class AuthProvider:
         auth = auth_provider.get_remote_auth_provider()
         mcp = FastMCP("My Protected Service", auth=auth)
 
-        # Use grant decorator for token exchange
+        # Declare a grant as a typed tool parameter for token exchange
         @mcp.tool()
-        @auth_provider.grant("https://api.example.com")
-        async def my_tool(ctx: Context, user_id: str):
-            # Use access context to check the status of the token exchange
-            # and handle the error state accordingly
-            access_context: AccessContext = await ctx.get_state("keycardai")
-            if access_context.has_errors():
+        async def my_tool(
+            user_id: str,
+            access: AccessContext = auth_provider.grant("https://api.example.com"),
+        ):
+            # Use the injected access context to check the status of the
+            # token exchange and handle the error state accordingly
+            if access.has_errors():
                 print("Failed to obtain access token for resource")
-                print(f"Error: {access_context.get_errors()}")
+                print(f"Error: {access.get_errors()}")
                 return
-            token = access_context.access("https://api.example.com").access_token
+            token = access.access("https://api.example.com").access_token
             # Use token to call external API
             return f"Data for user {user_id}"
         ```
@@ -608,16 +913,19 @@ class AuthProvider:
         resources: str | list[str],
         *,
         request_scopes: str | list[str] | dict[str, str | list[str]] | None = None,
-    ):
-        """Decorator for automatic delegated token exchange.
+    ) -> GrantDependency:
+        """Delegated token exchange for one or more resources.
 
-        This decorator automates the OAuth token exchange process for accessing
-        external resources on behalf of authenticated users. It follows the FastMCP
-        Context namespace pattern, making tokens available through ctx.get_state("keycardai").
+        Returns a :class:`GrantDependency` that automates the OAuth token
+        exchange process (RFC 8693) for accessing external resources on behalf
+        of authenticated users. Use it as a typed parameter default (preferred)
+        or as a decorator (the parameter-less get_state access is deprecated).
 
-        The returned value is an instance of AccessContext, which can be used to check the status of the token exchange
+        The injected value is an instance of AccessContext, which can be used
+        to check the status of the token exchange.
 
-        The decorator avoids raising exceptions, and instead sets the error state in the AccessContext.
+        Grant resolution avoids raising exceptions, and instead sets the error
+        state in the AccessContext.
 
         Args:
             resources: Target resource URL(s) for token exchange.
@@ -642,7 +950,7 @@ class AuthProvider:
 
         Usage:
             ```python
-            from fastmcp import FastMCP, Context
+            from fastmcp import FastMCP
             from keycardai.fastmcp import AuthProvider, AccessContext
 
             auth_provider = AuthProvider(zone_id="abc1234", mcp_base_url="http://localhost:8000")
@@ -650,199 +958,155 @@ class AuthProvider:
             mcp = FastMCP("Server", auth=auth)
 
             @mcp.tool()
-            @auth_provider.grant("https://api.example.com")
-            async def my_tool(ctx: Context, user_id: str):
-                # Access token available through context namespace
-                access_context: AccessContext = await ctx.get_state("keycardai")
-                if access_context.has_errors():
+            async def my_tool(
+                user_id: str,
+                access: AccessContext = auth_provider.grant("https://api.example.com"),
+            ):
+                if access.has_errors():
                     print("Failed to obtain access token for resource")
-                    print(f"Error: {access_context.get_errors()}")
+                    print(f"Error: {access.get_errors()}")
                     return
-                token = access_context.access("https://api.example.com").access_token
+                token = access.access("https://api.example.com").access_token
                 headers = {"Authorization": f"Bearer {token}"}
                 # Use headers to call external API
                 return f"Data for {user_id}"
 
             # Request a scope for a single resource
             @mcp.tool()
-            @auth_provider.grant(
-                "https://api.example.com",
-                request_scopes="read",
-            )
-            async def scoped_tool(ctx: Context):
+            async def scoped_tool(
+                access: AccessContext = auth_provider.grant(
+                    "https://api.example.com",
+                    request_scopes="read",
+                ),
+            ):
                 ...
 
             # Per-resource scopes when exchanging for multiple resources
             @mcp.tool()
-            @auth_provider.grant(
-                ["https://api1.example.com", "https://api2.example.com"],
-                request_scopes={
-                    "https://api1.example.com": "read",
-                    "https://api2.example.com": ["read", "write"],
-                },
-            )
-            async def multi_tool(ctx: Context):
+            async def multi_tool(
+                access: AccessContext = auth_provider.grant(
+                    ["https://api1.example.com", "https://api2.example.com"],
+                    request_scopes={
+                        "https://api1.example.com": "read",
+                        "https://api2.example.com": ["read", "write"],
+                    },
+                ),
+            ):
                 ...
             ```
 
-        The decorated function must:
-        - Have a Context parameter from FastMCP (e.g., `ctx: Context`)
-        - Be an async function (required for `await ctx.get_state()`)
+        The decorator form remains supported from the same object:
+        ``@auth_provider.grant(...)`` above the function. On that path the
+        function must declare an AccessContext parameter (injected, hidden
+        from the tool schema) or a FastMCP Context parameter; without an
+        AccessContext parameter a DeprecationWarning is emitted and the
+        result must be read via ``await ctx.get_state("keycardai")``.
 
         Raises:
-            MissingContextError: If the decorated function doesn't have a Context parameter
-                                or if Context cannot be found in function arguments at runtime
+            MissingContextError: Decorator form only: if the decorated function
+                                declares neither an AccessContext parameter nor a
+                                Context parameter, or if Context cannot be found
+                                at call time on the deprecated get_state path.
 
         Error handling:
-        - Returns structured error response if token exchange fails
+        - Records structured errors on the AccessContext if token exchange fails
         - Preserves original function signature and behavior
         - Provides detailed error messages for debugging
         """
-        def _has_context(func: Callable) -> bool:
-            sig = inspect.signature(func)
-            for value in sig.parameters.values():
-                if value.annotation == Context:
-                    return True
-            return False
+        return GrantDependency(self, resources, request_scopes)
 
-        def _get_context(*args, **kwargs) -> Context | None:
-            for value in args:
-                if isinstance(value, Context):
-                    return value
-            for value in kwargs.values():
-                if isinstance(value, Context):
-                    return value
-            return None
+    async def _build_access_context(
+        self,
+        resources: list[str],
+        request_scopes: str | list[str] | dict[str, str | list[str]] | None = None,
+    ) -> AccessContext:
+        """Acquire the caller token and exchange it for each resource.
 
-        def _scope_for(resource: str) -> str | None:
-            """Resolve the RFC 8693 scope string to request for a resource."""
-            if request_scopes is None:
-                return None
-            value = (
-                request_scopes.get(resource)
-                if isinstance(request_scopes, dict)
-                else request_scopes
-            )
-            if value is None:
-                return None
-            scope = " ".join(value) if isinstance(value, list) else value
-            return scope or None
+        Never raises: failures are recorded on the returned AccessContext as
+        a global error (token acquisition) or a resource error (exchange).
+        Honors the override_access_context() testing seam.
+        """
+        override = _access_context_override.get()
+        if override is not None:
+            return override
 
-        async def _set_error(error: dict[str, str], resource: str | None, access_context: AccessContext, ctx: Context):
-            """Helper to set error context and call function."""
-            if resource:
-                access_context.set_resource_error(resource, error)
-            else:
-                access_context.set_error(error)
-            await ctx.set_state("keycardai", access_context, serializable=False)
+        logger.debug(f"Starting token exchange for resources: {resources}")
+        _access_context = AccessContext()
+        try:
+            _user_token = get_access_token()
+            if not _user_token:
+                logger.warning("No authentication token available")
+                _access_context.set_error({
+                    "message": "No authentication token available. Please ensure you're properly authenticated.",
+                })
+                return _access_context
+            logger.introspect(f"User token retrieved: {get_token_debug_info(_user_token.token)}")
+        except Exception as e:
+            logger.error("Failed to get access token")
+            _access_context.set_error({
+                "message": "Failed to get access token from the request context. Please ensure you're properly authenticated.",
+                "raw_error": str(e),
+            })
+            return _access_context
 
-        async def _call_func(is_async_func: bool, func: Callable, *args, **kwargs):
-            if is_async_func:
-                return await func(*args, **kwargs)
-            else:
-                return func(*args, **kwargs)
-
-        def decorator(func: Callable) -> Callable:
-            is_async_func = inspect.iscoroutinefunction(func)
-            if not _has_context(func):
-                raise MissingContextError(
-                    function_name=func.__name__,
-                    parameters=list(inspect.signature(func).parameters.keys())
-                )
-
-            @wraps(func)
-            async def wrapper(*args, **kwargs) -> Any:
-                _ctx = _get_context(*args, **kwargs)
-                if _ctx is None:
-                    raise MissingContextError(
-                        function_name=func.__name__,
-                        parameters=[type(arg).__name__ for arg in args] + list(kwargs.keys()),
-                        runtime_context=True
+        _access_tokens = {}
+        for resource in resources:
+            logger.debug(f"Exchanging token for resource: {resource}")
+            try:
+                if self.application_credential:
+                    logger.debug(f"Using application credential: {type(self.application_credential).__name__}")
+                    # auth_info context is used by application credential implementation
+                    # to prepare correct assertions in the token exchange request.
+                    # For WebIdentity, use the stable WIF key_id so the client assertion
+                    # JWT has a predictable `iss` that can be pre-registered in Keycard.
+                    # Falling back to the DCR client_id would produce an ephemeral `ua:...`
+                    # identifier that changes on every restart and cannot be pre-registered.
+                    _resource_client_id = (
+                        self.application_credential.identity_manager.key_id
+                        if hasattr(self.application_credential, "identity_manager")
+                        else self.client.config.client_id or ""
+                    )
+                    _auth_info = {
+                        "resource_client_id": _resource_client_id,
+                        "resource_server_url": self.mcp_base_url,
+                        "zone_id": "",
+                    }
+                    _token_exchange_request = await self.application_credential.prepare_token_exchange_request(
+                        client=self.client,
+                        subject_token=_user_token.token,
+                        resource=resource,
+                        auth_info=_auth_info,
+                    )
+                else:
+                    _token_exchange_request = TokenExchangeRequest(
+                        subject_token=_user_token.token,
+                        resource=resource,
+                        subject_token_type="urn:ietf:params:oauth:token-type:access_token",
                     )
 
-                _resource_list = [resources] if isinstance(resources, str) else resources
-                logger.debug(f"Starting token exchange for resources: {_resource_list}")
+                _scope = _scope_for(request_scopes, resource)
+                if _scope:
+                    _token_exchange_request.scope = _scope
 
-                _access_context = AccessContext()
-                try:
-                    _user_token = get_access_token()
-                    if not _user_token:
-                        logger.warning(f"No authentication token available for {func.__name__}")
-                        await _set_error({
-                            "message": "No authentication token available. Please ensure you're properly authenticated.",
-                        }, None, _access_context, _ctx)
-                        return await _call_func(is_async_func, func, *args, **kwargs)
-                    logger.introspect(f"User token retrieved: {get_token_debug_info(_user_token.token)}")
-                except Exception as e:
-                    logger.error("Failed to get access token")
-                    await _set_error({
-                        "message": "Failed to get access token from context. Ensure the Context parameter is properly annotated.",
-                        "raw_error": str(e),
-                    }, None, _access_context, _ctx)
-                    return await _call_func(is_async_func, func, *args, **kwargs)
+                _token_response = await self.client.exchange_token(_token_exchange_request)
 
-                _access_tokens = {}
-                for resource in _resource_list:
-                    logger.debug(f"Exchanging token for resource: {resource}")
-                    try:
-                        if self.application_credential:
-                            logger.debug(f"Using application credential: {type(self.application_credential).__name__}")
-                            # auth_info context is used by application credential implementation
-                            # to prepare correct assertions in the token exchange request.
-                            # For WebIdentity, use the stable WIF key_id so the client assertion
-                            # JWT has a predictable `iss` that can be pre-registered in Keycard.
-                            # Falling back to the DCR client_id would produce an ephemeral `ua:...`
-                            # identifier that changes on every restart and cannot be pre-registered.
-                            _resource_client_id = (
-                                self.application_credential.identity_manager.key_id
-                                if hasattr(self.application_credential, "identity_manager")
-                                else self.client.config.client_id or ""
-                            )
-                            _auth_info = {
-                                "resource_client_id": _resource_client_id,
-                                "resource_server_url": self.mcp_base_url,
-                                "zone_id": "",
-                            }
-                            _token_exchange_request = await self.application_credential.prepare_token_exchange_request(
-                                client=self.client,
-                                subject_token=_user_token.token,
-                                resource=resource,
-                                auth_info=_auth_info,
-                            )
-                        else:
-                            _token_exchange_request = TokenExchangeRequest(
-                                subject_token=_user_token.token,
-                                resource=resource,
-                                subject_token_type="urn:ietf:params:oauth:token-type:access_token",
-                            )
+                _access_tokens[resource] = _token_response
+                logger.debug(f"Token exchange successful for {resource}")
+                logger.introspect(f"Token details for {resource}: {get_token_debug_info(_token_response.access_token)}")
+            except Exception as e:
+                logger.error(f"Token exchange failed for {resource}")
+                _error_dict: dict[str, str] = {
+                    "message": f"Token exchange failed for {resource}",
+                }
+                if hasattr(e, "error"):
+                    _error_dict["code"] = e.error
+                if hasattr(e, "error_description") and e.error_description:
+                    _error_dict["description"] = e.error_description
+                if not hasattr(e, "error"):
+                    _error_dict["raw_error"] = str(e)
+                _access_context.set_resource_error(resource, _error_dict)
+                return _access_context
 
-                        _scope = _scope_for(resource)
-                        if _scope:
-                            _token_exchange_request.scope = _scope
-
-                        _token_response = await self.client.exchange_token(_token_exchange_request)
-
-                        _access_tokens[resource] = _token_response
-                        logger.debug(f"Token exchange successful for {resource}")
-                        logger.introspect(f"Token details for {resource}: {get_token_debug_info(_token_response.access_token)}")
-                    except Exception as e:
-                        logger.error(f"Token exchange failed for {resource}")
-                        _error_dict: dict[str, str] = {
-                            "message": f"Token exchange failed for {resource}",
-                        }
-                        if hasattr(e, "error"):
-                            _error_dict["code"] = e.error
-                        if hasattr(e, "error_description") and e.error_description:
-                            _error_dict["description"] = e.error_description
-                        if not hasattr(e, "error"):
-                            _error_dict["raw_error"] = str(e)
-                        await _set_error(_error_dict, resource, _access_context, _ctx)
-                        return await _call_func(is_async_func, func, *args, **kwargs)
-
-                logger.debug(f"All token exchanges completed. Setting access context with {len(_access_tokens)} token(s)")
-                _access_context.set_bulk_tokens(_access_tokens)
-                await _ctx.set_state("keycardai", _access_context, serializable=False)
-                logger.debug(f"Executing decorated function: {func.__name__}")
-                return await _call_func(is_async_func, func, *args, **kwargs)
-            return wrapper
-        return decorator
+        logger.debug(f"All token exchanges completed. Populating access context with {len(_access_tokens)} token(s)")
+        _access_context.set_bulk_tokens(_access_tokens)
+        return _access_context
