@@ -1,7 +1,42 @@
 from contextlib import contextmanager
-from unittest.mock import Mock, patch
 
 from keycardai.oauth.types.models import TokenResponse
+
+from ..provider import AccessContext, override_access_context
+
+
+class _MockAccessContext(AccessContext):
+    """AccessContext preloaded for tests.
+
+    Behaves like a real AccessContext, with one addition: when constructed
+    with a ``default_token``, :meth:`access` returns that token for any
+    resource that has no explicit token or error. When a resource lookup
+    fails, the miss is recorded as a resource error so ``has_errors()``
+    reflects it, matching how grant resolution records failures.
+    """
+
+    def __init__(self, default_token: str | None = None):
+        super().__init__()
+        self._default_token = default_token
+
+    def access(self, resource: str) -> TokenResponse:
+        if (
+            self._default_token is not None
+            and not self.has_errors()
+            and resource not in self._access_tokens
+        ):
+            return TokenResponse(
+                access_token=self._default_token,
+                token_type="Bearer",
+            )
+        try:
+            return super().access(resource)
+        except Exception:
+            if not self.has_error() and not self.has_resource_error(resource):
+                self.set_resource_error(
+                    resource, {"message": f"Resource not granted: {resource}"}
+                )
+            raise
 
 
 @contextmanager
@@ -12,6 +47,12 @@ def mock_access_context(
     error_message: str = "Mock authentication error",
 ):
     """Mock the authentication system for testing.
+
+    Builds an :class:`AccessContext` from the given tokens or error state and
+    installs it through the public :func:`override_access_context` seam, so
+    every grant resolution (injected-parameter or decorator form) yields it
+    without touching real token acquisition or exchange. No module internals
+    are patched.
 
     Args:
         access_token: Default access token to return for any resource (str)
@@ -34,65 +75,25 @@ def mock_access_context(
             "https://api.other.com": "token_456"
         }):
             # Will return specific tokens for each resource
-            # Any resource not in the dict will set has_errors=True with "Resource not granted" message
+            # Any resource not in the dict raises ResourceAccessError and
+            # records a "Resource not granted" error on the context
 
         # 4. Returns error set to true and error message
         with mock_access_context(has_errors=True, error_message="Auth failed"):
             # Will report errors with the specified message
     """
-    with patch('keycardai.fastmcp.provider.AccessContext') as mock_access_context_class, \
-         patch('keycardai.fastmcp.provider.get_access_token') as mock_get_access_token:
+    access_context = _MockAccessContext(
+        default_token=None if resource_tokens is not None else access_token
+    )
 
-        mock_access_context_instance = Mock()
-        mock_access_context_instance.has_errors.return_value = has_errors
+    if has_errors:
+        access_context.set_error({"message": error_message})
+    elif resource_tokens is not None:
+        for resource, token in resource_tokens.items():
+            access_context.set_token(
+                resource,
+                TokenResponse(access_token=token, token_type="Bearer"),
+            )
 
-        if has_errors:
-            # Return proper error structure matching AccessContext.get_errors()
-            mock_access_context_instance.get_errors.return_value = {
-                "resources": {},
-                "error": {"message": error_message}
-            }
-            mock_access_context_instance.access.side_effect = Exception(error_message)
-        else:
-            def mock_access_method(resource_url):
-                if resource_tokens is not None:
-                    if resource_url in resource_tokens:
-                        # Return proper TokenResponse object
-                        return TokenResponse(
-                            access_token=resource_tokens[resource_url],
-                            token_type="Bearer"
-                        )
-                    else:
-                        # Resource not granted - set error state and raise exception
-                        mock_access_context_instance.has_errors.return_value = True
-                        mock_access_context_instance.get_errors.return_value = {
-                            "resources": {
-                                resource_url: {"message": f"Resource not granted: {resource_url}"}
-                            },
-                            "error": None
-                        }
-                        from keycardai.mcp.server.exceptions import ResourceAccessError
-                        raise ResourceAccessError()
-                else:
-                    # Return proper TokenResponse object
-                    return TokenResponse(
-                        access_token=access_token,
-                        token_type="Bearer"
-                    )
-
-            mock_access_context_instance.access = mock_access_method
-            mock_access_context_instance.get_errors.return_value = {
-                "resources": {},
-                "error": None
-            }
-
-        mock_access_context_instance.set_bulk_tokens = Mock()
-        mock_access_context_instance.set_error = Mock()
-        mock_access_context_instance.set_resource_error = Mock()
-        mock_access_context_class.return_value = mock_access_context_instance
-
-        mock_user_token = Mock()
-        mock_user_token.token = "user_jwt_token"
-        mock_get_access_token.return_value = mock_user_token
-
-        yield mock_access_context_instance
+    with override_access_context(access_context):
+        yield access_context
