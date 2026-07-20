@@ -14,7 +14,15 @@ from collections.abc import Sequence
 
 from pydantic import AnyHttpUrl
 
-from keycardai.oauth.exceptions import InvalidTokenError
+from keycardai.oauth.exceptions import (
+    InvalidTokenError,
+    JWKSError,
+    JWKSKeyNotFoundError,
+)
+from keycardai.oauth.server.exceptions import (
+    JWKSDiscoveryError,
+    JWKSUriValidationError,
+)
 from keycardai.oauth.server.verifier import TokenVerifier
 from starlette.authentication import (
     AuthCredentials,
@@ -223,6 +231,30 @@ class KeycardAuthBackend(AuthenticationBackend):
             raise KeycardAuthError(
                 "invalid_token", "Token verification failed"
             ) from e
+        except JWKSKeyNotFoundError as e:
+            # Forged token, or a valid token whose signing key rotated out of
+            # the JWKS: the resource server cannot validate it. RFC 6750
+            # invalid_token so the client re-runs authorization instead of
+            # seeing a 500.
+            raise KeycardAuthError(
+                "invalid_token", "Unable to verify token signing key"
+            ) from e
+        except (JWKSError, JWKSDiscoveryError, JWKSUriValidationError) as e:
+            # JWKS fetch or issuer discovery failed: verification could not
+            # complete for a server-side reason (unreachable zone, non-2xx
+            # JWKS, cross-origin jwks_uri). Signal a retryable 503 rather than
+            # letting the exception escape to a 500 with a stack trace.
+            #
+            # This bucket intentionally lists the named discovery/fetch classes,
+            # not the OAuthServerError base. Config and cache faults
+            # (VerifierConfigError, CacheError) are not per-request failures, so
+            # they stay on the unexpected-error path (500) instead of a 503 that
+            # would falsely advertise the fault as transient.
+            raise KeycardAuthError(
+                "temporarily_unavailable",
+                "Unable to reach the authorization server to verify the token",
+                status_code=503,
+            ) from e
 
         resource_server_url = _get_oauth_protected_resource_url(conn)
         user = KeycardUser(
@@ -250,6 +282,13 @@ def _build_unauthorized_response(
     anonymous). The ``resource_metadata=`` URL is computed from the request
     per RFC 9728.
     """
+    if status_code >= 500:
+        # Verification could not complete (e.g. the JWKS endpoint was
+        # unreachable). This is not a challenge the client can satisfy by
+        # re-authenticating, so return a small body and no WWW-Authenticate
+        # header. Never leak the underlying exception.
+        return Response(content=description or "Service Unavailable", status_code=status_code)
+
     resource_metadata = _get_oauth_protected_resource_url(conn)
     response = Response(
         content="Unauthorized" if status_code == 401 else "Forbidden",

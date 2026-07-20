@@ -9,11 +9,16 @@ from starlette.middleware.authentication import AuthenticationMiddleware
 from starlette.requests import HTTPConnection, Request
 from starlette.testclient import TestClient
 
-from keycardai.oauth.exceptions import InvalidTokenError
+from keycardai.oauth.exceptions import (
+    InvalidTokenError,
+    JWKSFetchError,
+    JWKSKeyNotFoundError,
+)
 from keycardai.oauth.server import AccessContext
 from keycardai.oauth.server.credentials import ClientSecret
 from keycardai.oauth.server.exceptions import (
     AuthProviderConfigurationError,
+    JWKSDiscoveryError,
     MissingAccessContextError,
 )
 from keycardai.starlette import (
@@ -324,6 +329,71 @@ class TestKeycardAuthBackend:
         challenge = response.headers.get("WWW-Authenticate", "")
         assert 'Bearer error="invalid_token"' in challenge
         assert "resource_metadata=" in challenge
+
+    def test_jwks_key_not_found_returns_401_challenge(self):
+        """A forged/rotated kid (JWKSKeyNotFoundError) is a 401, not a 500."""
+        provider = AuthProvider(
+            zone_id="test-zone",
+            application_credential=ClientSecret(("cid", "csec")),
+        )
+        verifier = MagicMock(
+            enable_multi_zone=False,
+            verify_token=AsyncMock(
+                side_effect=JWKSKeyNotFoundError("Key ID 'abc' not found")
+            ),
+        )
+        provider.get_token_verifier = MagicMock(return_value=verifier)  # type: ignore[method-assign]
+
+        app = FastAPI()
+        provider.install(app)
+
+        @app.get("/api/me")
+        @requires("authenticated")
+        async def me(request: Request):
+            return {"ok": True}
+
+        client = TestClient(app, raise_server_exceptions=False)
+        response = client.get(
+            "/api/me", headers={"Authorization": "Bearer forged-token"}
+        )
+        assert response.status_code == 401
+        challenge = response.headers.get("WWW-Authenticate", "")
+        assert 'Bearer error="invalid_token"' in challenge
+        assert "resource_metadata=" in challenge
+
+    @pytest.mark.parametrize(
+        "error",
+        [
+            JWKSFetchError("JWKS endpoint returned status 503"),
+            JWKSDiscoveryError("https://zone.example.com", "test-zone"),
+        ],
+    )
+    def test_jwks_fetch_or_discovery_failure_returns_503(self, error):
+        """A JWKS/discovery outage is a retryable 503, not a 500 with a leak."""
+        provider = AuthProvider(
+            zone_id="test-zone",
+            application_credential=ClientSecret(("cid", "csec")),
+        )
+        verifier = MagicMock(
+            enable_multi_zone=False,
+            verify_token=AsyncMock(side_effect=error),
+        )
+        provider.get_token_verifier = MagicMock(return_value=verifier)  # type: ignore[method-assign]
+
+        app = FastAPI()
+        provider.install(app)
+
+        @app.get("/api/me")
+        @requires("authenticated")
+        async def me(request: Request):
+            return {"ok": True}
+
+        client = TestClient(app, raise_server_exceptions=False)
+        response = client.get(
+            "/api/me", headers={"Authorization": "Bearer valid-looking-token"}
+        )
+        assert response.status_code == 503
+        assert "WWW-Authenticate" not in response.headers
 
     def test_keycard_auth_error_carries_oauth_metadata(self):
         exc = KeycardAuthError("invalid_token", "Token verification failed")
