@@ -1,5 +1,6 @@
 """Auth completion routing and handlers."""
 
+import asyncio
 import warnings
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING, Any
@@ -14,6 +15,16 @@ if TYPE_CHECKING:
     from .coordinators.base import AuthCoordinator
 
 logger = get_logger(__name__)
+
+# Upper bound for each individual cleanup storage call. Cleanup runs
+# synchronously on the OAuth callback path, so a hung remote backend
+# (e.g. Redis, DynamoDB) must not stall the user-facing callback response
+# indefinitely. asyncio.wait_for raises TimeoutError (asyncio.TimeoutError
+# on Python 3.10, an alias of the builtin on 3.11+), which is an Exception
+# subclass on every supported Python, so a timeout falls through to the
+# same logged-and-swallowed handling as any other storage error while
+# outer cancellation (CancelledError, a BaseException) still propagates.
+_CLEANUP_TIMEOUT_SECONDS = 5.0
 
 
 class CompletionRouter:
@@ -174,15 +185,20 @@ class CompletionRouter:
         """
         Clean up completion routing metadata.
 
-        Runs before the completion result is returned. Storage errors are
-        logged and not propagated because the completion itself already
-        succeeded; cancellation propagates normally.
+        Runs before the completion result is returned. The delete is bounded
+        by _CLEANUP_TIMEOUT_SECONDS so a hung storage backend cannot stall
+        the callback response. Storage errors (including timeouts) are logged
+        and not propagated because the completion itself already succeeded;
+        cancellation propagates normally.
 
         Args:
             state: OAuth state parameter to clean up
         """
         try:
-            await self.state_storage.delete_completion_route(state)
+            await asyncio.wait_for(
+                self.state_storage.delete_completion_route(state),
+                timeout=_CLEANUP_TIMEOUT_SECONDS,
+            )
             logger.debug(f"Cleaned up completion route for state: {state[:8]}...")
         except Exception as e:
             # Log but don't propagate cleanup errors - the completion succeeded
@@ -564,10 +580,11 @@ async def oauth_completion_handler(
     namespace_parts = storage._namespace.split(":")
     context_id = namespace_parts[1] if len(namespace_parts) > 1 else "unknown"
 
-    # Cleanup runs synchronously before returning: both deletes are fast storage
-    # calls, and a fire-and-forget task can be garbage-collected (or cancelled at
-    # shutdown) before it runs, leaving a stale pending-auth record that sessions
-    # would keep advertising as an auth challenge.
+    # Cleanup runs synchronously before returning: a fire-and-forget task can be
+    # garbage-collected (or cancelled at shutdown) before it runs, leaving a
+    # stale pending-auth record that sessions would keep advertising as an auth
+    # challenge. Each storage call is bounded by _CLEANUP_TIMEOUT_SECONDS so a
+    # hung backend cannot stall the callback response.
     # Note: completion metadata cleanup is handled by coordinator
     await _cleanup_oauth_completion_state(
         storage, coordinator, state, context_id, server_name
@@ -590,10 +607,12 @@ async def _cleanup_oauth_completion_state(
 
     Runs before the completion result is returned so a completed authorization
     never leaves a stale pending-auth record behind. Each step is attempted
-    independently: a failure deleting the PKCE state must not skip clearing
-    the pending-auth record. Storage errors are logged and not propagated
-    because the token exchange already succeeded; cancellation propagates
-    normally.
+    independently: a failure or timeout deleting the PKCE state must not skip
+    clearing the pending-auth record. Each storage call is bounded by
+    _CLEANUP_TIMEOUT_SECONDS so a hung backend cannot stall the callback
+    response. Storage errors (including timeouts) are logged and not
+    propagated because the token exchange already succeeded; cancellation
+    propagates normally.
 
     Args:
         storage: Strategy storage
@@ -603,12 +622,18 @@ async def _cleanup_oauth_completion_state(
         server_name: Server name
     """
     try:
-        await storage.delete(f"_pkce_state:{state}")
+        await asyncio.wait_for(
+            storage.delete(f"_pkce_state:{state}"),
+            timeout=_CLEANUP_TIMEOUT_SECONDS,
+        )
     except Exception as e:
         logger.warning(f"Failed to delete PKCE state for {server_name}: {e}")
 
     try:
-        await coordinator.clear_auth_pending(context_id=context_id, server_name=server_name)
+        await asyncio.wait_for(
+            coordinator.clear_auth_pending(context_id=context_id, server_name=server_name),
+            timeout=_CLEANUP_TIMEOUT_SECONDS,
+        )
         logger.debug(f"Cleaned up OAuth completion state for {server_name}")
     except Exception as e:
         logger.warning(f"Failed to clear pending auth for {server_name}: {e}")

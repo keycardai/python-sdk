@@ -1,11 +1,15 @@
 """Unit tests for the CompletionHandlerRegistry."""
 
+import asyncio
+import logging
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+import keycardai.mcp.client.auth.handlers as handlers_module
 from keycardai.mcp.client.auth.handlers import (
     CompletionHandlerRegistry,
+    _cleanup_oauth_completion_state,
     get_default_handler_registry,
     oauth_completion_handler,
     register_completion_handler,
@@ -290,6 +294,128 @@ class TestOAuthCompletionCleanup:
         assert await storage.get(f"_pkce_state:{state}") is None
 
 
+class TestCleanupTimeout:
+    """Cleanup storage calls are bounded so a hung backend can't stall the callback."""
+
+    @pytest.mark.asyncio
+    async def test_hung_pkce_delete_times_out_and_still_clears_auth_pending(
+        self, monkeypatch, caplog
+    ):
+        """A hung PKCE delete times out, logs a warning, and the next step still runs."""
+        monkeypatch.setattr(handlers_module, "_CLEANUP_TIMEOUT_SECONDS", 0.05)
+
+        coordinator = AsyncMock()
+        backend = InMemoryBackend()
+        storage = NamespacedStorage(
+            backend, "client:test_user:server:test_server:connection:oauth"
+        )
+        state = "state_hung_pkce_delete"
+        await _seed_pkce_state(storage, state)
+
+        async def hung_delete(key: str) -> None:
+            await asyncio.Event().wait()  # never set: hangs forever
+
+        storage.delete = hung_delete
+
+        with caplog.at_level(logging.WARNING, logger="keycardai.mcp.client"):
+            # Outer guard: if the timeout wrapper were broken, fail fast
+            # instead of hanging the test run.
+            result = await asyncio.wait_for(
+                oauth_completion_handler(
+                    coordinator,
+                    storage,
+                    {"code": "auth_code", "state": state},
+                    client_factory=_token_client_factory,
+                ),
+                timeout=2.0,
+            )
+
+        assert result["success"] is True
+        # The timed-out PKCE delete did not skip clearing pending auth
+        coordinator.clear_auth_pending.assert_awaited_once_with(
+            context_id="test_user", server_name="test_server"
+        )
+        assert any(
+            "Failed to delete PKCE state" in record.getMessage()
+            for record in caplog.records
+        )
+
+    @pytest.mark.asyncio
+    async def test_hung_clear_auth_pending_times_out_and_handler_returns(
+        self, monkeypatch, caplog
+    ):
+        """A hung pending-auth clear times out and the handler still returns success."""
+        monkeypatch.setattr(handlers_module, "_CLEANUP_TIMEOUT_SECONDS", 0.05)
+
+        coordinator = AsyncMock()
+
+        async def hung_clear(context_id: str, server_name: str) -> None:
+            await asyncio.Event().wait()
+
+        coordinator.clear_auth_pending = hung_clear
+
+        backend = InMemoryBackend()
+        storage = NamespacedStorage(
+            backend, "client:test_user:server:test_server:connection:oauth"
+        )
+        state = "state_hung_clear"
+        await _seed_pkce_state(storage, state)
+
+        with caplog.at_level(logging.WARNING, logger="keycardai.mcp.client"):
+            result = await asyncio.wait_for(
+                oauth_completion_handler(
+                    coordinator,
+                    storage,
+                    {"code": "auth_code", "state": state},
+                    client_factory=_token_client_factory,
+                ),
+                timeout=2.0,
+            )
+
+        assert result["success"] is True
+        # The PKCE delete step still ran to completion
+        assert await storage.get(f"_pkce_state:{state}") is None
+        assert any(
+            "Failed to clear pending auth" in record.getMessage()
+            for record in caplog.records
+        )
+
+    @pytest.mark.asyncio
+    async def test_outer_cancellation_propagates_through_cleanup(self):
+        """Cancelling the task running cleanup propagates CancelledError.
+
+        The timeout wrapper converts inner timeouts to TimeoutError, but outer
+        cancellation must still propagate and abort the remaining steps.
+        """
+        coordinator = AsyncMock()
+        backend = InMemoryBackend()
+        storage = NamespacedStorage(
+            backend, "client:test_user:server:test_server:connection:oauth"
+        )
+
+        started = asyncio.Event()
+
+        async def hung_delete(key: str) -> None:
+            started.set()
+            await asyncio.Event().wait()
+
+        storage.delete = hung_delete
+
+        task = asyncio.create_task(
+            _cleanup_oauth_completion_state(
+                storage, coordinator, "state_cancelled", "test_user", "test_server"
+            )
+        )
+        await started.wait()
+        task.cancel()
+
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        # Cancellation aborts cleanup entirely: the next step never ran
+        coordinator.clear_auth_pending.assert_not_awaited()
+
+
 class TestCompletionRouterCleanup:
     """Test that CompletionRouter cleans up routing metadata synchronously."""
 
@@ -340,6 +466,56 @@ class TestCompletionRouterCleanup:
         # Synchronous assertion, no event loop yield: the delete already ran
         assert deleted_routes == [state]
         assert await state_storage.get_completion_route(state) is None
+
+    @pytest.mark.asyncio
+    async def test_hung_route_delete_times_out_and_completion_returns(
+        self, monkeypatch, caplog
+    ):
+        """A hung completion-route delete times out instead of stalling the callback."""
+        from keycardai.mcp.client.auth.coordinators.base import AuthCoordinator
+
+        monkeypatch.setattr(handlers_module, "_CLEANUP_TIMEOUT_SECONDS", 0.05)
+
+        class TestCoordinator(AuthCoordinator):
+            @property
+            def endpoint_type(self) -> str:
+                return "test"
+
+        registry = CompletionHandlerRegistry()
+
+        @registry.register("stub_completion")
+        async def stub_completion(coordinator, storage, params, **kwargs):
+            return {"success": True}
+
+        coordinator = TestCoordinator(
+            backend=InMemoryBackend(), handler_registry=registry
+        )
+
+        state = "state_hung_route_delete"
+        await coordinator.register_completion_route(
+            routing_key=state,
+            handler_name="stub_completion",
+            storage_namespace="client:test_user:server:test_server:connection:oauth",
+            context_id="test_user",
+            server_name="test_server",
+        )
+
+        async def hung_delete(routing_key: str) -> None:
+            await asyncio.Event().wait()
+
+        coordinator.completion_router.state_storage.delete_completion_route = hung_delete
+
+        with caplog.at_level(logging.WARNING, logger="keycardai.mcp.client"):
+            result = await asyncio.wait_for(
+                coordinator.handle_completion({"code": "auth_code", "state": state}),
+                timeout=2.0,
+            )
+
+        assert result["success"] is True
+        assert any(
+            "Failed to cleanup completion route" in record.getMessage()
+            for record in caplog.records
+        )
 
 
 class TestClientFactoryManagement:
