@@ -481,6 +481,38 @@ class TestRequires:
         assert 'error="insufficient_scope"' in challenge
         assert "resource_metadata=" in challenge
 
+    def test_insufficient_scope_challenge_includes_scope_attribute(self):
+        """RFC 6750 §3: the insufficient_scope challenge carries a scope
+        attribute with the space-delimited list of required scopes."""
+        provider = AuthProvider(
+            zone_id="test-zone",
+            application_credential=ClientSecret(("cid", "csec")),
+        )
+        provider.get_token_verifier = MagicMock(  # type: ignore[method-assign]
+            return_value=_stub_verifier(scopes=["read"])
+        )
+
+        app = FastAPI()
+        provider.install(app)
+
+        @app.get("/api/admin")
+        @requires(["authenticated", "read", "admin"])
+        async def admin(request: Request):
+            return {"ok": True}
+
+        client = TestClient(app, raise_server_exceptions=False)
+        response = client.get(
+            "/api/admin", headers={"Authorization": "Bearer some-token"}
+        )
+        assert response.status_code == 403
+        challenge = response.headers.get("WWW-Authenticate", "")
+        assert 'error="insufficient_scope"' in challenge
+        # Space-delimited required scopes per RFC 6750 §3. The synthetic
+        # "authenticated" gating scope is not an OAuth scope a client can
+        # request, so it is excluded from the attribute.
+        assert 'scope="read admin"' in challenge
+        assert "resource_metadata=" in challenge
+
 
 class TestGrant:
     def test_missing_access_context_param_raises(self):
