@@ -76,6 +76,9 @@ def requires(
     # synthetic "authenticated" scope is a Starlette gating convention
     # (always present on verified requests), not an OAuth scope a client
     # can request from the authorization server, so it is excluded.
+    # Values are interpolated into the header unescaped: they are static
+    # developer literals from this decorator, never request- or
+    # token-derived, so no attacker-controlled path reaches the header.
     challenge_scope = " ".join(s for s in scopes_list if s != "authenticated") or None
 
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
