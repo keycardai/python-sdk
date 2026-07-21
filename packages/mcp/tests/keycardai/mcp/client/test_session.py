@@ -432,6 +432,78 @@ class TestSessionConnect:
         assert session.is_failed
 
     @pytest.mark.asyncio
+    async def test_connect_clears_lingering_stale_auth_pending(self):
+        """Transitioning into CONNECTED clears a lingering pending-auth record.
+
+        Simulates a completed authorization whose cleanup never ran: the
+        pending-auth record is still in storage when the session successfully
+        connects. After the transition into CONNECTED the record is gone and
+        no auth challenge is surfaced.
+        """
+        storage = InMemoryBackend()
+        coordinator = MockAuthCoordinator(storage)
+        context = coordinator.create_context("user:alice")
+
+        server_config = {"url": "http://localhost:3000"}
+        session = Session("test_server", server_config, context, coordinator)
+
+        # Stale record left behind by a cleanup that never ran
+        await coordinator.set_auth_pending(
+            context_id=context.id,
+            server_name="test_server",
+            auth_metadata={
+                "authorization_url": "http://auth.example.com",
+                "state": "state123"
+            }
+        )
+
+        mock_connection = MockConnection()
+        mock_client_session = MockClientSession()
+
+        with patch("keycardai.mcp.client.session.create_connection", return_value=mock_connection):
+            with patch("keycardai.mcp.client.session.ClientSession", return_value=mock_client_session):
+                await session.connect()
+
+        assert session.status == SessionStatus.CONNECTED
+        assert await session.get_auth_challenge() is None
+        stored = await coordinator.get_auth_pending(
+            context_id=context.id,
+            server_name="test_server"
+        )
+        assert stored is None
+
+    @pytest.mark.asyncio
+    async def test_connect_succeeds_when_stale_auth_pending_clear_fails(self):
+        """A storage error clearing the stale record must not fail the connection."""
+        storage = InMemoryBackend()
+        coordinator = MockAuthCoordinator(storage)
+        context = coordinator.create_context("user:alice")
+
+        server_config = {"url": "http://localhost:3000"}
+        session = Session("test_server", server_config, context, coordinator)
+
+        await coordinator.set_auth_pending(
+            context_id=context.id,
+            server_name="test_server",
+            auth_metadata={
+                "authorization_url": "http://auth.example.com",
+                "state": "state123"
+            }
+        )
+        coordinator.clear_auth_pending = AsyncMock(side_effect=RuntimeError("storage down"))
+
+        mock_connection = MockConnection()
+        mock_client_session = MockClientSession()
+
+        with patch("keycardai.mcp.client.session.create_connection", return_value=mock_connection):
+            with patch("keycardai.mcp.client.session.ClientSession", return_value=mock_client_session):
+                await session.connect()
+
+        assert session.status == SessionStatus.CONNECTED
+        assert session.is_operational
+        coordinator.clear_auth_pending.assert_awaited_once()
+
+    @pytest.mark.asyncio
     async def test_connect_disconnects_existing_session_if_connected_but_no_session(self):
         """Test that connect disconnects if marked connected but no session."""
         storage = InMemoryBackend()
@@ -866,6 +938,93 @@ class TestSessionGetAuthChallenge:
         )
         result = await session.get_auth_challenge()
         assert result == custom_challenge
+
+    @pytest.mark.asyncio
+    async def test_get_auth_challenge_returns_challenge_when_auth_pending_status(self):
+        """Test that a session in AUTH_PENDING status surfaces the stored challenge."""
+        storage = InMemoryBackend()
+        coordinator = MockAuthCoordinator(storage)
+        context = coordinator.create_context("user:alice")
+
+        server_config = {"url": "http://localhost:3000"}
+        session = Session("test_server", server_config, context, coordinator)
+        session.status = SessionStatus.AUTH_PENDING
+
+        challenge = {
+            "authorization_url": "http://auth.example.com",
+            "state": "state123"
+        }
+        await coordinator.set_auth_pending(
+            context_id=context.id,
+            server_name="test_server",
+            auth_metadata=challenge
+        )
+
+        result = await session.get_auth_challenge()
+
+        assert result == challenge
+
+    @pytest.mark.asyncio
+    async def test_get_auth_challenge_surfaces_fresh_challenge_while_connected(self):
+        """A challenge written while the session is CONNECTED is surfaced, not deleted.
+
+        Regression guard for mid-session token expiry: a live tool call gets a
+        401, the transport's auth strategy writes a fresh pending-auth record,
+        but the session status never leaves CONNECTED. The challenge must be
+        returned so the user sees the re-auth URL, and reading it must not
+        delete the record (polling APIs call this getter repeatedly).
+        """
+        storage = InMemoryBackend()
+        coordinator = MockAuthCoordinator(storage)
+        context = coordinator.create_context("user:alice")
+
+        server_config = {"url": "http://localhost:3000"}
+        session = Session("test_server", server_config, context, coordinator)
+        session.status = SessionStatus.CONNECTED
+
+        # Fresh challenge written by the transport while already CONNECTED
+        challenge = {
+            "authorization_url": "http://auth.example.com/reauth",
+            "state": "state456"
+        }
+        await coordinator.set_auth_pending(
+            context_id=context.id,
+            server_name="test_server",
+            auth_metadata=challenge
+        )
+
+        result = await session.get_auth_challenge()
+        assert result == challenge
+
+        # Reading is side-effect free: the record survives repeated polls
+        assert await session.get_auth_challenge() == challenge
+        stored = await coordinator.get_auth_pending(
+            context_id=context.id,
+            server_name="test_server"
+        )
+        assert stored == challenge
+
+    @pytest.mark.asyncio
+    async def test_requires_auth_true_when_connected_with_fresh_challenge(self):
+        """requires_auth reflects a fresh challenge even for a CONNECTED session."""
+        storage = InMemoryBackend()
+        coordinator = MockAuthCoordinator(storage)
+        context = coordinator.create_context("user:alice")
+
+        server_config = {"url": "http://localhost:3000"}
+        session = Session("test_server", server_config, context, coordinator)
+        session.status = SessionStatus.CONNECTED
+
+        await coordinator.set_auth_pending(
+            context_id=context.id,
+            server_name="test_server",
+            auth_metadata={
+                "authorization_url": "http://auth.example.com/reauth",
+                "state": "state456"
+            }
+        )
+
+        assert await session.requires_auth() is True
 
 
 class TestSessionStorageIsolation:

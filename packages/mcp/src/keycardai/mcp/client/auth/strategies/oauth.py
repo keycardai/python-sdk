@@ -272,15 +272,8 @@ class OAuthStrategy:
             )
 
             # Step 4: Register completion route for token exchange
-            # Coordinators that require synchronous cleanup (e.g., LocalAuthCoordinator
-            # with blocking wait patterns) will have it, others use background cleanup
-            handler_kwargs = {}
-            if self.coordinator.requires_synchronous_cleanup:
-                handler_kwargs["run_cleanup_in_background"] = False
-                logger.debug(f"[{self.server_name}] Using synchronous cleanup for {type(self.coordinator).__name__}")
-            else:
-                logger.debug(f"[{self.server_name}] Using background cleanup for {type(self.coordinator).__name__}")
-
+            # Completion cleanup always runs synchronously in the handler, so no
+            # cleanup-mode kwargs are needed regardless of coordinator type
             await self.coordinator.register_completion_route(
                 routing_key=flow_metadata.state,
                 handler_name="oauth_completion",
@@ -288,7 +281,6 @@ class OAuthStrategy:
                 context_id=self.context.id,
                 server_name=self.server_name,
                 routing_param="state",
-                handler_kwargs=handler_kwargs,
                 metadata=self.context.metadata,
                 ttl=timedelta(minutes=10)
             )
