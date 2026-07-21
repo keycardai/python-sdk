@@ -87,6 +87,9 @@ def build_app(config: AgentServiceConfig, executor: AgentExecutor) -> Starlette:
         zone_url=config.auth_server_url,
         server_name=config.service_name,
         server_url=config.identity_url,
+        # Bind accepted tokens to this service; leaving audience unset
+        # disables the audience check entirely.
+        audience=config.identity_url,
         application_credential=ClientSecret((config.client_id, config.client_secret)),
     )
     verifier = auth_provider.get_token_verifier()
