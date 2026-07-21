@@ -316,17 +316,6 @@ class TestCacheManagement:
             assert stats["expired"] == 1
 
 
-class TestListDelegatableServices:
-    """Test service listing (placeholder implementation)."""
-
-    @pytest.mark.asyncio
-    async def test_list_delegatable_services_returns_empty(self, discovery):
-        """Test list_delegatable_services returns empty list (not yet implemented)."""
-        services = await discovery.list_delegatable_services()
-        assert services == []
-        assert isinstance(services, list)
-
-
 class TestContextManager:
     """Test discovery as async context manager."""
 

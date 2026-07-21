@@ -142,8 +142,7 @@ async def test_invoke_service_posts_jsonrpc_envelope(a2a_client):
         )
 
     # The wrapper unwraps the SendMessageResponse.message.parts text.
-    assert result["result"] == "Task completed successfully"
-    assert result["delegation_chain"] == []
+    assert result == {"result": "Task completed successfully"}
 
     # Confirm the request matches the 1.x dispatcher contract.
     posted_url = mock_post.call_args[0][0]
