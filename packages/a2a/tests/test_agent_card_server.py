@@ -92,6 +92,9 @@ def app(service_config):
                     request_handler=request_handler,
                     rpc_url="/jsonrpc",
                     context_builder=KeycardServerCallContextBuilder(),
+                    # Mirrors the example: Keycard SDKs in other languages
+                    # still speak A2A 0.3.
+                    enable_v0_3_compat=True,
                 ),
                 middleware=[
                     Middleware(

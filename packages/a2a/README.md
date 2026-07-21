@@ -96,6 +96,10 @@ your_app.routes.append(Mount(
         request_handler=request_handler,
         rpc_url="/jsonrpc",
         context_builder=KeycardServerCallContextBuilder(),
+        # Keycard SDKs in other languages still speak A2A 0.3 (`message/send`
+        # with no A2A-Version header); without this the 1.x dispatcher rejects
+        # them with -32601 MethodNotFound. Interim until all SDKs speak 1.0.
+        enable_v0_3_compat=True,
     ),
     middleware=[
         Middleware(

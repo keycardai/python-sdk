@@ -13,6 +13,7 @@ server-to-server delegation use ``DelegationClient`` from
 
 import asyncio
 import os
+import uuid
 
 import httpx
 
@@ -28,13 +29,19 @@ async def example_manual_jsonrpc() -> None:
     print("=" * 60)
 
     async with httpx.AsyncClient() as client:
+        # A2A 1.0 envelope: CamelCase method name, a required messageId, an
+        # enum-string role, and the A2A-Version header. (A2A 0.3 clients send
+        # "message/send" instead; servers accept those only when built with
+        # enable_v0_3_compat=True, as the sibling keycard_protected_server
+        # example does.)
         jsonrpc_request = {
             "jsonrpc": "2.0",
             "id": "1",
-            "method": "message/send",
+            "method": "SendMessage",
             "params": {
                 "message": {
-                    "role": "user",
+                    "messageId": str(uuid.uuid4()),
+                    "role": "ROLE_USER",
                     "parts": [{"text": "What is the status of deployment?"}],
                 }
             },
@@ -47,6 +54,7 @@ async def example_manual_jsonrpc() -> None:
                 headers={
                     "Content-Type": "application/json",
                     "Authorization": f"Bearer {os.getenv('AUTH_TOKEN', '<your-token>')}",
+                    "A2A-Version": "1.0",
                 },
             )
 
