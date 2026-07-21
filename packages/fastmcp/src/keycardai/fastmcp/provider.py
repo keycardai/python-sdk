@@ -919,12 +919,19 @@ class AuthProvider:
         resources: str | list[str],
         *,
         request_scopes: str | list[str] | dict[str, str | list[str]] | None = None,
-    ) -> GrantDependency:
+        # Declared Any (the FastAPI Depends() convention) so both supported
+        # idioms type-check: as a parameter default the checker takes the type
+        # from the `access: AccessContext` annotation, and as a decorator the
+        # runtime GrantDependency.__call__ applies. A precise return type
+        # breaks one idiom or the other. Narrow to AccessContext when the
+        # decorator path is removed.
+    ) -> Any:
         """Delegated token exchange for one or more resources.
 
-        Returns a :class:`GrantDependency` that automates the OAuth token
-        exchange process (RFC 8693) for accessing external resources on behalf
-        of authenticated users. Use it as a typed parameter default (preferred)
+        Returns a :class:`GrantDependency` (typed as ``Any`` so both call
+        idioms type-check) that automates the OAuth token exchange process
+        (RFC 8693) for accessing external resources on behalf of
+        authenticated users. Use it as a typed parameter default (preferred)
         or as a decorator (the parameter-less get_state access is deprecated).
 
         The injected value is an instance of AccessContext, which can be used
