@@ -57,7 +57,7 @@ Connect to your server using any MCP-compatible client (e.g., Cursor, Claude Des
 
 ## Delegated Access
 
-For accessing external APIs on behalf of users using the `@grant` decorator, see the [Delegated Access Example](../delegated_access/).
+For accessing external APIs on behalf of users with an injected grant parameter, see the [Delegated Access Example](../delegated_access/).
 
 ## Environment Variables Reference
 

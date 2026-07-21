@@ -4,10 +4,15 @@ This module provides seamless integration between Keycard's OAuth client
 and FastMCP servers, enabling secure authentication and authorization.
 
 Components:
-- AuthProvider: Keycard authentication provider with RemoteAuthProvider creation and grant decorator
-- AccessContext: Context object for accessing delegated tokens (used in FastMCP Context namespace)
+- AuthProvider: Keycard authentication provider with RemoteAuthProvider creation and grant dependency
+- AccessContext: Typed context object for accessing delegated tokens, injected into tool parameters
 - Application credentials: ClientSecret, WebIdentity, EKSWorkloadIdentity for different authentication scenarios
 - Auth strategies: BasicAuth, MultiZoneBasicAuth, NoneAuth for HTTP client authentication
+
+GrantDependency is the return type of AuthProvider.grant(); it is exported for
+type annotations only and is never constructed directly. Testing seams live in
+keycardai.fastmcp.testing (mock_access_context is also re-exported here for
+backward compatibility).
 
 Re-export Guide:
     Local definitions (primary API): AuthProvider, AccessContext
@@ -19,8 +24,8 @@ Re-export Guide:
 
 Basic Usage:
 
-    from fastmcp import FastMCP, Context
-    from keycardai.fastmcp import AuthProvider
+    from fastmcp import FastMCP
+    from keycardai.fastmcp import AccessContext, AuthProvider
 
     # Create authentication provider
     auth_provider = AuthProvider(
@@ -33,11 +38,13 @@ Basic Usage:
     auth = auth_provider.get_remote_auth_provider()
     mcp = FastMCP("My Server", auth=auth)
 
-    # Use grant decorator for token exchange
+    # Declare the grant as a typed tool parameter for token exchange
     @mcp.tool()
-    @auth_provider.grant("https://api.example.com")
-    async def call_external_api(ctx: Context, query: str):
-        token = (await ctx.get_state("keycardai")).access("https://api.example.com").access_token
+    async def call_external_api(
+        query: str,
+        access: AccessContext = auth_provider.grant("https://api.example.com"),
+    ):
+        token = access.access("https://api.example.com").access_token
         # Use token to call external API
         return f"Results for {query}"
 
@@ -55,11 +62,14 @@ Advanced Configuration:
 
     # Multiple resource access
     @mcp.tool()
-    @auth_provider.grant(["https://www.googleapis.com/calendar/v3", "https://www.googleapis.com/drive/v3"])
-    async def sync_calendar_to_drive(ctx: Context):
-        access_context = await ctx.get_state("keycardai")
-        calendar_token = access_context.access("https://www.googleapis.com/calendar/v3").access_token
-        drive_token = access_context.access("https://www.googleapis.com/drive/v3").access_token
+    async def sync_calendar_to_drive(
+        access: AccessContext = auth_provider.grant([
+            "https://www.googleapis.com/calendar/v3",
+            "https://www.googleapis.com/drive/v3",
+        ]),
+    ):
+        calendar_token = access.access("https://www.googleapis.com/calendar/v3").access_token
+        drive_token = access.access("https://www.googleapis.com/drive/v3").access_token
         # Use both tokens for cross-service operations
         return "Sync completed"
 
@@ -107,13 +117,20 @@ from keycardai.oauth.http.auth import (
     NoneAuth,
 )
 
-from .provider import AccessContext, AuthProvider
+from .provider import (
+    AccessContext,
+    AuthProvider,
+    GrantDependency,
+)
 from .testing import mock_access_context
 
 __all__ = [
     # === Primary API (Local Definitions) ===
     "AuthProvider",
     "AccessContext",
+    # === Typing Support ===
+    # Return type of AuthProvider.grant(); exported for annotations, never constructed directly
+    "GrantDependency",
     # === Application Credentials (re-exported from keycardai.mcp.server.auth) ===
     "ApplicationCredential",
     "ClientSecret",

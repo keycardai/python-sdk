@@ -1,6 +1,6 @@
 # GitHub API Integration with Keycard Delegated Access
 
-A complete example demonstrating how to use the `@grant` decorator for token exchange, enabling your MCP server to access external APIs (GitHub) on behalf of authenticated users.
+A complete example demonstrating how to declare a grant as a typed tool parameter for token exchange, enabling your MCP server to access external APIs (GitHub) on behalf of authenticated users.
 
 ## Why Keycard?
 
@@ -150,7 +150,7 @@ User                    MCP Server              Keycard                 GitHub
 ```
 
 1. User authenticates to your MCP server via Keycard
-2. When a tool with `@grant` is called, Keycard exchanges the user's token
+2. When a tool declaring a grant parameter is called, Keycard exchanges the user's token
 3. The exchanged token has the scopes configured for the external resource
 4. Your server uses this token to call GitHub API on behalf of the user
 

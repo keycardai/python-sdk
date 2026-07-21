@@ -1,9 +1,9 @@
 """Smoke tests for package examples.
 
-Verifies that each example in packages/mcp-fastmcp/examples/ imports cleanly
-and exposes the expected objects. The @grant decorator validates function
-signatures at import time, so a successful import confirms the example
-is compatible with the current SDK API.
+Verifies that each example in packages/fastmcp/examples/ imports cleanly
+and exposes the expected objects. Grant declarations (parameter defaults and
+decorators) are constructed and registered with FastMCP at import time, so a
+successful import confirms the example is compatible with the current SDK API.
 """
 
 import importlib.util
@@ -73,7 +73,8 @@ def test_delegated_access_example_loads():
     assert hasattr(mod, "auth")
     assert hasattr(mod, "mcp")
     # FastMCP's @mcp.tool() wraps functions in FunctionTool objects (not callable),
-    # but their existence confirms @grant validated the signatures at import time.
+    # but their existence confirms the grant parameter declarations were
+    # accepted by FastMCP's dependency machinery at registration time.
     assert hasattr(mod, "get_github_user")
     assert hasattr(mod, "list_github_repos")
     assert hasattr(mod, "main")
