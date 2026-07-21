@@ -163,29 +163,6 @@ def mock_agent_card_minimal():
 
 
 # ============================================
-# Service Discovery Fixtures
-# ============================================
-
-@pytest.fixture
-def mock_delegatable_services():
-    """Mock list of delegatable services."""
-    return [
-        {
-            "name": "Service One",
-            "url": "https://service1.example.com",
-            "description": "First test service",
-            "capabilities": ["capability1", "capability2"],
-        },
-        {
-            "name": "Service Two",
-            "url": "https://service2.example.com",
-            "description": "Second test service",
-            "capabilities": ["capability3"],
-        },
-    ]
-
-
-# ============================================
 # JWT Token Fixtures
 # ============================================
 
