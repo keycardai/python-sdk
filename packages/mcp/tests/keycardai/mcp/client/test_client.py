@@ -4,6 +4,8 @@ This module tests the Client class initialization, lifecycle management,
 connection handling, and coordination with sessions.
 """
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
 from mcp import Tool
 
@@ -1017,24 +1019,21 @@ class TestClientGetAuthChallenges:
         assert challenges[0]["other_field"] == "value"
 
     @pytest.mark.asyncio
-    async def test_get_auth_challenges_empty_for_connected_session_with_stale_record(self):
-        """Test that a connected session's stale pending-auth record is not surfaced.
+    async def test_get_auth_challenges_empty_after_completed_auth_and_reconnect(self):
+        """Completed authorization plus reconnect leaves no auth challenges.
 
-        Simulates a completed authorization and auto-reconnect where the
-        completion cleanup task was dropped before running: the pending-auth
-        record is still in coordinator storage, but the session is CONNECTED.
-        get_auth_challenges() must return an empty list without any
-        consumer-side filtering.
+        Simulates a completed authorization whose cleanup never ran: the
+        pending-auth record is still in coordinator storage when the session
+        reconnects. The transition into CONNECTED clears the stale record, so
+        get_auth_challenges() returns an empty list without any consumer-side
+        filtering.
         """
         servers = {"test_server": {"url": "http://localhost:3000"}}
         mock_coordinator = MockAuthCoordinator()
 
         client = Client(servers=servers, auth_coordinator=mock_coordinator)
 
-        # Real Session (not a mock) so the CONNECTED short-circuit is exercised
-        session = client.sessions["test_server"]
-
-        # Stale record left behind by a dropped cleanup task
+        # Stale record left behind by a cleanup that never ran
         await mock_coordinator.set_auth_pending(
             context_id=client.context.id,
             server_name="test_server",
@@ -1043,17 +1042,74 @@ class TestClientGetAuthChallenges:
                 "state": "state123"
             }
         )
-        session.status = SessionStatus.CONNECTED
+
+        # Real Session (not a mock) so connect() flows through the
+        # transition into CONNECTED, the same path the auto-reconnect
+        # after auth completion takes.
+        mock_connection = MagicMock()
+        mock_connection.start = AsyncMock(return_value=(MagicMock(), MagicMock()))
+        mock_connection.stop = AsyncMock()
+
+        mock_client_session = MagicMock()
+        mock_client_session.__aenter__ = AsyncMock(return_value=mock_client_session)
+        mock_client_session.__aexit__ = AsyncMock()
+        mock_client_session.initialize = AsyncMock()
+
+        with patch("keycardai.mcp.client.session.create_connection", return_value=mock_connection), \
+             patch("keycardai.mcp.client.session.ClientSession", return_value=mock_client_session):
+            await client.connect()
+
+        assert client.sessions["test_server"].status == SessionStatus.CONNECTED
 
         challenges = await client.get_auth_challenges()
 
         assert challenges == []
-        # The stale record was cleared lazily
+        # The stale record was cleared at the transition into CONNECTED
         stored = await mock_coordinator.get_auth_pending(
             context_id=client.context.id,
             server_name="test_server"
         )
         assert stored is None
+
+    @pytest.mark.asyncio
+    async def test_get_auth_challenges_surfaces_fresh_challenge_for_connected_session(self):
+        """A challenge written while a session is CONNECTED is surfaced.
+
+        Regression guard for mid-session token expiry: transport-level 401
+        handling writes a fresh pending-auth record without ever changing the
+        session status. get_auth_challenges() must include that challenge so
+        the user sees the re-auth URL, and reading it must not delete it.
+        """
+        servers = {"test_server": {"url": "http://localhost:3000"}}
+        mock_coordinator = MockAuthCoordinator()
+
+        client = Client(servers=servers, auth_coordinator=mock_coordinator)
+
+        # Real Session (not a mock) so the real getter is exercised
+        session = client.sessions["test_server"]
+        session.status = SessionStatus.CONNECTED
+
+        # Fresh record written by the transport while already CONNECTED
+        challenge = {
+            "authorization_url": "http://auth.example.com/reauth",
+            "state": "state456"
+        }
+        await mock_coordinator.set_auth_pending(
+            context_id=client.context.id,
+            server_name="test_server",
+            auth_metadata=challenge
+        )
+
+        challenges = await client.get_auth_challenges()
+
+        assert challenges == [{**challenge, "server": "test_server"}]
+        # Reading did not delete the record: a second poll still surfaces it
+        assert await client.get_auth_challenges() == challenges
+        stored = await mock_coordinator.get_auth_pending(
+            context_id=client.context.id,
+            server_name="test_server"
+        )
+        assert stored == challenge
 
 
 class TestClientIdGeneration:

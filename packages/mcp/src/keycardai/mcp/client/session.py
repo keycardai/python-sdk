@@ -415,6 +415,16 @@ class Session:
         try:
             await self._session.initialize()
             self._set_status(SessionStatus.CONNECTED, "session initialized")
+            # Reaching CONNECTED means auth works, so any pending-auth record
+            # still stored for this session is stale by definition (e.g. a
+            # completion cleanup that never ran). Clearing at the transition
+            # happens once, not on every read, and cannot clobber a challenge
+            # written after connection (mid-session token expiry re-auth),
+            # because that is written while the session is already CONNECTED.
+            # The auto-reconnect in on_completion_handled also flows through
+            # connect() into this method, so this is the single hook for the
+            # transition into CONNECTED.
+            await self._clear_stale_auth_pending()
 
         except Exception as e:
             auth_challenge = await self.get_auth_challenge()
@@ -489,17 +499,37 @@ class Session:
         An auth challenge is created by the auth strategy when authentication
         is required but not yet complete (e.g., waiting for OAuth callback).
 
-        A connected session has no pending challenge by definition, so this
-        returns None when the session status is CONNECTED. Any record still
-        stored for this session at that point is stale (e.g. completion
-        cleanup did not run) and is cleared lazily.
+        This is a plain storage read with no side effects, so polling it
+        repeatedly is safe. A challenge can exist even while the session is
+        CONNECTED: a mid-session token expiry is handled at the transport
+        level and writes a fresh pending-auth record without changing the
+        session status, and that challenge must be surfaced so the user can
+        re-authorize. Stale records from completed authorizations are cleared
+        on the transition into CONNECTED, not here.
 
         Returns:
             Dict with challenge details (strategy-specific) or None if no pending challenge.
             For OAuth: {'authorization_url': str, 'state': str}
             For other strategies: may contain different fields
         """
-        if self.status == SessionStatus.CONNECTED:
+        # Auth challenge is stored in coordinator
+        return await self.coordinator.get_auth_pending(
+            context_id=self.context.id,
+            server_name=self.server_name
+        )
+
+    async def _clear_stale_auth_pending(self) -> None:
+        """
+        Best-effort clear of a lingering pending-auth record after connecting.
+
+        Called on the transition into CONNECTED. A record still stored at
+        that point belongs to an already-completed authorization (e.g. the
+        completion cleanup never ran) and would otherwise keep being
+        advertised as an auth challenge. Storage errors are logged and
+        swallowed: a stale record must never fail an otherwise successful
+        connection.
+        """
+        try:
             stale_challenge = await self.coordinator.get_auth_pending(
                 context_id=self.context.id,
                 server_name=self.server_name
@@ -507,19 +537,17 @@ class Session:
             if stale_challenge:
                 logger.debug(
                     f"Session {self.server_name}: Clearing stale auth challenge "
-                    f"for connected session"
+                    f"after successful connection"
                 )
                 await self.coordinator.clear_auth_pending(
                     context_id=self.context.id,
                     server_name=self.server_name
                 )
-            return None
-
-        # Auth challenge is stored in coordinator
-        return await self.coordinator.get_auth_pending(
-            context_id=self.context.id,
-            server_name=self.server_name
-        )
+        except Exception as e:
+            logger.warning(
+                f"Session {self.server_name}: Failed to clear stale "
+                f"pending-auth record after connecting: {e}"
+            )
 
     def __getattr__(self, name: str) -> Any:
         """
