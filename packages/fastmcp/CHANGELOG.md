@@ -1,3 +1,95 @@
+## 0.5.0-keycardai-fastmcp (2026-07-21)
+
+
+- feat(keycardai-fastmcp): grant-as-dependency typed injection (deprecate get_state) (#204)
+- * feat(keycardai-fastmcp): grant-as-dependency typed injection via fastmcp.dependencies
+- AuthProvider.grant() now returns a GrantDependency, a fastmcp.dependencies
+Dependency subclass. Declared as a typed parameter default
+(access: AccessContext = auth_provider.grant(...)), FastMCP resolves it per
+request: __aenter__ reads the caller token, performs the RFC 8693 exchanges,
+and injects the populated AccessContext, hidden from the tool input schema.
+Errors are recorded on the AccessContext, never raised, preserving the
+existing error-capture contract.
+- GrantDependency.__call__ keeps the @auth_provider.grant(...) decorator
+spelling working from the same object. The decorator now injects into a
+declared AccessContext parameter (hidden from the wrapper signature) and
+emits a decoration-time DeprecationWarning, once per tool, when no
+AccessContext parameter is declared; it keeps dual-writing
+set_state("keycardai") during the deprecation window.
+- Also:
+- AccessContext.from_context(ctx) escape hatch for helpers called from
+  inside tools that only hold the FastMCP Context.
+- Fix the Context parameter check: resolve string annotations via
+  get_type_hints and match Context inside unions (Context | None) and
+  Annotated forms; a declared AccessContext parameter removes the
+  ctx: Context requirement entirely.
+- override_access_context(): public seam that forces grant resolution to a
+  caller-supplied AccessContext (used by the testing utilities).
+- Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+- * refactor(keycardai-fastmcp): move mock_access_context onto the public override seam
+- mock_access_context previously patched module internals
+(keycardai.fastmcp.provider.AccessContext and get_access_token). It now
+builds a real AccessContext, preloaded with the requested tokens or error
+state, and installs it through the public override_access_context() seam,
+so grant resolution short-circuits on both the injected-parameter and
+decorator paths without any patching.
+- The yielded object is now a real AccessContext (subclassed only to serve a
+default token for arbitrary resources), so assertions exercise the same
+error paths as production code. override_access_context is re-exported
+from keycardai.fastmcp.testing for tests that want to build the
+AccessContext themselves.
+- Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+- * docs(keycardai-fastmcp): flip README and examples to the injected-parameter grant form
+- The README quick start, package docstrings, and both examples now declare
+grants as typed AccessContext parameter defaults instead of the deprecated
+decorator + ctx.get_state("keycardai") pattern. Adds README sections on
+error capture, the from_context escape hatch, and the mock_access_context
+testing utility.
+- Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+- * build(keycardai-fastmcp): raise fastmcp floor to >=3.1.0 for the Dependency extension point
+- GrantDependency subclasses fastmcp.dependencies.Dependency. The
+fastmcp.dependencies module exists since 3.0.0, but it only exports the
+Dependency base class (via the uncalled-for DI engine) starting with
+fastmcp 3.1.0; on 3.0.x the module exports Depends only, so
+keycardai-fastmcp would fail to import. Raise the manifest floor in the
+package and both examples accordingly (verified against the published
+3.0.0/3.0.2 vs 3.1.0 wheels on PyPI).
+- Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+- * test(keycardai-fastmcp): end-to-end grant injection through a real FastMCP server
+- Adds a round trip through FastMCP's in-memory client verifying the
+injected AccessContext parameter is resolved per request and excluded
+from the tool input schema. Ignores flake8-bugbear B008 in tests and
+examples: auth_provider.grant(...) in a parameter default is the
+intended injection spelling, matching how FastAPI treats Depends().
+- Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+- * refactor(keycardai-fastmcp): keep grant and AccessContext as the only primary nouns
+- GrantDependency stays exported for type annotations but is documented as
+the return type of AuthProvider.grant(), not a concept to learn.
+override_access_context moves out of the package root: it is a testing
+seam and lives in keycardai.fastmcp.testing only.
+- Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+- * docs(keycardai-fastmcp): document contracts surfaced by review
+- All-or-nothing multi-resource grant behavior is now stated on
+GrantDependency and _build_access_context. The mock's bare-token form
+answers for any resource; the docstring and README steer strict tests
+to resource_tokens. README gains a migration note covering warning
+escalation (-W error) on the deprecated decorator path and a B008
+per-file-ignore example for downstream linters. The string-annotation
+fallback in _annotation_matches carries a comment on its narrow
+false-positive window.
+- Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+- * fix(keycardai-fastmcp): type grant() as Any so both call idioms type-check
+- A GrantDependency return annotation makes the documented parameter
+default (access: AccessContext = auth_provider.grant(...)) fail type
+checking, and AccessContext breaks the still-supported decorator form.
+Any is the FastAPI Depends() convention: the parameter annotation
+carries the type for the injected form and the decorator form stays
+callable. Narrow to AccessContext when the decorator path is removed.
+- Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+- ---------
+- Co-authored-by: GitHub Action <action@github.com>
+Co-authored-by: Claude Fable 5 <noreply@anthropic.com>
+
 ## 0.4.0-keycardai-fastmcp (2026-06-02)
 
 
