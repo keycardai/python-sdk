@@ -20,6 +20,9 @@ Example::
     auth = AuthProvider(
         zone_id="your-zone-id",
         application_credential=ClientSecret(("client_id", "client_secret")),
+        # Resource indicator (RFC 8707) Keycard mints tokens for. The verifier
+        # rejects tokens whose "aud" claim does not include this value.
+        audience="https://your-api.example.com",
     )
 
     app = FastAPI()
@@ -106,7 +109,9 @@ class AuthProvider:
                      this should be the top-level domain.
             server_name: Human-readable name for the server.
             required_scopes: Required scopes for token validation.
-            audience: Expected token audience for verification.
+            audience: Expected token audience for verification. When left
+                unset (None), the audience check is disabled and tokens
+                verify regardless of their ``aud`` claim.
             server_url: Resource server URL.
             enable_multi_zone: Enable multi-zone support where zone_url is the
                 top-level domain and the zone is extracted from request
