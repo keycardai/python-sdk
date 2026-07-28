@@ -1180,8 +1180,8 @@ test = [
 requires-dist = [
     { name = "fastmcp", specifier = ">=3.1.0" },
     { name = "httpx", specifier = ">=0.27.2" },
-    { name = "keycardai-mcp", specifier = ">=0.15.0" },
-    { name = "keycardai-oauth", specifier = ">=0.7.0" },
+    { name = "keycardai-mcp", specifier = ">=0.15.0,<0.27" },
+    { name = "keycardai-oauth", editable = "../oauth" },
     { name = "pydantic", specifier = ">=2.11.7" },
     { name = "pydantic-settings", specifier = ">=2.7.1" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=8.4.1" },
@@ -1212,18 +1212,27 @@ wheels = [
 
 [[package]]
 name = "keycardai-oauth"
-version = "0.21.1"
-source = { registry = "https://pypi.org/simple" }
+source = { editable = "../oauth" }
 dependencies = [
     { name = "cryptography" },
     { name = "httpx" },
     { name = "joserfc" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c4/fd/4b99de8a1c3f255caed132335401ec22f18c6e5f5ae6fb951abdc4cbd9b6/keycardai_oauth-0.21.1.tar.gz", hash = "sha256:3da92e1bde38aa354f8bbda40d5db7a342a84cc677889d51862fd6ac8fd72a1b", size = 202875, upload-time = "2026-07-20T17:32:36.99Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/74/c1/afe338247da4f03c55656074073cc8e141fcd400f53cd805d15888cba44b/keycardai_oauth-0.21.1-py3-none-any.whl", hash = "sha256:56cbd817be913f6dfe44fa1aafd03e0670c2e00281b7b0b1ce2bbbb7c669ff57", size = 84063, upload-time = "2026-07-20T17:32:35.636Z" },
+
+[package.metadata]
+requires-dist = [
+    { name = "cryptography", specifier = ">=45.0.7" },
+    { name = "httpx", specifier = ">=0.28.1" },
+    { name = "joserfc", specifier = ">=1.6.8" },
+    { name = "pydantic", specifier = ">=2.11.7" },
+    { name = "pytest", marker = "extra == 'test'", specifier = ">=8.4.1" },
+    { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=1.1.0" },
 ]
+provides-extras = ["test"]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pytest-cov", specifier = ">=6.2.1" }]
 
 [[package]]
 name = "keycardai-starlette"

@@ -27,9 +27,13 @@ test-package PACKAGE:
 test-file PACKAGE FILE:
     cd packages/{{PACKAGE}} && uv run --extra test pytest tests/{{FILE}} -v
 
-# Run tests with coverage enforcement. mcp sits at 60% because well-tested server
-# primitives moved to oauth/starlette, leaving the under-tested client integrations
-# (CrewAI, LangChain, OpenAI) as the dominant share of what remains.
+# Run tests with coverage enforcement. mcp stays at 60%, but the denominator it
+# measures grew: 2679 statements against ~2500 before, because all four
+# *_agents.py client integrations are now imported by
+# tests/.../test_tool_schema_reads.py and so are counted. Dropping the agent
+# frameworks alone would have shrunk it to 2036 and inflated the percentage to
+# ~75 on less measured code; that test is what keeps the gate honest. Headroom
+# is thin (60.88% actual) -- if it dips, add coverage rather than lowering this.
 test-coverage: build
     cd packages/oauth && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=70
     cd packages/starlette && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=55

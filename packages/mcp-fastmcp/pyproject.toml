@@ -38,6 +38,14 @@ Repository = "https://github.com/keycardai/python-sdk"
 Documentation = "https://docs.keycardai.com"
 Issues = "https://github.com/keycardai/python-sdk/issues"
 
+[tool.uv.sources]
+# keycardai-fastmcp is path-linked: it sits on the same mcp<2.0 major as this
+# bridge, so testing against the local copy is both possible and correct.
+keycardai-fastmcp = { path = "../fastmcp", editable = true }
+keycardai-oauth = { path = "../oauth", editable = true }
+# keycardai-starlette stays on the index: it is a transitive dependency via
+# keycardai-mcp, and tool.uv.sources only redirects direct dependencies.
+
 [build-system]
 requires = ["hatchling", "uv-dynamic-versioning"]
 build-backend = "hatchling.build"

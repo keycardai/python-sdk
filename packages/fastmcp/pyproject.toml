@@ -12,7 +12,11 @@ dependencies = [
     "httpx>=0.27.2",
     "keycardai-oauth>=0.7.0",
     "fastmcp>=3.1.0",
-    "keycardai-mcp>=0.15.0",
+    # Capped deliberately. fastmcp 3.x pins mcp<2.0 and keycardai-mcp 0.27+
+    # requires mcp>=2.0, so the two are unsatisfiable together. Without this
+    # cap pip silently backtracks keycardai-mcp to 0.26.0 and freezes there.
+    # Lift to the 2.0 line together with the fastmcp 4.x bump (ECO-198).
+    "keycardai-mcp>=0.15.0,<0.27",
 ]
 keywords = ["fastmcp", "mcp", "model-context-protocol", "oauth", "token-exchange", "authentication", "keycard"]
 classifiers = [
@@ -44,6 +48,14 @@ Homepage = "https://github.com/keycardai/python-sdk"
 Repository = "https://github.com/keycardai/python-sdk"
 Documentation = "https://docs.keycardai.com"
 Issues = "https://github.com/keycardai/python-sdk/issues"
+
+[tool.uv.sources]
+# Only keycardai-mcp comes from the index: it is on mcp>=2.0 and this package is
+# on mcp<2.0, so the local copy is genuinely unusable here. Everything else is
+# path-linked so a breaking change in a sibling still fails this package's CI.
+keycardai-oauth = { path = "../oauth", editable = true }
+# keycardai-starlette stays on the index: it is a transitive dependency via
+# keycardai-mcp, and tool.uv.sources only redirects direct dependencies.
 
 [build-system]
 requires = ["hatchling", "uv-dynamic-versioning"]
