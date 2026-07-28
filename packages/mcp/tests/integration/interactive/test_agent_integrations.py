@@ -35,9 +35,14 @@ import os
 from typing import TYPE_CHECKING
 
 import pytest
-from agents import Agent, Runner
-from langchain.agents import create_agent
-from langchain_openai import ChatOpenAI
+
+# openai-agents pins mcp<2.0, so it is not installable alongside this package's
+# mcp>=2.0 and is absent from the test extra. Skip rather than fail collection.
+pytest.importorskip("agents")
+
+from agents import Agent, Runner  # noqa: E402
+from langchain.agents import create_agent  # noqa: E402
+from langchain_openai import ChatOpenAI  # noqa: E402
 
 from keycardai.mcp.client import Client, InMemoryBackend, LocalAuthCoordinator
 from keycardai.mcp.client.integrations.langchain_agents import LangChainClient

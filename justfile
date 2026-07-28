@@ -3,15 +3,19 @@ dev-setup:
     uv run pre-commit install
     uv sync --all-extras --all-packages
 
-# Build the project
+# Build the project. packages/fastmcp and packages/mcp-fastmcp sit outside the
+# uv workspace (they hold mcp<2.0; see ECO-198), so they sync separately.
 build:
     uv sync --all-packages
+    cd packages/fastmcp && uv sync --extra test
+    cd packages/mcp-fastmcp && uv sync --extra test
 
 # Run tests for all packages
 test: build
     just test-package oauth
     just test-package starlette
     just test-package mcp
+    just test-package fastmcp
     just test-package mcp-fastmcp
     just test-package a2a
 
@@ -30,6 +34,7 @@ test-coverage: build
     cd packages/oauth && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=70
     cd packages/starlette && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=55
     cd packages/mcp && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=60
+    cd packages/fastmcp && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=60
     cd packages/mcp-fastmcp && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=70
     cd packages/a2a && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=55
 

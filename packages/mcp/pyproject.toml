@@ -41,17 +41,19 @@ crewai = [
 pydantic-ai = [
     "pydantic-ai>=0.2.0",
 ]
+# openai-agents, crewai and fastmcp all pin mcp<2.0 and cannot install next to
+# this package's mcp>=2.0. Their suites are guarded by pytest.importorskip and
+# report as SKIPPED, so the gap is visible in test output rather than silent:
+#   - tests/.../test_crewai_agents.py       skips without crewai
+#   - tests/integration/interactive/*       skips without openai-agents/fastmcp
+# They come back when those projects accept mcp 2.0 (ECO-198).
 test = [
     "pytest>=8.4.1",
     "pytest-asyncio>=1.1.0",
     "pytest-cov>=6.2.1",
     "pytest-timeout>=2.3.1",
-    "fastmcp>=3.0.0",  # For integration tests
-    "keycardai-mcp-fastmcp",  # For integration tests
-    "openai-agents>=0.5.1",
     "langchain>=1.0.5",
     "langchain-openai>=1.0.2",
-    "crewai>=0.86.0",
     "pydantic-ai>=0.2.0",
 ]
 
