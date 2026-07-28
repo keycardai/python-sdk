@@ -37,7 +37,7 @@ MCPServerError = OAuthServerError
 class MissingContextError(OAuthServerError):
     """Raised when grant decorator encounters a missing context error.
 
-    This exception is MCP-specific because it references FastMCP ``Context``
+    This exception is MCP-specific because it references MCPServer ``Context``
     and ``RequestContext`` types in its guidance messages.
     """
 
@@ -67,7 +67,7 @@ class MissingContextError(OAuthServerError):
                     f"Function {func_info} must have a Context parameter to use @grant decorator.\n\n"
                     "The @grant decorator requires access to Context to store access tokens.\n\n"
                     "Fix by adding Context parameter:\n"
-                    "  from fastmcp import Context\n\n"
+                    "  from mcp.server.mcpserver import Context\n\n"
                     "  @auth_provider.grant('https://api.example.com')\n"
                     f"  async def {function_name or 'your_function'}(ctx: Context, ...):  # <- Add 'ctx: Context' parameter\n"
                     "      access_context = await ctx.get_state('keycardai')\n"

@@ -280,7 +280,7 @@ The following services require user authorization: {', '.join(pending_services)}
         tool_name = mcp_tool.name
         tool_description = mcp_tool.description or f"Tool {tool_name} from {server_name}"
 
-        input_schema = mcp_tool.inputSchema if hasattr(mcp_tool, "inputSchema") else {}
+        input_schema = mcp_tool.input_schema if hasattr(mcp_tool, "input_schema") else {}
 
         # Create args schema from MCP tool schema
         tool_args_schema = None

@@ -4,7 +4,7 @@ This example demonstrates how to use the @grant decorator to request
 token exchange for accessing external APIs (GitHub) on behalf of
 authenticated users using the low-level keycardai-mcp package.
 
-Key differences from FastMCP integration:
+Key differences from MCPServer integration:
 - AccessContext is passed as a function parameter (not retrieved from ctx.get_state())
 - Both AccessContext and Context parameters are required by @grant
 - Server startup uses uvicorn.run(auth_provider.app(mcp))
@@ -21,7 +21,7 @@ import os
 
 import httpx
 import uvicorn
-from mcp.server.fastmcp import Context, FastMCP
+from mcp.server.mcpserver import Context, MCPServer
 
 from keycardai.mcp.server.auth import AccessContext, AuthProvider, ClientSecret
 
@@ -41,7 +41,7 @@ auth_provider = AuthProvider(
 )
 
 # Create MCP server (not authenticated yet)
-mcp = FastMCP("GitHub API Server")
+mcp = MCPServer("GitHub API Server")
 
 
 @mcp.tool()

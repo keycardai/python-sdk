@@ -1,13 +1,13 @@
 """Hello World MCP Server with Low-Level Keycard Authentication.
 
 A minimal example demonstrating the keycardai-mcp package's AuthProvider
-for scenarios requiring more control than the FastMCP integration.
+for scenarios requiring more control than the MCPServer integration.
 """
 
 import os
 
 import uvicorn
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 from keycardai.mcp.server.auth import AuthProvider
 
@@ -20,7 +20,7 @@ auth_provider = AuthProvider(
 )
 
 # Create MCP server (not authenticated yet)
-mcp = FastMCP("Hello World Server")
+mcp = MCPServer("Hello World Server")
 
 
 @mcp.tool()

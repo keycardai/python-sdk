@@ -13,7 +13,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock, Mock
 
 import pytest
-from mcp.server.fastmcp import Context
+from mcp.server.mcpserver import Context
 
 from keycardai.mcp.server.auth import AccessContext, AuthProvider, EKSWorkloadIdentity
 from keycardai.mcp.server.exceptions import (

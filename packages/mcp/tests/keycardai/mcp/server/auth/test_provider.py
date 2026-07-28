@@ -13,8 +13,8 @@ from typing import Any
 from unittest.mock import Mock, patch
 
 import pytest
-from mcp.server.fastmcp import Context
-from mcp.shared.context import RequestContext
+from mcp.server.context import ServerRequestContext as RequestContext
+from mcp.server.mcpserver import Context
 
 from keycardai.mcp.server.auth import (
     AccessContext,
@@ -296,7 +296,7 @@ class TestGrantDecoratorContextExtraction:
 
     @pytest.mark.asyncio
     async def test_context_extraction_from_fastmcp_context(self, auth_provider_config, mock_client_factory):
-        """Test context extraction when FastMCP Context is provided."""
+        """Test context extraction when MCPServer Context is provided."""
         auth_provider = AuthProvider(
             **auth_provider_config,
             client_factory=mock_client_factory

@@ -120,7 +120,7 @@ class OpenAIMCPServer:
 
         call_tool_result = CallToolResult(
             content=[TextContent(type="text", text=text)],
-            isError=False,
+            is_error=False,
         )
 
         logger.debug(f"Returning CallToolResult with {len(call_tool_result.content)} content items")
