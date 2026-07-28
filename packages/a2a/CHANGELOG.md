@@ -1,3 +1,49 @@
+## 0.4.0-keycardai-a2a (2026-07-28)
+
+
+- fix(keycardai-a2a)!: 0.3 compat for cross-SDK interop, example audience binding, dead code removal (#207)
+- * fix(keycardai-a2a): enable A2A 0.3 compat in server compositions for cross-SDK interop
+- a2a-sdk 1.x's JSONRPC dispatcher ships enable_v0_3_compat=False, so a
+server composed per our README/example rejected 0.3 message/send
+requests from the Go/TS Keycard SDKs with -32601 MethodNotFound. The
+package deliberately does not wrap create_jsonrpc_routes (it is glue,
+not a server abstraction), so the flag is now passed at every
+composition point we ship: the README quickstart, the
+keycard_protected_server example, and the test fixtures that mirror
+them.
+- The a2a_jsonrpc_usage example's manual envelope was itself a 0.3 shape
+(message/send, plain role, no messageId, no A2A-Version header) aimed at
+the 1.0 server the sibling example builds; it now shows the current 1.0
+envelope, with a comment pointing 0.3 callers at the compat flag.
+- Adds a dispatch test proving a 0.3 message/send request round-trips
+through the built app when compat is on.
+- Interim measure per ECO-161: the flag goes away once all Keycard SDKs
+speak A2A 1.0.
+- Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+- * docs(keycardai-a2a): bind token audience in example AuthProvider construction
+- The example and README quickstart constructed AuthProvider without an
+audience, which disables the verifier's audience check: any token
+minted in the zone for any service would be accepted. Delegation
+tokens are minted with audience = the target service's public URL, so
+the correct binding is the service's own identity_url. The
+test_agent_card_server fixture that mirrors the example gets the same
+binding.
+- Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+- * fix(keycardai-a2a): drop dead delegation-chain remnants from the keycardai-agents extraction
+- Two leftovers from the pre-split keycardai-agents package:
+- - DelegationClient.invoke_service returned a hardcoded
+  delegation_chain: [] field that nothing populates; the return shape
+  is now just {result}. No consumer reads it (the only test assertion
+  checked it was always empty).
+- ServiceDiscovery.list_delegatable_services was a warn-and-return-[]
+  stub whose docstring and log message pointed at get_a2a_tools(),
+  which does not exist in this package. Removed along with its
+  placeholder test and the orphaned mock_delegatable_services fixture.
+- Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+- ---------
+- Co-authored-by: GitHub Action <action@github.com>
+Co-authored-by: Claude Fable 5 <noreply@anthropic.com>
+
 ## 0.3.0-keycardai-a2a (2026-05-01)
 
 
