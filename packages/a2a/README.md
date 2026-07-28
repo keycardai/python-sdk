@@ -69,6 +69,9 @@ auth_provider = AuthProvider(
     zone_url=config.auth_server_url,
     server_name=config.service_name,
     server_url=config.identity_url,
+    # Bind accepted tokens to this service; leaving audience unset
+    # disables the audience check entirely.
+    audience=config.identity_url,
     application_credential=ClientSecret((config.client_id, config.client_secret)),
 )
 verifier = auth_provider.get_token_verifier()
@@ -96,6 +99,10 @@ your_app.routes.append(Mount(
         request_handler=request_handler,
         rpc_url="/jsonrpc",
         context_builder=KeycardServerCallContextBuilder(),
+        # Keycard SDKs in other languages still speak A2A 0.3 (`message/send`
+        # with no A2A-Version header); without this the 1.x dispatcher rejects
+        # them with -32601 MethodNotFound. Interim until all SDKs speak 1.0.
+        enable_v0_3_compat=True,
     ),
     middleware=[
         Middleware(

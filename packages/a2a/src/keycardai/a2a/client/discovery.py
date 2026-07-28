@@ -57,11 +57,6 @@ class ServiceDiscovery:
         >>> # Discover service (cached)
         >>> card = await discovery.get_service_card("https://slack-poster.example.com")
         >>> print(card["capabilities"])
-        >>>
-        >>> # List all discoverable services from Keycard dependencies
-        >>> services = await discovery.list_delegatable_services()
-        >>> for service in services:
-        ...     print(f"{service['name']}: {service['url']}")
     """
 
     def __init__(
@@ -185,36 +180,6 @@ class ServiceDiscovery:
         )
 
         return card
-
-    async def list_delegatable_services(self) -> list[dict[str, Any]]:
-        """List all services this service can delegate to.
-
-        Queries Keycard to find all services that this service has
-        dependencies configured for. Returns service information with
-        their agent cards.
-
-        Returns:
-            List of service dictionaries with 'name', 'url', 'description', 'capabilities'
-
-        Note:
-            This requires a Keycard API endpoint that lists application dependencies.
-            Currently returns empty list. Once Keycard API is available, it will query:
-            GET https://{zone_id}.keycard.cloud/api/v1/applications/{client_id}/dependencies
-
-            For now, use the `delegatable_services` parameter in `get_a2a_tools()`
-            to manually specify services.
-
-        Example:
-            >>> services = await discovery.list_delegatable_services()
-            >>> for service in services:
-            ...     print(f"{service['name']}: {service['capabilities']}")
-        """
-        logger.warning(
-            "list_delegatable_services() not yet implemented - "
-            "requires Keycard API for dependency listing. "
-            "Use delegatable_services parameter in get_a2a_tools() instead."
-        )
-        return []
 
     async def clear_cache(self) -> None:
         """Clear all cached agent cards."""

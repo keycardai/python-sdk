@@ -62,6 +62,9 @@ def app(service_config):
         zone_url=service_config.auth_server_url,
         server_name=service_config.service_name,
         server_url=service_config.identity_url,
+        # Mirrors the example: bind accepted tokens to this service;
+        # leaving audience unset disables the audience check entirely.
+        audience=service_config.identity_url,
         application_credential=ClientSecret(
             (service_config.client_id, service_config.client_secret)
         ),
@@ -92,6 +95,9 @@ def app(service_config):
                     request_handler=request_handler,
                     rpc_url="/jsonrpc",
                     context_builder=KeycardServerCallContextBuilder(),
+                    # Mirrors the example: Keycard SDKs in other languages
+                    # still speak A2A 0.3.
+                    enable_v0_3_compat=True,
                 ),
                 middleware=[
                     Middleware(

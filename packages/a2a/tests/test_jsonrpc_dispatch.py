@@ -106,6 +106,9 @@ def client(service_config):
                     request_handler=request_handler,
                     rpc_url="/jsonrpc",
                     context_builder=KeycardServerCallContextBuilder(),
+                    # Mirrors the README / example composition: Keycard SDKs
+                    # in other languages still speak A2A 0.3.
+                    enable_v0_3_compat=True,
                 ),
                 middleware=[
                     Middleware(
@@ -154,4 +157,37 @@ class TestJsonRpcDispatchPositivePath:
         assert "echoed: ping" in body
         # The KeycardServerCallContextBuilder propagated the access_token
         # from the auth backend's KeycardUser into ServerCallContext.state.
+        assert "token: bearer-test-token" in body
+
+    def test_v0_3_message_send_drives_executor(self, client):
+        """A 0.3 ``message/send`` request succeeds via the compat adapter.
+
+        Keycard SDKs in other languages still send the 0.3 wire shape:
+        method ``message/send``, snake-less camelCase message fields with a
+        plain ``user`` role and ``kind``-tagged parts, and no ``A2A-Version``
+        header (the dispatcher treats a missing header as 0.3). With
+        ``enable_v0_3_compat=False`` this request fails with -32601
+        MethodNotFound, breaking cross-SDK interop.
+        """
+        response = client.post(
+            "/a2a/jsonrpc",
+            json={
+                "jsonrpc": "2.0",
+                "id": "1",
+                "method": "message/send",
+                "params": {
+                    "message": {
+                        "messageId": "req-03",
+                        "role": "user",
+                        "parts": [{"kind": "text", "text": "ping-03"}],
+                    }
+                },
+            },
+        )
+
+        assert response.status_code == 200, response.text
+        payload = response.json()
+        assert "error" not in payload, payload
+        body = response.text
+        assert "echoed: ping-03" in body
         assert "token: bearer-test-token" in body

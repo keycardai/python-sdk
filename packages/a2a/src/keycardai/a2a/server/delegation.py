@@ -60,16 +60,13 @@ def _build_jsonrpc_send_message(task: dict[str, Any] | str) -> dict[str, Any]:
 
 def _unwrap_jsonrpc_response(response_body: dict[str, Any]) -> dict[str, Any]:
     """Unwrap an A2A 1.x JSONRPC ``SendMessageResponse`` into a flat
-    ``{result, delegation_chain}`` dict.
+    ``{result}`` dict.
 
     ``SendMessageResponse`` is a oneof of ``message`` or ``task``. When the
     remote executor enqueues a ``Message``, the text is read from
     ``result.message.parts[].text`` and joined. When it produces a ``Task``,
     the task is JSON-stringified into ``result``; callers needing the full
     Task lifecycle should use ``a2a.client.create_client`` directly.
-
-    ``delegation_chain`` is always empty here. Multi-hop chain tracking
-    requires parsing JWT claims directly.
 
     Raises:
         ValueError: if the response carries a JSONRPC ``error`` member.
@@ -82,7 +79,7 @@ def _unwrap_jsonrpc_response(response_body: dict[str, Any]) -> dict[str, Any]:
         )
     result = response_body.get("result")
     if result is None:
-        return {"result": "", "delegation_chain": []}
+        return {"result": ""}
     if isinstance(result, dict):
         message = result.get("message")
         if isinstance(message, dict):
@@ -94,13 +91,10 @@ def _unwrap_jsonrpc_response(response_body: dict[str, Any]) -> dict[str, Any]:
                     if isinstance(p, dict) and "text" in p
                 ]
                 if text_parts:
-                    return {
-                        "result": "\n".join(text_parts),
-                        "delegation_chain": [],
-                    }
+                    return {"result": "\n".join(text_parts)}
     if isinstance(result, str):
-        return {"result": result, "delegation_chain": []}
-    return {"result": json.dumps(result), "delegation_chain": []}
+        return {"result": result}
+    return {"result": json.dumps(result)}
 
 
 class DelegationClient:
@@ -287,9 +281,9 @@ class DelegationClient:
         """Call another agent service over A2A JSONRPC with bearer auth.
 
         Sends a ``SendMessage`` JSONRPC request to ``${service_url}/a2a/jsonrpc``
-        and returns ``{"result": <text>, "delegation_chain": []}``. For the
-        full A2A protocol surface (Task lifecycle, streaming, status updates),
-        use ``a2a.client.create_client`` directly.
+        and returns ``{"result": <text>}``. For the full A2A protocol surface
+        (Task lifecycle, streaming, status updates), use
+        ``a2a.client.create_client`` directly.
 
         Args:
             service_url: Base URL of the target service
@@ -298,7 +292,7 @@ class DelegationClient:
             subject_token: Optional token for exchange if token not provided
 
         Returns:
-            Dict with ``result`` (str) and ``delegation_chain`` (list).
+            Dict with ``result`` (str).
 
         Raises:
             httpx.HTTPStatusError: If the JSONRPC request fails
@@ -535,9 +529,9 @@ class DelegationClientSync:
         """Call another agent service over A2A JSONRPC with bearer auth.
 
         Sends a ``SendMessage`` JSONRPC request to ``${service_url}/a2a/jsonrpc``
-        and returns ``{"result": <text>, "delegation_chain": []}``. For the
-        full A2A protocol surface (Task lifecycle, streaming, status updates),
-        use ``a2a.client.create_client`` directly.
+        and returns ``{"result": <text>}``. For the full A2A protocol surface
+        (Task lifecycle, streaming, status updates), use
+        ``a2a.client.create_client`` directly.
 
         Args:
             service_url: Base URL of the target service
@@ -546,7 +540,7 @@ class DelegationClientSync:
             subject_token: Optional token for exchange if token not provided
 
         Returns:
-            Dict with ``result`` (str) and ``delegation_chain`` (list).
+            Dict with ``result`` (str).
 
         Raises:
             httpx.HTTPStatusError: If the JSONRPC request fails
