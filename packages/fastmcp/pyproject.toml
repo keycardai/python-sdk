@@ -12,11 +12,13 @@ dependencies = [
     "httpx>=0.27.2",
     "keycardai-oauth>=0.7.0",
     "fastmcp>=3.1.0",
-    # Capped deliberately. fastmcp 3.x pins mcp<2.0 and keycardai-mcp 0.27+
-    # requires mcp>=2.0, so the two are unsatisfiable together. Without this
-    # cap pip silently backtracks keycardai-mcp to 0.26.0 and freezes there.
-    # Lift to the 2.0 line together with the fastmcp 4.x bump (ECO-198).
-    "keycardai-mcp>=0.15.0,<0.27",
+    # Pinned to the 0.27.x line, both ends load-bearing. fastmcp 3.x pins
+    # mcp<2.0, so this package needs a keycardai-mcp that agrees. 0.27.0 is the
+    # first release carrying "mcp<2.0"; 0.26.0 and earlier declare an unbounded
+    # "mcp>=1.13.1" and resolve onto mcp 2.0, which fails to import. The upper
+    # bound excludes the mcp 2.0 line this PR starts. Move both ends together
+    # with the fastmcp 4.x bump (ECO-198).
+    "keycardai-mcp>=0.27,<0.28",
 ]
 keywords = ["fastmcp", "mcp", "model-context-protocol", "oauth", "token-exchange", "authentication", "keycard"]
 classifiers = [

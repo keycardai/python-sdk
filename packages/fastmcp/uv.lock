@@ -1180,7 +1180,7 @@ test = [
 requires-dist = [
     { name = "fastmcp", specifier = ">=3.1.0" },
     { name = "httpx", specifier = ">=0.27.2" },
-    { name = "keycardai-mcp", specifier = ">=0.15.0,<0.27" },
+    { name = "keycardai-mcp", specifier = ">=0.27,<0.28" },
     { name = "keycardai-oauth", editable = "../oauth" },
     { name = "pydantic", specifier = ">=2.11.7" },
     { name = "pydantic-settings", specifier = ">=2.7.1" },
@@ -1193,7 +1193,7 @@ provides-extras = ["test"]
 
 [[package]]
 name = "keycardai-mcp"
-version = "0.26.0"
+version = "0.27.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -1205,9 +1205,9 @@ dependencies = [
     { name = "nanoid" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/60/ce/8ad8f16a627746248d9977fcf4a12bf181d4861f0f33fb7fd8915c5c81e7/keycardai_mcp-0.26.0.tar.gz", hash = "sha256:49629dee15beb3fc846bc90598f0b674fd70cfb7a2b4ee7b1404890891f2ee66", size = 205785, upload-time = "2026-06-15T17:58:14.001Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/92/9f/6fbcee0c411a3b493b921b978ea7b21bc4400da62598c4a649013245269e/keycardai_mcp-0.27.0.tar.gz", hash = "sha256:1b2e9293616689c03b5a496fc6d03361c2d5d332d31682a015365584f3166551", size = 206191, upload-time = "2026-07-29T00:24:03.458Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/bb/03/a23b760551b66488654a035ff994c54d93c2f666ec29723e4a5af559261a/keycardai_mcp-0.26.0-py3-none-any.whl", hash = "sha256:2cf900cd28259e673221c634ae21aef3b87c483b3781dc25f8f3e7a8f2471746", size = 138021, upload-time = "2026-06-15T17:58:12.805Z" },
+    { url = "https://files.pythonhosted.org/packages/64/bc/f23c07ce47d40e5a12a5e18b54acb9a817c19bdf40731b64a10e28d61ad2/keycardai_mcp-0.27.0-py3-none-any.whl", hash = "sha256:9be54c23780d3ade79e9c3153ee22ca1ce970eade0b524c2e83afdc8ae206c8c", size = 138030, upload-time = "2026-07-29T00:24:02.113Z" },
 ]
 
 [[package]]
