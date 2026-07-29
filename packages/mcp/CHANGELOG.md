@@ -1,3 +1,22 @@
+## 0.27.0-keycardai-mcp (2026-07-29)
+
+
+- fix(keycardai-mcp): cap mcp below 2.0 (#219)
+- mcp 2.0.0 published 2026-07-28. The floor was unbounded, so fresh
+installs began resolving onto the new major immediately, against code
+written for 1.x.
+- Capping rather than porting because the wider ecosystem has not crossed
+over. Two of the four agent frameworks this package ships integrations
+for still pin mcp below 2.0 outright:
+-   openai-agents 0.19.0  mcp<2,>=1.19.0
+  crewai        1.15.8  mcp~=1.28.1
+- fastmcp 3.x pins it too. A hard mcp>=2.0 floor here would make
+keycardai-mcp uninstallable next to any of them.
+- The 2.0 port itself is written and green in #218; it lands once those
+pins move.
+- Co-authored-by: GitHub Action <action@github.com>
+Co-authored-by: Claude Opus 5 (1M context) <noreply@anthropic.com>
+
 ## 0.26.0-keycardai-mcp (2026-06-15)
 
 
