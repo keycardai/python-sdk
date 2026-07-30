@@ -1,3 +1,80 @@
+## 0.27.1-keycardai-mcp (2026-07-30)
+
+
+- fix(keycardai-mcp): synchronous OAuth completion cleanup, no stale auth challenges (#205)
+- * fix(keycardai-mcp): run OAuth completion cleanup synchronously before returning
+- Completion cleanup (PKCE state delete, pending-auth clear, and the
+completion-route delete in CompletionRouter) previously ran via bare
+asyncio.create_task on the background path. The event loop keeps only a
+weak reference to such tasks, so they could be garbage-collected before
+running (or cancelled at shutdown with the CancelledError swallowed),
+leaving a stale pending-auth record that connected sessions kept
+advertising as an auth challenge.
+- Both cleanup steps are fast storage calls, so they now always run
+synchronously before the completion result is returned, for every
+coordinator:
+- - oauth_completion_handler awaits its cleanup unconditionally; the
+  run_cleanup_in_background parameter is deprecated and ignored (a
+  DeprecationWarning fires when it is passed explicitly)
+- CompletionRouter.route_completion awaits the route-metadata delete
+  instead of scheduling a fire-and-forget task
+- a failure deleting the PKCE state no longer skips clearing the
+  pending-auth record; each cleanup step is attempted independently
+- CancelledError is no longer swallowed by cleanup helpers
+- AuthCoordinator.requires_synchronous_cleanup is deprecated (kept for
+  backward compatibility, returns True); OAuthStrategy no longer
+  consults it and LocalAuthCoordinator's override is removed
+- Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+- * fix(keycardai-mcp): never surface an auth challenge for a connected session
+- Session.get_auth_challenge() was a pure storage read, so a pending-auth
+record that outlived a completed authorization (for example when cleanup
+did not run) kept being advertised as an auth challenge after the session
+auto-reconnected. Consumers of get_auth_challenges() had to filter it out
+themselves until the record's TTL expired, and custom storage backends
+that ignore ttl surfaced it indefinitely.
+- A CONNECTED session has no pending challenge by definition:
+get_auth_challenge() now returns None in that state and lazily clears any
+stale stored record. All other statuses keep the storage read, so a
+session in AUTH_PENDING still surfaces its challenge. This is defense in
+depth on top of the synchronous completion cleanup; the lazy clear only
+helps in-process, which is fine for a secondary guard.
+- Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+- * fix(keycardai-mcp): clear stale auth-pending records on connect, not in the getter
+- The CONNECTED short-circuit in Session.get_auth_challenge() clobbered
+fresh re-auth challenges. A mid-session 401 (token expiry on a live
+tool call) is handled by the httpx transport, which writes a new
+pending-auth record without ever changing the session status, so a
+long-lived CONNECTED session with an expired token had its fresh
+challenge deleted by the getter and get_auth_challenges() returned [],
+hiding the re-auth URL from the user. A destructive write inside a
+getter that polling APIs hit repeatedly was also the wrong shape.
+- get_auth_challenge() is a plain storage read again. The stale-record
+clear moves to the transition into CONNECTED in _initialize_session:
+reaching CONNECTED means auth works, so any record stored at that
+point is stale by definition. The clear runs once at the transition,
+is best-effort (storage errors never fail the connection), and cannot
+clobber a mid-session re-auth challenge because that is written while
+the session is already CONNECTED. The auto-reconnect path in
+on_completion_handled flows through connect() into
+_initialize_session, so one hook covers both paths.
+- Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+- * fix(keycardai-mcp): bound synchronous OAuth cleanup with a timeout
+- Completion cleanup runs synchronously on the OAuth callback path, so a
+hung storage delete (remote backends such as Redis or DynamoDB) would
+stall the user-facing callback response indefinitely. Each cleanup
+storage call (PKCE state delete, pending-auth clear, completion-route
+delete) is now wrapped in asyncio.wait_for with a 5 second bound.
+- A timeout falls through to the existing logged-and-swallowed per-step
+handling, so a timed-out step never skips the remaining steps.
+asyncio.wait_for raises TimeoutError (asyncio.TimeoutError on Python
+3.10, an alias of the builtin on 3.11+), an Exception subclass on
+every supported Python, while outer cancellation (CancelledError, a
+BaseException) still propagates.
+- Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+- ---------
+- Co-authored-by: GitHub Action <action@github.com>
+Co-authored-by: Claude Fable 5 <noreply@anthropic.com>
+
 ## 0.27.0-keycardai-mcp (2026-07-29)
 
 
