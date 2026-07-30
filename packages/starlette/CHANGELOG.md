@@ -1,3 +1,39 @@
+## 0.12.0-keycardai-starlette (2026-07-30)
+
+
+- fix(keycardai-starlette): audience in Quick Start, RFC 6750 scope attribute, opaque-mount docs (#206)
+- * docs(keycardai-starlette): set audience= in Quick Start examples
+- The example app sets audience= with an RFC 8707 comment, but the README
+Quick Start and the module docstrings (the actual copy-paste path) omitted
+it. An unset audience silently disables audience validation in the shared
+verifier, so servers built from the Quick Start accepted tokens minted for
+any resource in the zone. Show audience= in every Quick Start example and
+state plainly that leaving it unset disables the audience check.
+- Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+- * fix(keycardai-starlette): add RFC 6750 scope attribute to insufficient_scope challenge
+- The 403 insufficient_scope challenge told clients they were missing scopes
+without saying which ones. RFC 6750 section 3 defines the scope attribute as
+the space-delimited list of scopes needed to access the protected resource,
+which lets clients re-request authorization with the right scopes.
+- The challenge now carries scope="..." built from the @requires(...) scope
+list. The synthetic "authenticated" gating scope is excluded since it is a
+Starlette convention, not an OAuth scope a client can request. Existing
+challenge attributes (error, error_description, resource_metadata) are
+unchanged.
+- Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+- * docs(keycardai-starlette): document require_authentication for opaque mounts
+- require_authentication=True (the escape hatch for mounted sub-apps that
+bypass route decorators) was only discoverable through docstrings. Add a
+README section under protected_router() showing when the flag is needed
+and the one-liner to enable it, including the KeycardAuthBackend spelling
+for direct middleware registration.
+- Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+- * docs(keycardai-starlette): note the scope attribute carries static developer input
+- Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+- ---------
+- Co-authored-by: GitHub Action <action@github.com>
+Co-authored-by: Claude Fable 5 <noreply@anthropic.com>
+
 ## 0.11.0-keycardai-starlette (2026-07-20)
 
 
