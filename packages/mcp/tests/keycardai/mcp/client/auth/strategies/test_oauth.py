@@ -62,12 +62,6 @@ class MockCoordinator:
         # Mock storage for callback cleanup
         backend = InMemoryBackend()
         self.storage = NamespacedStorage(backend, "auth_coordinator")
-        self._requires_synchronous_cleanup = False
-
-    @property
-    def requires_synchronous_cleanup(self) -> bool:
-        """Mock property for cleanup behavior."""
-        return self._requires_synchronous_cleanup
 
     async def get_redirect_uris(self) -> list[str] | None:
         """Return mock redirect URIs."""
@@ -508,8 +502,12 @@ class TestOAuthStrategyHandleChallenge:
         assert "state" in challenge
 
     @pytest.mark.asyncio
-    async def test_handle_challenge_coordinator_cleanup_behavior(self):
-        """Test that handle_challenge respects coordinator cleanup requirements."""
+    async def test_handle_challenge_registers_route_without_cleanup_kwargs(self):
+        """Test that handle_challenge registers no cleanup-mode handler kwargs.
+
+        Completion cleanup always runs synchronously in the handler, so the
+        registered route must not carry a run_cleanup_in_background flag.
+        """
 
         # Mock responses
         def resource_response():
@@ -551,9 +549,7 @@ class TestOAuthStrategyHandleChallenge:
             post_responses=[registration_response],
         )
 
-        # Test with coordinator requiring synchronous cleanup
         coordinator = MockCoordinator()
-        coordinator._requires_synchronous_cleanup = True
         _, connection_storage, strategy_storage = create_test_storage()
         context = create_test_context(coordinator)
 
@@ -576,11 +572,10 @@ class TestOAuthStrategyHandleChallenge:
         )
 
         assert result is True
-        # Verify handler_kwargs includes synchronous cleanup flag
+        # The route must not carry any cleanup-mode flag
         state = list(coordinator.registered_routes.keys())[0]
         handler_kwargs = coordinator.registered_routes[state]["handler_kwargs"]
-        assert "run_cleanup_in_background" in handler_kwargs
-        assert handler_kwargs["run_cleanup_in_background"] is False
+        assert "run_cleanup_in_background" not in handler_kwargs
 
 
 class TestOAuthStrategyCallbackCompletion:
@@ -737,7 +732,6 @@ class TestOAuthStrategyCallbackCompletion:
             storage=strategy_storage,
             params={"code": "auth_code_123", "state": state},
             client_factory=client_factory,
-            run_cleanup_in_background=False
         )
 
         assert result["success"] is True
@@ -840,7 +834,6 @@ class TestOAuthStrategyIntegrationScenarios:
             storage=strategy_storage,
             params={"code": "auth_code_123", "state": state},
             client_factory=client_factory,
-            run_cleanup_in_background=False
         )
 
         # Verify final state

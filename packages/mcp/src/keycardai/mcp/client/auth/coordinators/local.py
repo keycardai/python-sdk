@@ -21,7 +21,6 @@ class LocalAuthCoordinator(AuthCoordinator):
     Key behaviors:
     - Opens browser to authorization URL (configurable)
     - Blocks in handle_redirect() until completion arrives (configurable)
-    - Requires synchronous cleanup to avoid race conditions (when blocking)
     """
 
     def __init__(
@@ -64,16 +63,6 @@ class LocalAuthCoordinator(AuthCoordinator):
     def endpoint_type(self) -> str:
         """Type of endpoint: local HTTP server."""
         return "local"
-
-    @property
-    def requires_synchronous_cleanup(self) -> bool:
-        """
-        LocalAuthCoordinator requires synchronous cleanup.
-
-        This prevents race conditions with the blocking wait pattern
-        in handle_redirect() which waits for completion to arrive.
-        """
-        return True
 
     async def shutdown(self) -> None:
         """

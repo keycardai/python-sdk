@@ -92,14 +92,15 @@ class AuthCoordinator(ABC):
         """
         Whether this coordinator requires synchronous callback cleanup.
 
-        Override in subclasses if they need cleanup to complete before
-        callback response (e.g., LocalAuthCoordinator needs this to avoid
-        race conditions with blocking wait patterns).
+        Deprecated: completion cleanup always runs synchronously before the
+        completion result is returned, for every coordinator. The SDK no
+        longer consults this property; it is kept for backward compatibility
+        with code that reads or overrides it.
 
         Returns:
-            False by default (asynchronous cleanup is fine)
+            True (cleanup is always synchronous)
         """
-        return False
+        return True
 
     def create_context(self, context_id: str, metadata: dict[str, Any] | None = None) -> Context:
         """

@@ -22,12 +22,6 @@ class MockCoordinator:
         self.handle_redirect_calls = []
         self.auth_pending = {}
         self.storage = NamespacedStorage(InMemoryBackend(), "auth_coordinator")
-        self._requires_synchronous_cleanup = False
-
-    @property
-    def requires_synchronous_cleanup(self) -> bool:
-        """Mock property for cleanup behavior."""
-        return self._requires_synchronous_cleanup
 
     async def get_redirect_uris(self) -> list[str]:
         """Return mock callback URIs."""
