@@ -21,6 +21,9 @@ from keycardai.oauth.server import AccessContext, ClientSecret
 auth = AuthProvider(
     zone_id="your-zone-id",
     application_credential=ClientSecret(("client_id", "client_secret")),
+    # Resource indicator (RFC 8707) Keycard mints tokens for. The verifier
+    # rejects tokens whose "aud" claim does not include this value.
+    audience="https://your-api.example.com",
 )
 
 app = FastAPI()
@@ -42,6 +45,9 @@ async def me(request: Request):
 async def get_data(request: Request, access: AccessContext):
     token = access.access("https://api.example.com").access_token
 ```
+
+Leaving `audience` unset disables the audience check: the verifier accepts any
+token minted by the zone regardless of its `aud` claim.
 
 ## How it integrates with Starlette
 
@@ -120,6 +126,28 @@ app = Starlette(routes=protected_router(
     verifier=auth.get_token_verifier(),
 ))
 ```
+
+#### Opaque sub-apps: `require_authentication=True`
+
+`@requires(...)` only gates routes you decorate. A mounted sub-app that
+handles its own routing (an MCP JSONRPC dispatcher, a gRPC handler, any
+non-Starlette ASGI app) bypasses route decorators, so anonymous requests
+would fall through to it. Pass `require_authentication=True` to make the
+backend itself the gate: requests without an `Authorization` header get an
+RFC 6750 401 challenge instead of reaching the sub-app anonymously.
+
+```python
+app = Starlette(routes=protected_router(
+    issuer=auth.issuer,
+    app=inner,
+    verifier=auth.get_token_verifier(),
+    require_authentication=True,  # every request to `inner` needs a token
+))
+```
+
+The same flag exists on `KeycardAuthBackend(verifier, require_authentication=True)`
+when you register the middleware yourself. OAuth metadata paths under
+`/.well-known/` stay public either way (RFC 9728 §2, RFC 8414 §3).
 
 ### `AuthenticationMiddleware` directly
 

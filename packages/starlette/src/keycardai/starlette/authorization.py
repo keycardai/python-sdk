@@ -64,6 +64,7 @@ def requires(
     - If the user is authenticated but missing one of the required scopes,
       returns a 403 (configurable via ``status_code``) carrying an RFC 6750
       ``WWW-Authenticate: Bearer error="insufficient_scope"`` challenge with
+      the ``scope=`` attribute listing the required scopes (RFC 6750 §3) and
       the ``resource_metadata=`` URL (RFC 9728).
 
     The ``redirect`` argument from stock ``requires`` is intentionally
@@ -71,6 +72,14 @@ def requires(
     resources.
     """
     scopes_list = [scopes] if isinstance(scopes, str) else list(scopes)
+    # RFC 6750 §3 scope attribute for insufficient_scope challenges. The
+    # synthetic "authenticated" scope is a Starlette gating convention
+    # (always present on verified requests), not an OAuth scope a client
+    # can request from the authorization server, so it is excluded.
+    # Values are interpolated into the header unescaped: they are static
+    # developer literals from this decorator, never request- or
+    # token-derived, so no attacker-controlled path reaches the header.
+    challenge_scope = " ".join(s for s in scopes_list if s != "authenticated") or None
 
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
         sig = inspect.signature(func)
@@ -106,6 +115,7 @@ def requires(
                         error="insufficient_scope",
                         description="Insufficient scope",
                         status_code=status_code,
+                        scope=challenge_scope,
                     )
                 return await func(*args, **kwargs)
 
@@ -130,6 +140,7 @@ def requires(
                     error="insufficient_scope",
                     description="Insufficient scope",
                     status_code=status_code,
+                    scope=challenge_scope,
                 )
             return func(*args, **kwargs)
 

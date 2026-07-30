@@ -77,12 +77,22 @@ def _get_bearer_token(conn: HTTPConnection | Request) -> str | None:
     return parts[1]
 
 
-def _build_challenge_header(error: str, description: str, resource_metadata: str) -> str:
-    return (
-        f'Bearer error="{error}", '
-        f'error_description="{description}", '
-        f'resource_metadata="{resource_metadata}"'
-    )
+def _build_challenge_header(
+    error: str,
+    description: str,
+    resource_metadata: str,
+    scope: str | None = None,
+) -> str:
+    parts = [
+        f'error="{error}"',
+        f'error_description="{description}"',
+    ]
+    if scope:
+        # RFC 6750 §3: space-delimited list of scopes needed to access the
+        # protected resource. Sent with insufficient_scope challenges.
+        parts.append(f'scope="{scope}"')
+    parts.append(f'resource_metadata="{resource_metadata}"')
+    return "Bearer " + ", ".join(parts)
 
 
 class KeycardAuthError(AuthenticationError):
@@ -274,13 +284,15 @@ def _build_unauthorized_response(
     error: str = "invalid_token",
     description: str = "Authentication required",
     status_code: int = 401,
+    scope: str | None = None,
 ) -> Response:
     """Build an RFC 6750 ``WWW-Authenticate`` challenge response.
 
     Used by ``keycard_on_error`` (when the authentication backend raises) and
     by the ``@requires`` / ``@auth.grant`` decorators (when the request is
     anonymous). The ``resource_metadata=`` URL is computed from the request
-    per RFC 9728.
+    per RFC 9728. ``scope`` carries the RFC 6750 §3 space-delimited list of
+    required scopes for ``insufficient_scope`` challenges.
     """
     if status_code >= 500:
         # Verification could not complete (e.g. the JWKS endpoint was
@@ -295,7 +307,7 @@ def _build_unauthorized_response(
         status_code=status_code,
     )
     response.headers["WWW-Authenticate"] = _build_challenge_header(
-        error, description, resource_metadata
+        error, description, resource_metadata, scope=scope
     )
     return response
 
