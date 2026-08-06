@@ -4,9 +4,10 @@ on:
   push:
     branches:
       - main
+      - release/mcp-v1
 
 concurrency:
-  group: main
+  group: release-${{ github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -42,6 +43,9 @@ jobs:
         id: changes
         run: |
           PACKAGES=$(just detect-changes)
+          if [[ "${{ github.ref_name }}" == "release/mcp-v1" ]]; then
+            PACKAGES=$(jq -c '[.[] | select(.package_name == "keycardai-mcp")]' <<< "$PACKAGES")
+          fi
           echo "changed-packages=$PACKAGES" >> $GITHUB_OUTPUT
 
   bump-packages:
@@ -58,4 +62,5 @@ jobs:
     with:
       package_name: ${{ matrix.package.package_name }}
       package_dir: ${{ matrix.package.package_dir }}
+      target_branch: ${{ github.ref_name }}
     secrets: inherit
