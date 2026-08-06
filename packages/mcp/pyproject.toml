@@ -146,7 +146,9 @@ tag_format = "${version}-keycardai-mcp"
 ignored_tag_formats = ["${version}-*"]
 update_changelog_on_bump = true
 bump_message = "bump: keycardai-mcp $current_version → $new_version"
-major_version_zero = true
+# The package is past 1.0.0: breaking changes must cut majors. Leaving this
+# true made cz derive 1.1.0 from a feat! commit in typescript-sdk's cutover.
+major_version_zero = false
 
 [tool.commitizen.customize]
 changelog_pattern = "^(feat|fix|refactor|perf|test|build|ci|revert)\\(keycardai-mcp\\)(!)?:"
