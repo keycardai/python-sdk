@@ -1,3 +1,147 @@
+## 2.0.0-keycardai-mcp (2026-08-07)
+
+
+- feat(keycardai-mcp)!: port to mcp 2.0 (ECO-195) (#218)
+- * feat(keycardai-mcp)!: port to mcp 2.0
+- mcp 2.0 removed the bundled FastMCP 1.x (mcp.server.fastmcp). Its
+successor in-package is mcp.server.mcpserver.MCPServer, which exposes
+the same two APIs AuthProvider.app() uses (session_manager and
+streamable_http_app), so the retarget is direct.
+- Import moves:
+  mcp.server.fastmcp.{Context,FastMCP} -> mcp.server.mcpserver.{Context,MCPServer}
+  mcp.shared.context.RequestContext    -> mcp.server.context.ServerRequestContext
+  streamablehttp_client                -> streamable_http_client
+- mcp 2.0 also renamed model fields to snake_case. Constructors still
+accept the camelCase aliases, so only attribute reads broke:
+result.nextCursor and mcp_tool.inputSchema. The agent integrations
+guarded theirs with hasattr(), which under 2.0 returns False and
+silently yields an empty tool schema rather than raising, so those are
+corrected too.
+- Breaking: AuthProvider.app() is typed MCPServer instead of FastMCP.
+Consumers needing mcp 1.x pin the prior keycardai-mcp minor.
+- keycardai-fastmcp is untouched and unaffected. It only imports
+credential types, ClientFactory and exceptions from this package, and
+it stays on fastmcp 3.x / mcp 1.x until fastmcp 4.0 is stable.
+- Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+- * build: split the fastmcp packages out of the uv workspace for mcp 2.0
+- packages/mcp now requires mcp>=2.0. fastmcp 3.x, openai-agents and crewai
+all still pin mcp<2.0, and a uv workspace resolves to a single lock, so
+they cannot co-resolve.
+- Workspace: packages/fastmcp and packages/mcp-fastmcp move to
+workspace.exclude and carry their own resolution. They pick up
+keycardai-mcp from the index (0.26.0, mcp 1.x) rather than the local
+path, which is the honest arrangement while the two sit on different
+mcp majors.
+- packages/mcp test extra: drops fastmcp, keycardai-mcp-fastmcp,
+openai-agents and crewai. The suites that need them are guarded by
+pytest.importorskip and report SKIPPED, so the gap shows in test output
+instead of disappearing. test_agent_integrations.py gained a guard; it
+was importing agents at module scope and failing collection.
+- Release tooling: scripts/changelog.py enumerated packages from
+workspace.members, so both excluded packages would have silently dropped
+out of version bumps and changelogs. Added tool.keycardai.release
+standalone-members, which it now unions in. Verified all 7 packages are
+still discovered.
+- packages/fastmcp gains real CI coverage for the first time (ECO-172): it
+is added to the justfile test and coverage targets, and its test extra
+was missing pytest-cov and requests, which it had been getting
+incidentally from the shared workspace environment.
+- Coverage gates all pass: oauth 84.38%, starlette 79.57%, mcp 62.60%,
+fastmcp 85.01%, mcp-fastmcp 100%, a2a 45 tests.
+- Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+- * build: drop the mcp<2.0-pinned agent frameworks from packages/mcp
+- Socket blocked the previous commit, correctly. Removing openai-agents
+and crewai was not enough: pydantic-ai also pins mcp<2.0, transitively
+via fastmcp-slim[client]<4. Left in place, the resolver backtracked
+pydantic-ai 2.x -> 1.44.0 to satisfy mcp>=2.0, and 1.44.0 pulled
+fastmcp 2.14.1, which carries the known fastmcp advisory (Socket
+vulnerability score 25).
+- Removed from packages/mcp:
+  - test extra: pydantic-ai (alongside openai-agents and crewai)
+  - optional-dependencies: the crewai and pydantic-ai convenience extras
+- The extras go because pip install keycardai-mcp[crewai] cannot resolve
+against mcp>=2.0 regardless. The integration modules still ship; bring
+your own framework install on a pre-2.0 keycardai-mcp.
+- Root lock no longer contains fastmcp, pydantic-ai, crewai or
+openai-agents at any version, and resolves mcp 2.0.0.
+- Coverage note, so the number is not misread: packages/mcp reports 75.10%
+here against 62.60% before. That is not an improvement. The four
+*_agents.py integration modules are no longer imported, so coverage.py
+drops them from the report and the denominator shrinks from ~2500 to
+2036 statements. The same code is untested; less of it is now measured.
+- Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+- * fix: address review on the mcp 2.0 split
+- Release blocker. release.yml ran `uv build --package <name>`, which
+resolves against workspace.members -- exactly what the split removed the
+two fastmcp packages from. Verified: `uv build --package
+keycardai-fastmcp` errors with "not found in workspace", same for
+keycardai-mcp-fastmcp. changelog.py being correct made this worse, not
+better: tags get cut and changelogs written, then publish dies. Now
+builds by path using the package-dir output detect-package already
+emits. Verified for both excluded packages and two workspace members.
+- Resolution trap. packages/fastmcp declared keycardai-mcp>=0.15.0
+unbounded alongside fastmcp>=3.1.0 (mcp<2.0). Since keycardai-mcp 0.27+
+needs mcp>=2.0, the pair is unsatisfiable, so pip silently backtracked
+keycardai-mcp to 0.26.0 and froze there. Capped <0.27 so the conflict is
+explicit.
+- mcp>=2.0.0 was unbounded, reproducing this exact incident on mcp 3.0.
+Capped <3.0.
+- Sibling isolation. The standalone locks took every keycardai-* package
+from the index, so a breaking change in packages/oauth no longer failed
+packages/fastmcp. keycardai-oauth is now path-linked in both, and
+keycardai-fastmcp is path-linked into the bridge (same mcp<2.0 major).
+Only keycardai-mcp stays on the index, where the major genuinely
+differs. keycardai-starlette also stays: it is transitive via
+keycardai-mcp and tool.uv.sources only redirects direct dependencies.
+- The input_schema fix was unverified. The existing pydantic test sets
+inputSchema on a MagicMock, where hasattr is unconditionally True, so it
+cannot tell the two spellings apart. Added
+test_tool_schema_reads.py, which drives the real
+_convert_mcp_tool_to_langchain with a real mcp.types.Tool and asserts
+the generated args_schema carries the field. Confirmed it fails when the
+camelCase read is restored.
+- tests/conftest.py imported dotenv unguarded. It is a crewai-only shim
+and crewai is no longer installable here, so the single-package flow
+errored at collection. Guarded.
+- Coverage gate stays 60, but the denominator it measures grew to 2679
+statements against ~2500 before, because the new test imports the
+integration modules and pulls all four back into measurement. Removing
+the frameworks alone had shrunk it to 2036 and inflated the figure to
+~75% on less code. The reviewer's suggested 72 was correct for that
+2036 state and no longer applies. Headroom is thin at 60.88%.
+- Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+- * fix(keycardai-fastmcp): target the 0.27.x line, not below it
+- Rebased onto main now that #219 shipped the mcp<2.0 cap as keycardai-mcp
+0.27.0.
+- That version number invalidates the cap this branch carried.
+packages/fastmcp pinned "keycardai-mcp>=0.15.0,<0.27" on the assumption
+that 0.27 would be the mcp 2.0 port. It is not: 0.27.0 is the cap
+release, and it is the only published version that constrains mcp
+correctly.
+-   keycardai-mcp 0.26.0  mcp>=1.13.1        unbounded -> resolves mcp 2.0
+  keycardai-mcp 0.27.0  mcp>=1.28.1,<2.0   safe
+- So "<0.27" excluded the one good version and forced the broken one.
+Now ">=0.27,<0.28": the floor guarantees the mcp cap is present, the
+ceiling excludes the 2.0 line this branch starts. Both standalone locks
+verified resolving keycardai-mcp 0.27.0 with mcp 1.29.0.
+- Also resolved the pyproject conflict against main's cap by keeping this
+branch's mcp>=2.0.0,<3.0, and regenerated all three lockfiles from the
+merged manifests rather than hand-merging them.
+- Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+- * fix(keycardai-fastmcp): pair with the keycardai-mcp 1.x line
+- keycardai-mcp 1.0.0 is on PyPI and release/mcp-v1 exists, so the
+fastmcp cap moves from the interim 0.27.x window to >=1,<2. Both
+standalone locks re-resolved to 1.0.0.
+- Also flips packages/mcp's major_version_zero to false. The package is
+past 1.0.0 and the flag caps breaking changes at minor: left true, this
+PR's feat! merge would release the mcp 2.0 port as keycardai-mcp 1.1.0,
+which is exactly what happened in typescript-sdk's cutover before the
+same fix there.
+- Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>
+- ---------
+- Co-authored-by: GitHub Action <action@github.com>
+Co-authored-by: Claude Opus 5 (1M context) <noreply@anthropic.com>
+
 ## 1.0.0-keycardai-mcp (2026-08-06)
 
 ## 0.27.1-keycardai-mcp (2026-07-30)
