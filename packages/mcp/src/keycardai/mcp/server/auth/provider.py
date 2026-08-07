@@ -7,8 +7,8 @@ from functools import wraps
 from typing import Any
 
 from mcp.server.auth.settings import AuthSettings
-from mcp.server.fastmcp import Context, FastMCP
-from mcp.shared.context import RequestContext
+from mcp.server.context import ServerRequestContext as RequestContext
+from mcp.server.mcpserver import Context, MCPServer
 from pydantic import AnyHttpUrl
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
@@ -373,7 +373,7 @@ class AuthProvider:
 
         Usage:
             ```python
-            from mcp.server.fastmcp import Context
+            from mcp.server.mcpserver import Context
             from keycardai.mcp.server.auth import AccessContext
 
             @provider.grant("https://api.example.com")
@@ -489,8 +489,8 @@ class AuthProvider:
         The authenticated user is set on the request by KeycardAuthBackend
         (Starlette's AuthenticationMiddleware) during authorization. This helper
         extracts the auth info from the request context from either the
-        RequestContext or the Context parameter. Required to support both FastMCP
-        and lowlevel server implementations.
+        RequestContext or the Context parameter. Required to support both
+        MCPServer and lowlevel server implementations.
         """
         def _extract_auth_info_from_context(
             *args, **kwargs
@@ -529,7 +529,7 @@ class AuthProvider:
             if resource:
                 access_context.set_resource_error(resource, error)
             else:
-                access_context.set_error(error)           # mcp.server.fastmcp always runs in async mode
+                access_context.set_error(error)           # mcp.server.mcpserver always runs in async mode
 
         """
         The mcp package always runs in async mode, however users can supply functions with either sync or async signature.
@@ -687,7 +687,7 @@ class AuthProvider:
         including OAuth metadata endpoints and the main MCP application with authentication.
 
         Args:
-            mcp_app: The MCP FastMCP streamable HTTP application
+            mcp_app: The MCP server's streamable HTTP application
 
         Returns:
             Sequence of routes including metadata mount and protected MCP mount
@@ -697,7 +697,7 @@ class AuthProvider:
             from starlette.applications import Starlette
 
             # Create MCP server and auth provider
-            mcp = FastMCP("My Server")
+            mcp = MCPServer("My Server")
             provider = AuthProvider(zone_url="https://keycard.cloud", ...)
 
             # Create Starlette app with protected routes
@@ -712,7 +712,7 @@ class AuthProvider:
             jwks=self.jwks
         )
 
-    def app(self, mcp_app: FastMCP, middleware: list[Middleware] | None = None) -> ASGIApp:
+    def app(self, mcp_app: MCPServer, middleware: list[Middleware] | None = None) -> ASGIApp:
         """Get the MCP app with authentication middleware and metadata endpoints."""
         @contextlib.asynccontextmanager
         async def lifespan(app: Starlette):

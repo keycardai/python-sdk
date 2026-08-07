@@ -203,7 +203,7 @@ The following services require user authorization: {", ".join(pending_services)}
             mcp_tool.description or f"Tool {tool_name} from {server_name}"
         )
 
-        input_schema = mcp_tool.inputSchema if hasattr(mcp_tool, "inputSchema") else {}
+        input_schema = mcp_tool.input_schema if hasattr(mcp_tool, "input_schema") else {}
 
         # Create Pydantic model for the input schema
         if input_schema and isinstance(input_schema, dict):

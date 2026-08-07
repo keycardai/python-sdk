@@ -65,16 +65,30 @@ def discover_workspace_packages() -> list[dict]:
     if not members:
         raise Exception("No workspace members found in pyproject.toml")
 
+    # Packages that ship from this repo but resolve outside the uv workspace still
+    # need version bumps and changelogs. They are listed explicitly because they
+    # are, by construction, absent from workspace.members and matched by
+    # workspace.exclude.
+    standalone = (
+        config.get("tool", {})
+        .get("keycardai", {})
+        .get("release", {})
+        .get("standalone-members", [])
+    )
+
     packages = []
 
-    for member_pattern in members:
+    for member_pattern in members + standalone:
         member_paths = glob.glob(str(root_dir / member_pattern))
 
         for member_path in member_paths:
             member_path = Path(member_path)
 
             relative_path = member_path.relative_to(root_dir)
-            if any(relative_path.match(exclude_pattern) for exclude_pattern in exclude):
+            is_standalone = member_pattern in standalone
+            if not is_standalone and any(
+                relative_path.match(exclude_pattern) for exclude_pattern in exclude
+            ):
                 continue
 
             package_pyproject = member_path / "pyproject.toml"

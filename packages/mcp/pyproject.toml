@@ -9,7 +9,7 @@ authors = [{ name = "Keycard", email = "support@keycard.ai" }]
 dependencies = [
     "keycardai-oauth>=0.9.0",
     "keycardai-starlette>=0.6.0",
-    "mcp>=1.28.1,<2.0",
+    "mcp>=2.0.0,<3.0",
     "pydantic>=2.11.7",
     "httpx>=0.27.2",
     "nanoid>=2.0.0",
@@ -34,25 +34,29 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-crewai = [
-    "crewai>=0.86.0",
-    "nest-asyncio>=1.6.0",
-]
-pydantic-ai = [
-    "pydantic-ai>=0.2.0",
-]
+# The `crewai` and `pydantic-ai` convenience extras are gone: both frameworks
+# pin mcp<2.0 (pydantic-ai transitively via fastmcp-slim[client]<4), so
+# `pip install keycardai-mcp[crewai]` cannot resolve against mcp>=2.0 anyway.
+# The integration modules themselves still ship -- bring your own framework
+# install, on a keycardai-mcp release that predates mcp 2.0. Restored when the
+# frameworks accept mcp 2.0 (ECO-198).
+# openai-agents, crewai, pydantic-ai and fastmcp all pin mcp<2.0 (pydantic-ai
+# transitively, via fastmcp-slim[client]<4) and cannot install next to this
+# package's mcp>=2.0. Leaving them in lets the resolver backtrack to ancient
+# releases -- it picked pydantic-ai 1.44.0 and with it fastmcp 2.14.1, which
+# Socket blocks. Their suites are guarded by pytest.importorskip and report as
+# SKIPPED, so the gap is visible in test output rather than silent:
+#   - tests/.../test_crewai_agents.py       skips without crewai
+#   - tests/.../test_pydantic_agents.py     skips without pydantic_ai
+#   - tests/integration/interactive/*       skips without openai-agents/fastmcp
+# They come back when those projects accept mcp 2.0 (ECO-198).
 test = [
     "pytest>=8.4.1",
     "pytest-asyncio>=1.1.0",
     "pytest-cov>=6.2.1",
     "pytest-timeout>=2.3.1",
-    "fastmcp>=3.0.0",  # For integration tests
-    "keycardai-mcp-fastmcp",  # For integration tests
-    "openai-agents>=0.5.1",
     "langchain>=1.0.5",
     "langchain-openai>=1.0.2",
-    "crewai>=0.86.0",
-    "pydantic-ai>=0.2.0",
 ]
 
 [project.urls]
@@ -142,7 +146,9 @@ tag_format = "${version}-keycardai-mcp"
 ignored_tag_formats = ["${version}-*"]
 update_changelog_on_bump = true
 bump_message = "bump: keycardai-mcp $current_version → $new_version"
-major_version_zero = true
+# The package is past 1.0.0: breaking changes must cut majors. Leaving this
+# true made cz derive 1.1.0 from a feat! commit in typescript-sdk's cutover.
+major_version_zero = false
 
 [tool.commitizen.customize]
 changelog_pattern = "^(feat|fix|refactor|perf|test|build|ci|revert)\\(keycardai-mcp\\)(!)?:"

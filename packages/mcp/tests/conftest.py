@@ -25,21 +25,27 @@
 #   implementation. This must run before crewai is imported -- importing it
 #   here in the package-level conftest guarantees that, since pytest loads
 #   conftest modules before collecting test files.
-import dotenv as _dotenv
-import dotenv.main as _dotenv_main
+# This shim exists only for crewai, which is not installable alongside mcp>=2.0
+# (ECO-198), so dotenv may legitimately be absent. Guarded rather than assumed:
+# unguarded, it errors at collection for anyone running this package on its own.
+try:
+    import dotenv as _dotenv
+    import dotenv.main as _dotenv_main
+except ImportError:
+    _dotenv = None
+    _dotenv_main = None
 
-_real_load_dotenv = _dotenv_main.load_dotenv
+if _dotenv is not None and _dotenv_main is not None:
+    _real_load_dotenv = _dotenv_main.load_dotenv
 
+    def _block_implicit_load_dotenv(
+        dotenv_path=None, stream=None, *args, **kwargs
+    ):
+        if dotenv_path is None and stream is None:
+            return False
+        return _real_load_dotenv(dotenv_path, stream, *args, **kwargs)
 
-def _block_implicit_load_dotenv(
-    dotenv_path=None, stream=None, *args, **kwargs
-):
-    if dotenv_path is None and stream is None:
-        return False
-    return _real_load_dotenv(dotenv_path, stream, *args, **kwargs)
-
-
-_dotenv.load_dotenv = _block_implicit_load_dotenv
-_dotenv_main.load_dotenv = _block_implicit_load_dotenv
+    _dotenv.load_dotenv = _block_implicit_load_dotenv
+    _dotenv_main.load_dotenv = _block_implicit_load_dotenv
 
 from .fixtures.auth_provider import *  # noqa: E402, F403, F401

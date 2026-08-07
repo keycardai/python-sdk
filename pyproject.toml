@@ -55,22 +55,27 @@ members = [
     "packages/oauth",
     "packages/starlette",
     "packages/mcp",
-    "packages/mcp-fastmcp",
-    "packages/fastmcp",
     "packages/a2a",
 ]
 # Examples are standalone projects with their own lockfiles: each pins its parent
 # package via a path source and resolves the rest from the index.
-exclude = ["packages/*/examples/*"]
+# packages/fastmcp and packages/mcp-fastmcp carry their own resolution. They sit
+# on fastmcp 3.x, which pins mcp<2.0, while packages/mcp is on mcp>=2.0. One
+# workspace lock cannot hold both majors. See ECO-198.
+exclude = ["packages/*/examples/*", "packages/fastmcp", "packages/mcp-fastmcp"]
 
 [tool.uv.sources]
 # Workspace sources will be defined here as packages are added
 keycardai-oauth = { workspace = true }
 keycardai-starlette = { workspace = true }
-keycardai-fastmcp = { workspace = true }
-keycardai-mcp-fastmcp = { workspace = true }
 keycardai-mcp = { workspace = true }
 keycardai-a2a = { workspace = true }
+
+[tool.keycardai.release]
+# packages/fastmcp and packages/mcp-fastmcp are excluded from the uv workspace
+# (they hold mcp<2.0; see tool.uv.workspace.exclude and ECO-198) but still ship
+# from this repo, so the release tooling has to keep seeing them.
+standalone-members = ["packages/fastmcp", "packages/mcp-fastmcp"]
 
 [build-system]
 requires = ["hatchling", "uv-dynamic-versioning"]
@@ -110,7 +115,6 @@ dev = [
     "pre-commit>=4.3.0",
     "commitizen>=3.29.0",
     "httpx>=0.28.1",
-    "fastmcp>=3.0.0",
 ]
 
 # Configure as a namespace/workspace root package

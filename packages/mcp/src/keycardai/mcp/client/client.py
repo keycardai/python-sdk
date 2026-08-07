@@ -229,10 +229,10 @@ class Client:
 
                     session_tools.extend(result.tools)
 
-                    if result.nextCursor is None:
+                    if result.next_cursor is None:
                         break
 
-                    cursor = result.nextCursor
+                    cursor = result.next_cursor
 
                 tools[session] = session_tools
 

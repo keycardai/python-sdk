@@ -81,8 +81,11 @@ jobs:
         run: uv sync --all-extras --all-packages
 
       - name: Build package
+        # Build by path, not --package: `uv build --package` resolves against
+        # workspace.members, and packages/fastmcp + packages/mcp-fastmcp are
+        # deliberately excluded from the workspace (see ECO-198).
         run: |
-          uv build --package ${{ needs.detect-package.outputs.package }} 
+          uv build --out-dir dist "${{ needs.detect-package.outputs.package-dir }}"
 
       - name: Publish to PyPI
         run: |

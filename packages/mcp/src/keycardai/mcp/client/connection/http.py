@@ -5,7 +5,7 @@ Provides StreamableHttpConnection which uses httpx for HTTP-based MCP connection
 """
 from typing import TYPE_CHECKING, Any
 
-from mcp.client.streamable_http import streamablehttp_client
+from mcp.client.streamable_http import streamable_http_client
 
 from ..auth.strategies import create_auth_strategy
 from ..auth.transports import HttpxAuth
@@ -80,7 +80,7 @@ class StreamableHttpConnection(Connection):
         # Strategy already has its storage from constructor
         auth = HttpxAuth(strategy=self.auth_strategy)
 
-        self._mcp_client = streamablehttp_client(
+        self._mcp_client = streamable_http_client(
             self.server_config.get("url"),
             auth=auth,
         )
