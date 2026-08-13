@@ -6,6 +6,11 @@ else (the agent graph, the middleware hooks, the tool call) is real.
 
 from __future__ import annotations
 
+import asyncio
+import base64
+import json
+import time
+
 import pytest
 from langchain.agents import create_agent
 from langchain.tools import tool
@@ -24,6 +29,16 @@ from keycardai.oauth.types.models import TokenExchangeRequest
 
 RESOURCE = "https://api.example.test"
 PROMPT = {"messages": [HumanMessage("Read the delegated token.")]}
+
+
+def jwt_with_exp(exp: float) -> str:
+    """An unsigned JWT carrying only exp; the middleware never verifies."""
+
+    def b64(part: dict) -> str:
+        raw = base64.urlsafe_b64encode(json.dumps(part).encode())
+        return raw.rstrip(b"=").decode()
+
+    return f"{b64({'alg': 'none'})}.{b64({'exp': exp})}.sig"
 
 
 class StubExchangeClient:
@@ -264,3 +279,114 @@ def test_as_self_denial_is_an_error_never_an_interrupt() -> None:
 def test_zone_url_is_required_without_an_injected_client() -> None:
     with pytest.raises(ValueError, match="zone_url"):
         KeycardGrantMiddleware(resources=[RESOURCE])
+
+
+def test_expired_subject_token_pauses_for_sign_in_not_consent() -> None:
+    """Consent cannot fix an expired token, so it must not route to consent."""
+    stub = StubExchangeClient()
+    agent = build_agent(
+        stub,
+        sign_in_url="https://consent.example/",
+        authorization_url="https://consent.example/authorize",
+    )
+    config = {"configurable": {"thread_id": "expired-token"}}
+
+    result = agent.invoke(
+        PROMPT,
+        config,
+        context=KeycardIdentity(subject_token=jwt_with_exp(time.time() - 60)),
+    )
+    payload = result["__interrupt__"][0].value
+    assert payload["type"] == "sign_in_required"
+    assert payload["reason"] == "subject_token_expired"
+    assert not stub.exchange_calls, "an expired token must not be sent for exchange"
+
+
+def test_expired_subject_token_without_sign_in_url_is_an_error() -> None:
+    stub = StubExchangeClient()
+    result = build_agent(stub).invoke(
+        PROMPT, context=KeycardIdentity(subject_token=jwt_with_exp(time.time() - 60))
+    )
+    content = last_tool_message(result).content
+    assert "GLOBAL_ERROR" in content
+    assert "subject_token_expired" in content
+    assert not stub.exchange_calls
+
+
+def test_unexpired_jwt_subject_token_exchanges_normally() -> None:
+    stub = StubExchangeClient()
+    token = jwt_with_exp(time.time() + 3600)
+    result = build_agent(stub).invoke(
+        PROMPT, context=KeycardIdentity(subject_token=token)
+    )
+    assert f"TOKEN: obo-token-for-{RESOURCE}" in last_tool_message(result).content
+    assert stub.exchange_calls[0].subject_token == token
+
+
+def test_sync_path_runs_on_one_persistent_loop() -> None:
+    """A fresh loop per sync call would defeat the per-loop client cache."""
+    middleware = KeycardGrantMiddleware(
+        resources=[RESOURCE], client=StubExchangeClient()
+    )
+
+    async def running_loop() -> asyncio.AbstractEventLoop:
+        return asyncio.get_running_loop()
+
+    assert middleware._run_sync(running_loop()) is middleware._run_sync(running_loop())
+
+
+def test_grant_serves_tools_outside_the_agent() -> None:
+    stub = StubExchangeClient()
+    middleware = KeycardGrantMiddleware(resources=[RESOURCE], client=stub)
+
+    with middleware.grant(KeycardIdentity(subject_token="caller-token")) as access:
+        assert not access.has_errors()
+        result = read_delegated_token.invoke({"resource": RESOURCE})
+    assert f"TOKEN: obo-token-for-{RESOURCE}" in result
+
+    with pytest.raises(RuntimeError, match="KeycardGrantMiddleware"):
+        read_delegated_token.invoke({"resource": RESOURCE})
+
+
+async def test_agrant_serves_tools_on_the_async_path() -> None:
+    stub = StubExchangeClient()
+    middleware = KeycardGrantMiddleware(resources=[RESOURCE], client=stub)
+
+    async with middleware.agrant(KeycardIdentity(as_self=True)) as access:
+        assert access.access(RESOURCE).access_token == f"self-token-for-{RESOURCE}"
+        result = await read_delegated_token.ainvoke({"resource": RESOURCE})
+    assert f"TOKEN: self-token-for-{RESOURCE}" in result
+
+
+def test_grant_uses_the_fallback_identity_when_omitted() -> None:
+    stub = StubExchangeClient()
+    middleware = KeycardGrantMiddleware(
+        resources=[RESOURCE],
+        client=stub,
+        fallback_identity=KeycardIdentity(as_self=True),
+    )
+    with middleware.grant() as access:
+        assert access.access(RESOURCE).access_token == f"self-token-for-{RESOURCE}"
+
+
+def test_grant_applies_the_tool_resources_override() -> None:
+    stub = StubExchangeClient()
+    middleware = KeycardGrantMiddleware(
+        resources=["https://other.example.test"],
+        tool_resources={"read_delegated_token": [RESOURCE]},
+        client=stub,
+    )
+    with middleware.grant(
+        KeycardIdentity(subject_token="caller-token"), tool_name="read_delegated_token"
+    ) as access:
+        assert access.access(RESOURCE).access_token == f"obo-token-for-{RESOURCE}"
+    assert [c.resource for c in stub.exchange_calls] == [RESOURCE]
+
+
+def test_grant_records_missing_identity_instead_of_raising() -> None:
+    middleware = KeycardGrantMiddleware(
+        resources=[RESOURCE], client=StubExchangeClient()
+    )
+    with middleware.grant() as access:
+        assert access.has_error()
+        assert access.get_error()["code"] == "missing_identity"

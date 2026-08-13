@@ -207,8 +207,14 @@ keycard = KeycardGrantMiddleware(
 
 | Payload `type` | Fires when | Resume behavior |
 |---|---|---|
-| `sign_in_required` | The run carries no identity | Identity is re-resolved, then the exchange runs |
-| `authorization_required` | Identity present, grant missing | The exchange is retried |
+| `sign_in_required` | The run carries no identity, or its subject token has expired | Identity is re-resolved, then the exchange runs |
+| `authorization_required` | Identity present and valid, grant missing | The exchange is retried |
+
+Expiry is detected locally (a decode-only check of the JWT's `exp`; the zone
+stays the authority on validity), so an expired session routes to sign-in
+rather than to a consent page that cannot fix it. The `sign_in_required`
+payload carries a `reason` field (`missing_identity` or
+`subject_token_expired`) so a chat surface can word the prompt accordingly.
 
 Both require a checkpointer. Two details worth knowing:
 
@@ -220,6 +226,25 @@ Both require a checkpointer. Two details worth knowing:
 
 Scope granularity falls out of this for free: if a user has granted read but
 not write, the read call succeeds and the write call is the one that pauses.
+
+## Using tools outside the agent
+
+`get_access_context()` normally only works inside an agent run, because the
+middleware sets the context at the tool-call boundary. For code that calls a
+tool without the agent loop, `grant()` enters the same access context
+explicitly. The motivating case is a UI panel served by the same governed
+tool the agent uses in chat:
+
+```python
+def dashboard_snapshot(session_token: str) -> str:
+    with keycard.grant(KeycardIdentity(subject_token=session_token)):
+        return list_requests.invoke({})
+```
+
+`agrant()` is the async variant. Both accept `tool_name=` to apply that
+tool's `tool_resources` override, and fall back to `fallback_identity` when
+no identity is passed. There is no run to pause, so nothing interrupts here:
+failures stay on the yielded `AccessContext`, exactly as tools see them.
 
 ## Per-tool resources and scopes
 

@@ -12,7 +12,12 @@ The same middleware instance works under `create_agent` and `create_deep_agent`
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
+import base64
+import json
+import threading
+import time
+from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Iterator
+from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Any
@@ -57,6 +62,29 @@ _current_access: ContextVar[AccessContext | None] = ContextVar(
 )
 
 
+def _subject_token_expired(token: str) -> bool:
+    """Whether a JWT subject token is already expired.
+
+    Decode-only, no signature verification: the zone remains the authority on
+    validity. This check exists to route an expiry to sign-in instead of a
+    consent page, and to skip an exchange round trip that is guaranteed to
+    fail. Opaque or malformed tokens return False and are left for the zone
+    to judge.
+    """
+    parts = token.split(".")
+    if len(parts) != 3:
+        return False
+    try:
+        raw = base64.urlsafe_b64decode(parts[1] + "=" * (-len(parts[1]) % 4))
+        payload = json.loads(raw)
+    except (ValueError, UnicodeDecodeError):
+        return False
+    if not isinstance(payload, dict):
+        return False
+    exp = payload.get("exp")
+    return isinstance(exp, (int, float)) and exp <= time.time()
+
+
 def get_access_context() -> AccessContext:
     """The AccessContext for the tool call currently executing.
 
@@ -90,9 +118,11 @@ class KeycardGrantMiddleware(AgentMiddleware):
             interrupt payload carries this URL (str, or callable taking the
             failed resource URLs) for the user to establish the grant; on
             resume the exchange is retried. Requires a checkpointer.
-        sign_in_url: When set, a run that carries no identity at all pauses
-            with a `sign_in_required` interrupt linking here, instead of
-            failing. The whole flow then lives in the chat: sign in, resume.
+        sign_in_url: When set, a run that carries no identity, or whose
+            subject token has already expired, pauses with a
+            `sign_in_required` interrupt linking here, instead of failing.
+            The payload's `reason` field says which case it was. The whole
+            flow then lives in the chat: sign in, resume.
         fallback_identity: Identity used when the runtime context carries
             none. Pass a callable to resolve it per tool call, so a sign-in
             that happens mid-run is picked up on resume without a restart.
@@ -134,6 +164,8 @@ class KeycardGrantMiddleware(AgentMiddleware):
         self._loop_clients: WeakKeyDictionary[
             asyncio.AbstractEventLoop, AsyncClient
         ] = WeakKeyDictionary()
+        self._sync_loop: asyncio.AbstractEventLoop | None = None
+        self._sync_loop_lock = threading.Lock()
 
     def _resolve_fallback(self) -> KeycardIdentity | None:
         fallback = self._fallback_identity
@@ -160,8 +192,8 @@ class KeycardGrantMiddleware(AgentMiddleware):
         Cached per loop rather than per call: an AsyncClient holds connections
         owned by its loop and must not outlive it. Under an async server the
         loop persists, so this reuses one client (and one metadata discovery)
-        for the process. Sync callers that reach here through `asyncio.run`
-        get a fresh loop each time and therefore a fresh client.
+        for the process. The sync tool path runs on the middleware's own
+        persistent loop (see _run_sync), so it shares one warm client too.
         """
         if self._injected_client is not None:
             return self._injected_client
@@ -171,6 +203,27 @@ class KeycardGrantMiddleware(AgentMiddleware):
             client = self._new_client()
             self._loop_clients[loop] = client
         return client
+
+    def _run_sync(self, coro: Coroutine[Any, Any, AccessContext]) -> AccessContext:
+        """Run grant work from the sync path on one persistent background loop.
+
+        asyncio.run would build a fresh event loop per tool call, so the
+        per-loop client cache would miss every time and each call would pay
+        client construction plus metadata discovery again. One long-lived
+        loop keeps a single warm client (and its connections) for every sync
+        tool call in the process.
+        """
+        with self._sync_loop_lock:
+            loop = self._sync_loop
+            if loop is None:
+                loop = asyncio.new_event_loop()
+                threading.Thread(
+                    target=loop.run_forever,
+                    name="keycard-grant-middleware",
+                    daemon=True,
+                ).start()
+                self._sync_loop = loop
+        return asyncio.run_coroutine_threadsafe(coro, loop).result()
 
     def _resources_for(self, request: ToolCallRequest) -> list[str]:
         name = request.tool_call.get("name", "")
@@ -235,8 +288,14 @@ class KeycardGrantMiddleware(AgentMiddleware):
         return access
 
     async def _build_access(self, request: ToolCallRequest) -> AccessContext:
+        return await self._build_access_for(
+            self._resolve_identity(request), self._resources_for(request)
+        )
+
+    async def _build_access_for(
+        self, identity: KeycardIdentity | None, resources: list[str]
+    ) -> AccessContext:
         access = AccessContext()
-        identity = self._resolve_identity(request)
 
         if identity is None:
             access.set_error(
@@ -254,12 +313,24 @@ class KeycardGrantMiddleware(AgentMiddleware):
             )
             return access
 
+        if identity.subject_token and _subject_token_expired(identity.subject_token):
+            access.set_error(
+                {
+                    "message": (
+                        "The subject token for this run has expired. "
+                        "Sign in again to continue."
+                    ),
+                    "code": "subject_token_expired",
+                }
+            )
+            return access
+
         if identity.as_self:
-            return await self._grant_as_self(self._resources_for(request), access)
+            return await self._grant_as_self(resources, access)
 
         return await exchange_tokens_for_resources(
             client=self._client(),
-            resources=self._resources_for(request),
+            resources=resources,
             subject_token=identity.subject_token or "",
             access_context=access,
             user_identifier=identity.user_identifier,
@@ -285,12 +356,17 @@ class KeycardGrantMiddleware(AgentMiddleware):
             ),
         }
 
-    def _sign_in_payload(self) -> dict[str, Any]:
+    def _sign_in_payload(self, access: AccessContext) -> dict[str, Any]:
+        error = access.get_error() or {}
+        reason = error.get("code", "missing_identity")
         return {
             "type": "sign_in_required",
             "sign_in_url": self._sign_in_url,
+            "reason": reason,
             "message": (
-                "Sign in with Keycard to continue. Open the link, sign in, "
+                "Your session has expired. Sign in again, then resume the run."
+                if reason == "subject_token_expired"
+                else "Sign in with Keycard to continue. Open the link, sign in, "
                 "then resume the run."
             ),
         }
@@ -308,7 +384,7 @@ class KeycardGrantMiddleware(AgentMiddleware):
         if identity is not None and identity.as_self:
             return None
         if access.has_error() and self._sign_in_url:
-            return self._sign_in_payload()
+            return self._sign_in_payload(access)
         failed = access.get_failed_resources()
         if failed and self._authorization_url is not None:
             return self._interrupt_payload(failed, access)
@@ -337,15 +413,71 @@ class KeycardGrantMiddleware(AgentMiddleware):
         request: ToolCallRequest,
         handler: Callable[[ToolCallRequest], ToolMessage | Command[Any]],
     ) -> ToolMessage | Command[Any]:
-        access = asyncio.run(self._build_access(request))
+        access = self._run_sync(self._build_access(request))
         for _ in range(self._MAX_AUTHORIZATION_ATTEMPTS):
             payload = self._pending_interrupt(access, request)
             if payload is None:
                 break
             interrupt(payload)
-            access = asyncio.run(self._build_access(request))
+            access = self._run_sync(self._build_access(request))
         token = _current_access.set(access)
         try:
             return handler(request)
+        finally:
+            _current_access.reset(token)
+
+    def _grant_target(
+        self, identity: KeycardIdentity | None, tool_name: str | None
+    ) -> tuple[KeycardIdentity | None, list[str]]:
+        resolved = identity if identity is not None else self._resolve_fallback()
+        resources = (
+            self._tool_resources.get(tool_name, self._resources)
+            if tool_name is not None
+            else self._resources
+        )
+        return resolved, resources
+
+    @contextmanager
+    def grant(
+        self,
+        identity: KeycardIdentity | None = None,
+        *,
+        tool_name: str | None = None,
+    ) -> Iterator[AccessContext]:
+        """Serve get_access_context() for code that runs outside an agent.
+
+        Lets the same governed tools back non-agent surfaces, e.g. seeding a
+        dashboard panel on page load with the tool the agent uses in chat:
+
+            with keycard.grant(KeycardIdentity(subject_token=token)):
+                rows = list_requests.invoke({})
+
+        When `identity` is omitted, `fallback_identity` is used. `tool_name`
+        applies that tool's `tool_resources` override; otherwise the default
+        resources are granted. There is no run to pause, so nothing
+        interrupts here: failures stay on the yielded AccessContext, exactly
+        as tools see them.
+        """
+        resolved, resources = self._grant_target(identity, tool_name)
+        access = self._run_sync(self._build_access_for(resolved, resources))
+        token = _current_access.set(access)
+        try:
+            yield access
+        finally:
+            _current_access.reset(token)
+
+    @asynccontextmanager
+    async def agrant(
+        self,
+        identity: KeycardIdentity | None = None,
+        *,
+        tool_name: str | None = None,
+    ) -> AsyncIterator[AccessContext]:
+        """Async grant(): the same contract on the running event loop."""
+        resolved, resources = self._grant_target(identity, tool_name)
+        access = await self._build_access_for(resolved, resources)
+        token = _current_access.set(access)
+        try:
+            yield access
         finally:
             _current_access.reset(token)
