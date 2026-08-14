@@ -390,3 +390,31 @@ def test_grant_records_missing_identity_instead_of_raising() -> None:
     with middleware.grant() as access:
         assert access.has_error()
         assert access.get_error()["code"] == "missing_identity"
+
+
+def test_grant_accepts_explicit_resources_without_a_tool() -> None:
+    """A resource with no tool attached, e.g. a vaulted LLM key."""
+    stub = StubExchangeClient()
+    middleware = KeycardGrantMiddleware(resources=[RESOURCE], client=stub)
+    key_resource = "https://llm-key.example.test"
+
+    with middleware.grant(
+        KeycardIdentity(as_self=True), resources=[key_resource]
+    ) as access:
+        assert access.access(key_resource).access_token == (
+            f"self-token-for-{key_resource}"
+        )
+    assert stub.self_calls == [{"resource": key_resource}]
+
+
+def test_grant_rejects_tool_name_and_resources_together() -> None:
+    middleware = KeycardGrantMiddleware(
+        resources=[RESOURCE], client=StubExchangeClient()
+    )
+    with pytest.raises(ValueError, match="not both"):
+        with middleware.grant(
+            KeycardIdentity(as_self=True),
+            tool_name="read_delegated_token",
+            resources=[RESOURCE],
+        ):
+            pass

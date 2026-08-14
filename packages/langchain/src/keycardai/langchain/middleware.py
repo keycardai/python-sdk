@@ -427,15 +427,19 @@ class KeycardGrantMiddleware(AgentMiddleware):
             _current_access.reset(token)
 
     def _grant_target(
-        self, identity: KeycardIdentity | None, tool_name: str | None
+        self,
+        identity: KeycardIdentity | None,
+        tool_name: str | None,
+        resources: list[str] | None,
     ) -> tuple[KeycardIdentity | None, list[str]]:
+        if tool_name is not None and resources is not None:
+            raise ValueError("Pass tool_name or resources, not both")
         resolved = identity if identity is not None else self._resolve_fallback()
-        resources = (
-            self._tool_resources.get(tool_name, self._resources)
-            if tool_name is not None
-            else self._resources
-        )
-        return resolved, resources
+        if resources is not None:
+            return resolved, list(resources)
+        if tool_name is not None:
+            return resolved, self._tool_resources.get(tool_name, self._resources)
+        return resolved, self._resources
 
     @contextmanager
     def grant(
@@ -443,6 +447,7 @@ class KeycardGrantMiddleware(AgentMiddleware):
         identity: KeycardIdentity | None = None,
         *,
         tool_name: str | None = None,
+        resources: list[str] | None = None,
     ) -> Iterator[AccessContext]:
         """Serve get_access_context() for code that runs outside an agent.
 
@@ -452,14 +457,23 @@ class KeycardGrantMiddleware(AgentMiddleware):
             with keycard.grant(KeycardIdentity(subject_token=token)):
                 rows = list_requests.invoke({})
 
+        Also serves resources that have no tool at all, e.g. fetching a
+        vaulted LLM key under the agent's own identity:
+
+            with keycard.grant(
+                KeycardIdentity(as_self=True), resources=[LLM_KEY]
+            ) as access:
+                key = access.access(LLM_KEY).access_token
+
         When `identity` is omitted, `fallback_identity` is used. `tool_name`
-        applies that tool's `tool_resources` override; otherwise the default
-        resources are granted. There is no run to pause, so nothing
-        interrupts here: failures stay on the yielded AccessContext, exactly
-        as tools see them.
+        applies that tool's `tool_resources` override, `resources` grants
+        exactly the listed resources (the two are mutually exclusive), and
+        with neither the default resources are granted. There is no run to
+        pause, so nothing interrupts here: failures stay on the yielded
+        AccessContext, exactly as tools see them.
         """
-        resolved, resources = self._grant_target(identity, tool_name)
-        access = self._run_sync(self._build_access_for(resolved, resources))
+        resolved, targets = self._grant_target(identity, tool_name, resources)
+        access = self._run_sync(self._build_access_for(resolved, targets))
         token = _current_access.set(access)
         try:
             yield access
@@ -472,10 +486,11 @@ class KeycardGrantMiddleware(AgentMiddleware):
         identity: KeycardIdentity | None = None,
         *,
         tool_name: str | None = None,
+        resources: list[str] | None = None,
     ) -> AsyncIterator[AccessContext]:
         """Async grant(): the same contract on the running event loop."""
-        resolved, resources = self._grant_target(identity, tool_name)
-        access = await self._build_access_for(resolved, resources)
+        resolved, targets = self._grant_target(identity, tool_name, resources)
+        access = await self._build_access_for(resolved, targets)
         token = _current_access.set(access)
         try:
             yield access

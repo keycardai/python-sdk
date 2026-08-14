@@ -241,10 +241,20 @@ def dashboard_snapshot(session_token: str) -> str:
         return list_requests.invoke({})
 ```
 
+It also serves resources that have no tool at all. Fetching a vaulted LLM
+key under the agent's own identity, for example:
+
+```python
+with keycard.grant(KeycardIdentity(as_self=True), resources=[LLM_KEY]) as access:
+    key = access.access(LLM_KEY).access_token
+```
+
 `agrant()` is the async variant. Both accept `tool_name=` to apply that
-tool's `tool_resources` override, and fall back to `fallback_identity` when
-no identity is passed. There is no run to pause, so nothing interrupts here:
-failures stay on the yielded `AccessContext`, exactly as tools see them.
+tool's `tool_resources` override, or `resources=` to grant exactly the
+listed resources (one or the other, not both), and fall back to
+`fallback_identity` when no identity is passed. There is no run to pause,
+so nothing interrupts here: failures stay on the yielded `AccessContext`,
+exactly as tools see them.
 
 ## Per-tool resources and scopes
 
