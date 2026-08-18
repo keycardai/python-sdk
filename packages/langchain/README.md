@@ -289,6 +289,9 @@ resource a tool reads. `resource_errors=` and `error_message=` cover the failure
 paths, and `override_access_context` takes a hand-built context for full
 control.
 
+The package's own test strategy, row by row with coverage status, lives in
+[TESTING.md](TESTING.md).
+
 ## A note on tool arguments
 
 Give tools arguments that express **intent**, and keep configuration and clocks

@@ -50,10 +50,11 @@ class StubExchangeClient:
         self.self_calls: list[dict[str, str]] = []
         self.granted = True
         self.self_granted = True
+        self.denied_resources: set[str] = set()
 
     async def exchange_token(self, request: TokenExchangeRequest) -> TokenResponse:
         self.exchange_calls.append(request)
-        if not self.granted:
+        if not self.granted or request.resource in self.denied_resources:
             raise RuntimeError("no grant for this resource yet")
         return TokenResponse(
             access_token=f"obo-token-for-{request.resource}",
@@ -390,6 +391,36 @@ def test_grant_records_missing_identity_instead_of_raising() -> None:
     with middleware.grant() as access:
         assert access.has_error()
         assert access.get_error()["code"] == "missing_identity"
+
+
+def test_partial_grant_yields_token_and_resource_error_side_by_side() -> None:
+    """Partial success is the contract: one denied resource must not poison
+    the granted one, and the failure stays per-resource, not global."""
+    stub = StubExchangeClient()
+    denied = "https://denied.example.test"
+    stub.denied_resources.add(denied)
+    middleware = KeycardGrantMiddleware(resources=[RESOURCE, denied], client=stub)
+
+    with middleware.grant(KeycardIdentity(subject_token="caller-token")) as access:
+        assert access.access(RESOURCE).access_token == f"obo-token-for-{RESOURCE}"
+        assert access.has_resource_error(denied)
+        assert not access.has_error()
+
+
+def test_no_tool_executes_before_an_interrupt_resolves() -> None:
+    """The pause happens before the handler: an interrupted run must contain
+    no ToolMessage, so nothing side-effectful ran pre-consent."""
+    stub = StubExchangeClient()
+    stub.granted = False
+    agent = build_agent(stub, authorization_url="https://consent.example/authorize")
+    config = {"configurable": {"thread_id": "no-tool-before-interrupt"}}
+
+    result = agent.invoke(
+        PROMPT, config, context=KeycardIdentity(subject_token="caller-token")
+    )
+    assert result.get("__interrupt__")
+    tool_messages = [m for m in result["messages"] if isinstance(m, ToolMessage)]
+    assert not tool_messages, "tool ran before authorization resolved"
 
 
 def test_grant_accepts_explicit_resources_without_a_tool() -> None:
