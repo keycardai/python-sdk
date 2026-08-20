@@ -26,8 +26,9 @@ from weakref import WeakKeyDictionary
 from langchain_core.messages import ToolMessage
 from langgraph.types import Command, interrupt
 
-from keycardai.oauth import AsyncClient, BasicAuth, ClientConfig, NoneAuth
+from keycardai.oauth import AsyncClient, ClientConfig, NoneAuth
 from keycardai.oauth.server.access_context import AccessContext
+from keycardai.oauth.server.credentials import ApplicationCredential, ClientSecret
 from keycardai.oauth.server.token_exchange import exchange_tokens_for_resources
 from langchain.agents.middleware import AgentMiddleware
 from langchain.agents.middleware.types import ToolCallRequest
@@ -107,8 +108,13 @@ class KeycardGrantMiddleware(AgentMiddleware):
     Args:
         zone_url: Keycard zone URL (issuer). Required unless `client` is given.
         resources: Resource URLs to grant for every tool call.
-        client_id / client_secret: The agent's application credential. Used to
-            authenticate the exchange; required for impersonation.
+        application_credential: How the agent authenticates to the zone.
+            `ClientSecret` for Keycard-issued client credentials,
+            `WorkloadIdentity` for a platform-signed OIDC token (no static
+            secret on the box). Mutually exclusive with client_id /
+            client_secret.
+        client_id / client_secret: Shorthand for
+            `application_credential=ClientSecret((client_id, client_secret))`.
         tool_resources: Optional per-tool override, tool name -> resource URLs.
             Tools absent from the map get `resources`.
         request_scopes: Optional outbound scopes for the exchange, same shapes
@@ -135,6 +141,7 @@ class KeycardGrantMiddleware(AgentMiddleware):
         *,
         zone_url: str | None = None,
         resources: list[str],
+        application_credential: ApplicationCredential | None = None,
         client_id: str | None = None,
         client_secret: str | None = None,
         tool_resources: dict[str, list[str]] | None = None,
@@ -151,10 +158,18 @@ class KeycardGrantMiddleware(AgentMiddleware):
             raise ValueError(
                 "KeycardGrantMiddleware requires zone_url (or an injected client)"
             )
+        if application_credential is not None and (client_id or client_secret):
+            raise ValueError(
+                "Pass application_credential or client_id/client_secret, not both"
+            )
         self._zone_url = zone_url
         self._resources = list(resources)
-        self._client_id = client_id
-        self._client_secret = client_secret
+        if application_credential is not None:
+            self._credential: ApplicationCredential | None = application_credential
+        elif client_id and client_secret:
+            self._credential = ClientSecret((client_id, client_secret))
+        else:
+            self._credential = None
         self._tool_resources = tool_resources or {}
         self._request_scopes = request_scopes
         self._authorization_url = authorization_url
@@ -173,18 +188,17 @@ class KeycardGrantMiddleware(AgentMiddleware):
 
     def _new_client(self) -> AsyncClient:
         auth = (
-            BasicAuth(self._client_id, self._client_secret)
-            if self._client_id and self._client_secret
+            self._credential.get_http_client_auth()
+            if self._credential is not None
             else NoneAuth()
         )
-        return AsyncClient(
-            issuer=self._zone_url,
-            auth=auth,
-            config=ClientConfig(
-                enable_metadata_discovery=True,
-                auto_register_client=False,
-            ),
+        config = ClientConfig(
+            enable_metadata_discovery=True,
+            auto_register_client=False,
         )
+        if self._credential is not None:
+            config = self._credential.set_client_config(config, {})
+        return AsyncClient(issuer=self._zone_url, auth=auth, config=config)
 
     def _client(self) -> AsyncClient:
         """The client bound to the running event loop.
@@ -257,6 +271,33 @@ class KeycardGrantMiddleware(AgentMiddleware):
             return None
         return " ".join(value) if isinstance(value, list) else value
 
+    async def _client_auth_fields(
+        self, client: AsyncClient, resource: str
+    ) -> dict[str, str]:
+        """Client-authentication fields the credential puts in the request body.
+
+        Assertion-based credentials (WorkloadIdentity, WebIdentity) carry no
+        HTTP-level auth; their proof rides in the request as a jwt-bearer
+        client assertion. The protocol only exposes request preparation for
+        token exchange, so this prepares one and lifts the auth fields for
+        the client-credentials call. ClientSecret authenticates at the HTTP
+        layer and contributes nothing here.
+
+        The subject token below is a placeholder: client credentials has no
+        subject, the request model requires a non-empty one, and only the
+        client-auth fields of the prepared request are read.
+        """
+        if self._credential is None:
+            return {}
+        prepared = await self._credential.prepare_token_exchange_request(
+            client=client, subject_token="client-credentials", resource=resource
+        )
+        fields: dict[str, str] = {}
+        if getattr(prepared, "client_assertion", None):
+            fields["client_assertion"] = prepared.client_assertion
+            fields["client_assertion_type"] = prepared.client_assertion_type
+        return fields
+
     async def _grant_as_self(
         self, resources: list[str], access: AccessContext
     ) -> AccessContext:
@@ -272,6 +313,7 @@ class KeycardGrantMiddleware(AgentMiddleware):
                 scope = self._scope_for(resource)
                 if scope:
                     kwargs["scope"] = scope
+                kwargs.update(await self._client_auth_fields(client, resource))
                 token = await client.client_credentials_grant(**kwargs)
                 access.set_token(resource, token)
             except Exception as e:
@@ -333,6 +375,7 @@ class KeycardGrantMiddleware(AgentMiddleware):
             resources=resources,
             subject_token=identity.subject_token or "",
             access_context=access,
+            application_credential=self._credential,
             user_identifier=identity.user_identifier,
             request_scopes=self._request_scopes,
         )

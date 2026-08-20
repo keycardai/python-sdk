@@ -65,9 +65,8 @@ runs at the tool-call boundary. Before each tool executes it acquires tokens
 for the declared resources under the identity of the run, then exposes the
 result to the tool as an `AccessContext`.
 
-The middleware is framework-shaped rather than Keycard-shaped: identity travels
-on the agent's own `context_schema`, and the pause-for-authorization flow is a
-LangGraph interrupt. Nothing is bolted onto the side of the framework.
+Identity travels on the agent's own `context_schema`, and the
+pause-for-authorization flow is a LangGraph interrupt.
 
 The same middleware instance works under `create_agent`, a raw LangGraph graph,
 and `create_deep_agent` (deep agents are built on the same middleware system).
@@ -83,9 +82,9 @@ access pattern:
 | `as_self=True` | as itself | Client-credentials grant under the agent's own application identity. No user anywhere. |
 | `user_identifier` | impersonation | Substitute-user exchange, authenticated by the agent's credential. Forbidden by default; requires a zone policy. |
 
-A run with no identity at all is an error (or a sign-in interrupt), never a
-silent fallback to the agent's own authority — acting as itself is always an
-explicit choice.
+A run with no identity fails with a `missing_identity` error, or pauses with a
+`sign_in_required` interrupt when `sign_in_url` is set. It never falls back to
+the agent's own authority: acting as itself is always an explicit choice.
 
 ### On-behalf-of: a user-facing agent
 
@@ -114,7 +113,7 @@ Runnable version: [`examples/user_facing_agent`](examples/user_facing_agent).
 
 ### As itself: a background agent
 
-No user in the loop — a scheduled digest, a queue worker, a monitor. The agent
+No user in the loop: a scheduled digest, a queue worker, a monitor. The agent
 authenticates as its own application and Keycard delivers whatever credential
 the zone brokers for the resource, including vaulted secrets, so the worker's
 environment holds no API keys and revocation lives in one place.
@@ -159,6 +158,26 @@ agent.invoke(
     context=KeycardIdentity(user_identifier="user@example.com"),
 )
 ```
+
+### Authenticating without a static secret
+
+`client_id` / `client_secret` is shorthand for a `ClientSecret` credential.
+Every pattern also accepts an `application_credential`, so a deployed agent
+can authenticate with a platform-signed OIDC token instead of holding a
+secret:
+
+```python
+from keycardai.oauth.server import FileTokenSource, WorkloadIdentity
+
+keycard = KeycardGrantMiddleware(
+    zone_url="https://your-zone.keycard.cloud",
+    resources=["https://api.github.com"],
+    application_credential=WorkloadIdentity(FileTokenSource()),
+)
+```
+
+`WorkloadIdentity` fetches the platform token per call and sends it as a
+jwt-bearer client assertion; nothing long-lived sits in the environment.
 
 ### Identity without per-run context
 

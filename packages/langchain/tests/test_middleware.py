@@ -393,6 +393,70 @@ def test_grant_records_missing_identity_instead_of_raising() -> None:
         assert access.get_error()["code"] == "missing_identity"
 
 
+class StubAssertionCredential:
+    """ApplicationCredential whose proof rides in the request body,
+    the shape WorkloadIdentity and WebIdentity use."""
+
+    def get_http_client_auth(self):  # noqa: ANN201
+        from keycardai.oauth import NoneAuth
+
+        return NoneAuth()
+
+    def set_client_config(self, config, auth_info):  # noqa: ANN001, ANN201
+        return config
+
+    async def prepare_token_exchange_request(
+        self, client, subject_token: str, resource: str, auth_info=None
+    ):  # noqa: ANN001, ANN201
+        return TokenExchangeRequest(
+            subject_token=subject_token,
+            resource=resource,
+            subject_token_type="urn:ietf:params:oauth:token-type:access_token",
+            client_assertion="stub-assertion",
+            client_assertion_type="urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+        )
+
+
+def test_credential_and_client_id_are_mutually_exclusive() -> None:
+    with pytest.raises(ValueError, match="not both"):
+        KeycardGrantMiddleware(
+            zone_url="https://zone.example",
+            resources=[RESOURCE],
+            application_credential=StubAssertionCredential(),
+            client_id="agent",
+            client_secret="secret",
+        )
+
+
+def test_credential_prepares_the_exchange_request() -> None:
+    stub = StubExchangeClient()
+    middleware = KeycardGrantMiddleware(
+        resources=[RESOURCE],
+        client=stub,
+        application_credential=StubAssertionCredential(),
+    )
+    with middleware.grant(KeycardIdentity(subject_token="caller-token")) as access:
+        assert access.access(RESOURCE).access_token == f"obo-token-for-{RESOURCE}"
+    request = stub.exchange_calls[0]
+    assert request.subject_token == "caller-token"
+    assert request.client_assertion == "stub-assertion"
+
+
+def test_credential_assertion_reaches_the_as_self_grant() -> None:
+    stub = StubExchangeClient()
+    middleware = KeycardGrantMiddleware(
+        resources=[RESOURCE],
+        client=stub,
+        application_credential=StubAssertionCredential(),
+    )
+    with middleware.grant(KeycardIdentity(as_self=True)) as access:
+        assert access.access(RESOURCE).access_token == f"self-token-for-{RESOURCE}"
+    call = stub.self_calls[0]
+    assert call["resource"] == RESOURCE
+    assert call["client_assertion"] == "stub-assertion"
+    assert call["client_assertion_type"].endswith("jwt-bearer")
+
+
 def test_partial_grant_yields_token_and_resource_error_side_by_side() -> None:
     """Partial success is the contract: one denied resource must not poison
     the granted one, and the failure stays per-resource, not global."""
