@@ -417,6 +417,27 @@ class StubAssertionCredential:
         )
 
 
+def test_client_id_and_secret_are_client_secret_shorthand() -> None:
+    """The two spellings must be one object: the params build the same
+    ClientSecret a caller would pass as application_credential."""
+    from keycardai.oauth.server.credentials import ClientSecret
+
+    stub = StubExchangeClient()
+    middleware = KeycardGrantMiddleware(
+        resources=[RESOURCE],
+        client=stub,
+        client_id="agent",
+        client_secret="s3cret",
+    )
+    assert isinstance(middleware._credential, ClientSecret)
+
+    with middleware.grant(KeycardIdentity(subject_token="caller-token")) as access:
+        assert access.access(RESOURCE).access_token == f"obo-token-for-{RESOURCE}"
+    request = stub.exchange_calls[0]
+    assert request.subject_token == "caller-token"
+    assert request.client_assertion is None
+
+
 def test_credential_and_client_id_are_mutually_exclusive() -> None:
     with pytest.raises(ValueError, match="not both"):
         KeycardGrantMiddleware(
