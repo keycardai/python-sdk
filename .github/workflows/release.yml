@@ -10,6 +10,7 @@ on:
       - '*-keycardai-mcp-fastmcp'
       - '*-keycardai-fastmcp'
       - '*-keycardai-a2a'
+      - '*-keycardai-langchain'
 
 jobs:
   detect-package:

@@ -56,6 +56,7 @@ members = [
     "packages/starlette",
     "packages/mcp",
     "packages/a2a",
+    "packages/langchain",
 ]
 # Examples are standalone projects with their own lockfiles: each pins its parent
 # package via a path source and resolves the rest from the index.
