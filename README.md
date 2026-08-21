@@ -28,7 +28,6 @@
 
 ### Current Limitations
 
-- **Alpha Status**: All packages are in early development (`Development Status :: 3 - Alpha`). APIs may change between minor versions.
 - **FastMCP 3.x Required**: The `keycardai-fastmcp` package requires FastMCP 3.0 or later. FastMCP 3.0 made `ctx.get_state()` and `ctx.set_state()` async; all tool functions using these calls must be `async def`.
 - **MCP Protocol Version**: Tested against MCP protocol version as implemented by `mcp>=1.13.1`. Newer MCP protocol versions may introduce incompatibilities.
 
@@ -76,14 +75,6 @@ All packages follow [Semantic Versioning](https://semver.org/):
 - During `0.x.y` development:
   - **MINOR** bumps (`0.x.0`) may contain breaking changes
   - **PATCH** bumps (`0.x.y`) are backward-compatible bug fixes
-
-### Alpha Status (`0.x.y`)
-
-All packages are currently in alpha status. This means:
-
-1. **API Stability**: Public APIs may change between minor versions
-2. **Documentation**: APIs are documented but may evolve
-3. **Production Use**: Suitable for early adopters comfortable with potential migration work
 
 ### When Will Packages Reach 1.0?
 

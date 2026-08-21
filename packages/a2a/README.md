@@ -2,8 +2,6 @@
 
 Keycard auth primitives for [a2a-sdk](https://github.com/a2aproject/A2A) 1.x agent services. This package is glue, not a parallel server abstraction. Customers compose these primitives with a2a-sdk's standard route factories and request handler in their own Starlette / FastAPI app to get bearer token verification, OAuth metadata discovery, and OAuth 2.0 token exchange (RFC 8693) for downstream delegated calls.
 
-> **Preview.** This package is pre-1.0. APIs may change between minor versions.
-
 ## What's in here
 
 Server-side wiring:
