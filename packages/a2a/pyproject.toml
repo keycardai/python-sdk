@@ -19,7 +19,7 @@ dependencies = [
 ]
 keywords = ["a2a", "agent-to-agent", "delegation", "agents", "ai", "authentication", "oauth", "token-exchange", "keycard"]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
