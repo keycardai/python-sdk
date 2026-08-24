@@ -34,6 +34,7 @@ Example:
 from .client import AsyncClient, Client
 from .exceptions import (
     AuthenticationError,
+    AuthorizationDeniedError,
     ConfigError,
     InvalidTokenError,
     JWKSError,
@@ -43,6 +44,7 @@ from .exceptions import (
     OAuthError,
     OAuthHttpError,
     OAuthProtocolError,
+    StateMismatchError,
     TokenExchangeError,
 )
 from .http.auth import AuthStrategy, BasicAuth, BearerAuth, MultiZoneBasicAuth, NoneAuth
@@ -82,6 +84,8 @@ __all__ = [
     "NetworkError",
     "ConfigError",
     "AuthenticationError",
+    "AuthorizationDeniedError",
+    "StateMismatchError",
     "TokenExchangeError",
     "JWKSError",
     "JWKSFetchError",

@@ -95,6 +95,60 @@ async def main():
 asyncio.run(main())
 ```
 
+### Web-App Authorization Code Flow
+
+For applications that own their registered redirect route, use the stateless
+web-app flow and store the returned `state` and `code_verifier` in session
+state between requests:
+
+```python
+from keycardai.oauth.pkce import begin_authorization, complete_authorization
+
+async def login_route(session):
+    redirect = await begin_authorization(
+        client_id="my-web-app",
+        issuer="https://oauth.example.com",
+        redirect_uri="https://app.example.com/oauth/callback",
+        scopes=["openid"],
+    )
+    session["oauth_flow"] = {
+        "state": redirect.state,
+        "code_verifier": redirect.code_verifier,
+    }
+    return redirect.url  # Redirect the browser to this URL.
+
+
+async def callback_route(request, session):
+    flow = session.pop("oauth_flow")
+    return await complete_authorization(
+        callback_params=request.query_params,
+        state=flow["state"],
+        code_verifier=flow["code_verifier"],
+        client_id="my-web-app",
+        redirect_uri="https://app.example.com/oauth/callback",
+        issuer="https://oauth.example.com",
+    )
+```
+
+If the application caches authorization server metadata, it can replace
+`issuer=...` with `metadata=cached_metadata` in both handlers to skip discovery
+on each sign-in:
+
+```python
+from keycardai.oauth import AuthorizationServerMetadata
+
+cached_metadata = AuthorizationServerMetadata(
+    issuer="https://oauth.example.com",
+    authorization_endpoint="https://oauth.example.com/authorize",
+    token_endpoint="https://oauth.example.com/token",
+)
+
+# login_route:    issuer="https://oauth.example.com"
+#             -> metadata=cached_metadata
+# callback_route: issuer="https://oauth.example.com"
+#             -> metadata=cached_metadata
+```
+
 ## Features
 
 - **Token Exchange (RFC 8693)** - Exchange tokens for different audiences, scopes, or token types
@@ -103,6 +157,7 @@ asyncio.run(main())
 - **UserInfo (OIDC Core 1.0 Section 5.3)** - Fetch the signed-in user's identity claims
 - **Bearer Token Support (RFC 6750)** - Standard bearer token handling and utilities
 - **PKCE Support (RFC 7636)** - Proof Key for Code Exchange for public clients
+- **Web-App Authorization Code Flow** - Stateless begin and complete helpers for applications with their own callback route
 - **Multiple Auth Strategies** - BasicAuth, BearerAuth, and multi-zone authentication
 - **Comprehensive Error Handling** - Structured exceptions with retry guidance
 - **Sync and Async Clients** - Choose the right client for your application
