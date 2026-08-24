@@ -17,6 +17,8 @@ from .models import (
     ServerMetadataRequest,
     TokenExchangeRequest,
     TokenResponse,
+    UserInfoRequest,
+    UserInfoResponse,
 )
 from .oauth import (
     GrantType,
@@ -46,6 +48,8 @@ __all__ = [
     "ServerMetadataRequest",
     "TokenExchangeRequest",
     "TokenResponse",
+    "UserInfoRequest",
+    "UserInfoResponse",
     # OAuth enums and constants
     "GrantType",
     "PKCECodeChallengeMethod",

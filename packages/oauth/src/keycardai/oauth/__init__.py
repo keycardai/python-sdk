@@ -8,6 +8,7 @@ Supported OAuth 2.0 Standards:
 - RFC 7591: OAuth 2.0 Dynamic Client Registration
 - RFC 6750: OAuth 2.0 Bearer Token Usage
 - RFC 8414: OAuth 2.0 Authorization Server Metadata
+- OpenID Connect Core 1.0 Section 5.3: UserInfo
 
 Example:
     # Simple usage
@@ -58,6 +59,8 @@ from .types.models import (
     Endpoints,
     TokenExchangeRequest,
     TokenResponse,
+    UserInfoRequest,
+    UserInfoResponse,
 )
 from .types.oauth import (
     GrantType,
@@ -98,6 +101,8 @@ __all__ = [
     "ClientCredentialsRequest",
     "TokenExchangeRequest",
     "AuthorizationServerMetadata",
+    "UserInfoRequest",
+    "UserInfoResponse",
     # === Authorization ===
     "build_authorize_url",
     # === OAuth Enums ===

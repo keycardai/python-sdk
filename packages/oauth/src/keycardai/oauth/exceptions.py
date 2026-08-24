@@ -206,12 +206,21 @@ class JWKSKeyNotFoundError(JWKSError):
 
 
 class InvalidTokenError(OAuthError):
-    """A presented token failed verification.
+    """A presented token failed verification or was rejected by a server.
 
     Raised by the verify surface for any token-validity failure: an
     unsupported algorithm, a missing ``kid`` header, an untrusted or missing
     issuer, an expired token, an audience or scope mismatch, or a bad
-    signature. Carries the RFC 6750 ``invalid_token`` error code.
+    signature. Also raised when a resource server rejects the token with
+    HTTP 401, as the UserInfo endpoint does.
+
+    Carries the RFC 6750 error code, ``invalid_token`` unless a server
+    challenge named a different one.
     """
 
     error_code = "invalid_token"
+
+    def __init__(self, message: str, *, error_code: str | None = None):
+        super().__init__(message)
+        if error_code is not None:
+            self.error_code = error_code
