@@ -1,4 +1,4 @@
-"""High-level PKCE flow for browser-based OAuth 2.0 user authentication.
+"""High-level PKCE flows for browser-based OAuth 2.0 user authentication.
 
 Builds on the lower-level PKCE primitives in :mod:`keycardai.oauth.utils.pkce`
 and reuses :class:`keycardai.oauth.AsyncClient` for the OAuth-server-facing
@@ -24,9 +24,39 @@ Example (issuer-direct)::
         client_id="my-app",
         issuer="https://auth.example.com",
     )
+
+Example (web app)::
+
+    redirect = await begin_authorization(
+        client_id="my-app",
+        issuer="https://auth.example.com",
+        redirect_uri="https://app.example.com/oauth/callback",
+    )
+    session["oauth_flow"] = {
+        "state": redirect.state,
+        "code_verifier": redirect.code_verifier,
+    }
+    # Redirect the browser to ``redirect.url``. In the callback route:
+    flow = session.pop("oauth_flow")
+    token = await complete_authorization(
+        callback_params=request.query_params,
+        state=flow["state"],
+        code_verifier=flow["code_verifier"],
+        client_id="my-app",
+        issuer="https://auth.example.com",
+        redirect_uri="https://app.example.com/oauth/callback",
+    )
 """
 
 from .callback import OAuthCallbackServer
 from .client import authenticate, resolve_issuer_from_challenge
+from .web import AuthorizationRedirect, begin_authorization, complete_authorization
 
-__all__ = ["OAuthCallbackServer", "authenticate", "resolve_issuer_from_challenge"]
+__all__ = [
+    "AuthorizationRedirect",
+    "OAuthCallbackServer",
+    "authenticate",
+    "begin_authorization",
+    "complete_authorization",
+    "resolve_issuer_from_challenge",
+]

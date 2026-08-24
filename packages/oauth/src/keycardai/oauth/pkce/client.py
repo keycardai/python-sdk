@@ -116,25 +116,16 @@ async def authenticate(
         RuntimeError: If the authorization redirect carried an OAuth
             ``error`` parameter.
     """
-    if (issuer is None) == (www_authenticate_header is None):
-        raise ConfigError(
-            "Provide exactly one of 'issuer' or 'www_authenticate_header' "
-            "to authenticate()"
-        )
-
     if issuer is not None:
         logger.info("PKCE flow starting against issuer %s", issuer)
-        auth_server_url = issuer.rstrip("/")
     else:
-        if resource_url is None:
-            raise ConfigError(
-                "'resource_url' is required when authenticating from a "
-                "WWW-Authenticate challenge"
-            )
         logger.info("PKCE flow starting for resource %s", resource_url)
-        auth_server_url = await resolve_issuer_from_challenge(
-            www_authenticate_header, http_client=http_client
-        )
+    auth_server_url = await _resolve_auth_server_url(
+        issuer=issuer,
+        www_authenticate_header=www_authenticate_header,
+        resource_url=resource_url,
+        http_client=http_client,
+    )
 
     auth_strategy = (
         BasicAuth(client_id, client_secret) if client_secret else NoneAuth()
@@ -180,6 +171,34 @@ async def authenticate(
             client_id=client_id,
             resource=resource_url,
         )
+
+
+async def _resolve_auth_server_url(
+    *,
+    issuer: str | None,
+    www_authenticate_header: str | None,
+    resource_url: str | None,
+    http_client: httpx.AsyncClient | None,
+) -> str:
+    """Resolve the authorization server from the supported flow entry modes."""
+    if (issuer is None) == (www_authenticate_header is None):
+        raise ConfigError(
+            "Provide exactly one of 'issuer' or 'www_authenticate_header' "
+            "to authenticate()"
+        )
+
+    if issuer is not None:
+        return issuer.rstrip("/")
+
+    if resource_url is None:
+        raise ConfigError(
+            "'resource_url' is required when authenticating from a "
+            "WWW-Authenticate challenge"
+        )
+    assert www_authenticate_header is not None
+    return await resolve_issuer_from_challenge(
+        www_authenticate_header, http_client=http_client
+    )
 
 
 async def resolve_issuer_from_challenge(

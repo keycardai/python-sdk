@@ -97,6 +97,30 @@ class OAuthProtocolError(OAuthError):
         super().__init__(message)
 
 
+class AuthorizationDeniedError(OAuthProtocolError):
+    """Authorization endpoint denial returned in a redirect callback.
+
+    Carries the OAuth ``error`` and optional ``error_description`` values
+    returned by the authorization server.
+    """
+
+    def __init__(
+        self,
+        error: str,
+        error_description: str | None = None,
+        error_uri: str | None = None,
+        operation: str = "",
+    ):
+        super().__init__(error, error_description, error_uri, operation)
+
+
+class StateMismatchError(OAuthError):
+    """The authorization callback state is missing or does not match."""
+
+    def __init__(self, message: str = "Authorization callback state mismatch"):
+        super().__init__(message)
+
+
 @dataclass
 class NetworkError(OAuthError):
     """Transport/network failures with retry guidance.
@@ -191,4 +215,3 @@ class InvalidTokenError(OAuthError):
     """
 
     error_code = "invalid_token"
-
