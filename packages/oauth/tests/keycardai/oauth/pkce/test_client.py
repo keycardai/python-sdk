@@ -16,7 +16,7 @@ from keycardai.oauth.pkce import (
     authenticate,
     resolve_issuer_from_challenge,
 )
-from keycardai.oauth.pkce.client import _extract_resource_metadata_url
+from keycardai.oauth.pkce._issuer import _extract_resource_metadata_url
 from keycardai.oauth.types.models import TokenResponse
 
 WWW_AUTHENTICATE = (

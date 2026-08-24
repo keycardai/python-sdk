@@ -34,23 +34,10 @@ from ..http.auth import BasicAuth, NoneAuth
 from ..operations._authorize import build_authorize_url
 from ..types.models import ClientConfig, TokenResponse
 from ..utils.pkce import PKCEGenerator
-from ._issuer import (
-    _extract_resource_metadata_url,
-    _fetch_resource_metadata,
-    _resolve_auth_server_url,
-    resolve_issuer_from_challenge,
-)
+from ._issuer import _resolve_auth_server_url
 from .callback import OAuthCallbackServer
 
 logger = logging.getLogger(__name__)
-
-__all__ = [
-    "authenticate",
-    "resolve_issuer_from_challenge",
-    "_resolve_auth_server_url",
-    "_fetch_resource_metadata",
-    "_extract_resource_metadata_url",
-]
 
 
 async def authenticate(

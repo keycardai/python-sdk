@@ -48,8 +48,9 @@ Example (web app)::
     )
 """
 
+from ._issuer import resolve_issuer_from_challenge
 from .callback import OAuthCallbackServer
-from .client import authenticate, resolve_issuer_from_challenge
+from .client import authenticate
 from .web import AuthorizationRedirect, begin_authorization, complete_authorization
 
 __all__ = [
