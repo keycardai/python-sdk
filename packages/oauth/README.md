@@ -100,6 +100,7 @@ asyncio.run(main())
 - **Token Exchange (RFC 8693)** - Exchange tokens for different audiences, scopes, or token types
 - **Dynamic Client Registration (RFC 7591)** - Register OAuth clients programmatically
 - **Authorization Server Metadata (RFC 8414)** - Auto-discover server endpoints and capabilities
+- **UserInfo (OIDC Core 1.0 Section 5.3)** - Fetch the signed-in user's identity claims
 - **Bearer Token Support (RFC 6750)** - Standard bearer token handling and utilities
 - **PKCE Support (RFC 7636)** - Proof Key for Code Exchange for public clients
 - **Multiple Auth Strategies** - BasicAuth, BearerAuth, and multi-zone authentication
@@ -120,6 +121,7 @@ The SDK implements the following OAuth 2.0 specifications:
 | [RFC 7662](https://datatracker.ietf.org/doc/html/rfc7662) | Token Introspection | Validate and inspect token metadata |
 | [RFC 7009](https://datatracker.ietf.org/doc/html/rfc7009) | Token Revocation | Invalidate access and refresh tokens |
 | [RFC 9126](https://datatracker.ietf.org/doc/html/rfc9126) | Pushed Authorization Requests | Enhanced authorization request security |
+| [OIDC Core 1.0 Section 5.3](https://openid.net/specs/openid-connect-core-1_0.html#UserInfo) | UserInfo | Fetch identity claims for the subject of an access token |
 
 ## Configuration
 
@@ -393,7 +395,30 @@ with Client("https://oauth.example.com") as client:
     print(f"Supported grants: {metadata.grant_types_supported}")
     print(f"Supported scopes: {metadata.scopes_supported}")
     print(f"PKCE methods: {metadata.code_challenge_methods_supported}")
+    print(f"UserInfo endpoint: {metadata.userinfo_endpoint}")
+    print(f"End session endpoint: {metadata.end_session_endpoint}")
 ```
+
+### UserInfo (OIDC Core 1.0 Section 5.3)
+
+Fetch the identity claims for the user an access token was issued to. The
+endpoint comes from discovery (`userinfo_endpoint`), and the access token is
+sent as a Bearer credential instead of the client's own credentials:
+
+```python
+from keycardai.oauth import Client
+
+with Client("https://oauth.example.com") as client:
+    user = client.userinfo(access_token)
+
+    print(f"Subject: {user.sub}")
+    print(f"Email: {user.claims.get('email')}")
+    # Every claim the provider returned is preserved in user.claims
+```
+
+If the server's metadata has no `userinfo_endpoint`, `userinfo()` raises
+`ConfigError` without making a request. An expired or revoked token raises
+`InvalidTokenError`.
 
 ## Error Handling
 
