@@ -1,9 +1,8 @@
 # Web-App Authorization Code Flow Example
 
 Demonstrates the stateless web-app authorization-code flow with PKCE. A web
-application caches authorization server metadata, stores `state` and
-`code_verifier` in session state between its login and callback routes, then
-passes them to `complete_authorization`.
+application stores `state` and `code_verifier` in session state between its
+login and callback routes, then passes them to `complete_authorization`.
 
 The example is framework-agnostic. Connect `login_redirect` and
 `oauth_callback` to routes in your web framework and replace the in-memory
@@ -17,8 +16,12 @@ uv run python main.py
 ```
 
 Replace the example issuer, client ID, and redirect URI with values registered
-with your authorization server before connecting the handlers to routes. Load
-and refresh the cached metadata according to your application's policy.
+with your authorization server before connecting the handlers to routes.
+
+If your application caches authorization server metadata, pass the cached
+`AuthorizationServerMetadata` as `metadata=` to both helpers instead of
+`issuer=`. This skips discovery on each sign-in; load and refresh the metadata
+according to your application's policy.
 
 ## Requirements
 

@@ -433,13 +433,37 @@ async def test_complete_rejects_metadata_without_token_endpoint():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
+    "function, base_kwargs",
+    [
+        (
+            begin_authorization,
+            {
+                "client_id": "my-app",
+                "redirect_uri": "https://app.example.com/callback",
+            },
+        ),
+        (
+            complete_authorization,
+            {
+                "callback_params": {"code": "code", "state": "state"},
+                "state": "state",
+                "code_verifier": "verifier",
+                "client_id": "my-app",
+                "redirect_uri": "https://app.example.com/callback",
+            },
+        ),
+    ],
+)
+@pytest.mark.parametrize(
     "entry_kwargs",
     [
         {"issuer": "https://auth.example.com"},
         {"www_authenticate_header": WWW_AUTHENTICATE},
     ],
 )
-async def test_metadata_cannot_be_combined_with_other_entry_modes(entry_kwargs):
+async def test_metadata_cannot_be_combined_with_other_entry_modes(
+    function, base_kwargs, entry_kwargs
+):
     metadata = AuthorizationServerMetadata(
         issuer="https://auth.example.com",
         authorization_endpoint="https://auth.example.com/authorize",
@@ -447,9 +471,8 @@ async def test_metadata_cannot_be_combined_with_other_entry_modes(entry_kwargs):
     )
 
     with pytest.raises(ConfigError, match="exactly one"):
-        await begin_authorization(
-            client_id="my-app",
-            redirect_uri="https://app.example.com/callback",
+        await function(
+            **base_kwargs,
             metadata=metadata,
             **entry_kwargs,
         )

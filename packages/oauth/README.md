@@ -99,26 +99,16 @@ asyncio.run(main())
 
 For applications that own their registered redirect route, use the stateless
 web-app flow and store the returned `state` and `code_verifier` in session
-state between requests. If the application already caches authorization server
-metadata, pass it to both route handlers to skip discovery:
+state between requests:
 
 ```python
-from keycardai.oauth import AuthorizationServerMetadata
 from keycardai.oauth.pkce import begin_authorization, complete_authorization
-
-# Load once at startup and refresh according to the application's cache policy.
-metadata = AuthorizationServerMetadata(
-    issuer="https://oauth.example.com",
-    authorization_endpoint="https://oauth.example.com/authorize",
-    token_endpoint="https://oauth.example.com/token",
-)
-
 
 async def login_route(session):
     redirect = await begin_authorization(
         client_id="my-web-app",
+        issuer="https://oauth.example.com",
         redirect_uri="https://app.example.com/oauth/callback",
-        metadata=metadata,
         scopes=["openid"],
     )
     session["oauth_flow"] = {
@@ -136,8 +126,27 @@ async def callback_route(request, session):
         code_verifier=flow["code_verifier"],
         client_id="my-web-app",
         redirect_uri="https://app.example.com/oauth/callback",
-        metadata=metadata,
+        issuer="https://oauth.example.com",
     )
+```
+
+If the application caches authorization server metadata, it can replace
+`issuer=...` with `metadata=cached_metadata` in both handlers to skip discovery
+on each sign-in:
+
+```python
+from keycardai.oauth import AuthorizationServerMetadata
+
+cached_metadata = AuthorizationServerMetadata(
+    issuer="https://oauth.example.com",
+    authorization_endpoint="https://oauth.example.com/authorize",
+    token_endpoint="https://oauth.example.com/token",
+)
+
+# login_route:    issuer="https://oauth.example.com"
+#             -> metadata=cached_metadata
+# callback_route: issuer="https://oauth.example.com"
+#             -> metadata=cached_metadata
 ```
 
 ## Features
