@@ -1,3 +1,23 @@
+## 0.23.0-keycardai-oauth (2026-08-24)
+
+
+- feat(keycardai-oauth): stateless web-app authorization-code flow (spec #46) (#233)
+- * feat(keycardai-oauth): add stateless web-app authorization-code flow (spec #46)
+- Co-Authored-By: Larry Osakwe <larry@keycard.ai>
+- * fix(keycardai-oauth): harden stateless web authorization flow
+- Co-Authored-By: Larry Osakwe <larry@keycard.ai>
+- * refactor(keycardai-oauth): centralize issuer resolution
+- Co-Authored-By: Larry Osakwe <larry@keycard.ai>
+- * refactor(keycardai-oauth): remove issuer compatibility shims
+- Co-Authored-By: Larry Osakwe <larry@keycard.ai>
+- * feat(keycardai-oauth): support cached metadata in web authorization flow
+- Co-Authored-By: Larry Osakwe <larry@keycard.ai>
+- * fix(keycardai-oauth): restore issuer-first web-flow docs
+- Co-Authored-By: Larry Osakwe <larry@keycard.ai>
+- ---------
+- Co-authored-by: devin-ai-keycard <devin-ai@keycard.ai>
+Co-authored-by: Larry Osakwe <larry@keycard.ai>
+
 ## 0.22.0-keycardai-oauth (2026-08-24)
 
 
