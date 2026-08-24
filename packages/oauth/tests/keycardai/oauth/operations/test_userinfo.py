@@ -131,10 +131,28 @@ class TestUserInfoResponseParsing:
         assert exc_info.value.error_code == "invalid_token"
 
     def test_401_without_challenge_is_still_an_invalid_token_error(self):
-        with pytest.raises(InvalidTokenError):
+        with pytest.raises(InvalidTokenError) as exc_info:
             parse_userinfo_http_response(
                 HttpResponse(status=401, headers={}, body=b"")
             )
+
+        assert exc_info.value.error_code == "invalid_token"
+
+    def test_challenge_error_code_is_carried_on_the_exception(self):
+        """A challenge naming another RFC 6750 code is reported, not flattened."""
+        with pytest.raises(InvalidTokenError) as exc_info:
+            parse_userinfo_http_response(
+                HttpResponse(
+                    status=401,
+                    headers={
+                        "WWW-Authenticate": 'Bearer error="insufficient_scope", '
+                        'scope="openid profile"'
+                    },
+                    body=b"",
+                )
+            )
+
+        assert exc_info.value.error_code == "insufficient_scope"
 
     def test_signed_response_is_a_protocol_error(self):
         with pytest.raises(OAuthProtocolError, match="application/jwt"):

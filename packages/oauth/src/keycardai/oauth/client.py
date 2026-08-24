@@ -652,7 +652,9 @@ class AsyncClient:
         Zone access tokens are authorization-only, so identity claims such as
         ``email`` live behind the issuer's ``userinfo_endpoint`` rather than in
         the token. The endpoint is resolved from server metadata: metadata the
-        client already discovered is reused, otherwise discovery runs first.
+        client already discovered is reused, otherwise discovery runs first --
+        including when ``ClientConfig.enable_metadata_discovery`` is False. Pass
+        ``metadata`` to avoid the discovery request entirely.
 
         Simple usage:
             async with AsyncClient("https://zone.keycard.cloud") as client:
@@ -1380,7 +1382,9 @@ class Client:
         Zone access tokens are authorization-only, so identity claims such as
         ``email`` live behind the issuer's ``userinfo_endpoint`` rather than in
         the token. The endpoint is resolved from server metadata: metadata the
-        client already discovered is reused, otherwise discovery runs first.
+        client already discovered is reused, otherwise discovery runs first --
+        including when ``ClientConfig.enable_metadata_discovery`` is False. Pass
+        ``metadata`` to avoid the discovery request entirely.
 
         Simple usage:
             with Client("https://zone.keycard.cloud") as client:

@@ -780,6 +780,27 @@ class TestUserInfo:
         mock_discover.assert_not_called()
         assert result.sub == "user-123"
 
+    def test_sync_userinfo_discovers_even_when_auto_discovery_disabled(self):
+        """userinfo() needs the endpoint, so it discovers regardless of the config flag."""
+        transport = Mock()
+        transport.request_raw.return_value = self._claims_response()
+
+        client = Client(
+            "https://test.example.com",
+            transport=transport,
+            config=ClientConfig(enable_metadata_discovery=False),
+        )
+
+        with patch.object(
+            client,
+            "discover_server_metadata",
+            return_value=self._metadata("https://test.example.com/userinfo"),
+        ) as mock_discover:
+            result = client.userinfo("user-access-token")
+
+        mock_discover.assert_called_once()
+        assert result.sub == "user-123"
+
     def test_sync_userinfo_without_endpoint_makes_no_request(self):
         transport = Mock()
 

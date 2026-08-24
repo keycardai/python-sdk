@@ -114,7 +114,8 @@ def parse_userinfo_http_response(res: HttpResponse) -> UserInfoResponse:
         error = _challenge_error(_header(res, "WWW-Authenticate"))
         raise InvalidTokenError(
             f"UserInfo request rejected with '{error}': the access token is "
-            "expired, revoked, or not accepted at the UserInfo endpoint."
+            "expired, revoked, or not accepted at the UserInfo endpoint.",
+            error_code=error,
         )
 
     if res.status >= 400:
