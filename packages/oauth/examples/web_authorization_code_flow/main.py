@@ -9,6 +9,8 @@ from keycardai.oauth.pkce import (
 )
 from keycardai.oauth.types.models import TokenResponse
 
+session: dict[str, dict[str, str]] = {}
+
 
 async def login_redirect() -> AuthorizationRedirect:
     """Start login and store the flow values in the user's session."""
@@ -36,9 +38,6 @@ async def oauth_callback(callback_params: Mapping[str, str]) -> TokenResponse:
         issuer="https://oauth.example.com",
         redirect_uri="https://app.example.com/oauth/callback",
     )
-
-
-session: dict[str, dict[str, str]] = {}
 
 
 def main() -> None:

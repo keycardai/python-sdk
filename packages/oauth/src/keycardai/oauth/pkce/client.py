@@ -32,11 +32,11 @@ from typing import Any
 import httpx
 
 from ..client import AsyncClient
-from ..exceptions import ConfigError
 from ..http.auth import BasicAuth, NoneAuth
 from ..operations._authorize import build_authorize_url
 from ..types.models import ClientConfig, TokenResponse
 from ..utils.pkce import PKCEGenerator
+from ._issuer import _resolve_auth_server_url
 from .callback import OAuthCallbackServer
 
 logger = logging.getLogger(__name__)
@@ -171,36 +171,6 @@ async def authenticate(
             client_id=client_id,
             resource=resource_url,
         )
-
-
-async def _resolve_auth_server_url(
-    *,
-    issuer: str | None,
-    www_authenticate_header: str | None,
-    resource_url: str | None,
-    http_client: httpx.AsyncClient | None,
-) -> str:
-    """Resolve the authorization server from the supported flow entry modes."""
-    if (issuer is None) == (www_authenticate_header is None):
-        raise ConfigError(
-            "Provide exactly one of 'issuer' or 'www_authenticate_header' "
-            "to authenticate()"
-        )
-
-    if issuer is not None:
-        return issuer.rstrip("/")
-
-    if resource_url is None:
-        raise ConfigError(
-            "'resource_url' is required when authenticating from a "
-            "WWW-Authenticate challenge"
-        )
-    assert www_authenticate_header is not None
-    return await resolve_issuer_from_challenge(
-        www_authenticate_header, http_client=http_client
-    )
-
-
 async def resolve_issuer_from_challenge(
     www_authenticate_header: str,
     *,

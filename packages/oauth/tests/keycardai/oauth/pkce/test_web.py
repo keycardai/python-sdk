@@ -114,6 +114,27 @@ async def test_complete_rejects_wrong_or_missing_state_without_exchange(
 
 
 @pytest.mark.asyncio
+async def test_complete_rejects_non_ascii_callback_state_without_exchange(monkeypatch):
+    exchange = AsyncMock()
+    monkeypatch.setattr(
+        "keycardai.oauth.pkce.web.AsyncClient",
+        _async_client_factory(exchange=exchange),
+    )
+
+    with pytest.raises(StateMismatchError):
+        await complete_authorization(
+            callback_params={"code": "auth-code", "state": "attacker-☃"},
+            state="stored-state",
+            code_verifier="stored-verifier",
+            client_id="my-app",
+            issuer="https://auth.example.com",
+            redirect_uri="https://app.example.com/callback",
+        )
+
+    exchange.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_complete_surfaces_authorization_denial_without_exchange(monkeypatch):
     exchange = AsyncMock()
     monkeypatch.setattr(
@@ -237,7 +258,13 @@ async def test_begin_resolves_issuer_from_challenge(monkeypatch):
 @pytest.mark.parametrize(
     "function,kwargs",
     [
-        (begin_authorization, {"client_id": "my-app", "redirect_uri": "https://app.example.com/callback"}),
+        (
+            begin_authorization,
+            {
+                "client_id": "my-app",
+                "redirect_uri": "https://app.example.com/callback",
+            },
+        ),
         (
             complete_authorization,
             {
@@ -250,7 +277,6 @@ async def test_begin_resolves_issuer_from_challenge(monkeypatch):
         ),
     ],
 )
-@pytest.mark.asyncio
 async def test_flow_requires_exactly_one_issuer_entry(function, kwargs):
     with pytest.raises(ConfigError, match="exactly one"):
         await function(**kwargs)

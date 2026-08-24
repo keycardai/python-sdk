@@ -21,11 +21,18 @@ from ..http.auth import BasicAuth, NoneAuth
 from ..operations._authorize import build_authorize_url
 from ..types.models import ClientConfig, TokenResponse
 from ..utils.pkce import PKCEGenerator
-from .client import _resolve_auth_server_url
+from ._issuer import _resolve_auth_server_url
 
 
 class AuthorizationRedirect(BaseModel):
-    """Authorization redirect URL and values the application must retain."""
+    """Authorization redirect URL and values the application must retain.
+
+    Attributes:
+        url: The authorization URL to which the browser should be redirected.
+        state: The generated CSRF value to store until the callback.
+        code_verifier: The PKCE verifier to store until the callback. This
+            value must never be sent to the browser.
+    """
 
     url: str
     state: str
@@ -47,6 +54,38 @@ async def begin_authorization(
     Returns the URL to which the application should redirect the user's
     browser, together with the ``state`` and ``code_verifier`` to store until
     the callback route is reached.
+
+    Args:
+        client_id: OAuth client ID.
+        redirect_uri: Registered redirect URI handled by the web application.
+        resource_url: The protected resource the caller is targeting. Passed
+            as the RFC 8707 ``resource`` parameter when provided.
+        www_authenticate_header: The ``WWW-Authenticate`` challenge from the
+            protected resource. Must contain a ``resource_metadata`` URL per
+            RFC 9728. Mutually exclusive with ``issuer``.
+        issuer: Authorization server issuer URL to use directly. Mutually
+            exclusive with ``www_authenticate_header``.
+        scopes: Optional list of OAuth scopes to request.
+        http_client: Optional ``httpx.AsyncClient`` used to fetch protected
+            resource metadata in challenge-driven mode. When omitted, a
+            short-lived client is created internally.
+
+    Returns:
+        ``AuthorizationRedirect`` containing the authorization URL, generated
+        state, and PKCE code verifier. Store the state and verifier in
+        application-controlled session state.
+
+    Raises:
+        keycardai.oauth.ConfigError: If both or neither issuer entry modes are
+            provided, or challenge mode omits ``resource_url``.
+        ValueError: If discovery fails because required authorization server
+            endpoints are missing, or because challenge discovery metadata is
+            incomplete.
+        httpx.HTTPStatusError: If fetching protected resource metadata fails.
+        keycardai.oauth.OAuthHttpError: If authorization server discovery
+            returns an HTTP error.
+        keycardai.oauth.OAuthProtocolError: If authorization server discovery
+            returns an OAuth protocol error.
     """
     auth_server_url = await _resolve_auth_server_url(
         issuer=issuer,
@@ -104,6 +143,48 @@ async def complete_authorization(
     Callback validation occurs before issuer discovery or any token request.
     The application supplies the ``state`` and ``code_verifier`` retained
     from :func:`begin_authorization`.
+
+    Args:
+        callback_params: Query parameters received by the application's
+            callback route, including ``code`` and ``state`` or an OAuth
+            ``error`` and optional ``error_description``.
+        state: The state value stored from the begin step.
+        code_verifier: The PKCE verifier stored from the begin step. This
+            value must never be sent to the browser.
+        client_id: OAuth client ID.
+        redirect_uri: The same registered redirect URI used in the begin step.
+        resource_url: The protected resource the caller is targeting. Passed
+            as the RFC 8707 ``resource`` parameter when provided.
+        www_authenticate_header: The ``WWW-Authenticate`` challenge from the
+            protected resource. Must contain a ``resource_metadata`` URL per
+            RFC 9728. Mutually exclusive with ``issuer``.
+        issuer: Authorization server issuer URL to use directly. Mutually
+            exclusive with ``www_authenticate_header``.
+        client_secret: Optional client secret for confidential clients.
+            Public clients omit this and use no token-endpoint auth.
+        http_client: Optional ``httpx.AsyncClient`` used to fetch protected
+            resource metadata in challenge-driven mode. When omitted, a
+            short-lived client is created internally.
+
+    Returns:
+        ``TokenResponse`` returned by the authorization server's token
+        endpoint.
+
+    Raises:
+        keycardai.oauth.ConfigError: If both or neither issuer entry modes are
+            provided, or challenge mode omits ``resource_url``.
+        ValueError: If discovery fails because required authorization server
+            endpoints are missing, or because challenge discovery metadata is
+            incomplete.
+        AuthorizationDeniedError: If the callback carries an OAuth
+            authorization error. No token request is made.
+        StateMismatchError: If the callback state is missing or does not match
+            the stored state. No token request is made.
+        OAuthProtocolError: If the callback has no authorization code, or if
+            the token endpoint returns an OAuth protocol error.
+        httpx.HTTPStatusError: If fetching protected resource metadata fails.
+        keycardai.oauth.OAuthHttpError: If authorization server discovery or
+            the token endpoint returns an HTTP error.
     """
     error = callback_params.get("error")
     if error is not None:
@@ -114,7 +195,9 @@ async def complete_authorization(
         )
 
     callback_state = callback_params.get("state")
-    if callback_state is None or not secrets.compare_digest(callback_state, state):
+    if callback_state is None or not secrets.compare_digest(
+        callback_state.encode("utf-8"), state.encode("utf-8")
+    ):
         raise StateMismatchError()
 
     code = callback_params.get("code")

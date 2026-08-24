@@ -104,26 +104,30 @@ state between requests:
 ```python
 from keycardai.oauth.pkce import begin_authorization, complete_authorization
 
-redirect = await begin_authorization(
-    client_id="my-web-app",
-    issuer="https://oauth.example.com",
-    redirect_uri="https://app.example.com/oauth/callback",
-    scopes=["openid"],
-)
-session["oauth_flow"] = {
-    "state": redirect.state,
-    "code_verifier": redirect.code_verifier,
-}
-# Redirect the browser to redirect.url. In the callback route:
-flow = session.pop("oauth_flow")
-token = await complete_authorization(
-    callback_params=request.query_params,
-    state=flow["state"],
-    code_verifier=flow["code_verifier"],
-    client_id="my-web-app",
-    issuer="https://oauth.example.com",
-    redirect_uri="https://app.example.com/oauth/callback",
-)
+async def login_route(session):
+    redirect = await begin_authorization(
+        client_id="my-web-app",
+        issuer="https://oauth.example.com",
+        redirect_uri="https://app.example.com/oauth/callback",
+        scopes=["openid"],
+    )
+    session["oauth_flow"] = {
+        "state": redirect.state,
+        "code_verifier": redirect.code_verifier,
+    }
+    return redirect.url  # Redirect the browser to this URL.
+
+
+async def callback_route(request, session):
+    flow = session.pop("oauth_flow")
+    return await complete_authorization(
+        callback_params=request.query_params,
+        state=flow["state"],
+        code_verifier=flow["code_verifier"],
+        client_id="my-web-app",
+        issuer="https://oauth.example.com",
+        redirect_uri="https://app.example.com/oauth/callback",
+    )
 ```
 
 ## Features
