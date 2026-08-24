@@ -275,6 +275,12 @@ class AuthorizationServerMetadata:
     # JWKS endpoint for server public keys
     jwks_uri: str | None = None
 
+    # OpenID Connect Discovery 1.0 Section 3
+    userinfo_endpoint: str | None = None
+
+    # OpenID Connect RP-Initiated Logout 1.0 Section 2.1
+    end_session_endpoint: str | None = None
+
     # Supported capabilities
     response_types_supported: list[str] | None = None
     response_modes_supported: list[str] | None = None
@@ -306,6 +312,43 @@ class AuthorizationServerMetadata:
     # Vendor extensions and debugging
     raw: dict[str, Any] | None = None
     headers: dict[str, str] | None = None
+
+
+# =============================================================================
+# UserInfo (OpenID Connect Core 1.0 Section 5.3)
+# =============================================================================
+
+
+class UserInfoRequest(BaseModel):
+    """UserInfo request as defined in OIDC Core 1.0 Section 5.3.
+
+    Reference: https://openid.net/specs/openid-connect-core-1_0.html#UserInfo
+    """
+
+    access_token: str = Field(
+        ...,
+        min_length=1,
+        description="Access token presented as a Bearer credential at the UserInfo endpoint.",
+    )
+    timeout: float | None = None
+
+
+@dataclass
+class UserInfoResponse:
+    """UserInfo response as defined in OIDC Core 1.0 Section 5.3.
+
+    Claims are returned exactly as the provider sent them: nothing is filtered
+    to a known set. ``sub`` is the only claim OIDC requires and is validated
+    present.
+
+    Reference: https://openid.net/specs/openid-connect-core-1_0.html#UserInfoResponse
+    """
+
+    sub: str
+    claims: dict[str, Any]
+
+    headers: dict[str, str] | None = None
+
 
 # =============================================================================
 # JSON Web Key Set (RFC 7517)

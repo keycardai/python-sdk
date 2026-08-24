@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from keycardai.oauth import AsyncClient, Client, ClientConfig
 from keycardai.oauth.exceptions import ConfigError
+from keycardai.oauth.http._wire import HttpResponse
 from keycardai.oauth.types.models import (
     AuthorizationServerMetadata,
     ClientCredentialsRequest,
@@ -721,3 +722,109 @@ class TestClientValidation:
                 mock_build_context.assert_called()
                 call_kwargs = mock_build_context.call_args.kwargs
                 assert call_kwargs['user_agent'] == custom_user_agent
+
+class TestUserInfo:
+    """Client-level UserInfo behavior (OIDC Core 1.0 Section 5.3)."""
+
+    def _metadata(self, userinfo_endpoint: str | None = None):
+        return AuthorizationServerMetadata(
+            issuer="https://test.example.com",
+            token_endpoint="https://test.example.com/token",
+            userinfo_endpoint=userinfo_endpoint,
+        )
+
+    def _claims_response(self):
+        return HttpResponse(
+            status=200,
+            headers={"Content-Type": "application/json"},
+            body=b'{"sub": "user-123", "email": "kim@example.com"}',
+        )
+
+    def test_sync_userinfo_uses_discovered_endpoint(self):
+        transport = Mock()
+        transport.request_raw.return_value = self._claims_response()
+
+        client = Client("https://test.example.com", transport=transport)
+
+        with patch.object(
+            client,
+            "discover_server_metadata",
+            return_value=self._metadata("https://test.example.com/userinfo"),
+        ):
+            with client:
+                result = client.userinfo("user-access-token")
+
+        assert result.sub == "user-123"
+        assert result.claims["email"] == "kim@example.com"
+        sent = transport.request_raw.call_args[0][0]
+        assert sent.url == "https://test.example.com/userinfo"
+        assert sent.headers["Authorization"] == "Bearer user-access-token"
+
+    def test_sync_userinfo_reuses_provided_metadata(self):
+        """Passing metadata skips discovery entirely."""
+        transport = Mock()
+        transport.request_raw.return_value = self._claims_response()
+
+        client = Client(
+            "https://test.example.com",
+            transport=transport,
+            config=ClientConfig(enable_metadata_discovery=False),
+        )
+
+        with patch.object(client, "discover_server_metadata") as mock_discover:
+            result = client.userinfo(
+                "user-access-token",
+                metadata=self._metadata("https://test.example.com/userinfo"),
+            )
+
+        mock_discover.assert_not_called()
+        assert result.sub == "user-123"
+
+    def test_sync_userinfo_without_endpoint_makes_no_request(self):
+        transport = Mock()
+
+        client = Client(
+            "https://test.example.com",
+            transport=transport,
+            config=ClientConfig(enable_metadata_discovery=False),
+        )
+
+        with pytest.raises(ConfigError, match="userinfo_endpoint"):
+            client.userinfo("user-access-token", metadata=self._metadata())
+
+        transport.request_raw.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_async_userinfo_uses_discovered_endpoint(self):
+        transport = AsyncMock()
+        transport.request_raw.return_value = self._claims_response()
+
+        client = AsyncClient("https://test.example.com", transport=transport)
+
+        with patch.object(
+            client,
+            "discover_server_metadata",
+            AsyncMock(return_value=self._metadata("https://test.example.com/userinfo")),
+        ):
+            async with client:
+                result = await client.userinfo("user-access-token")
+
+        assert result.sub == "user-123"
+        sent = transport.request_raw.call_args[0][0]
+        assert sent.url == "https://test.example.com/userinfo"
+        assert sent.headers["Authorization"] == "Bearer user-access-token"
+
+    @pytest.mark.asyncio
+    async def test_async_userinfo_without_endpoint_makes_no_request(self):
+        transport = AsyncMock()
+
+        client = AsyncClient(
+            "https://test.example.com",
+            transport=transport,
+            config=ClientConfig(enable_metadata_discovery=False),
+        )
+
+        with pytest.raises(ConfigError, match="userinfo_endpoint"):
+            await client.userinfo("user-access-token", metadata=self._metadata())
+
+        transport.request_raw.assert_not_called()

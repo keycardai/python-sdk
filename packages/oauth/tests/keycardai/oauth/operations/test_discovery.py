@@ -122,6 +122,36 @@ class TestDiscoveryOperations:
 
         assert result.issuer == "https://auth.example.com"
 
+    def test_parse_discovery_http_response_types_oidc_endpoints(self):
+        """OIDC userinfo/end_session endpoints are typed on the returned metadata."""
+        http_response = HttpResponse(
+            status=200,
+            headers={"Content-Type": "application/json"},
+            body=(
+                b'{"issuer": "https://auth.example.com", '
+                b'"userinfo_endpoint": "https://auth.example.com/userinfo", '
+                b'"end_session_endpoint": "https://auth.example.com/logout"}'
+            )
+        )
+
+        result = parse_discovery_http_response(http_response)
+
+        assert result.userinfo_endpoint == "https://auth.example.com/userinfo"
+        assert result.end_session_endpoint == "https://auth.example.com/logout"
+
+    def test_parse_discovery_http_response_without_oidc_endpoints(self):
+        """A document omitting the OIDC endpoints parses without error."""
+        http_response = HttpResponse(
+            status=200,
+            headers={"Content-Type": "application/json"},
+            body=b'{"issuer": "https://auth.example.com"}'
+        )
+
+        result = parse_discovery_http_response(http_response)
+
+        assert result.userinfo_endpoint is None
+        assert result.end_session_endpoint is None
+
     def test_discover_server_metadata_rejects_issuer_mismatch(self):
         """The discovery operation validates the issuer against the request."""
         mock_transport = Mock()

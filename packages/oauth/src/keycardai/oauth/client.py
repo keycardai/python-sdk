@@ -39,6 +39,11 @@ from .operations._token_exchange import (
     exchange_token,
     exchange_token_async,
 )
+from .operations._userinfo import (
+    fetch_userinfo,
+    fetch_userinfo_async,
+    resolve_userinfo_endpoint,
+)
 from .types.models import (
     AuthorizationServerMetadata,
     ClientConfig,
@@ -49,6 +54,8 @@ from .types.models import (
     ServerMetadataRequest,
     TokenExchangeRequest,
     TokenResponse,
+    UserInfoRequest,
+    UserInfoResponse,
 )
 from .types.oauth import (
     GrantType,
@@ -316,6 +323,7 @@ class AsyncClient:
         self._client_id = None
         self._client_secret = None
         self._discovered_endpoints: Endpoints | None = None
+        self._discovered_metadata: AuthorizationServerMetadata | None = None
 
     @property
     def base_url(self) -> str:
@@ -345,6 +353,7 @@ class AsyncClient:
             if self.config.enable_metadata_discovery:
                 try:
                     metadata = await self.discover_server_metadata()
+                    self._discovered_metadata = metadata
                     self._discovered_endpoints = resolve_endpoints(
                         self.issuer,
                         self._endpoint_overrides,
@@ -630,6 +639,63 @@ class AsyncClient:
             request=request,
             context=context,
         )
+
+    async def userinfo(
+        self,
+        access_token: str,
+        *,
+        metadata: AuthorizationServerMetadata | None = None,
+        timeout: float | None = None,
+    ) -> UserInfoResponse:
+        """Fetch the signed-in user's identity claims from the UserInfo endpoint.
+
+        Zone access tokens are authorization-only, so identity claims such as
+        ``email`` live behind the issuer's ``userinfo_endpoint`` rather than in
+        the token. The endpoint is resolved from server metadata: metadata the
+        client already discovered is reused, otherwise discovery runs first.
+
+        Simple usage:
+            async with AsyncClient("https://zone.keycard.cloud") as client:
+                user = await client.userinfo(access_token)
+                print(user.sub, user.claims.get("email"))
+
+        With pre-discovered metadata:
+            metadata = await client.discover_server_metadata()
+            user = await client.userinfo(access_token, metadata=metadata)
+
+        Args:
+            access_token: Access token issued for the signed-in user.
+            metadata: Optional pre-discovered server metadata. Discovery is
+                skipped when provided.
+            timeout: Optional request timeout override.
+
+        Returns:
+            UserInfoResponse with ``sub`` and all returned claims.
+
+        Raises:
+            ConfigError: If the metadata has no ``userinfo_endpoint``
+            InvalidTokenError: If the access token is not accepted (HTTP 401)
+            OAuthHttpError: If the UserInfo endpoint returns another non-2xx status
+            OAuthProtocolError: If the response is not a JSON claims object with ``sub``
+            NetworkError: If the network request fails
+        """
+        request = UserInfoRequest(access_token=access_token, timeout=timeout)
+
+        if metadata is None:
+            await self._ensure_initialized()
+            metadata = self._discovered_metadata or await self.discover_server_metadata()
+
+        ctx = build_http_context(
+            endpoint=resolve_userinfo_endpoint(metadata),
+            transport=self.transport,
+            auth=self.auth_strategy,
+            issuer=self.issuer,
+            user_agent=self.config.user_agent,
+            custom_headers=self.config.custom_headers,
+            timeout=timeout or self.config.timeout,
+        )
+
+        return await fetch_userinfo_async(request, ctx)
 
     @overload
     async def exchange_token(
@@ -1019,6 +1085,7 @@ class Client:
         self._client_id = None
         self._client_secret = None
         self._discovered_endpoints: Endpoints | None = None
+        self._discovered_metadata: AuthorizationServerMetadata | None = None
 
     @property
     def base_url(self) -> str:
@@ -1048,6 +1115,7 @@ class Client:
             if self.config.enable_metadata_discovery:
                 try:
                     metadata = self.discover_server_metadata()
+                    self._discovered_metadata = metadata
                     self._discovered_endpoints = resolve_endpoints(
                         self.issuer,
                         self._endpoint_overrides,
@@ -1299,6 +1367,63 @@ class Client:
             request=request,
             context=context,
         )
+
+    def userinfo(
+        self,
+        access_token: str,
+        *,
+        metadata: AuthorizationServerMetadata | None = None,
+        timeout: float | None = None,
+    ) -> UserInfoResponse:
+        """Fetch the signed-in user's identity claims from the UserInfo endpoint.
+
+        Zone access tokens are authorization-only, so identity claims such as
+        ``email`` live behind the issuer's ``userinfo_endpoint`` rather than in
+        the token. The endpoint is resolved from server metadata: metadata the
+        client already discovered is reused, otherwise discovery runs first.
+
+        Simple usage:
+            with Client("https://zone.keycard.cloud") as client:
+                user = client.userinfo(access_token)
+                print(user.sub, user.claims.get("email"))
+
+        With pre-discovered metadata:
+            metadata = client.discover_server_metadata()
+            user = client.userinfo(access_token, metadata=metadata)
+
+        Args:
+            access_token: Access token issued for the signed-in user.
+            metadata: Optional pre-discovered server metadata. Discovery is
+                skipped when provided.
+            timeout: Optional request timeout override.
+
+        Returns:
+            UserInfoResponse with ``sub`` and all returned claims.
+
+        Raises:
+            ConfigError: If the metadata has no ``userinfo_endpoint``
+            InvalidTokenError: If the access token is not accepted (HTTP 401)
+            OAuthHttpError: If the UserInfo endpoint returns another non-2xx status
+            OAuthProtocolError: If the response is not a JSON claims object with ``sub``
+            NetworkError: If the network request fails
+        """
+        request = UserInfoRequest(access_token=access_token, timeout=timeout)
+
+        if metadata is None:
+            self._ensure_initialized()
+            metadata = self._discovered_metadata or self.discover_server_metadata()
+
+        ctx = build_http_context(
+            endpoint=resolve_userinfo_endpoint(metadata),
+            transport=self.transport,
+            auth=self.auth_strategy,
+            issuer=self.issuer,
+            user_agent=self.config.user_agent,
+            custom_headers=self.config.custom_headers,
+            timeout=timeout or self.config.timeout,
+        )
+
+        return fetch_userinfo(request, ctx)
 
     @overload
     def exchange_token(
