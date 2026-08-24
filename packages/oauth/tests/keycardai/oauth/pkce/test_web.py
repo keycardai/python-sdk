@@ -18,7 +18,11 @@ from keycardai.oauth.pkce import (
     begin_authorization,
     complete_authorization,
 )
-from keycardai.oauth.types.models import TokenResponse
+from keycardai.oauth.types.models import (
+    AuthorizationServerMetadata,
+    Endpoints,
+    TokenResponse,
+)
 from keycardai.oauth.utils.pkce import PKCEGenerator
 
 WWW_AUTHENTICATE = (
@@ -58,6 +62,29 @@ async def test_begin_returns_redirect_and_pkce_values(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_begin_uses_metadata_without_constructing_client(monkeypatch):
+    async_client = MagicMock()
+    monkeypatch.setattr("keycardai.oauth.pkce.web.AsyncClient", async_client)
+    metadata = AuthorizationServerMetadata(
+        issuer="https://auth.example.com",
+        authorization_endpoint="https://auth.example.com/authorize",
+        token_endpoint="https://auth.example.com/token",
+    )
+
+    result = await begin_authorization(
+        client_id="my-app",
+        redirect_uri="https://app.example.com/callback",
+        metadata=metadata,
+        scopes=["openid"],
+    )
+
+    assert urlsplit(result.url).netloc == "auth.example.com"
+    assert urlsplit(result.url).path == "/authorize"
+    assert parse_qs(urlsplit(result.url).query)["scope"] == ["openid"]
+    async_client.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_complete_exchanges_matching_state(monkeypatch):
     captured = {}
     token = TokenResponse(access_token="token")
@@ -84,6 +111,35 @@ async def test_complete_exchanges_matching_state(monkeypatch):
         "client_id": "my-app",
         "resource": "https://api.example.com",
     }
+
+
+@pytest.mark.asyncio
+async def test_complete_uses_metadata_without_discovery(monkeypatch):
+    captured = {}
+    token = TokenResponse(access_token="token")
+    monkeypatch.setattr(
+        "keycardai.oauth.pkce.web.AsyncClient",
+        _async_client_factory(captured=captured, exchange_response=token),
+    )
+    metadata = AuthorizationServerMetadata(
+        issuer="https://auth.example.com",
+        authorization_endpoint="https://auth.example.com/authorize",
+        token_endpoint="https://auth.example.com/token",
+    )
+
+    result = await complete_authorization(
+        callback_params={"code": "auth-code", "state": "stored-state"},
+        state="stored-state",
+        code_verifier="stored-verifier",
+        client_id="my-app",
+        redirect_uri="https://app.example.com/callback",
+        metadata=metadata,
+    )
+
+    assert result is token
+    assert captured["config"].enable_metadata_discovery is False
+    assert captured["endpoints"] == Endpoints(token=metadata.token_endpoint)
+    captured["get_endpoints"].assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -299,24 +355,129 @@ async def test_begin_challenge_mode_requires_resource_url():
         )
 
 
+@pytest.mark.asyncio
+async def test_begin_rejects_missing_authorization_endpoint(monkeypatch):
+    monkeypatch.setattr(
+        "keycardai.oauth.pkce.web.AsyncClient",
+        _async_client_factory(
+            endpoint_result=MagicMock(
+                authorize=None, token="https://auth.example.com/token"
+            )
+        ),
+    )
+
+    with pytest.raises(ValueError, match="authorization_endpoint"):
+        await begin_authorization(
+            client_id="my-app",
+            redirect_uri="https://app.example.com/callback",
+            issuer="https://auth.example.com",
+        )
+
+
+@pytest.mark.asyncio
+async def test_complete_rejects_missing_token_endpoint(monkeypatch):
+    monkeypatch.setattr(
+        "keycardai.oauth.pkce.web.AsyncClient",
+        _async_client_factory(
+            endpoint_result=MagicMock(
+                authorize="https://auth.example.com/authorize", token=None
+            )
+        ),
+    )
+
+    with pytest.raises(ValueError, match="token_endpoint"):
+        await complete_authorization(
+            callback_params={"code": "code", "state": "state"},
+            state="state",
+            code_verifier="verifier",
+            client_id="my-app",
+            redirect_uri="https://app.example.com/callback",
+            issuer="https://auth.example.com",
+        )
+
+
+@pytest.mark.asyncio
+async def test_begin_rejects_metadata_without_authorization_endpoint():
+    metadata = AuthorizationServerMetadata(
+        issuer="https://auth.example.com",
+        authorization_endpoint=None,
+        token_endpoint="https://auth.example.com/token",
+    )
+
+    with pytest.raises(ValueError, match="authorization_endpoint"):
+        await begin_authorization(
+            client_id="my-app",
+            redirect_uri="https://app.example.com/callback",
+            metadata=metadata,
+        )
+
+
+@pytest.mark.asyncio
+async def test_complete_rejects_metadata_without_token_endpoint():
+    metadata = AuthorizationServerMetadata(
+        issuer="https://auth.example.com",
+        authorization_endpoint="https://auth.example.com/authorize",
+        token_endpoint=None,
+    )
+
+    with pytest.raises(ValueError, match="token_endpoint"):
+        await complete_authorization(
+            callback_params={"code": "code", "state": "state"},
+            state="state",
+            code_verifier="verifier",
+            client_id="my-app",
+            redirect_uri="https://app.example.com/callback",
+            metadata=metadata,
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "entry_kwargs",
+    [
+        {"issuer": "https://auth.example.com"},
+        {"www_authenticate_header": WWW_AUTHENTICATE},
+    ],
+)
+async def test_metadata_cannot_be_combined_with_other_entry_modes(entry_kwargs):
+    metadata = AuthorizationServerMetadata(
+        issuer="https://auth.example.com",
+        authorization_endpoint="https://auth.example.com/authorize",
+        token_endpoint="https://auth.example.com/token",
+    )
+
+    with pytest.raises(ConfigError, match="exactly one"):
+        await begin_authorization(
+            client_id="my-app",
+            redirect_uri="https://app.example.com/callback",
+            metadata=metadata,
+            **entry_kwargs,
+        )
+
+
 def _async_client_factory(
     *,
     captured: dict | None = None,
     exchange_response: TokenResponse | None = None,
     exchange: AsyncMock | None = None,
+    endpoint_result: MagicMock | None = None,
 ):
-    def factory(issuer=None, *, auth, config):
+    def factory(issuer=None, *, auth, config, endpoints=None):
         if captured is not None:
             captured["issuer"] = issuer
             captured["auth"] = auth
             captured["config"] = config
+            captured["endpoints"] = endpoints
         instance = MagicMock()
         instance.get_endpoints = AsyncMock(
-            return_value=MagicMock(
+            return_value=endpoint_result
+            or MagicMock(
                 authorize="https://auth.example.com/authorize",
                 token="https://auth.example.com/token",
             )
         )
+        if captured is not None:
+            captured["get_endpoints"] = instance.get_endpoints
         instance.exchange_authorization_code = (
             exchange
             if exchange is not None

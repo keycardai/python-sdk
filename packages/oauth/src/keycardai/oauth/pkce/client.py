@@ -114,16 +114,16 @@ async def authenticate(
         RuntimeError: If the authorization redirect carried an OAuth
             ``error`` parameter.
     """
-    if issuer is not None:
-        logger.info("PKCE flow starting against issuer %s", issuer)
-    else:
-        logger.info("PKCE flow starting for resource %s", resource_url)
     auth_server_url = await _resolve_auth_server_url(
         issuer=issuer,
         www_authenticate_header=www_authenticate_header,
         resource_url=resource_url,
         http_client=http_client,
     )
+    if issuer is not None:
+        logger.info("PKCE flow starting against issuer %s", issuer)
+    else:
+        logger.info("PKCE flow starting for resource %s", resource_url)
 
     auth_strategy = (
         BasicAuth(client_id, client_secret) if client_secret else NoneAuth()

@@ -7,17 +7,22 @@ from keycardai.oauth.pkce import (
     begin_authorization,
     complete_authorization,
 )
-from keycardai.oauth.types.models import TokenResponse
+from keycardai.oauth.types.models import AuthorizationServerMetadata, TokenResponse
 
 session: dict[str, dict[str, str]] = {}
+cached_metadata = AuthorizationServerMetadata(
+    issuer="https://oauth.example.com",
+    authorization_endpoint="https://oauth.example.com/authorize",
+    token_endpoint="https://oauth.example.com/token",
+)
 
 
 async def login_redirect() -> AuthorizationRedirect:
     """Start login and store the flow values in the user's session."""
     redirect = await begin_authorization(
         client_id="my-web-app",
-        issuer="https://oauth.example.com",
         redirect_uri="https://app.example.com/oauth/callback",
+        metadata=cached_metadata,
         scopes=["openid", "profile"],
     )
     session["oauth_flow"] = {
@@ -35,8 +40,8 @@ async def oauth_callback(callback_params: Mapping[str, str]) -> TokenResponse:
         state=flow["state"],
         code_verifier=flow["code_verifier"],
         client_id="my-web-app",
-        issuer="https://oauth.example.com",
         redirect_uri="https://app.example.com/oauth/callback",
+        metadata=cached_metadata,
     )
 
 

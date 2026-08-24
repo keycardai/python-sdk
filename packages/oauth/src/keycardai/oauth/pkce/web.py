@@ -14,12 +14,18 @@ from pydantic import BaseModel
 from ..client import AsyncClient
 from ..exceptions import (
     AuthorizationDeniedError,
+    ConfigError,
     OAuthProtocolError,
     StateMismatchError,
 )
 from ..http.auth import BasicAuth, NoneAuth
 from ..operations._authorize import build_authorize_url
-from ..types.models import ClientConfig, TokenResponse
+from ..types.models import (
+    AuthorizationServerMetadata,
+    ClientConfig,
+    Endpoints,
+    TokenResponse,
+)
 from ..utils.pkce import PKCEGenerator
 from ._issuer import _resolve_auth_server_url
 
@@ -46,6 +52,7 @@ async def begin_authorization(
     resource_url: str | None = None,
     www_authenticate_header: str | None = None,
     issuer: str | None = None,
+    metadata: AuthorizationServerMetadata | None = None,
     scopes: list[str] | None = None,
     http_client: httpx.AsyncClient | None = None,
 ) -> AuthorizationRedirect:
@@ -65,6 +72,9 @@ async def begin_authorization(
             RFC 9728. Mutually exclusive with ``issuer``.
         issuer: Authorization server issuer URL to use directly. Mutually
             exclusive with ``www_authenticate_header``.
+        metadata: Optional pre-discovered authorization server metadata.
+            Discovery is skipped when provided, and the application owns
+            caching and refreshing this metadata.
         scopes: Optional list of OAuth scopes to request.
         http_client: Optional ``httpx.AsyncClient`` used to fetch protected
             resource metadata in challenge-driven mode. When omitted, a
@@ -76,47 +86,62 @@ async def begin_authorization(
         application-controlled session state.
 
     Raises:
-        keycardai.oauth.ConfigError: If both or neither issuer entry modes are
+        keycardai.oauth.ConfigError: If anything other than exactly one of
+            ``issuer``, ``www_authenticate_header``, or ``metadata`` is
             provided, or challenge mode omits ``resource_url``.
-        ValueError: If discovery fails because required authorization server
-            endpoints are missing, or because challenge discovery metadata is
-            incomplete.
+        ValueError: If the authorization endpoint is missing from the supplied
+            metadata or discovered server metadata, or if challenge discovery
+            metadata is incomplete.
         httpx.HTTPStatusError: If fetching protected resource metadata fails.
         keycardai.oauth.OAuthHttpError: If authorization server discovery
             returns an HTTP error.
         keycardai.oauth.OAuthProtocolError: If authorization server discovery
             returns an OAuth protocol error.
     """
-    auth_server_url = await _resolve_auth_server_url(
+    _validate_entry_mode(
         issuer=issuer,
         www_authenticate_header=www_authenticate_header,
-        resource_url=resource_url,
-        http_client=http_client,
+        metadata=metadata,
     )
-    auth_strategy = NoneAuth()
-    config = ClientConfig(enable_metadata_discovery=True, auto_register_client=False)
 
-    async with AsyncClient(
-        issuer=auth_server_url, auth=auth_strategy, config=config
-    ) as oauth_client:
-        endpoints = await oauth_client.get_endpoints()
-        if not endpoints.authorize or not endpoints.token:
+    if metadata is not None:
+        if metadata.authorization_endpoint is None:
             raise ValueError(
-                "Authorization server metadata is missing authorization_endpoint "
-                "or token_endpoint"
+                "Authorization server metadata is missing authorization_endpoint"
             )
-
-        pkce = PKCEGenerator().generate_pkce_pair()
-        state = secrets.token_urlsafe(32)
-        url = build_authorize_url(
-            endpoints.authorize,
-            client_id=client_id,
-            redirect_uri=redirect_uri,
-            pkce=pkce,
-            resources=[resource_url] if resource_url else None,
-            scope=" ".join(scopes) if scopes else None,
-            state=state,
+        authorization_endpoint = metadata.authorization_endpoint
+    else:
+        auth_server_url = await _resolve_auth_server_url(
+            issuer=issuer,
+            www_authenticate_header=www_authenticate_header,
+            resource_url=resource_url,
+            http_client=http_client,
         )
+        config = ClientConfig(
+            enable_metadata_discovery=True, auto_register_client=False
+        )
+
+        async with AsyncClient(
+            issuer=auth_server_url, auth=NoneAuth(), config=config
+        ) as oauth_client:
+            endpoints = await oauth_client.get_endpoints()
+            if not endpoints.authorize:
+                raise ValueError(
+                    "Authorization server metadata is missing authorization_endpoint"
+                )
+            authorization_endpoint = endpoints.authorize
+
+    pkce = PKCEGenerator().generate_pkce_pair()
+    state = secrets.token_urlsafe(32)
+    url = build_authorize_url(
+        authorization_endpoint,
+        client_id=client_id,
+        redirect_uri=redirect_uri,
+        pkce=pkce,
+        resources=[resource_url] if resource_url else None,
+        scope=" ".join(scopes) if scopes else None,
+        state=state,
+    )
 
     return AuthorizationRedirect(
         url=url,
@@ -135,6 +160,7 @@ async def complete_authorization(
     resource_url: str | None = None,
     www_authenticate_header: str | None = None,
     issuer: str | None = None,
+    metadata: AuthorizationServerMetadata | None = None,
     client_secret: str | None = None,
     http_client: httpx.AsyncClient | None = None,
 ) -> TokenResponse:
@@ -160,6 +186,9 @@ async def complete_authorization(
             RFC 9728. Mutually exclusive with ``issuer``.
         issuer: Authorization server issuer URL to use directly. Mutually
             exclusive with ``www_authenticate_header``.
+        metadata: Optional pre-discovered authorization server metadata.
+            Discovery is skipped when provided, and the application owns
+            caching and refreshing this metadata.
         client_secret: Optional client secret for confidential clients.
             Public clients omit this and use no token-endpoint auth.
         http_client: Optional ``httpx.AsyncClient`` used to fetch protected
@@ -171,11 +200,12 @@ async def complete_authorization(
         endpoint.
 
     Raises:
-        keycardai.oauth.ConfigError: If both or neither issuer entry modes are
+        keycardai.oauth.ConfigError: If anything other than exactly one of
+            ``issuer``, ``www_authenticate_header``, or ``metadata`` is
             provided, or challenge mode omits ``resource_url``.
-        ValueError: If discovery fails because required authorization server
-            endpoints are missing, or because challenge discovery metadata is
-            incomplete.
+        ValueError: If the token endpoint is missing from the supplied
+            metadata or discovered server metadata, or if challenge discovery
+            metadata is incomplete.
         AuthorizationDeniedError: If the callback carries an OAuth
             authorization error. No token request is made.
         StateMismatchError: If the callback state is missing or does not match
@@ -208,30 +238,64 @@ async def complete_authorization(
             operation="authorization callback",
         )
 
-    auth_server_url = await _resolve_auth_server_url(
+    _validate_entry_mode(
         issuer=issuer,
         www_authenticate_header=www_authenticate_header,
-        resource_url=resource_url,
-        http_client=http_client,
+        metadata=metadata,
     )
+    if metadata is not None:
+        if metadata.token_endpoint is None:
+            raise ValueError(
+                "Authorization server metadata is missing token_endpoint"
+            )
+        auth_server_url = metadata.issuer
+    else:
+        auth_server_url = await _resolve_auth_server_url(
+            issuer=issuer,
+            www_authenticate_header=www_authenticate_header,
+            resource_url=resource_url,
+            http_client=http_client,
+        )
+
     auth_strategy = (
         BasicAuth(client_id, client_secret) if client_secret else NoneAuth()
     )
-    config = ClientConfig(enable_metadata_discovery=True, auto_register_client=False)
+    config = ClientConfig(
+        enable_metadata_discovery=metadata is None, auto_register_client=False
+    )
 
     async with AsyncClient(
-        issuer=auth_server_url, auth=auth_strategy, config=config
+        issuer=auth_server_url,
+        auth=auth_strategy,
+        config=config,
+        endpoints=Endpoints(token=metadata.token_endpoint) if metadata else None,
     ) as oauth_client:
-        endpoints = await oauth_client.get_endpoints()
-        if not endpoints.authorize or not endpoints.token:
-            raise ValueError(
-                "Authorization server metadata is missing authorization_endpoint "
-                "or token_endpoint"
-            )
+        if metadata is None:
+            endpoints = await oauth_client.get_endpoints()
+            if not endpoints.token:
+                raise ValueError(
+                    "Authorization server metadata is missing token_endpoint"
+                )
         return await oauth_client.exchange_authorization_code(
             code=code,
             redirect_uri=redirect_uri,
             code_verifier=code_verifier,
             client_id=client_id,
             resource=resource_url,
+        )
+
+
+def _validate_entry_mode(
+    *,
+    issuer: str | None,
+    www_authenticate_header: str | None,
+    metadata: AuthorizationServerMetadata | None,
+) -> None:
+    if sum(
+        value is not None
+        for value in (issuer, www_authenticate_header, metadata)
+    ) != 1:
+        raise ConfigError(
+            "Provide exactly one of 'issuer', 'www_authenticate_header', "
+            "or 'metadata'"
         )
