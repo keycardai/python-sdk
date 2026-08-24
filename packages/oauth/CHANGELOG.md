@@ -1,3 +1,18 @@
+## 0.22.0-keycardai-oauth (2026-08-24)
+
+
+- feat(keycardai-oauth): OIDC discovery fields and UserInfo capability (#232)
+- * feat(keycardai-oauth): add OIDC UserInfo and typed discovery endpoints
+- Types userinfo_endpoint and end_session_endpoint on AuthorizationServerMetadata
+and adds Client.userinfo()/AsyncClient.userinfo() per OIDC Core 1.0 Section 5.3.
+- Implements keycardai/keycard-sdk-spec#45.
+- Co-Authored-By: Larry Osakwe <larry@keycard.ai>
+- * fix(keycardai-oauth): carry challenge error code on InvalidTokenError
+- Co-Authored-By: Larry Osakwe <larry@keycard.ai>
+- ---------
+- Co-authored-by: devin-ai-keycard <devin-ai@keycard.ai>
+Co-authored-by: Larry Osakwe <larry@keycard.ai>
+
 ## 0.21.1-keycardai-oauth (2026-07-20)
 
 
