@@ -20,6 +20,7 @@ from langchain.agents import create_agent
 from langchain.tools import tool
 
 from keycardai.langchain import (
+    Access,
     KeycardGrantMiddleware,
     KeycardIdentity,
     get_access_context,
@@ -51,7 +52,7 @@ agent = create_agent(
 
 agent.invoke(
     {"messages": [...]},
-    context=KeycardIdentity(subject_token=caller_token),
+    context=Access.on_behalf_of(caller_token),
 )
 ```
 
@@ -73,14 +74,14 @@ and `create_deep_agent` (deep agents are built on the same middleware system).
 
 ## Access patterns
 
-`KeycardIdentity` carries the identity for a run, and its fields select the
-access pattern:
+`KeycardIdentity` is the context schema for a run. Use an `Access.*` factory to
+select the access pattern:
 
-| Field | Pattern | Meaning |
+| Field | Factory | Meaning |
 |---|---|---|
-| `subject_token` | on-behalf-of | Exchange the caller's own token for resource tokens (RFC 8693). |
-| `as_self=True` | as itself | Client-credentials grant under the agent's own application identity. No user anywhere. |
-| `user_identifier` | impersonation | Substitute-user exchange, authenticated by the agent's credential. Forbidden by default; requires a zone policy. |
+| `subject_token` | `Access.on_behalf_of(...)` | Exchange the caller's own token for resource tokens (RFC 8693). |
+| `as_self=True` | `Access.as_self()` | Client-credentials grant under the agent's own application identity. No user anywhere. |
+| `user_identifier` | `Access.impersonate(...)` | Substitute-user exchange, authenticated by the agent's credential. Forbidden by default; requires a zone policy. |
 
 A run with no identity fails with a `missing_identity` error, or pauses with a
 `sign_in_required` interrupt when `sign_in_url` is set. It never falls back to
@@ -93,6 +94,8 @@ call, so every resource access is attributed to agent-for-user in the audit
 log, and revoking the user's grant cuts the agent off immediately.
 
 ```python
+from keycardai.langchain import Access
+
 keycard = KeycardGrantMiddleware(
     zone_url="https://your-zone.keycard.cloud",
     resources=["https://www.googleapis.com/calendar/v3"],
@@ -105,7 +108,7 @@ keycard = KeycardGrantMiddleware(
 
 agent.invoke(
     {"messages": [...]},
-    context=KeycardIdentity(subject_token=caller_token),
+    context=Access.on_behalf_of(caller_token),
 )
 ```
 
@@ -119,6 +122,8 @@ the zone brokers for the resource, including vaulted secrets, so the worker's
 environment holds no API keys and revocation lives in one place.
 
 ```python
+from keycardai.langchain import Access
+
 keycard = KeycardGrantMiddleware(
     zone_url="https://your-zone.keycard.cloud",
     resources=["https://api.github.com"],
@@ -128,7 +133,7 @@ keycard = KeycardGrantMiddleware(
 
 agent.invoke(
     {"messages": [...]},
-    context=KeycardIdentity(as_self=True),
+    context=Access.as_self(),
 )
 ```
 
@@ -146,6 +151,8 @@ credential. This is the sharpest tool in the box and is forbidden by default;
 it requires an explicit impersonation policy in the zone.
 
 ```python
+from keycardai.langchain import Access
+
 keycard = KeycardGrantMiddleware(
     zone_url="https://your-zone.keycard.cloud",
     resources=["https://www.googleapis.com/calendar/v3"],
@@ -155,7 +162,7 @@ keycard = KeycardGrantMiddleware(
 
 agent.invoke(
     {"messages": [...]},
-    context=KeycardIdentity(user_identifier="user@example.com"),
+    context=Access.impersonate("user@example.com"),
 )
 ```
 
@@ -186,9 +193,11 @@ For a deployed agent whose surface does not thread per-run context, set
 sign-in that happens mid-conversation takes effect on resume without a restart:
 
 ```python
+from keycardai.langchain import Access
+
 keycard = KeycardGrantMiddleware(
     ...,
-    fallback_identity=lambda: KeycardIdentity(subject_token=session_token()),
+    fallback_identity=lambda: Access.on_behalf_of(session_token()),
 )
 ```
 
@@ -255,8 +264,10 @@ explicitly. The motivating case is a UI panel served by the same governed
 tool the agent uses in chat:
 
 ```python
+from keycardai.langchain import Access
+
 def dashboard_snapshot(session_token: str) -> str:
-    with keycard.grant(KeycardIdentity(subject_token=session_token)):
+    with keycard.grant(Access.on_behalf_of(session_token)):
         return list_requests.invoke({})
 ```
 
@@ -264,7 +275,9 @@ It also serves resources that have no tool at all. Fetching a vaulted LLM
 key under the agent's own identity, for example:
 
 ```python
-with keycard.grant(KeycardIdentity(as_self=True), resources=[LLM_KEY]) as access:
+from keycardai.langchain import Access
+
+with keycard.grant(Access.as_self(), resources=[LLM_KEY]) as access:
     key = access.access(LLM_KEY).access_token
 ```
 
