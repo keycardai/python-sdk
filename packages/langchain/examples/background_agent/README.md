@@ -2,9 +2,9 @@
 
 A LangChain agent with no user anywhere: a scheduled PR-review digest that
 fetches open pull requests from GitHub and summarizes them. It authenticates
-as its own Keycard application (`KeycardIdentity(as_self=True)`), and Keycard
-delivers whatever credential the zone brokers for the GitHub resource — a
-vaulted PAT, a GitHub App token — per tool call. The worker's environment
+as its own Keycard application (`Access.as_self()`), and Keycard
+delivers whatever credential the zone brokers for the GitHub resource, such as
+a vaulted PAT or a GitHub App token, per tool call. The worker's environment
 holds no GitHub credential, and revoking access happens in one place.
 
 ## Keycard setup

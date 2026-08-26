@@ -96,8 +96,8 @@ def get_access_context() -> AccessContext:
     if access is None:
         raise RuntimeError(
             "No Keycard AccessContext for this tool call. Add KeycardGrantMiddleware "
-            "to the agent's middleware list and invoke the agent with a "
-            "KeycardIdentity context."
+            "to the agent's middleware list and invoke the agent with an "
+            "Access.* identity as context."
         )
     return access
 
@@ -346,9 +346,9 @@ class KeycardGrantMiddleware(AgentMiddleware):
                         "No Keycard identity for this run. Sign in to continue."
                         if self._sign_in_url
                         else "No Keycard identity on the runtime context. Invoke the "
-                        "agent with context=KeycardIdentity(subject_token=...), "
-                        "KeycardIdentity(user_identifier=...), or "
-                        "KeycardIdentity(as_self=True)."
+                        "agent with context=Access.on_behalf_of(...), "
+                        "Access.impersonate(...), or "
+                        "Access.as_self()."
                     ),
                     "code": "missing_identity",
                 }
@@ -497,14 +497,14 @@ class KeycardGrantMiddleware(AgentMiddleware):
         Lets the same governed tools back non-agent surfaces, e.g. seeding a
         dashboard panel on page load with the tool the agent uses in chat:
 
-            with keycard.grant(KeycardIdentity(subject_token=token)):
+            with keycard.grant(Access.on_behalf_of(token)):
                 rows = list_requests.invoke({})
 
         Also serves resources that have no tool at all, e.g. fetching a
         vaulted LLM key under the agent's own identity:
 
             with keycard.grant(
-                KeycardIdentity(as_self=True), resources=[LLM_KEY]
+                Access.as_self(), resources=[LLM_KEY]
             ) as access:
                 key = access.access(LLM_KEY).access_token
 

@@ -24,6 +24,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
 
 from keycardai.langchain import (
+    Access,
     KeycardGrantMiddleware,
     KeycardIdentity,
     get_access_context,
@@ -71,7 +72,7 @@ def list_events(days_ahead: int = 0) -> str:
 
 def main() -> None:
     question = " ".join(sys.argv[1:]) or "What's on my calendar today?"
-    identity = KeycardIdentity(subject_token=os.environ["KEYCARD_SUBJECT_TOKEN"])
+    identity = Access.on_behalf_of(os.environ["KEYCARD_SUBJECT_TOKEN"])
 
     keycard = KeycardGrantMiddleware(
         zone_url=os.environ["KEYCARD_ZONE_URL"],

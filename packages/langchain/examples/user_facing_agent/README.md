@@ -8,7 +8,7 @@ off immediately.
 
 When the user has not granted calendar access yet, the middleware pauses the
 run with a LangGraph `authorization_required` interrupt. This CLI prints the
-consent link, waits, and resumes the same run — in a chat UI the same payload
+consent link, waits, and resumes the same run. In a chat UI the same payload
 becomes an in-chat sign-in card.
 
 ## Keycard setup
@@ -35,8 +35,8 @@ uv run main.py "what's on my calendar today?"
 
 ## What to look at
 
-- The identity for the run is `KeycardIdentity(subject_token=...)`, passed as
-  LangChain runtime context — not middleware state, so one deployed agent
+- The identity for the run is `Access.on_behalf_of(...)`, passed as
+  LangChain runtime context, not middleware state, so one deployed agent
   serves many users.
 - The interrupt/resume loop at the bottom of `main.py`: consent changes the
   grant in the zone, not the token in your session, so the resume retries the

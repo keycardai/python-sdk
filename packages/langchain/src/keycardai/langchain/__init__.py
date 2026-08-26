@@ -8,6 +8,7 @@ Quick start:
 
     from langchain.agents import create_agent
     from keycardai.langchain import (
+        Access,
         KeycardGrantMiddleware,
         KeycardIdentity,
         get_access_context,
@@ -35,13 +36,14 @@ Quick start:
 
     agent.invoke(
         {"messages": [...]},
-        context=KeycardIdentity(subject_token=caller_token),
+        context=Access.on_behalf_of(caller_token),
     )
 
 Re-export guide:
 
-- Local definitions: ``KeycardGrantMiddleware``, ``KeycardIdentity``,
-  ``get_access_context``.
+- Local definitions: ``Access``, ``KeycardGrantMiddleware``,
+  ``KeycardIdentity``, ``get_access_context``. ``KeycardIdentity`` is the
+  context schema, and can also be constructed directly.
 - Borrowed from ``keycardai-oauth``: ``AccessContext`` (the per-request token
   container) and ``ResourceAccessError`` (raised only by
   ``AccessContext.access``), re-exported so callers need one import.
@@ -50,6 +52,7 @@ Re-export guide:
 from keycardai.oauth.server.access_context import AccessContext
 from keycardai.oauth.server.exceptions import ResourceAccessError
 
+from .access import Access
 from .middleware import (
     KeycardGrantMiddleware,
     KeycardIdentity,
@@ -58,6 +61,7 @@ from .middleware import (
 
 __all__ = [
     # === Primary API ===
+    "Access",
     "KeycardGrantMiddleware",
     "KeycardIdentity",
     "get_access_context",

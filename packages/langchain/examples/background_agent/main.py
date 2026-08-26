@@ -1,6 +1,6 @@
 """A background agent with no user anywhere: a morning PR-review digest.
 
-The agent runs as itself (KeycardIdentity(as_self=True)): resource access is
+The agent runs as itself (Access.as_self()): resource access is
 attributed to the application alone, the GitHub credential lives in the zone
 (vaulted or brokered), and every fetch is an audit event. Nothing in this
 process or its environment holds a GitHub credential.
@@ -22,6 +22,7 @@ from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage
 
 from keycardai.langchain import (
+    Access,
     KeycardGrantMiddleware,
     KeycardIdentity,
     get_access_context,
@@ -118,7 +119,7 @@ def main() -> None:
 
     result = agent.invoke(
         {"messages": [HumanMessage("Compile this morning's review digest.")]},
-        context=KeycardIdentity(as_self=True),
+        context=Access.as_self(),
     )
     print(_text_of(result["messages"][-1]))
 
