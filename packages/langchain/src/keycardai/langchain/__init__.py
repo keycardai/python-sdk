@@ -42,8 +42,8 @@ Quick start:
 Re-export guide:
 
 - Local definitions: ``Access``, ``KeycardGrantMiddleware``,
-  ``KeycardIdentity``, ``get_access_context``. ``KeycardIdentity`` remains the
-  context schema and can also be constructed directly.
+  ``KeycardIdentity``, ``get_access_context``. ``KeycardIdentity`` is the
+  context schema, and can also be constructed directly.
 - Borrowed from ``keycardai-oauth``: ``AccessContext`` (the per-request token
   container) and ``ResourceAccessError`` (raised only by
   ``AccessContext.access``), re-exported so callers need one import.

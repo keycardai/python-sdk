@@ -1,8 +1,15 @@
+"""The Access factories: what they build, what they reject, where they route.
+
+The end-to-end cases reuse the agent harness from test_middleware, so each
+factory is checked against the middleware path it is supposed to drive.
+"""
+
 from __future__ import annotations
 
 import pytest
 from test_middleware import (
     PROMPT,
+    RESOURCE,
     StubExchangeClient,
     build_agent,
     last_tool_message,
@@ -42,11 +49,9 @@ def test_as_self_uses_client_credentials_without_exchange() -> None:
     stub = StubExchangeClient()
     result = build_agent(stub).invoke(PROMPT, context=Access.as_self())
 
-    assert "TOKEN: self-token-for-https://api.example.test" in last_tool_message(
-        result
-    ).content
+    assert f"TOKEN: self-token-for-{RESOURCE}" in last_tool_message(result).content
     assert not stub.exchange_calls
-    assert stub.self_calls == [{"resource": "https://api.example.test"}]
+    assert stub.self_calls == [{"resource": RESOURCE}]
 
 
 def test_on_behalf_of_exchanges_the_subject_token() -> None:
@@ -55,9 +60,7 @@ def test_on_behalf_of_exchanges_the_subject_token() -> None:
         PROMPT, context=Access.on_behalf_of("caller-token")
     )
 
-    assert "TOKEN: obo-token-for-https://api.example.test" in last_tool_message(
-        result
-    ).content
+    assert f"TOKEN: obo-token-for-{RESOURCE}" in last_tool_message(result).content
     assert stub.exchange_calls[0].subject_token == "caller-token"
 
 
@@ -70,5 +73,5 @@ def test_impersonate_uses_substitute_user_without_exchange() -> None:
     assert "TOKEN: impersonated-user@example.com" in last_tool_message(result).content
     assert not stub.exchange_calls
     assert stub.impersonate_calls == [
-        {"user": "user@example.com", "resource": "https://api.example.test"}
+        {"user": "user@example.com", "resource": RESOURCE}
     ]

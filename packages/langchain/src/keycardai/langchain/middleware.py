@@ -96,8 +96,8 @@ def get_access_context() -> AccessContext:
     if access is None:
         raise RuntimeError(
             "No Keycard AccessContext for this tool call. Add KeycardGrantMiddleware "
-            "to the agent's middleware list and invoke the agent with a "
-            "Access.* identity context."
+            "to the agent's middleware list and invoke the agent with an "
+            "Access.* identity as context."
         )
     return access
 
