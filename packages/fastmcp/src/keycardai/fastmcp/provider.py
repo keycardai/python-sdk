@@ -27,27 +27,28 @@ from fastmcp.dependencies import Dependency
 from fastmcp.server.auth import RemoteAuthProvider
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.server.dependencies import get_access_token, get_context
-from keycardai.mcp.server.auth import (
+from keycardai.oauth import AsyncClient, Client
+from keycardai.oauth.http.auth import NoneAuth
+from keycardai.oauth.server import (
     ApplicationCredential,
     ClientSecret,
     EKSWorkloadIdentity,
     WebIdentity,
 )
-from keycardai.mcp.server.auth.client_factory import (
+from keycardai.oauth.server.client_factory import (
     ClientFactory,
     DefaultClientFactory,
 )
-from keycardai.mcp.server.exceptions import (
+from keycardai.oauth.server.exceptions import (
     AuthProviderConfigurationError,
     AuthProviderInternalError,
     AuthProviderRemoteError,
-    MissingContextError,
     ResourceAccessError,
 )
-from keycardai.oauth import AsyncClient, Client
-from keycardai.oauth.http.auth import NoneAuth
 from keycardai.oauth.types.models import TokenExchangeRequest, TokenResponse
 from keycardai.oauth.utils.jwt import extract_scopes, get_claims
+
+from .exceptions import MissingContextError
 
 __all__ = [
     "INTROSPECT",
@@ -634,7 +635,7 @@ class AuthProvider:
         )
 
         # To configure access delegation, provide client credentials
-        from keycardai.mcp.server.auth import ClientSecret
+        from keycardai.fastmcp import ClientSecret
 
         auth_provider = AuthProvider(
             zone_id="abc1234",

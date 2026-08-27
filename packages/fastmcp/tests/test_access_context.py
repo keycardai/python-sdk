@@ -9,7 +9,7 @@ verify the rich-error contract holds for the fastmcp provider too.
 import pytest
 
 from keycardai.fastmcp.provider import AccessContext
-from keycardai.mcp.server.exceptions import ResourceAccessError
+from keycardai.oauth.server.exceptions import ResourceAccessError
 from keycardai.oauth.types.models import TokenResponse
 
 

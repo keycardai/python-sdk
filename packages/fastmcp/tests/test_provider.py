@@ -13,8 +13,8 @@ from unittest.mock import Mock, patch
 import pytest
 
 from keycardai.fastmcp.provider import AuthProvider, ClientFactory
-from keycardai.mcp.server.auth import ClientSecret, EKSWorkloadIdentity, WebIdentity
-from keycardai.mcp.server.exceptions import AuthProviderConfigurationError
+from keycardai.oauth.server import ClientSecret, EKSWorkloadIdentity, WebIdentity
+from keycardai.oauth.server.exceptions import AuthProviderConfigurationError
 
 
 @pytest.fixture

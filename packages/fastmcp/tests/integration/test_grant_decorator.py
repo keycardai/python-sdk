@@ -14,9 +14,9 @@ from fastmcp.server.dependencies import AccessToken
 from keycardai.fastmcp import (
     AccessContext,
     AuthProvider,
+    MissingContextError,
     ResourceAccessError,
 )
-from keycardai.mcp.server.exceptions import MissingContextError
 from keycardai.oauth.types.models import TokenExchangeRequest, TokenResponse
 
 
