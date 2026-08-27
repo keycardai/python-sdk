@@ -397,6 +397,9 @@ class StubAssertionCredential:
     """ApplicationCredential whose proof rides in the request body,
     the shape WorkloadIdentity and WebIdentity use."""
 
+    def __init__(self, client_id: str | None = None) -> None:
+        self.client_id = client_id
+
     def get_http_client_auth(self):  # noqa: ANN201
         from keycardai.oauth import NoneAuth
 
@@ -414,6 +417,7 @@ class StubAssertionCredential:
             subject_token_type="urn:ietf:params:oauth:token-type:access_token",
             client_assertion="stub-assertion",
             client_assertion_type="urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+            client_id=self.client_id,
         )
 
 
@@ -468,7 +472,7 @@ def test_credential_assertion_reaches_the_as_self_grant() -> None:
     middleware = KeycardGrantMiddleware(
         resources=[RESOURCE],
         client=stub,
-        application_credential=StubAssertionCredential(),
+        application_credential=StubAssertionCredential(client_id="agent"),
     )
     with middleware.grant(KeycardIdentity(as_self=True)) as access:
         assert access.access(RESOURCE).access_token == f"self-token-for-{RESOURCE}"
@@ -476,6 +480,19 @@ def test_credential_assertion_reaches_the_as_self_grant() -> None:
     assert call["resource"] == RESOURCE
     assert call["client_assertion"] == "stub-assertion"
     assert call["client_assertion_type"].endswith("jwt-bearer")
+    assert call["client_id"] == "agent"
+
+
+def test_credential_assertion_without_client_id_omits_it_from_as_self() -> None:
+    stub = StubExchangeClient()
+    middleware = KeycardGrantMiddleware(
+        resources=[RESOURCE],
+        client=stub,
+        application_credential=StubAssertionCredential(),
+    )
+    with middleware.grant(KeycardIdentity(as_self=True)) as access:
+        assert access.access(RESOURCE).access_token == f"self-token-for-{RESOURCE}"
+    assert "client_id" not in stub.self_calls[0]
 
 
 def test_partial_grant_yields_token_and_resource_error_side_by_side() -> None:

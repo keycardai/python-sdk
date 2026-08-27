@@ -293,9 +293,11 @@ class KeycardGrantMiddleware(AgentMiddleware):
             client=client, subject_token="client-credentials", resource=resource
         )
         fields: dict[str, str] = {}
-        if getattr(prepared, "client_assertion", None):
+        if prepared.client_assertion:
             fields["client_assertion"] = prepared.client_assertion
             fields["client_assertion_type"] = prepared.client_assertion_type
+            if prepared.client_id:
+                fields["client_id"] = prepared.client_id
         return fields
 
     async def _grant_as_self(
