@@ -1,3 +1,21 @@
+## 0.6.0-keycardai-fastmcp (2026-08-27)
+
+
+- refactor(keycardai-fastmcp): drop the keycardai-mcp dependency (#243)
+- * refactor(keycardai-fastmcp): drop the keycardai-mcp dependency
+- Co-Authored-By: Larry Osakwe <larry@keycard.ai>
+- * test(keycardai-fastmcp): move the AuthProvider unit tests out of the old module path
+- tests/keycardai/mcp/integrations/fastmcp/test_provider.py mirrored the
+pre-rename module layout. The file tests keycardai.fastmcp.provider, so it
+sits at tests/test_provider.py alongside test_access_context.py; the
+integration-style AuthProvider tests already live in
+tests/integration/test_auth_provider.py.
+- Pure rename, no content change. 85 passed, coverage 85.29%.
+- ---------
+- Co-authored-by: devin-ai-keycard <devin-ai@keycard.ai>
+Co-authored-by: Larry Osakwe <larry@keycard.ai>
+Co-authored-by: GitHub Action <action@github.com>
+
 ## 0.5.0-keycardai-fastmcp (2026-07-21)
 
 
