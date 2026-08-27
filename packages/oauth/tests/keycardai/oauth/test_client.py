@@ -400,6 +400,37 @@ class TestOverloadEquivalence:
 
             assert dict1 == dict2, f"Async client credentials requests differ: {dict1} != {dict2}"
 
+    def test_client_credentials_grant_kwargs_passes_client_id(self):
+        """Test the sync kwargs form passes client_id into the request."""
+        with patch('keycardai.oauth.client.client_credentials_grant') as mock_grant:
+            mock_grant.return_value = Mock()
+            client = Client("https://test.keycard.cloud")
+
+            client.client_credentials_grant(
+                client_id="app_123",
+                client_assertion="assertion_jwt",
+                client_assertion_type="urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+            )
+
+            request = mock_grant.call_args[0][0]
+            assert request.client_id == "app_123"
+
+    @pytest.mark.asyncio
+    async def test_async_client_credentials_grant_kwargs_passes_client_id(self):
+        """Test the async kwargs form passes client_id into the request."""
+        with patch('keycardai.oauth.client.client_credentials_grant_async') as mock_grant_async:
+            mock_grant_async.return_value = Mock()
+            async_client = AsyncClient("https://test.keycard.cloud")
+
+            await async_client.client_credentials_grant(
+                client_id="app_123",
+                client_assertion="assertion_jwt",
+                client_assertion_type="urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+            )
+
+            request = mock_grant_async.call_args[0][0]
+            assert request.client_id == "app_123"
+
     def test_discover_server_metadata_overload_equivalence(self):
         """Test that discover_server_metadata overloads create equivalent calls."""
         test_base_url = "https://custom.auth.server.com"

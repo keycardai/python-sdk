@@ -64,6 +64,15 @@ class ClientCredentialsRequest(BaseModel):
     scope: str | None = Field(default=None, description="Space-delimited scope of the access request.")
     client_assertion: str | None = None
     client_assertion_type: str | None = None
+    client_id: str | None = Field(
+        default=None,
+        description=(
+            "The client identifier. Accompanies a jwt-bearer client_assertion when the "
+            "zone resolves the application credential by application ID rather than by "
+            "the assertion subject. Not needed when the client authenticates at the HTTP "
+            "layer, such as Basic auth."
+        ),
+    )
     timeout: float | None = None
 
 
