@@ -22,7 +22,7 @@ The SDK uses **Commitizen** with **conventional commits** to automatically:
 
 ### 2. Tag-Based Releases
 - Tags follow format: `<version>-<package-name>`
-- Examples: `1.0.0-keycardai-oauth`, `0.2.0-keycardai-mcp-fastmcp`
+- Examples: `1.0.0-keycardai-oauth`, `0.2.0-keycardai-fastmcp`
 - Pushing tags triggers automated PyPI publishing
 
 ### 3. Automated Workflows
@@ -39,7 +39,7 @@ Use conventional commit format with exact package scopes:
 ```bash
 # Feature additions
 git commit -m "feat(keycardai-oauth): add PKCE support for enhanced security"
-git commit -m "feat(keycardai-mcp-fastmcp): implement connection pooling"
+git commit -m "feat(keycardai-fastmcp): implement connection pooling"
 
 # Bug fixes  
 git commit -m "fix(keycardai-oauth): resolve token refresh race condition"
@@ -56,7 +56,7 @@ BREAKING CHANGE: Client constructor now requires explicit configuration object"
 **Required Scopes**:
 - `keycardai-oauth`: OAuth package changes
 - `keycardai-mcp`: Core MCP package changes  
-- `keycardai-mcp-fastmcp`: FastMCP integration changes
+- `keycardai-fastmcp`: FastMCP integration changes
 - `deps`: Dependency updates
 - `docs`: Documentation updates
 
@@ -87,7 +87,7 @@ gh workflow run bump-package.yml -f package_name=keycardai-oauth -f package_dir=
 gh workflow run bump-package.yml -f package_name=keycardai-mcp -f package_dir=packages/mcp
 
 # For FastMCP integration
-gh workflow run bump-package.yml -f package_name=keycardai-mcp-fastmcp -f package_dir=packages/mcp-fastmcp
+gh workflow run bump-package.yml -f package_name=keycardai-fastmcp -f package_dir=packages/fastmcp
 ```
 
 This will:

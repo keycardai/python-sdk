@@ -7,7 +7,6 @@ on:
       - '*-keycardai-oauth'
       - '*-keycardai-starlette'
       - '*-keycardai-mcp'
-      - '*-keycardai-mcp-fastmcp'
       - '*-keycardai-fastmcp'
       - '*-keycardai-a2a'
       - '*-keycardai-langchain'
@@ -83,8 +82,8 @@ jobs:
 
       - name: Build package
         # Build by path, not --package: `uv build --package` resolves against
-        # workspace.members, and packages/fastmcp + packages/mcp-fastmcp are
-        # deliberately excluded from the workspace (see ECO-198).
+        # workspace.members, and packages/fastmcp is deliberately excluded
+        # from the workspace (see ECO-198).
         run: |
           uv build --out-dir dist "${{ needs.detect-package.outputs.package-dir }}"
 

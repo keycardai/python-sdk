@@ -261,7 +261,7 @@ def extract_package_from_tag(tag: str) -> dict:
     Examples:
     - 1.0.0-keycardai-oauth -> package: keycardai-oauth
     - 0.1.0-keycardai-mcp -> package: keycardai-mcp
-    - 0.2.0-keycardai-mcp-fastmcp -> package: keycardai-mcp-fastmcp
+    - 0.2.0-keycardai-fastmcp -> package: keycardai-fastmcp
     """
     if not tag:
         raise Exception("Tag cannot be empty")

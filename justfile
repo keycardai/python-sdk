@@ -3,12 +3,11 @@ dev-setup:
     uv run pre-commit install
     uv sync --all-extras --all-packages
 
-# Build the project. packages/fastmcp and packages/mcp-fastmcp sit outside the
-# uv workspace (they hold mcp<2.0; see ECO-198), so they sync separately.
+# Build the project. packages/fastmcp sits outside the uv workspace (it holds
+# mcp<2.0; see ECO-198), so it syncs separately.
 build:
     uv sync --all-packages
     cd packages/fastmcp && uv sync --extra test
-    cd packages/mcp-fastmcp && uv sync --extra test
 
 # Run tests for all packages
 test: build
@@ -16,7 +15,6 @@ test: build
     just test-package starlette
     just test-package mcp
     just test-package fastmcp
-    just test-package mcp-fastmcp
     just test-package a2a
     just test-package langchain
 
@@ -40,7 +38,6 @@ test-coverage: build
     cd packages/starlette && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=55
     cd packages/mcp && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=60
     cd packages/fastmcp && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=60
-    cd packages/mcp-fastmcp && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=70
     cd packages/a2a && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=55
     cd packages/langchain && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=85
 
@@ -57,27 +54,6 @@ fix-all:
 # Run type checker on all files
 typecheck:
     uv run --frozen ty check
-
-docs:
-    cd docs && npx --yes mint@latest dev
-
-# Generate API reference documentation for all modules
-sdk-ref-all:
-    just sdk-ref-mcp-fastmcp
-    just sdk-ref-mcp
-    just sdk-ref-oauth
-
-sdk-ref-mcp-fastmcp:
-    cd packages/mcp-fastmcp && uvx --with-editable . --refresh-package mdxify mdxify@latest keycardai.mcp.integrations.fastmcp --root-module keycardai --anchor-name "Python SDK" --output-dir ../../docs/sdk
-sdk-ref-mcp:
-    cd packages/mcp && uvx --with-editable . --refresh-package mdxify mdxify@latest keycardai.mcp --root-module keycardai --anchor-name "Python SDK" --output-dir ../../docs/sdk
-sdk-ref-oauth:
-    cd packages/oauth && uvx --with-editable . --refresh-package mdxify mdxify@latest keycardai.oauth --root-module keycardai --anchor-name "Python SDK" --output-dir ../../docs/sdk
-
-
-# Clean up API reference documentation
-sdk-ref-clean:
-    rm -rf docs/sdk
 
 # Validate commit messages for PR
 validate-commits BASE_BRANCH="origin/main":

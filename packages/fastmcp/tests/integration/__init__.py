@@ -1,4 +1,4 @@
-"""Integration tests for mcp-fastmcp package.
+"""Integration tests for fastmcp package.
 
 This package contains integration tests for the core interfaces:
 - AuthProvider: Keycard authentication provider for FastMCP

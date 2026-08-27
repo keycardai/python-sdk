@@ -4,8 +4,9 @@ FastMCP integration for Keycard OAuth: protect FastMCP servers with Keycard
 authentication and run delegated OAuth 2.0 token exchange (RFC 8693) for
 downstream APIs.
 
-This is the canonical home for the integration; `keycardai-mcp-fastmcp` is
-preserved as a deprecation bridge for callers still on the old name.
+This is the canonical home for the integration. The old name,
+`keycardai-mcp-fastmcp`, is retired; its final release (0.21.0) remains on
+PyPI so existing pins keep resolving.
 
 ## Installation
 
@@ -89,6 +90,8 @@ production.
 
 ## Migration from `keycardai-mcp-fastmcp`
 
-The old package keeps working: `from keycardai.mcp.integrations.fastmcp import AuthProvider`
-emits a `DeprecationWarning` pointing here and returns the same class. Migrate
-when convenient.
+The `keycardai-mcp-fastmcp` package is retired. Its final release, 0.21.0,
+stays on PyPI so existing pins keep resolving: `from
+keycardai.mcp.integrations.fastmcp import AuthProvider` emits a
+`DeprecationWarning` pointing here and returns the same class. New code
+should depend on `keycardai-fastmcp` and import from `keycardai.fastmcp`.

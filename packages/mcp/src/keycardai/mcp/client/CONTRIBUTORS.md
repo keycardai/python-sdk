@@ -1630,6 +1630,5 @@ async def test_oauth_discovery(httpx_mock: HTTPXMock):
 
 - **Architecture Diagrams**: See `docs/diagrams/client-flow.md` for detailed sequence diagrams
 - **Usage Examples**: See `packages/mcp/examples/` for complete examples
-- **API Documentation**: See `docs/sdk/` for API reference
 - **Standards**: See `docs/standards/` for OAuth and storage standards
 

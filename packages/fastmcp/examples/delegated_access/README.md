@@ -105,7 +105,7 @@ export MCP_SERVER_URL="https://your-tunnel-url.ngrok.io/"  # Must be publicly re
 ### 3. Install Dependencies and Run the Server
 
 ```bash
-cd packages/mcp-fastmcp/examples/delegated_access
+cd packages/fastmcp/examples/delegated_access
 uv sync
 uv run python main.py
 ```

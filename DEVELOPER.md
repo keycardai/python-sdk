@@ -23,40 +23,6 @@ cd python-sdk
 uv sync
 ```
 
-## Documentation
-
-### Launch Documentation Server
-
-The project includes comprehensive documentation built with Mint. To view the docs locally:
-
-```bash
-# Using just (recommended)
-just docs
-
-# Or directly with npx
-cd docs && npx --yes mint@latest dev
-```
-
-This will start a local documentation server (typically at `http://localhost:3000`) with:
-- API reference for all packages
-- Usage examples  
-- Integration guides
-- Architecture decisions
-
-### Generate API Documentation
-
-To regenerate the API reference documentation:
-
-```bash
-# Generate docs for all packages
-just sdk-ref-all
-
-# Or generate for specific packages
-just sdk-ref-oauth
-just sdk-ref-mcp
-just sdk-ref-mcp-fastmcp
-```
-
 ## Development
 
 This project uses uv workspaces to manage multiple related packages. Each package lives in the `packages/` directory and has its own `pyproject.toml`.
@@ -111,14 +77,12 @@ python-sdk/
 ├── README.md              # User-facing documentation
 ├── DEVELOPER.md           # This file - developer documentation
 ├── docs/                  # Documentation
-│   ├── docs.json          # Mint documentation config
-│   ├── examples/          # Usage examples
-│   ├── sdk/              # Auto-generated API reference
+│   ├── project/          # ADRs and playbooks
 │   └── standards/        # Development standards
 ├── packages/              # Individual packages
 │   ├── oauth/            # OAuth 2.0 implementation
-│   ├── mcp/              # Core MCP utilities  
-│   └── mcp-fastmcp/      # FastMCP integration
+│   ├── mcp/              # Core MCP utilities
+│   └── fastmcp/          # FastMCP integration
 ├── src/                   # Workspace-level source
 └── uv.lock               # Shared lockfile
 ```
@@ -161,7 +125,7 @@ We use [Conventional Commits](https://www.conventionalcommits.org/) with specifi
 **Required Scopes**:
 - `keycardai-oauth`: Changes to the OAuth package
 - `keycardai-mcp`: Changes to the core MCP package  
-- `keycardai-mcp-fastmcp`: Changes to the FastMCP integration
+- `keycardai-fastmcp`: Changes to the FastMCP integration
 - `deps`: Dependency updates
 - `docs`: Documentation updates
 
@@ -170,7 +134,7 @@ We use [Conventional Commits](https://www.conventionalcommits.org/) with specifi
 **Examples**:
 ```bash
 feat(keycardai-oauth): add PKCE support for enhanced security
-fix(keycardai-mcp-fastmcp): resolve connection timeout in auth middleware
+fix(keycardai-fastmcp): resolve connection timeout in auth middleware
 docs(keycardai-oauth): update API documentation with new examples
 chore(deps): update httpx to v0.25.0 for security patch
 ```

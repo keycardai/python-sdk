@@ -29,7 +29,7 @@ export MCP_SERVER_URL="http://localhost:8000/"
 ### 2. Install Dependencies
 
 ```bash
-cd packages/mcp-fastmcp/examples/hello_world_server
+cd packages/fastmcp/examples/hello_world_server
 uv sync
 ```
 
