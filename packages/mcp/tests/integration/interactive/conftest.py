@@ -83,7 +83,7 @@ def run_mcp_server(port: int, zone_url: str):
     from fastmcp import FastMCP
     from fastmcp.server.dependencies import get_access_token
 
-    from keycardai.mcp.integrations.fastmcp import AuthProvider
+    from keycardai.fastmcp import AuthProvider
 
     auth = AuthProvider(
         zone_url=zone_url,

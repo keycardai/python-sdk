@@ -16,7 +16,7 @@ Keycard lets you securely connect your AI IDE or agent to external resources. Wi
 
 | Feature | FastMCP Integration | Low-Level MCP (this example) |
 |---------|---------------------|------------------------------|
-| Import | `keycardai.mcp.integrations.fastmcp` | `keycardai.mcp.server.auth` |
+| Import | `keycardai.fastmcp` | `keycardai.mcp.server.auth` |
 | AccessContext | `await ctx.get_state("keycardai")` | Function parameter |
 | Server startup | `mcp.run()` | `uvicorn.run(auth_provider.app(mcp))` |
 

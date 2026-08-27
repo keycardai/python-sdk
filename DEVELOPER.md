@@ -81,7 +81,8 @@ python-sdk/
 │   └── standards/        # Development standards
 ├── packages/              # Individual packages
 │   ├── oauth/            # OAuth 2.0 implementation
-│   └── mcp/              # Core MCP utilities
+│   ├── mcp/              # Core MCP utilities
+│   └── fastmcp/          # FastMCP integration
 ├── src/                   # Workspace-level source
 └── uv.lock               # Shared lockfile
 ```
