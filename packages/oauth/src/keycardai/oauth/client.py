@@ -814,6 +814,7 @@ class AsyncClient:
         scope: str | None = None,
         client_assertion: str | None = None,
         client_assertion_type: str | None = None,
+        client_id: str | None = None,
         timeout: float | None = None,
     ) -> TokenResponse: ...
 
@@ -842,6 +843,10 @@ class AsyncClient:
                 strategy (e.g. MultiZoneBasicAuth) applies for this call.
                 Defaults to the client's issuer. Single-credential strategies
                 ignore it. May be combined with either calling form.
+            client_id: Client identifier sent in the request body. Required when a
+                federation-rule workload identity credential presents a jwt-bearer
+                client_assertion and the zone resolves the application credential by
+                application ID.
             **client_credentials_args: Alternative to request - provide individual parameters
 
         Returns:
@@ -1544,6 +1549,7 @@ class Client:
         scope: str | None = None,
         client_assertion: str | None = None,
         client_assertion_type: str | None = None,
+        client_id: str | None = None,
         timeout: float | None = None,
     ) -> TokenResponse: ...
 
@@ -1572,6 +1578,10 @@ class Client:
                 strategy (e.g. MultiZoneBasicAuth) applies for this call.
                 Defaults to the client's issuer. Single-credential strategies
                 ignore it. May be combined with either calling form.
+            client_id: Client identifier sent in the request body. Required when a
+                federation-rule workload identity credential presents a jwt-bearer
+                client_assertion and the zone resolves the application credential by
+                application ID.
             **client_credentials_args: Alternative to request - provide individual parameters
 
         Returns:

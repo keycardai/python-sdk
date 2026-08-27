@@ -57,6 +57,39 @@ class TestClientCredentialsOperations:
             "client_assertion_type": ["urn:ietf:params:oauth:client-assertion-type:jwt-bearer"],
         }
 
+    def test_client_credentials_request_client_id_defaults_to_none(self):
+        """Test client_id defaults to None on the request model."""
+        assert ClientCredentialsRequest().client_id is None
+        assert ClientCredentialsRequest(client_id="app_123").client_id == "app_123"
+
+    def test_build_client_credentials_http_request_with_client_id(self):
+        """Test client_id is encoded in the form body when set."""
+        req = ClientCredentialsRequest(
+            client_id="app_123",
+            client_assertion="assertion_jwt",
+            client_assertion_type="urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+        )
+
+        http_req = build_client_credentials_http_request(req, HTTPContext(endpoint="https://auth.example.com/token", transport=Mock(), auth=NoneAuth()))
+
+        form = parse_qs(http_req.body.decode("utf-8"))
+        assert form == {
+            "grant_type": ["client_credentials"],
+            "client_id": ["app_123"],
+            "client_assertion": ["assertion_jwt"],
+            "client_assertion_type": ["urn:ietf:params:oauth:client-assertion-type:jwt-bearer"],
+        }
+
+    def test_build_client_credentials_http_request_omits_unset_client_id(self):
+        """Test the client_id key is absent from the form body when unset."""
+        req = ClientCredentialsRequest(scope="read")
+
+        http_req = build_client_credentials_http_request(req, HTTPContext(endpoint="https://auth.example.com/token", transport=Mock(), auth=NoneAuth()))
+
+        form = parse_qs(http_req.body.decode("utf-8"))
+        assert "client_id" not in form
+        assert form == {"grant_type": ["client_credentials"], "scope": ["read"]}
+
     def test_parse_client_credentials_http_response_success(self):
         """Test parsing successful client credentials response."""
         response_body = b'''{
@@ -204,3 +237,64 @@ class TestClientCredentialsOperations:
             "grant_type": ["client_credentials"],
             "resource": ["https://api.example.com"],
         }
+
+    def test_client_credentials_grant_sync_sends_client_id(self):
+        """Test the sync grant sends client_id alongside a jwt-bearer assertion."""
+        mock_transport = Mock()
+        mock_transport.request_raw.return_value = HttpResponse(
+            status=200,
+            headers={"Content-Type": "application/json"},
+            body=b'{"access_token": "sync_issued_token", "token_type": "Bearer"}'
+        )
+
+        context = HTTPContext(
+            endpoint="https://auth.example.com/token",
+            transport=mock_transport,
+            auth=NoneAuth(),
+            timeout=30.0
+        )
+
+        req = ClientCredentialsRequest(
+            client_id="app_123",
+            client_assertion="assertion_jwt",
+            client_assertion_type="urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+        )
+
+        result = client_credentials_grant(req, context)
+
+        assert result.access_token == "sync_issued_token"
+
+        sent_request = mock_transport.request_raw.call_args[0][0]
+        form = parse_qs(sent_request.body.decode("utf-8"))
+        assert form["client_id"] == ["app_123"]
+
+    @pytest.mark.asyncio
+    async def test_client_credentials_grant_async_sends_client_id(self):
+        """Test the async grant sends client_id alongside a jwt-bearer assertion."""
+        mock_transport = AsyncMock()
+        mock_transport.request_raw.return_value = HttpResponse(
+            status=200,
+            headers={"Content-Type": "application/json"},
+            body=b'{"access_token": "async_issued_token", "token_type": "Bearer"}'
+        )
+
+        context = HTTPContext(
+            endpoint="https://auth.example.com/token",
+            transport=mock_transport,
+            auth=NoneAuth(),
+            timeout=30.0
+        )
+
+        req = ClientCredentialsRequest(
+            client_id="app_123",
+            client_assertion="assertion_jwt",
+            client_assertion_type="urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+        )
+
+        result = await client_credentials_grant_async(req, context)
+
+        assert result.access_token == "async_issued_token"
+
+        sent_request = mock_transport.request_raw.call_args[0][0]
+        form = parse_qs(sent_request.body.decode("utf-8"))
+        assert form["client_id"] == ["app_123"]
