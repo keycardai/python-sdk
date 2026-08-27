@@ -25,9 +25,9 @@ from keycardai.fastmcp import (
     AccessContext,
     AuthProvider,
     GrantDependency,
+    MissingContextError,
 )
 from keycardai.fastmcp.testing import override_access_context
-from keycardai.mcp.server.exceptions import MissingContextError
 from keycardai.oauth.types.models import TokenResponse
 
 

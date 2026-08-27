@@ -16,10 +16,11 @@ backward compatibility).
 
 Re-export Guide:
     Local definitions (primary API): AuthProvider, AccessContext
-    From keycardai.mcp.server.auth: ApplicationCredential, ClientSecret, EKSWorkloadIdentity, WebIdentity
-    From keycardai.mcp.server.auth.client_factory: ClientFactory, DefaultClientFactory
+    From keycardai.oauth.server: ApplicationCredential, ClientSecret, EKSWorkloadIdentity, WebIdentity
+    From keycardai.oauth.server.client_factory: ClientFactory, DefaultClientFactory
     From keycardai.oauth.http.auth: AuthStrategy, BasicAuth, MultiZoneBasicAuth, NoneAuth
-    From keycardai.mcp.server.exceptions: All exceptions
+    From keycardai.oauth.server.exceptions: All exceptions except MissingContextError
+    Locally defined: MissingContextError
     For canonical imports, use the source packages directly.
 
 Basic Usage:
@@ -86,14 +87,20 @@ Advanced Configuration:
     )
 """
 
-from keycardai.mcp.server.auth import (
+from keycardai.oauth.http.auth import (
+    AuthStrategy,
+    BasicAuth,
+    MultiZoneBasicAuth,
+    NoneAuth,
+)
+from keycardai.oauth.server import (
     ApplicationCredential,
     ClientSecret,
     EKSWorkloadIdentity,
     WebIdentity,
 )
-from keycardai.mcp.server.auth.client_factory import ClientFactory, DefaultClientFactory
-from keycardai.mcp.server.exceptions import (
+from keycardai.oauth.server.client_factory import ClientFactory, DefaultClientFactory
+from keycardai.oauth.server.exceptions import (
     # Specific exceptions
     AuthProviderConfigurationError,
     AuthProviderInternalError,
@@ -102,21 +109,15 @@ from keycardai.mcp.server.exceptions import (
     EKSWorkloadIdentityConfigurationError,
     EKSWorkloadIdentityRuntimeError,
     JWKSValidationError,
-    # Base exception
-    MCPServerError,
     MetadataDiscoveryError,
-    MissingContextError,
     OAuthClientConfigurationError,
+    # Base exception
+    OAuthServerError as MCPServerError,
     ResourceAccessError,
     TokenExchangeError,
 )
-from keycardai.oauth.http.auth import (
-    AuthStrategy,
-    BasicAuth,
-    MultiZoneBasicAuth,
-    NoneAuth,
-)
 
+from .exceptions import MissingContextError
 from .provider import (
     AccessContext,
     AuthProvider,
@@ -131,12 +132,12 @@ __all__ = [
     # === Typing Support ===
     # Return type of AuthProvider.grant(); exported for annotations, never constructed directly
     "GrantDependency",
-    # === Application Credentials (re-exported from keycardai.mcp.server.auth) ===
+    # === Application Credentials (re-exported from keycardai.oauth.server) ===
     "ApplicationCredential",
     "ClientSecret",
     "EKSWorkloadIdentity",
     "WebIdentity",
-    # === Client Factory (Advanced - re-exported from keycardai.mcp.server.auth) ===
+    # === Client Factory (Advanced - re-exported from keycardai.oauth.server.client_factory) ===
     # Use ClientFactory protocol for custom implementations; DefaultClientFactory for defaults
     "ClientFactory",
     "DefaultClientFactory",
@@ -145,7 +146,7 @@ __all__ = [
     "BasicAuth",
     "MultiZoneBasicAuth",
     "NoneAuth",
-    # === Exceptions (re-exported from keycardai.mcp.server.exceptions) ===
+    # === Exceptions (re-exported from keycardai.oauth.server.exceptions) ===
     # Base
     "MCPServerError",
     # Configuration
