@@ -1,3 +1,10 @@
+## 0.24.0-keycardai-oauth (2026-08-27)
+
+
+- feat(keycardai-oauth): client_id form parameter on the client-credentials grant (#238)
+- Co-authored-by: devin-ai-keycard <devin-ai@keycard.ai>
+Co-authored-by: Larry Osakwe <larry@keycard.ai>
+
 ## 0.23.0-keycardai-oauth (2026-08-24)
 
 
