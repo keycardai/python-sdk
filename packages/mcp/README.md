@@ -2,7 +2,7 @@
 
 A comprehensive Python SDK for Model Context Protocol (MCP) functionality that simplifies authentication and authorization concerns for developers working with AI/LLM integrations.
 
-> **Using the FastMCP framework?** See [keycardai-mcp-fastmcp](../mcp-fastmcp/) instead. For help choosing, see the [root README](../../README.md#which-package).
+> **Using the FastMCP framework?** See [keycardai-fastmcp](../fastmcp/) instead. For help choosing, see the [root README](../../README.md#which-package).
 
 ## Requirements
 
@@ -694,7 +694,7 @@ export KEYCARD_ZONE_ID="your-zone-id"
 uv sync && uv run python main.py
 ```
 
-> **Note**: For most use cases, we recommend using the [FastMCP integration](https://pypi.org/project/keycardai-mcp-fastmcp/) which provides a simpler API. This low-level approach is for advanced scenarios requiring more control.
+> **Note**: For most use cases, we recommend using the [FastMCP integration](https://pypi.org/project/keycardai-fastmcp/) which provides a simpler API. This low-level approach is for advanced scenarios requiring more control.
 
 For complete examples and advanced usage patterns, see our [documentation](https://docs.keycard.ai).
 

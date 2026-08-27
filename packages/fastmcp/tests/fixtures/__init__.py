@@ -1,1 +1,1 @@
-"""Shared test fixtures for mcp-fastmcp package."""
+"""Shared test fixtures for fastmcp package."""

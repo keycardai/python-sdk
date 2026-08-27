@@ -1,7 +1,7 @@
 """Integration tests for grant decorator interface.
 
 This module tests the grant decorator which is one of the core interfaces
-in the mcp-fastmcp package. It tests the complete flow of token exchange
+in the fastmcp package. It tests the complete flow of token exchange
 and context injection for both sync and async functions.
 """
 

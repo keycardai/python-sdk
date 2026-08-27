@@ -1,7 +1,7 @@
 """Integration tests for AuthProvider interface.
 
 This module tests the AuthProvider class which is one of the core interfaces
-in the mcp-fastmcp package. It tests the complete flow from initialization
+in the fastmcp package. It tests the complete flow from initialization
 to JWT verifier creation and RemoteAuthProvider creation.
 """
 

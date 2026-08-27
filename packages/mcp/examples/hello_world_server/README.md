@@ -2,7 +2,7 @@
 
 A minimal example using the `keycardai-mcp` package's AuthProvider directly.
 
-**Note**: For most use cases, we recommend using the FastMCP integration (`keycardai-mcp-fastmcp`). This low-level approach is for advanced scenarios requiring more control over the Starlette application.
+**Note**: For most use cases, we recommend using the FastMCP integration (`keycardai-fastmcp`). This low-level approach is for advanced scenarios requiring more control over the Starlette application.
 
 ## Why Keycard?
 
@@ -81,5 +81,5 @@ For accessing external APIs on behalf of users using the `@grant` decorator, see
 
 ## Learn More
 
-- [FastMCP Integration Example](../../../mcp-fastmcp/examples/hello_world_server/)
+- [FastMCP Integration Example](../../../fastmcp/examples/hello_world_server/)
 - [Keycard Documentation](https://docs.keycard.ai)

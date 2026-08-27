@@ -2,7 +2,7 @@
 
 A complete example demonstrating how to use the `@grant` decorator for token exchange using the low-level `keycardai-mcp` package. This enables your MCP server to access external APIs (GitHub) on behalf of authenticated users.
 
-**Note**: For most use cases, we recommend using the [FastMCP integration](../../../mcp-fastmcp/examples/delegated_access/). This low-level approach is for advanced scenarios requiring more control over the Starlette application.
+**Note**: For most use cases, we recommend using the [FastMCP integration](../../../fastmcp/examples/delegated_access/). This low-level approach is for advanced scenarios requiring more control over the Starlette application.
 
 ## Why Keycard?
 
@@ -208,7 +208,7 @@ The example demonstrates comprehensive error handling patterns:
 
 ## Learn More
 
-- [FastMCP Integration Example](../../../mcp-fastmcp/examples/delegated_access/) (recommended for most use cases)
+- [FastMCP Integration Example](../../../fastmcp/examples/delegated_access/) (recommended for most use cases)
 - [Keycard Documentation](https://docs.keycard.ai)
 - [Delegated Access Guide](https://docs.keycard.ai/build-with-keycard/delegated-access)
 - [GitHub API Documentation](https://docs.github.com/rest)
