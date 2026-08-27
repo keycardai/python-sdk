@@ -8,7 +8,7 @@ license = { text = "MIT" }
 authors = [{ name = "Keycard", email = "support@keycard.ai" }]
 dependencies = [
     "httpx>=0.27.2",
-    "keycardai-oauth>=0.9.0",
+    "keycardai-oauth>=0.24.0",
     "langchain>=1.0",
     "langgraph>=1.0",
 ]
