@@ -31,10 +31,12 @@ Example (web app)::
         client_id="my-app",
         issuer="https://auth.example.com",
         redirect_uri="https://app.example.com/oauth/callback",
+        resources=["https://api.example.com", "https://files.example.com"],
     )
     session["oauth_flow"] = {
         "state": redirect.state,
         "code_verifier": redirect.code_verifier,
+        "resources": redirect.resources,
     }
     # Redirect the browser to ``redirect.url``. In the callback route:
     flow = session.pop("oauth_flow")

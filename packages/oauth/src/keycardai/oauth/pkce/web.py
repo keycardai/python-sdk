@@ -6,6 +6,7 @@ returned ``state`` and ``code_verifier`` between those calls.
 """
 
 import secrets
+import warnings
 from collections.abc import Mapping
 
 import httpx
@@ -27,7 +28,7 @@ from ..types.models import (
     TokenResponse,
 )
 from ..utils.pkce import PKCEGenerator
-from ._issuer import _resolve_auth_server_url
+from ._issuer import resolve_issuer_from_challenge
 
 
 class AuthorizationRedirect(BaseModel):
@@ -38,23 +39,31 @@ class AuthorizationRedirect(BaseModel):
         state: The generated CSRF value to store until the callback.
         code_verifier: The PKCE verifier to store until the callback. This
             value must never be sent to the browser.
+        resources: The resources the authorization request was scoped to,
+            carried so the application can persist them alongside ``state``
+            and ``code_verifier``. They are not needed to redeem the code —
+            the authorization server derives the issued token's audience from
+            the code itself — but applications commonly need to know which
+            resources a session was authorized for.
     """
 
     url: str
     state: str
     code_verifier: str
+    resources: list[str] | None = None
 
 
 async def begin_authorization(
     *,
     client_id: str,
     redirect_uri: str,
-    resource_url: str | None = None,
+    resources: list[str] | None = None,
     www_authenticate_header: str | None = None,
     issuer: str | None = None,
     metadata: AuthorizationServerMetadata | None = None,
     scopes: list[str] | None = None,
     http_client: httpx.AsyncClient | None = None,
+    resource_url: str | None = None,
 ) -> AuthorizationRedirect:
     """Begin a web-app authorization-code-with-PKCE flow.
 
@@ -65,8 +74,10 @@ async def begin_authorization(
     Args:
         client_id: OAuth client ID.
         redirect_uri: Registered redirect URI handled by the web application.
-        resource_url: The protected resource the caller is targeting. Passed
-            as the RFC 8707 ``resource`` parameter when provided.
+        resources: The protected resources the caller is targeting. Each entry
+            is sent as its own RFC 8707 ``resource`` query parameter, so a
+            single authorization can cover several resources and the issued
+            token's audience covers all of them.
         www_authenticate_header: The ``WWW-Authenticate`` challenge from the
             protected resource. Must contain a ``resource_metadata`` URL per
             RFC 9728. Mutually exclusive with ``issuer``.
@@ -79,25 +90,30 @@ async def begin_authorization(
         http_client: Optional ``httpx.AsyncClient`` used to fetch protected
             resource metadata in challenge-driven mode. When omitted, a
             short-lived client is created internally.
+        resource_url: Deprecated. A single resource, equivalent to
+            ``resources=[resource_url]``. Emits a ``DeprecationWarning`` and
+            will be removed in a future release.
 
     Returns:
         ``AuthorizationRedirect`` containing the authorization URL, generated
-        state, and PKCE code verifier. Store the state and verifier in
-        application-controlled session state.
+        state, PKCE code verifier, and the requested resources. Store the
+        state and verifier in application-controlled session state.
 
     Raises:
         keycardai.oauth.ConfigError: If anything other than exactly one of
             ``issuer``, ``www_authenticate_header``, or ``metadata`` is
-            provided, or challenge mode omits ``resource_url``.
-        ValueError: If the authorization endpoint is missing from the supplied
-            metadata or discovered server metadata, or if challenge discovery
-            metadata is incomplete.
+            provided, or challenge mode omits ``resources``.
+        ValueError: If both ``resources`` and the deprecated ``resource_url``
+            are provided, or if the authorization endpoint is missing from the
+            supplied metadata or discovered server metadata, or if challenge
+            discovery metadata is incomplete.
         httpx.HTTPStatusError: If fetching protected resource metadata fails.
         keycardai.oauth.OAuthHttpError: If authorization server discovery
             returns an HTTP error.
         keycardai.oauth.OAuthProtocolError: If authorization server discovery
             returns an OAuth protocol error.
     """
+    resources = _resolve_resources(resources=resources, resource_url=resource_url)
     _validate_entry_mode(
         issuer=issuer,
         www_authenticate_header=www_authenticate_header,
@@ -111,10 +127,14 @@ async def begin_authorization(
             )
         authorization_endpoint = metadata.authorization_endpoint
     else:
-        auth_server_url = await _resolve_auth_server_url(
+        if www_authenticate_header is not None and not resources:
+            raise ConfigError(
+                "'resources' is required when authenticating from a "
+                "WWW-Authenticate challenge"
+            )
+        auth_server_url = await _resolve_issuer(
             issuer=issuer,
             www_authenticate_header=www_authenticate_header,
-            resource_url=resource_url,
             http_client=http_client,
         )
         config = ClientConfig(
@@ -138,7 +158,7 @@ async def begin_authorization(
         client_id=client_id,
         redirect_uri=redirect_uri,
         pkce=pkce,
-        resources=[resource_url] if resource_url else None,
+        resources=resources,
         scope=" ".join(scopes) if scopes else None,
         state=state,
     )
@@ -147,6 +167,7 @@ async def begin_authorization(
         url=url,
         state=state,
         code_verifier=pkce.code_verifier,
+        resources=resources,
     )
 
 
@@ -157,18 +178,23 @@ async def complete_authorization(
     code_verifier: str,
     client_id: str,
     redirect_uri: str,
-    resource_url: str | None = None,
     www_authenticate_header: str | None = None,
     issuer: str | None = None,
     metadata: AuthorizationServerMetadata | None = None,
     client_secret: str | None = None,
     http_client: httpx.AsyncClient | None = None,
+    resource_url: str | None = None,
 ) -> TokenResponse:
     """Complete a web-app authorization-code-with-PKCE flow.
 
     Callback validation occurs before issuer discovery or any token request.
     The application supplies the ``state`` and ``code_verifier`` retained
     from :func:`begin_authorization`.
+
+    No RFC 8707 ``resource`` parameter is sent on the token request: the
+    authorization server derives the issued token's audience from the
+    authorization code, which already records the resources the user
+    authorized in the begin step.
 
     Args:
         callback_params: Query parameters received by the application's
@@ -179,8 +205,6 @@ async def complete_authorization(
             value must never be sent to the browser.
         client_id: OAuth client ID.
         redirect_uri: The same registered redirect URI used in the begin step.
-        resource_url: The protected resource the caller is targeting. Passed
-            as the RFC 8707 ``resource`` parameter when provided.
         www_authenticate_header: The ``WWW-Authenticate`` challenge from the
             protected resource. Must contain a ``resource_metadata`` URL per
             RFC 9728. Mutually exclusive with ``issuer``.
@@ -194,6 +218,9 @@ async def complete_authorization(
         http_client: Optional ``httpx.AsyncClient`` used to fetch protected
             resource metadata in challenge-driven mode. When omitted, a
             short-lived client is created internally.
+        resource_url: Deprecated no-op. It never affected the issued token,
+            whose audience is derived from the authorization code. Emits a
+            ``DeprecationWarning`` and will be removed in a future release.
 
     Returns:
         ``TokenResponse`` returned by the authorization server's token
@@ -202,7 +229,7 @@ async def complete_authorization(
     Raises:
         keycardai.oauth.ConfigError: If anything other than exactly one of
             ``issuer``, ``www_authenticate_header``, or ``metadata`` is
-            provided, or challenge mode omits ``resource_url``.
+            provided.
         ValueError: If the token endpoint is missing from the supplied
             metadata or discovered server metadata, or if challenge discovery
             metadata is incomplete.
@@ -216,6 +243,17 @@ async def complete_authorization(
         keycardai.oauth.OAuthHttpError: If authorization server discovery or
             the token endpoint returns an HTTP error.
     """
+    if resource_url is not None:
+        warnings.warn(
+            "'resource_url' is deprecated and has no effect on "
+            "complete_authorization: the authorization server derives the "
+            "issued token's audience from the authorization code, so no "
+            "'resource' parameter is sent on the token request. It will be "
+            "removed in a future release.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+
     error = callback_params.get("error")
     if error is not None:
         raise AuthorizationDeniedError(
@@ -250,10 +288,9 @@ async def complete_authorization(
             )
         auth_server_url = metadata.issuer
     else:
-        auth_server_url = await _resolve_auth_server_url(
+        auth_server_url = await _resolve_issuer(
             issuer=issuer,
             www_authenticate_header=www_authenticate_header,
-            resource_url=resource_url,
             http_client=http_client,
         )
 
@@ -281,8 +318,50 @@ async def complete_authorization(
             redirect_uri=redirect_uri,
             code_verifier=code_verifier,
             client_id=client_id,
-            resource=resource_url,
         )
+
+
+def _resolve_resources(
+    *,
+    resources: list[str] | None,
+    resource_url: str | None,
+) -> list[str] | None:
+    """Map the deprecated single-resource keyword onto ``resources``."""
+    if resource_url is None:
+        return resources
+
+    warnings.warn(
+        "'resource_url' is deprecated; pass 'resources=[resource_url]' "
+        "instead. Several resources may be requested at once, each sent as "
+        "its own RFC 8707 'resource' parameter. 'resource_url' will be "
+        "removed in a future release.",
+        DeprecationWarning,
+        stacklevel=3,
+    )
+    if resources is not None:
+        raise ValueError(
+            "Provide either 'resources' or the deprecated 'resource_url', "
+            "not both"
+        )
+    return [resource_url]
+
+
+async def _resolve_issuer(
+    *,
+    issuer: str | None,
+    www_authenticate_header: str | None,
+    http_client: httpx.AsyncClient | None,
+) -> str:
+    if issuer is not None:
+        return issuer.rstrip("/")
+    if www_authenticate_header is None:
+        raise ConfigError(
+            "Provide exactly one of 'issuer', 'www_authenticate_header', "
+            "or 'metadata'"
+        )
+    return await resolve_issuer_from_challenge(
+        www_authenticate_header, http_client=http_client
+    )
 
 
 def _validate_entry_mode(
