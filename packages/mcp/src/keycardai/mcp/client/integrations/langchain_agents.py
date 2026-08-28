@@ -6,20 +6,93 @@ Provides a clean API for integrating MCP tools with LangChain agents:
 - System prompt generation with auth context
 - MCP tools converted to LangChain tools
 - Auth request tools for agent
+- Optional interrupt mode, so an MCP auth challenge pauses the run with the
+  same `authorization_required` payload keycardai-langchain's
+  KeycardGrantMiddleware raises
+- Lazy tools for agents built before any user has connected
 """
 
 import json
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from typing import Any
 
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field, create_model
 
 from ..client import Client
+from ..types import AuthChallenge
 from .auth_tools import AuthToolHandler, DefaultAuthToolHandler
 
 logger = logging.getLogger(__name__)
+
+AUTHORIZATION_REQUIRED = "authorization_required"
+
+_AUTHORIZATION_MESSAGE = (
+    "Access to the resources above has not been granted yet. "
+    "Open the authorization URL to grant it, then resume the run."
+)
+
+
+def build_authorization_interrupt_payload(
+    challenges: Sequence[AuthChallenge],
+) -> dict[str, Any]:
+    """The `authorization_required` interrupt payload for pending MCP challenges.
+
+    Deliberately the same shape keycardai-langchain's KeycardGrantMiddleware
+    produces for a missing grant, so an agent that combines brokered REST tools
+    (middleware) with MCP tools (this adapter) hands its chat surface one
+    payload to render, not two. MCP servers take the place of resource URLs in
+    the `resources` and `errors` fields.
+
+    Args:
+        challenges: Pending challenges, as returned by
+            `Client.get_auth_challenges()`.
+
+    Returns:
+        Interrupt payload with `type`, `resources`, `authorization_url`,
+        `errors` and `message`.
+    """
+    servers = [challenge["server"] for challenge in challenges]
+    authorization_url = next(
+        (
+            challenge["authorization_url"]
+            for challenge in challenges
+            if challenge.get("authorization_url")
+        ),
+        None,
+    )
+    return {
+        "type": AUTHORIZATION_REQUIRED,
+        "resources": servers,
+        "authorization_url": authorization_url,
+        "errors": {
+            challenge["server"]: {
+                "code": AUTHORIZATION_REQUIRED,
+                "message": (
+                    f"MCP server '{challenge['server']}' has not been authorized yet."
+                ),
+            }
+            for challenge in challenges
+        },
+        "message": _AUTHORIZATION_MESSAGE,
+    }
+
+
+def _interrupt(payload: dict[str, Any]) -> None:
+    """Raise a LangGraph interrupt.
+
+    Imported lazily: langgraph is only needed by callers that opt into
+    interrupt mode, and the adapter itself depends on langchain-core alone.
+    """
+    try:
+        from langgraph.types import interrupt
+    except ImportError as e:
+        raise RuntimeError(
+            "interrupt_on_auth requires langgraph. Install it with "
+            "`uv add langgraph` (it ships with langchain 1.x agents)."
+        ) from e
+    interrupt(payload)
 
 
 class LangChainClient:
@@ -46,6 +119,8 @@ class LangChainClient:
         auth_tool_handler: AuthToolHandler | None = None,
         auth_hook_closure: Callable[[], Awaitable[None]] | None = None,
         auth_prompt: str | None = None,
+        interrupt_on_auth: bool = False,
+        tool_allowlist: Sequence[str] | None = None,
     ):
         """
         Initialize adapter.
@@ -58,6 +133,16 @@ class LangChainClient:
                 For custom flows (Slack, email, etc.), provide your own handler.
             auth_hook_closure: Optional async function called when auth is needed
             auth_prompt: Optional custom authentication prompt to include in system message
+            interrupt_on_auth: Opt in to interrupt mode. A tool that hits an
+                auth challenge pauses the run with the same
+                `authorization_required` interrupt keycardai-langchain's
+                KeycardGrantMiddleware raises, instead of handing the model
+                auth-request tools. Off by default: the auth-tools behavior is
+                unchanged unless this is set. Requires langgraph and a
+                checkpointer on the agent.
+            tool_allowlist: Optional server tool names to expose. Everything
+                else the server advertises is hidden, which keeps a large
+                server (say 67 tools) from flooding the model's context.
         """
         self._mcp_client = mcp_client
         self._auth_tool_handler = auth_tool_handler or DefaultAuthToolHandler()
@@ -66,6 +151,8 @@ class LangChainClient:
         self._auth_hook_closure = auth_hook_closure
         self._tools_cache: list[StructuredTool] = []
         self.auth_prompt = auth_prompt
+        self._interrupt_on_auth = interrupt_on_auth
+        self._tool_allowlist = list(tool_allowlist) if tool_allowlist else None
 
     async def __aenter__(self) -> "LangChainClient":
         """
@@ -168,6 +255,8 @@ The following services require user authorization: {', '.join(pending_services)}
                 tool_infos = await self._mcp_client.list_tools(server_name)
 
                 for tool_info in tool_infos:
+                    if not self._is_allowed(tool_info.tool.name):
+                        continue
                     langchain_tool = self._convert_mcp_tool_to_langchain(
                         tool_info.tool, tool_info.server
                     )
@@ -203,6 +292,8 @@ The following services require user authorization: {', '.join(pending_services)}
 
         async def invoke_tool(**kwargs) -> str:
             """Invoke the MCP tool."""
+            if self._interrupt_on_auth:
+                await self._interrupt_if_authorization_required()
             try:
                 result = await self._mcp_client.call_tool(
                     tool_name, kwargs, server_name=server_name
@@ -309,12 +400,176 @@ The following services require user authorization: {', '.join(pending_services)}
         }
         return type_map.get(json_type, str)
 
+    def _is_allowed(self, tool_name: str) -> bool:
+        """Whether a server tool passes the configured allowlist."""
+        return self._tool_allowlist is None or tool_name in self._tool_allowlist
+
+    async def _connect_and_refresh(self) -> None:
+        """Connect the underlying client and re-read auth state.
+
+        Lazy tools call this on invocation: the client for a given user may
+        only be built once that user shows up, long after the agent's tool
+        list was assembled.
+        """
+        await self._mcp_client.connect()
+        self._pending_challenges = await self._mcp_client.get_auth_challenges()
+        try:
+            tool_infos = await self._mcp_client.list_tools()
+            self._authenticated_servers = list({info.server for info in tool_infos})
+        except Exception as e:
+            logger.error(f"Error listing tools: {e}", exc_info=True)
+            self._authenticated_servers = []
+        self._tools_cache = []
+
+    async def _pending_authorization_challenges(self) -> list[AuthChallenge]:
+        """Challenges for sessions that are waiting on the user, if any.
+
+        `session.requires_user_action` is the authoritative signal (status
+        AUTH_PENDING); the challenge carries the `authorization_url` to show.
+        """
+        waiting = [
+            name
+            for name, session in self._mcp_client.sessions.items()
+            if session.requires_user_action
+        ]
+        if not waiting:
+            return []
+        challenges = await self._mcp_client.get_auth_challenges()
+        return [c for c in challenges if c["server"] in waiting]
+
+    async def _interrupt_if_authorization_required(self) -> None:
+        """Pause the run when a connected session is waiting on authorization."""
+        challenges = await self._pending_authorization_challenges()
+        if not challenges:
+            return
+        self._pending_challenges = list(challenges)
+        _interrupt(build_authorization_interrupt_payload(challenges))
+
+    async def get_lazy_tools(self) -> list[StructuredTool]:
+        """
+        Tools that can be bound before any user has connected.
+
+        `create_agent` fixes its tool list when the module loads, but an MCP
+        server's real tools are only knowable once a user has a connected
+        session. These tools connect on first call and then reflect the
+        server's actual schemas:
+
+        - `list_mcp_tools` returns the server's tools with their full input
+          schemas (filtered by `tool_allowlist`), so the model calls them with
+          the server's own parameters rather than a hand-written subset.
+        - `call_mcp_tool` invokes one of them by name.
+
+        Both connect the client on invocation. In interrupt mode a pending
+        challenge pauses the run; otherwise the auth message is returned to
+        the model. Once a session is authorized, `get_tools()` returns the
+        server's tools as first-class LangChain tools, which is the better
+        binding whenever the agent can be built after `connect()`.
+
+        Returns:
+            List of lazy LangChain tools
+        """
+
+        def _allowed_infos(tool_infos):
+            return [i for i in tool_infos if self._is_allowed(i.tool.name)]
+
+        async def _prepare() -> str | None:
+            """Connect, and report why tools are unavailable when they are."""
+            await self._connect_and_refresh()
+            if self._interrupt_on_auth:
+                await self._interrupt_if_authorization_required()
+                return None
+            challenges = await self._pending_authorization_challenges()
+            if not challenges:
+                return None
+            url = challenges[0].get("authorization_url")
+            return (
+                f"Authorization required for {challenges[0]['server']}. "
+                f"Ask the user to visit: {url}"
+            )
+
+        async def list_mcp_tools() -> str:
+            pending = await _prepare()
+            if pending:
+                return pending
+            infos = _allowed_infos(await self._mcp_client.list_tools())
+            return json.dumps(
+                [
+                    {
+                        "name": info.tool.name,
+                        "server": info.server,
+                        "description": info.tool.description,
+                        "input_schema": getattr(info.tool, "input_schema", {}),
+                    }
+                    for info in infos
+                ],
+                indent=2,
+            )
+
+        async def call_mcp_tool(tool_name: str, arguments: dict | None = None) -> str:
+            pending = await _prepare()
+            if pending:
+                return pending
+            if not self._is_allowed(tool_name):
+                return f"Tool '{tool_name}' is not available."
+            infos = _allowed_infos(await self._mcp_client.list_tools())
+            info = next((i for i in infos if i.tool.name == tool_name), None)
+            if info is None:
+                available = ", ".join(i.tool.name for i in infos)
+                return f"Tool '{tool_name}' not found. Available tools: {available}"
+            tool = self._convert_mcp_tool_to_langchain(info.tool, info.server)
+            return await tool.coroutine(**(arguments or {}))
+
+        allowlist_note = (
+            f" Available tools: {', '.join(self._tool_allowlist)}."
+            if self._tool_allowlist
+            else ""
+        )
+
+        class CallMcpToolInput(BaseModel):
+            """Input for call_mcp_tool."""
+
+            tool_name: str = Field(
+                description="Name of the MCP tool, as returned by list_mcp_tools"
+            )
+            arguments: dict = Field(
+                default_factory=dict,
+                description=(
+                    "Arguments for the tool, matching the input_schema "
+                    "list_mcp_tools reported for it"
+                ),
+            )
+
+        return [
+            StructuredTool.from_function(
+                name="list_mcp_tools",
+                description=(
+                    "List the MCP tools available to this user, with the input "
+                    "schema of each. Call this before call_mcp_tool so the tool "
+                    "is called with the server's own parameters." + allowlist_note
+                ),
+                coroutine=list_mcp_tools,
+            ),
+            StructuredTool(
+                name="call_mcp_tool",
+                description=(
+                    "Call an MCP tool by name with the arguments its input "
+                    "schema declares." + allowlist_note
+                ),
+                coroutine=call_mcp_tool,
+                args_schema=CallMcpToolInput,
+            ),
+        ]
+
     async def get_auth_tools(self) -> list[StructuredTool]:
         """
         Get authentication request tools for the agent.
 
         Returns a tool that allows the agent to request user authentication
         when needed. If all services are authenticated, returns empty list.
+
+        In interrupt mode there is no auth tool: the run pauses with an
+        `authorization_required` interrupt instead of asking the model to
+        request authorization, so this returns an empty list.
 
         Returns:
             List with one auth request tool (or empty if no auth needed)
@@ -326,7 +581,7 @@ The following services require user authorization: {', '.join(pending_services)}
             >>> # If all authenticated:
             >>> # []
         """
-        if not self._pending_challenges:
+        if self._interrupt_on_auth or not self._pending_challenges:
             return []
 
         pending_services = [c["server"] for c in self._pending_challenges]
@@ -387,6 +642,8 @@ def create_client(
     mcp_client: Client,
     auth_tool_handler: AuthToolHandler | None = None,
     auth_hook_closure: Callable[[], Awaitable[None]] | None = None,
+    interrupt_on_auth: bool = False,
+    tool_allowlist: Sequence[str] | None = None,
 ) -> LangChainClient:
     """
     Get LangChain agents adapter for MCP client.
@@ -400,6 +657,8 @@ def create_client(
             Built-in options: SlackAuthToolHandler, ConsoleAuthToolHandler
             Default: DefaultAuthToolHandler (returns message for agent)
         auth_hook_closure: Optional async function called when auth is needed
+        interrupt_on_auth: Opt in to interrupt mode (see LangChainClient)
+        tool_allowlist: Optional server tool names to expose
 
     Returns:
         LangChain client adapter
@@ -450,6 +709,21 @@ def create_client(
         ...         {"messages": [{"role": "user", "content": "Hi, my name is Bob"}]},
         ...         {"configurable": {"thread_id": "123"}},
         ...     )
+
+    Example - Interrupt mode alongside keycardai-langchain's middleware:
+        >>> client = langchain_agents.create_client(
+        ...     mcp_client,
+        ...     interrupt_on_auth=True,
+        ...     tool_allowlist=["list_issues", "create_issue"],
+        ... )
+        >>> # A pending MCP challenge now pauses the run with the same
+        >>> # `authorization_required` payload KeycardGrantMiddleware raises.
     """
-    return LangChainClient(mcp_client, auth_tool_handler, auth_hook_closure)
+    return LangChainClient(
+        mcp_client,
+        auth_tool_handler,
+        auth_hook_closure,
+        interrupt_on_auth=interrupt_on_auth,
+        tool_allowlist=tool_allowlist,
+    )
 
