@@ -255,6 +255,66 @@ Both require a checkpointer. Two details worth knowing:
 Scope granularity falls out of this for free: if a user has granted read but
 not write, the read call succeeds and the write call is the one that pauses.
 
+## MCP tools in the same agent
+
+Agents commonly mix two kinds of access: REST tools whose credentials this
+middleware brokers per tool call, and MCP servers that run their own
+interactive OAuth through `keycardai-mcp`. Both can pause the run with the
+same `authorization_required` payload, so your chat surface renders one auth
+UX:
+
+```python
+from keycardai.mcp.client.integrations import langchain_agents
+
+adapter = langchain_agents.LangChainClient(
+    mcp_client,
+    interrupt_on_auth=True,                          # opt in; off by default
+    tool_allowlist=["list_issues", "create_issue"],  # keep the context small
+)
+```
+
+Without `interrupt_on_auth` the MCP adapter keeps its own UX: it hands the
+model a `request_authentication` tool instead of interrupting.
+
+Three things to get right when the two are combined:
+
+**MCP-backed tools exchange nothing.** The MCP server's OAuth grant belongs to
+the user and that server, not to Keycard's exchange, so map those tools to an
+empty resource list or the middleware will try to broker a token they do not
+need:
+
+```python
+KeycardGrantMiddleware(
+    zone_url=ZONE_URL,
+    resources=[CALENDAR],                 # REST tools
+    tool_resources={"call_mcp_tool": []}, # MCP-backed tool
+    authorization_url=lambda resources: f"{BASE_URL}/authorize?r={resources[0]}",
+)
+```
+
+**One callback route.** The MCP client's coordinator owns the redirect, and a
+single route completes the flow for every user:
+
+```python
+coordinator = StarletteAuthCoordinator(
+    redirect_uri=f"{BASE_URL}/auth/mcp/callback",
+    backend=InMemoryBackend(),
+)
+manager = ClientManager(servers, auth_coordinator=coordinator)
+
+
+async def mcp_callback(request):
+    await coordinator.handle_completion(dict(request.query_params))
+    return HTMLResponse("Authorized. Return to the chat and continue.")
+```
+
+**Per-user clients, tools bound after connect.** `manager.get_client(context_id=user_email)`
+gives each user their own session; build the agent's MCP tools after
+`client.connect()` so the model sees the server's real tool schemas (or use
+`adapter.get_lazy_tools()` when the tool list must exist at import time). The
+MCP client's [README](../mcp/src/keycardai/mcp/client/README.md#combining-mcp-tools-with-keycardai-langchain-grants)
+covers that side in full.
+
 ## Using tools outside the agent
 
 `get_access_context()` normally only works inside an agent run, because the
