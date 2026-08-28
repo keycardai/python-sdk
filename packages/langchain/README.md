@@ -309,8 +309,10 @@ async def mcp_callback(request):
 ```
 
 **Per-user clients, tools bound after connect.** `manager.get_client(context_id=user_email)`
-gives each user their own session; build the agent's MCP tools after
-`client.connect()` so the model sees the server's real tool schemas (or use
+gives each user their own session; build the agent's MCP tools inside
+`async with adapter:` (entering connects and discovers the authenticated
+servers; `get_tools()` is empty without it) so the model sees the server's
+real tool schemas (or use
 `adapter.get_lazy_tools()` when the tool list must exist at import time). The
 MCP client's [README](../mcp/src/keycardai/mcp/client/README.md#combining-mcp-tools-with-keycardai-langchain-grants)
 covers that side in full.

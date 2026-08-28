@@ -785,8 +785,11 @@ async def mcp_tools_for(user_email: str):
         interrupt_on_auth=True,
         tool_allowlist=["list_issues", "create_issue"],
     )
-    await client.connect()
-    return await adapter.get_tools()
+    # Entering the adapter connects the client and discovers which servers
+    # are authenticated; get_tools() is empty without it. Exit is a no-op,
+    # so the returned tools stay valid.
+    async with adapter:
+        return await adapter.get_tools()
 ```
 
 The session reconnects itself once `handle_completion` fires, so resuming the
