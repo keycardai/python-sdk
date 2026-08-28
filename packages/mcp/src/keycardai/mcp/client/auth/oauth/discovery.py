@@ -4,6 +4,7 @@ from collections.abc import Callable
 from typing import Any
 
 from httpx import AsyncClient, Response
+from httpx2 import Response as Httpx2Response
 
 from ...logging_config import get_logger
 from ..storage_facades import OAuthStorage
@@ -38,7 +39,10 @@ class OAuthDiscoveryService:
         self.storage = storage
         self.client_factory = client_factory or default_client_factory
 
-    async def discover_resource(self, challenge_response: Response) -> dict[str, Any]:
+    async def discover_resource(
+        self,
+        challenge_response: Response | Httpx2Response,
+    ) -> dict[str, Any]:
         """
         Discover protected resource metadata from 401 challenge.
 
@@ -149,4 +153,3 @@ class OAuthDiscoveryService:
                 continue
 
         raise ValueError("Failed to discover any authorization server")
-

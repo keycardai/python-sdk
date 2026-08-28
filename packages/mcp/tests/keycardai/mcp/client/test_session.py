@@ -5,6 +5,7 @@ disconnection, tool calling, authentication challenge handling, and status
 lifecycle transitions.
 """
 
+import logging
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
@@ -218,6 +219,44 @@ class TestSessionConnect:
         assert mock_connection.start_called is True
         assert mock_client_session.entered is True
         assert mock_client_session.initialize_called is True
+
+    @pytest.mark.asyncio
+    async def test_connect_logs_transport_type_error_with_traceback(
+        self,
+        caplog: pytest.LogCaptureFixture,
+    ):
+        """Programming errors retain their traceback while status handling stays intact."""
+        storage = InMemoryBackend()
+        coordinator = MockAuthCoordinator(storage)
+        context = coordinator.create_context("user:alice")
+        session = Session(
+            "test_server",
+            {"url": "http://localhost:3000"},
+            context,
+            coordinator,
+        )
+        mock_connection = MockConnection()
+        mock_connection.should_raise_on_start = TypeError(
+            "streamable_http_client() got an unexpected keyword argument 'auth'"
+        )
+
+        with (
+            patch(
+                "keycardai.mcp.client.session.create_connection",
+                return_value=mock_connection,
+            ),
+            caplog.at_level(logging.ERROR),
+        ):
+            await session.connect()
+
+        failure_record = next(
+            record
+            for record in caplog.records
+            if "Failed to establish connection" in record.message
+        )
+        assert failure_record.exc_info is not None
+        assert failure_record.exc_info[0] is TypeError
+        assert session.status is SessionStatus.AUTH_FAILED
 
     @pytest.mark.asyncio
     async def test_connect_when_already_connected_returns_early(self):
@@ -1639,4 +1678,3 @@ class TestSessionStatusBackwardCompatibility:
 
         session.get_auth_challenge = AsyncMock(return_value={"state": "test"})
         assert await session.requires_auth()
-
