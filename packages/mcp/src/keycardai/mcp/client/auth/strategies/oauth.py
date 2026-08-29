@@ -5,6 +5,7 @@ from datetime import timedelta
 from typing import TYPE_CHECKING, Any, Protocol
 
 from httpx import AsyncClient, Response
+from httpx2 import Response as Httpx2Response
 
 from ...logging_config import get_logger
 from ...storage import NamespacedStorage
@@ -225,7 +226,7 @@ class OAuthStrategy:
 
     async def handle_challenge(
         self,
-        challenge: Response,
+        challenge: Response | Httpx2Response,
         resource_url: str
     ) -> bool:
         """
@@ -244,7 +245,10 @@ class OAuthStrategy:
         Returns:
             True if challenge was handled successfully, False otherwise
         """
-        if not isinstance(challenge, Response) or challenge.status_code != 401:
+        if (
+            not isinstance(challenge, (Response, Httpx2Response))
+            or challenge.status_code != 401
+        ):
             return False
 
         try:
@@ -374,4 +378,3 @@ def create_auth_strategy(
         )
     else:
         raise ValueError(f"Unknown auth type: {auth_type}")
-

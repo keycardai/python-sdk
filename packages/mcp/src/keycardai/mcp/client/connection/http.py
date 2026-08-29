@@ -1,11 +1,13 @@
 """
 HTTP connection implementation for MCP client.
 
-Provides StreamableHttpConnection which uses httpx for HTTP-based MCP connections.
+Provides StreamableHttpConnection which uses httpx2 for HTTP-based MCP connections.
 """
+from contextlib import AbstractAsyncContextManager
 from typing import TYPE_CHECKING, Any
 
-from mcp.client.streamable_http import streamable_http_client
+import httpx2
+from mcp.client.streamable_http import TransportStreams, streamable_http_client
 
 from ..auth.strategies import create_auth_strategy
 from ..auth.transports import HttpxAuth
@@ -18,6 +20,9 @@ if TYPE_CHECKING:
     from ..storage import NamespacedStorage
 
 logger = get_logger(__name__)
+
+MCP_DEFAULT_TIMEOUT = 30.0
+MCP_DEFAULT_SSE_READ_TIMEOUT = 300.0
 
 
 class StreamableHttpConnection(Connection):
@@ -52,7 +57,10 @@ class StreamableHttpConnection(Connection):
         self.server_config = server_config
         self.context = context
         self.coordinator = coordinator
-        self._mcp_client = None
+        self._mcp_client: (
+            AbstractAsyncContextManager[TransportStreams] | None
+        ) = None
+        self._http_client: httpx2.AsyncClient | None = None
         self._disconnecting = False
 
         # Create connection-specific sub-namespace
@@ -76,31 +84,57 @@ class StreamableHttpConnection(Connection):
 
     async def connect(self) -> tuple[Any, Any]:
         """Establish HTTP connection with auth adapter."""
-        # Create httpx auth adapter
-        # Strategy already has its storage from constructor
+        url = self.server_config.get("url")
+        if not isinstance(url, str):
+            raise ValueError("HTTP server configuration requires a URL")
+
         auth = HttpxAuth(strategy=self.auth_strategy)
+        self._http_client = httpx2.AsyncClient(
+            auth=auth,
+            follow_redirects=True,
+            timeout=httpx2.Timeout(
+                MCP_DEFAULT_TIMEOUT,
+                read=MCP_DEFAULT_SSE_READ_TIMEOUT,
+            ),
+        )
 
         self._mcp_client = streamable_http_client(
-            self.server_config.get("url"),
-            auth=auth,
+            url,
+            http_client=self._http_client,
         )
-        self._read_stream, self._write_stream, _ = await self._mcp_client.__aenter__()
-        return (self._read_stream, self._write_stream)
+        try:
+            self._read_stream, self._write_stream = (
+                await self._mcp_client.__aenter__()
+            )
+            return (self._read_stream, self._write_stream)
+        except Exception:
+            await self.disconnect()
+            raise
 
     async def disconnect(self) -> None:
         """Disconnect from HTTP server."""
-        if self._disconnecting or self._mcp_client is None:
+        if self._disconnecting or (
+            self._mcp_client is None and self._http_client is None
+        ):
             return
 
         self._disconnecting = True
 
         try:
-            await self._mcp_client.__aexit__(None, None, None)
-        except Exception as e:
-            # Log but don't raise - we're cleaning up and want to ensure
-            # resources are released even if there are background task errors
-            logger.debug(f"Error during disconnect (suppressed): {e}")
+            if self._mcp_client is not None:
+                try:
+                    await self._mcp_client.__aexit__(None, None, None)
+                except Exception as e:
+                    logger.debug(f"Error during disconnect (suppressed): {e}")
+
+            if self._http_client is not None:
+                try:
+                    await self._http_client.aclose()
+                except Exception as e:
+                    logger.debug(
+                        f"Error closing HTTP client (suppressed): {e}"
+                    )
         finally:
             self._mcp_client = None
+            self._http_client = None
             self._disconnecting = False
-

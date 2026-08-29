@@ -3,7 +3,7 @@
 from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING
 
-from httpx import Auth, Request, Response
+from httpx2 import Auth, Request, Response
 
 from ..logging_config import get_logger
 
@@ -15,9 +15,9 @@ logger = get_logger(__name__)
 
 class HttpxAuth(Auth):
     """
-    Adapts AuthStrategy to httpx.Auth interface.
+    Adapts AuthStrategy to httpx2.Auth interface.
 
-    This is a thin adapter that translates between httpx's auth flow
+    This is a thin adapter that translates between httpx2's auth flow
     and our transport-agnostic AuthStrategy protocol.
 
     All business logic (OAuth discovery, token management, etc.) is
@@ -38,7 +38,7 @@ class HttpxAuth(Auth):
 
     async def async_auth_flow(self, request: Request) -> AsyncGenerator[Request, Response]:
         """
-        httpx auth flow - delegates to AuthStrategy.
+        httpx2 auth flow - delegates to AuthStrategy.
 
         This method:
         1. Adds auth metadata to the request (if available)
@@ -90,4 +90,3 @@ class HttpxAuth(Auth):
 
             except Exception as e:
                 logger.error(f"Error handling auth challenge: {e}", exc_info=True)
-

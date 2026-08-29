@@ -377,7 +377,10 @@ class Session:
         Args:
             error: The exception that occurred during connection
         """
-        logger.error("Failed to establish connection")
+        logger.error(
+            f"Failed to establish connection: {error}",
+            exc_info=(type(error), error, error.__traceback__),
+        )
         await self._cleanup_failed_connection()
 
         error_status = self._classify_connection_error(error)
