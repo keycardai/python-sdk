@@ -1,3 +1,17 @@
+## 2.1.0-keycardai-mcp (2026-08-29)
+
+
+- fix(keycardai-mcp): restore MCP 2.x HTTP connections (#247)
+- * fix(keycardai-mcp): restore MCP 2.x HTTP connections
+- Co-Authored-By: Larry Osakwe <larry@keycard.ai>
+- * fix(keycardai-mcp): declare httpx2 as a direct dependency
+- The client imports httpx2 in four modules but only received it
+transitively through mcp.
+- ---------
+- Co-authored-by: devin-ai-keycard <devin-ai@keycard.ai>
+Co-authored-by: Larry Osakwe <larry@keycard.ai>
+Co-authored-by: GitHub Action <action@github.com>
+
 ## 2.0.0-keycardai-mcp (2026-08-07)
 
 
