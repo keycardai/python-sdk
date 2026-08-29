@@ -44,12 +44,16 @@ async def test_begin_returns_redirect_and_pkce_values(monkeypatch):
         issuer="https://auth.example.com",
         redirect_uri="https://app.example.com/callback",
         scopes=["openid", "profile"],
-        resource_url="https://api.example.com",
+        resources=["https://api.example.com", "https://files.example.com"],
     )
 
     assert isinstance(result, AuthorizationRedirect)
     assert result.state
     assert result.code_verifier
+    assert result.resources == [
+        "https://api.example.com",
+        "https://files.example.com",
+    ]
     params = parse_qs(urlsplit(result.url).query)
     assert params["state"] == [result.state]
     assert params["code_challenge"] == [
@@ -57,8 +61,39 @@ async def test_begin_returns_redirect_and_pkce_values(monkeypatch):
     ]
     assert params["code_challenge_method"] == ["S256"]
     assert params["scope"] == ["openid profile"]
-    assert params["resource"] == ["https://api.example.com"]
+    assert params["resource"] == [
+        "https://api.example.com",
+        "https://files.example.com",
+    ]
     assert captured["issuer"] == "https://auth.example.com"
+
+
+@pytest.mark.asyncio
+async def test_begin_rejects_removed_resource_url():
+    with pytest.raises(TypeError, match="resource_url"):
+        await begin_authorization(
+            client_id="my-app",
+            issuer="https://auth.example.com",
+            redirect_uri="https://app.example.com/callback",
+            resource_url="https://api.example.com",
+        )
+
+
+@pytest.mark.asyncio
+async def test_begin_without_resources_sends_no_resource_parameter(monkeypatch):
+    monkeypatch.setattr(
+        "keycardai.oauth.pkce.web.AsyncClient",
+        _async_client_factory(),
+    )
+
+    result = await begin_authorization(
+        client_id="my-app",
+        issuer="https://auth.example.com",
+        redirect_uri="https://app.example.com/callback",
+    )
+
+    assert result.resources is None
+    assert "resource" not in parse_qs(urlsplit(result.url).query)
 
 
 @pytest.mark.asyncio
@@ -100,7 +135,6 @@ async def test_complete_exchanges_matching_state(monkeypatch):
         client_id="my-app",
         issuer="https://auth.example.com",
         redirect_uri="https://app.example.com/callback",
-        resource_url="https://api.example.com",
     )
 
     assert result is token
@@ -109,8 +143,21 @@ async def test_complete_exchanges_matching_state(monkeypatch):
         "redirect_uri": "https://app.example.com/callback",
         "code_verifier": "stored-verifier",
         "client_id": "my-app",
-        "resource": "https://api.example.com",
     }
+
+
+@pytest.mark.asyncio
+async def test_complete_rejects_removed_resource_url():
+    with pytest.raises(TypeError, match="resource_url"):
+        await complete_authorization(
+            callback_params={"code": "auth-code", "state": "stored-state"},
+            state="stored-state",
+            code_verifier="stored-verifier",
+            client_id="my-app",
+            issuer="https://auth.example.com",
+            redirect_uri="https://app.example.com/callback",
+            resource_url="https://api.example.com",
+        )
 
 
 @pytest.mark.asyncio
@@ -299,7 +346,7 @@ async def test_begin_resolves_issuer_from_challenge(monkeypatch):
     await begin_authorization(
         client_id="my-app",
         redirect_uri="https://app.example.com/callback",
-        resource_url="https://api.example.com",
+        resources=["https://api.example.com"],
         www_authenticate_header=WWW_AUTHENTICATE,
         http_client=http_client,
     )
@@ -346,8 +393,8 @@ async def test_flow_requires_exactly_one_issuer_entry(function, kwargs):
 
 
 @pytest.mark.asyncio
-async def test_begin_challenge_mode_requires_resource_url():
-    with pytest.raises(ConfigError, match="resource_url"):
+async def test_begin_challenge_mode_requires_resources():
+    with pytest.raises(ConfigError, match="resources"):
         await begin_authorization(
             client_id="my-app",
             redirect_uri="https://app.example.com/callback",
