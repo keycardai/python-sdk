@@ -1,3 +1,26 @@
+## 0.25.0-keycardai-oauth (2026-08-29)
+
+
+- feat(keycardai-oauth)!: multi-resource web-app flow (#245)
+- * feat(keycardai-oauth)!: multi-resource web-app flow
+- begin_authorization takes resources: list[str] | None and passes it straight
+through to the authorize-URL builder, so several RFC 8707 resource
+parameters can be requested in one authorization. AuthorizationRedirect
+carries the resources so apps persist them with state and the verifier.
+- complete_authorization no longer sends a resource parameter on the token
+request: the authorization server derives the audience from the code, so
+the parameter never affected redemption.
+- resource_url survives one release as a deprecated keyword on both calls
+(mapped to resources=[resource_url] on begin, a no-op on complete), and
+raises when combined with resources.
+- * feat(keycardai-oauth)!: remove resource_url outright, no deprecation window
+- The web-app flow shipped days ago with one known consumer, so the
+deprecation shims bought nothing. begin_authorization takes resources
+only; complete_authorization takes no resource in any form.
+- ---------
+- Co-authored-by: devin-ai-keycard <devin-ai@keycard.ai>
+Co-authored-by: GitHub Action <action@github.com>
+
 ## 0.24.0-keycardai-oauth (2026-08-27)
 
 
