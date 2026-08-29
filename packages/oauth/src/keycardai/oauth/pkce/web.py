@@ -6,7 +6,6 @@ returned ``state`` and ``code_verifier`` between those calls.
 """
 
 import secrets
-import warnings
 from collections.abc import Mapping
 
 import httpx
@@ -63,7 +62,6 @@ async def begin_authorization(
     metadata: AuthorizationServerMetadata | None = None,
     scopes: list[str] | None = None,
     http_client: httpx.AsyncClient | None = None,
-    resource_url: str | None = None,
 ) -> AuthorizationRedirect:
     """Begin a web-app authorization-code-with-PKCE flow.
 
@@ -90,9 +88,6 @@ async def begin_authorization(
         http_client: Optional ``httpx.AsyncClient`` used to fetch protected
             resource metadata in challenge-driven mode. When omitted, a
             short-lived client is created internally.
-        resource_url: Deprecated. A single resource, equivalent to
-            ``resources=[resource_url]``. Emits a ``DeprecationWarning`` and
-            will be removed in a future release.
 
     Returns:
         ``AuthorizationRedirect`` containing the authorization URL, generated
@@ -103,8 +98,7 @@ async def begin_authorization(
         keycardai.oauth.ConfigError: If anything other than exactly one of
             ``issuer``, ``www_authenticate_header``, or ``metadata`` is
             provided, or challenge mode omits ``resources``.
-        ValueError: If both ``resources`` and the deprecated ``resource_url``
-            are provided, or if the authorization endpoint is missing from the
+        ValueError: If the authorization endpoint is missing from the
             supplied metadata or discovered server metadata, or if challenge
             discovery metadata is incomplete.
         httpx.HTTPStatusError: If fetching protected resource metadata fails.
@@ -113,7 +107,6 @@ async def begin_authorization(
         keycardai.oauth.OAuthProtocolError: If authorization server discovery
             returns an OAuth protocol error.
     """
-    resources = _resolve_resources(resources=resources, resource_url=resource_url)
     _validate_entry_mode(
         issuer=issuer,
         www_authenticate_header=www_authenticate_header,
@@ -183,7 +176,6 @@ async def complete_authorization(
     metadata: AuthorizationServerMetadata | None = None,
     client_secret: str | None = None,
     http_client: httpx.AsyncClient | None = None,
-    resource_url: str | None = None,
 ) -> TokenResponse:
     """Complete a web-app authorization-code-with-PKCE flow.
 
@@ -218,9 +210,6 @@ async def complete_authorization(
         http_client: Optional ``httpx.AsyncClient`` used to fetch protected
             resource metadata in challenge-driven mode. When omitted, a
             short-lived client is created internally.
-        resource_url: Deprecated no-op. It never affected the issued token,
-            whose audience is derived from the authorization code. Emits a
-            ``DeprecationWarning`` and will be removed in a future release.
 
     Returns:
         ``TokenResponse`` returned by the authorization server's token
@@ -243,17 +232,6 @@ async def complete_authorization(
         keycardai.oauth.OAuthHttpError: If authorization server discovery or
             the token endpoint returns an HTTP error.
     """
-    if resource_url is not None:
-        warnings.warn(
-            "'resource_url' is deprecated and has no effect on "
-            "complete_authorization: the authorization server derives the "
-            "issued token's audience from the authorization code, so no "
-            "'resource' parameter is sent on the token request. It will be "
-            "removed in a future release.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-
     error = callback_params.get("error")
     if error is not None:
         raise AuthorizationDeniedError(
@@ -320,30 +298,6 @@ async def complete_authorization(
             client_id=client_id,
         )
 
-
-def _resolve_resources(
-    *,
-    resources: list[str] | None,
-    resource_url: str | None,
-) -> list[str] | None:
-    """Map the deprecated single-resource keyword onto ``resources``."""
-    if resource_url is None:
-        return resources
-
-    warnings.warn(
-        "'resource_url' is deprecated; pass 'resources=[resource_url]' "
-        "instead. Several resources may be requested at once, each sent as "
-        "its own RFC 8707 'resource' parameter. 'resource_url' will be "
-        "removed in a future release.",
-        DeprecationWarning,
-        stacklevel=3,
-    )
-    if resources is not None:
-        raise ValueError(
-            "Provide either 'resources' or the deprecated 'resource_url', "
-            "not both"
-        )
-    return [resource_url]
 
 
 async def _resolve_issuer(

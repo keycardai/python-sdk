@@ -69,33 +69,12 @@ async def test_begin_returns_redirect_and_pkce_values(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_begin_deprecated_resource_url_maps_to_resources(monkeypatch):
-    monkeypatch.setattr(
-        "keycardai.oauth.pkce.web.AsyncClient",
-        _async_client_factory(),
-    )
-
-    with pytest.warns(DeprecationWarning, match="resource_url"):
-        result = await begin_authorization(
-            client_id="my-app",
-            issuer="https://auth.example.com",
-            redirect_uri="https://app.example.com/callback",
-            resource_url="https://api.example.com",
-        )
-
-    assert result.resources == ["https://api.example.com"]
-    params = parse_qs(urlsplit(result.url).query)
-    assert params["resource"] == ["https://api.example.com"]
-
-
-@pytest.mark.asyncio
-async def test_begin_rejects_resources_with_deprecated_resource_url():
-    with pytest.warns(DeprecationWarning), pytest.raises(ValueError, match="not both"):
+async def test_begin_rejects_removed_resource_url():
+    with pytest.raises(TypeError, match="resource_url"):
         await begin_authorization(
             client_id="my-app",
             issuer="https://auth.example.com",
             redirect_uri="https://app.example.com/callback",
-            resources=["https://api.example.com"],
             resource_url="https://api.example.com",
         )
 
@@ -168,16 +147,9 @@ async def test_complete_exchanges_matching_state(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_complete_deprecated_resource_url_is_a_no_op(monkeypatch):
-    captured = {}
-    token = TokenResponse(access_token="token")
-    monkeypatch.setattr(
-        "keycardai.oauth.pkce.web.AsyncClient",
-        _async_client_factory(captured=captured, exchange_response=token),
-    )
-
-    with pytest.warns(DeprecationWarning, match="resource_url"):
-        result = await complete_authorization(
+async def test_complete_rejects_removed_resource_url():
+    with pytest.raises(TypeError, match="resource_url"):
+        await complete_authorization(
             callback_params={"code": "auth-code", "state": "stored-state"},
             state="stored-state",
             code_verifier="stored-verifier",
@@ -186,9 +158,6 @@ async def test_complete_deprecated_resource_url_is_a_no_op(monkeypatch):
             redirect_uri="https://app.example.com/callback",
             resource_url="https://api.example.com",
         )
-
-    assert result is token
-    assert "resource" not in captured["exchange_kwargs"]
 
 
 @pytest.mark.asyncio
