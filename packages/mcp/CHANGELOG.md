@@ -1,3 +1,23 @@
+## 3.0.0-keycardai-mcp (2026-08-29)
+
+
+- feat(keycardai-mcp): interrupt-compatible auth mode for the langchain adapter (ECO-332) (#246)
+- * feat(keycardai-mcp): interrupt-compatible auth mode for the langchain adapter
+- An agent that combines keycardai-langchain's KeycardGrantMiddleware with this adapter had two auth UXs: the middleware pauses the run with an `authorization_required` interrupt, while the adapter handed the model auth-request tools. `interrupt_on_auth=True` makes the adapter raise the same payload the middleware's `_interrupt_payload` produces, with MCP servers in place of resource URLs, sourced from the pending challenge of a session whose `requires_user_action` is true. Off by default: the auth-tools path is untouched unless the mode is enabled.
+- Also adds `tool_allowlist`, so a large server cannot flood the model's context, and `get_lazy_tools()` (`list_mcp_tools` / `call_mcp_tool`) for agents whose tool list must exist before any user has connected: they connect on first call and then expose the server's real tool schemas rather than a hand-written wrapper that hides its filtering parameters.
+- Co-Authored-By: Larry Osakwe <larry@keycard.ai>
+- * docs(keycardai-langchain): document MCP tools alongside brokered grants
+- Covers when to use middleware grants versus the MCP client, the empty tool_resources mapping for MCP-backed tools, the shared /auth/mcp/callback route wired to coordinator.handle_completion(...), and the MCP adapter's opt-in interrupt mode.
+- Co-Authored-By: Larry Osakwe <larry@keycard.ai>
+- * docs(keycardai-mcp): fix the build-after-connect snippet
+- get_tools() reads the server list that only __aenter__ (or the lazy
+path) populates; the documented pattern called client.connect() directly
+and returned zero tools every time. Enter the adapter instead.
+- ---------
+- Co-authored-by: devin-ai-keycard <devin-ai@keycard.ai>
+Co-authored-by: Larry Osakwe <larry@keycard.ai>
+Co-authored-by: GitHub Action <action@github.com>
+
 ## 2.1.0-keycardai-mcp (2026-08-29)
 
 
