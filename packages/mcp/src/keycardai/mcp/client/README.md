@@ -714,6 +714,105 @@ async with LangChainClient(mcp_client, auth_tool_handler=handler) as client:
 
 ---
 
+### Combining MCP tools with keycardai-langchain grants
+
+An agent often needs both: REST tools whose credentials Keycard brokers per
+tool call (`KeycardGrantMiddleware` from `keycardai-langchain`), and MCP tools
+whose server runs its own interactive OAuth. The two used to surface auth
+differently — the middleware pauses the run with an `authorization_required`
+interrupt, while this adapter handed the model a `request_authentication` tool
+— so one chat surface had to render two auth UXs.
+
+`interrupt_on_auth=True` makes the MCP adapter raise the *same*
+`authorization_required` payload as the middleware:
+
+```python
+{
+    "type": "authorization_required",
+    "resources": ["linear"],                       # MCP servers, not resource URLs
+    "authorization_url": "https://.../authorize?state=...",
+    "errors": {"linear": {"code": "authorization_required", "message": "..."}},
+    "message": "Access to the resources above has not been granted yet. ...",
+}
+```
+
+The URL comes from the pending challenge of a session whose
+`requires_user_action` is true (`challenges[0]["authorization_url"]`). Interrupt
+mode requires langgraph and a checkpointer, and it replaces the auth tools:
+`get_auth_tools()` returns `[]` while it is on. It is **opt-in** — without it
+the auth-tool behavior is exactly as documented above.
+
+**Which one grants what.** The middleware brokers tokens for resources *your*
+tools call. The MCP server's own OAuth is between the user and that server, so
+the middleware must exchange nothing for an MCP-backed tool — map it to an
+empty resource list:
+
+```python
+KeycardGrantMiddleware(
+    zone_url=ZONE_URL,
+    resources=[CALENDAR],                 # REST tools get brokered tokens
+    tool_resources={"call_mcp_tool": []}, # MCP-backed tool: nothing to exchange
+    authorization_url=lambda resources: f"{BASE_URL}/authorize?r={resources[0]}",
+)
+```
+
+**Wiring, end to end.** One coordinator and one callback route serve every
+user:
+
+```python
+from starlette.responses import HTMLResponse
+from keycardai.mcp.client import ClientManager
+from keycardai.mcp.client.auth.coordinators import StarletteAuthCoordinator
+from keycardai.mcp.client.storage import InMemoryBackend
+from keycardai.mcp.client.integrations import langchain_agents
+
+coordinator = StarletteAuthCoordinator(
+    redirect_uri=f"{BASE_URL}/auth/mcp/callback",
+    backend=InMemoryBackend(),
+)
+manager = ClientManager(servers, auth_coordinator=coordinator)
+
+
+async def mcp_callback(request):
+    await coordinator.handle_completion(dict(request.query_params))
+    return HTMLResponse("Authorized. Return to the chat and continue.")
+
+
+async def mcp_tools_for(user_email: str):
+    client = await manager.get_client(context_id=user_email)
+    adapter = langchain_agents.LangChainClient(
+        client,
+        interrupt_on_auth=True,
+        tool_allowlist=["list_issues", "create_issue"],
+    )
+    # Entering the adapter connects the client and discovers which servers
+    # are authenticated; get_tools() is empty without it. Exit is a no-op,
+    # so the returned tools stay valid.
+    async with adapter:
+        return await adapter.get_tools()
+```
+
+The session reconnects itself once `handle_completion` fires, so resuming the
+interrupted run is all that is left to do.
+
+**Exposing the server's real tools.** `create_agent` fixes its tool list when
+the module loads, before any user has connected, which is why hand-written
+wrapper tools appear: they hide the server's parameters (a wrapper over
+`list_issues` that drops `state`, `query`, `team` and `project` cannot answer
+"what is in progress?"). Two supported ways out:
+
+- **Build the agent after `connect()`** — per request, as `mcp_tools_for()`
+  above does. `get_tools()` reflects the server's real schemas.
+- **Lazy tools** — `await adapter.get_lazy_tools()` returns `list_mcp_tools`
+  and `call_mcp_tool`, which connect on first call and then report and invoke
+  the server's actual tools with their full input schemas. Use these when the
+  tool list genuinely has to exist at import time.
+
+`tool_allowlist=[...]` restricts which server tools are exposed either way; a
+67-tool server would otherwise flood the model's context window.
+
+---
+
 ### LangChain
 
 ```bash
