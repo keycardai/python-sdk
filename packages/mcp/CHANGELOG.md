@@ -1,4 +1,4 @@
-## 3.0.0-keycardai-mcp (2026-08-29)
+## 2.2.0-keycardai-mcp (2026-08-29)
 
 
 - feat(keycardai-mcp): interrupt-compatible auth mode for the langchain adapter (ECO-332) (#246)
