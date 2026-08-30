@@ -71,6 +71,10 @@ changelog-preview BASE_BRANCH="origin/main":
 preview-versions FORMAT="markdown":
     uv run python scripts/version_preview.py --format {{FORMAT}}
 
+# Test the release tooling: bump plumbing plus per-package increment detection
+test-release-tooling:
+    uv run python -m unittest discover -s scripts -p 'test_*.py' -v
+
 # Bump version for a specific package
 bump-package PACKAGE_NAME PACKAGE_DIR:
     uv run python scripts/bump_package.py {{PACKAGE_NAME}} {{PACKAGE_DIR}}

@@ -6,6 +6,7 @@ pipelines stay symmetric. Run with:
     python3 -m unittest discover -s scripts -p 'test_*.py'
 """
 
+import json
 import unittest
 from unittest import mock
 
@@ -92,6 +93,64 @@ class PrBaseBranchTests(unittest.TestCase):
         command = run_command.call_args_list[0][0][0]
         base_index = command.index("--base")
         self.assertEqual(command[base_index + 1], "release/mcp-v1")
+
+
+class MergeRefusalTests(unittest.TestCase):
+    """A refused merge must fail the run rather than force the release."""
+
+    PR_STATUS = json.dumps(
+        {
+            "state": "OPEN",
+            "mergeCommit": None,
+            "statusCheckRollup": [{"status": "COMPLETED", "conclusion": "SUCCESS"}],
+        }
+    )
+
+    @mock.patch.object(bump_package.time, "sleep")
+    @mock.patch.object(bump_package.time, "time", side_effect=[0, 0, 10, 10_000])
+    @mock.patch.object(bump_package, "run_command")
+    def test_refused_merge_never_updates_the_target_ref(
+        self, run_command, _time, _sleep
+    ) -> None:
+        run_command.side_effect = [
+            (0, self.PR_STATUS, ""),
+            (1, "", "the base branch policy prohibits the merge"),
+        ]
+
+        merge_sha = bump_package.wait_for_pr_merge(
+            "keycardai/python-sdk", 250, "main", timeout_seconds=1
+        )
+
+        self.assertIsNone(merge_sha)
+        for call in run_command.call_args_list:
+            command = call[0][0]
+            self.assertNotIn("PATCH", command)
+            self.assertFalse(
+                any(arg.startswith("repos/") and "git/refs" in arg for arg in command),
+                f"the refs API must not be touched: {command}",
+            )
+
+    @mock.patch.object(bump_package, "create_and_push_tag")
+    @mock.patch.object(bump_package, "wait_for_pr_merge", return_value=None)
+    @mock.patch.object(bump_package, "create_pr_with_automerge", return_value=250)
+    @mock.patch.object(bump_package, "create_signed_commit_on_branch", return_value=True)
+    @mock.patch.object(bump_package, "create_remote_branch", return_value=True)
+    @mock.patch.object(bump_package, "get_modified_files", return_value=["pyproject.toml"])
+    @mock.patch.object(bump_package, "get_branch_sha", return_value="a" * 40)
+    @mock.patch.object(bump_package, "cz_bump_files_only", return_value="2.2.0")
+    @mock.patch.object(bump_package, "recover_untagged_bump", return_value=None)
+    @mock.patch.object(bump_package, "get_repo_slug", return_value="keycardai/python-sdk")
+    @mock.patch.object(bump_package, "pull_branch", return_value=True)
+    @mock.patch.object(bump_package, "configure_git")
+    def test_unmerged_bump_pr_fails_the_run_without_tagging(
+        self, *mocks, **_kwargs
+    ) -> None:
+        create_and_push_tag = mocks[-1]
+
+        self.assertFalse(
+            bump_package.bump_package("keycardai-mcp", "packages/mcp")
+        )
+        create_and_push_tag.assert_not_called()
 
 
 if __name__ == "__main__":

@@ -46,6 +46,11 @@ on:
 jobs:
   bump:
     runs-on: ubuntu-latest
+    # Two bumps of the same package on the same branch would race for the bump
+    # branch and tag, so serialise them without ever cancelling a queued bump.
+    concurrency:
+      group: bump-${{ inputs.package_name }}-${{ inputs.target_branch }}
+      cancel-in-progress: false
     permissions:
       contents: write
       pull-requests: write

@@ -16,15 +16,18 @@ through PRs and require commits to be signed:
    ``createCommitOnBranch`` mutation, which signs the commit as the
    authenticated bot identity.
 4. A PR is opened with auto-merge armed. Once its checks are green the
-   script merges it directly: the workflow app is a ruleset bypass actor,
-   and auto-merge never exercises bypass, it only fires when every
-   requirement (including required reviews) is actually satisfied. Auto-merge
-   stays armed as the fallback if the direct merge is refused. Previously the
-   script only waited for auto-merge, i.e. it merges itself once
-   required CI checks pass on it.
+   script also asks for a squash merge, and auto-merge stays armed as the
+   fallback: it only fires when every branch requirement is actually
+   satisfied.
 5. The script polls until the PR merges, captures the squash-merge SHA on
    the target branch, then creates and pushes the ``<version>-<package>`` tag
    at that SHA. Tags trigger the existing ``release.yml`` publish workflow.
+
+The tag is the only thing that publishes a release, so it is created from a
+merge and nothing else. If the branch policy refuses the merge, the job fails
+with the PR link instead of forcing the ref or tagging an unmerged commit: a
+released version that never landed on the target branch leaves the version
+file behind PyPI.
 
 The runner needs:
 
@@ -177,7 +180,11 @@ def cz_bump_files_only(
     exit_code, stdout, stderr = run_command(command, cwd=package_dir)
 
     if exit_code != 0:
-        if "NO_COMMITS_TO_BUMP" in stderr or "no eligible commits" in stderr.lower():
+        if (
+            "NO_COMMITS_TO_BUMP" in stderr
+            or "NO_COMMITS_FOUND" in stderr
+            or "no eligible commits" in stderr.lower()
+        ):
             print("cz reports no eligible commits since last tag; nothing to bump.")
             return None
         print(f"cz bump failed (exit {exit_code}): {stderr}")
@@ -405,6 +412,10 @@ def checks_green(pr_data: dict) -> bool:
     return True
 
 
+def pr_url(repo: str, pr_number: int) -> str:
+    return f"https://github.com/{repo}/pull/{pr_number}"
+
+
 def wait_for_pr_merge(
     repo: str,
     pr_number: int,
@@ -413,7 +424,8 @@ def wait_for_pr_merge(
 ) -> str | None:
     """Poll the PR until it merges. Returns the merge commit SHA on the target branch.
 
-    Fails if the PR is closed without merging or if the timeout elapses.
+    Returns ``None`` if the PR is closed without merging, if the merge is
+    refused, or if the timeout elapses; the caller must not tag in that case.
     Polls every 30s; logs each status change so the run is debuggable.
     """
     print(f"Waiting for PR #{pr_number} to merge (timeout {timeout_seconds}s)...")
@@ -429,7 +441,7 @@ def wait_for_pr_merge(
                 "view",
                 str(pr_number),
                 "--json",
-                "state,mergeCommit,statusCheckRollup,headRefOid",
+                "state,mergeCommit,statusCheckRollup",
             ]
         )
         if exit_code != 0:
@@ -459,16 +471,14 @@ def wait_for_pr_merge(
             return sha
 
         if state == "CLOSED":
-            print(f"PR #{pr_number} was closed without merging.")
+            print(f"PR #{pr_number} was closed without merging: {pr_url(repo, pr_number)}")
             return None
 
         if state == "OPEN" and direct_merge_attempts < 3 and checks_green(data):
             # Auto-merge waits for requirements the app is entitled to bypass
-            # (required reviews), and the merge API does not exercise ruleset
-            # bypass either; ref updates do. Try the merge for the clean PR
-            # timeline, then fall back to fast-forwarding the target branch to
-            # the PR head,
-            # which GitHub records as merging the PR.
+            # (required reviews), so ask for the merge directly too. A refusal
+            # leaves auto-merge armed and the PR unmerged; it never escalates to
+            # a ref update, which would land the bump outside the branch policy.
             direct_merge_attempts += 1
             exit_code, _, stderr = run_command(
                 ["gh", "pr", "merge", str(pr_number), "--squash"]
@@ -476,40 +486,22 @@ def wait_for_pr_merge(
             if exit_code == 0:
                 print(f"Merged PR #{pr_number} directly as the bypass actor.")
             else:
-                print(f"Direct merge refused: {stderr.strip()[:200]}")
-                head_sha = data.get("headRefOid")
-                if head_sha:
-                    exit_code, _, stderr = run_command(
-                        [
-                            "gh",
-                            "api",
-                            "-X",
-                            "PATCH",
-                            f"repos/{repo}/git/refs/heads/{target_branch}",
-                            "-f",
-                            f"sha={head_sha}",
-                        ]
-                    )
-                    if exit_code == 0:
-                        print(
-                            f"Fast-forwarded {target_branch} to {head_sha[:8]}; "
-                            f"PR #{pr_number} will be marked merged."
-                        )
-                    else:
-                        print(
-                            f"Fast-forward attempt {direct_merge_attempts} failed "
-                            f"({target_branch} may have moved); auto-merge stays armed: "
-                            f"{stderr.strip()[:200]}"
-                        )
+                print(
+                    f"Merge attempt {direct_merge_attempts} refused "
+                    f"({stderr.strip()[:200]}); auto-merge stays armed."
+                )
 
         time.sleep(30)
 
-    print(f"Timeout waiting for PR #{pr_number} to merge.")
+    print(f"Timeout waiting for PR #{pr_number} to merge: {pr_url(repo, pr_number)}")
     return None
 
 
 def create_and_push_tag(repo: str, tag: str, sha: str) -> bool:
     """Create the tag on the remote pointing at ``sha`` and push it.
+
+    ``sha`` must be a merge commit on the target branch: the tag publishes the
+    release, so it may only ever point at a bump that actually landed.
 
     Uses the REST refs API rather than ``git push --tags`` so the operation
     works even if the runner's local main is behind (the workflow doesn't
@@ -593,6 +585,12 @@ def bump_package(
 
     merge_sha = wait_for_pr_merge(repo, pr_number, target_branch)
     if merge_sha is None:
+        print(
+            f"Bump PR {pr_url(repo, pr_number)} did not merge, so no "
+            f"{tag} tag was created and nothing was released. Merge the PR "
+            "(or re-run this job once it can merge) to publish "
+            f"{package_name} {new_version}."
+        )
         return False
 
     if not create_and_push_tag(repo, tag, merge_sha):

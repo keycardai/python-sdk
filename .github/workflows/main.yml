@@ -6,8 +6,12 @@ on:
       - main
       - release/mcp-v1
 
+# One group per pushed commit: a shared group only holds a single pending run,
+# so a newly queued merge cancels the merge waiting behind the running one and
+# that merge's version bump never happens. Same-package bumps stay serialised
+# by the per-package group in bump-package.yml.
 concurrency:
-  group: release-${{ github.ref_name }}
+  group: release-${{ github.ref_name }}-${{ github.sha }}
   cancel-in-progress: false
 
 jobs:
