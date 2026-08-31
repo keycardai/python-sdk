@@ -386,6 +386,45 @@ control.
 The package's own test strategy, row by row with coverage status, lives in
 [TESTING.md](TESTING.md).
 
+## Contract parity with TypeScript
+
+The same integration exists for TypeScript as
+[`@keycardai/langchain`](https://www.npmjs.com/package/@keycardai/langchain).
+Same contract, idiomatic expression on each side: concepts, payload shapes,
+defaults, and behaviors are identical; the spelling follows each language.
+
+| Concept | Python (`keycardai-langchain`) | TypeScript (`@keycardai/langchain`) |
+|---|---|---|
+| Middleware | `KeycardGrantMiddleware(...)` | `keycardGrantMiddleware({ ... })` |
+| Identity type | `KeycardIdentity` (dataclass, passed as `context_schema`) | `KeycardIdentity` / `keycardIdentitySchema` (carried by the middleware) |
+| Identity factories | `Access.as_self()`, `Access.on_behalf_of(token)`, `Access.impersonate(user)` | `Access.asSelf()`, `Access.onBehalfOf(token)`, `Access.impersonate(user)` |
+| Access context accessor | `get_access_context()` | `getAccessContext()` |
+| Zone | `zone_url=` | `zoneUrl:` |
+| Resource configuration | `resources=`, `tool_resources={tool: [...]}` | `resources:`, `toolResources: { tool: [...] }` |
+| Outbound scopes | `request_scopes=` | `requestScopes:` |
+| Credential | `application_credential=`, or `client_id=` / `client_secret=` | `applicationCredential:`, or `clientId:` / `clientSecret:` |
+| Sign-in URL | `sign_in_url=` | `signInUrl:` |
+| Authorization URL | `authorization_url=` (str or callable) | `authorizationUrl:` (string or function) |
+| Fallback identity | `fallback_identity=` (value or callable) | `fallbackIdentity:` (value or function) |
+| Escape hatch | `with keycard.grant(...) as access:` / `async with keycard.agrant(...)` | `await keycard.grant(options, (access) => ...)` |
+| Testing seam | `mock_access_context(...)`, `override_access_context(...)` | `mockAccessContext(...)`, `overrideAccessContext(...)` |
+| Error accessors | `has_errors()`, `get_errors()`, `get_resource_error(r)` | `hasErrors()`, `getErrors()`, `getResourceError(r)` |
+| Ungranted read | raises `ResourceAccessError` | throws `ResourceAccessError` |
+| Interrupt payloads | `sign_in_required` / `authorization_required`, snake_case fields | identical, snake_case fields preserved |
+| Attempt cap | 3 acquisition attempts per tool call | 3 acquisition attempts per tool call |
+
+Deliberate differences, where the language leaves no honest choice:
+
+- **TypeScript's escape hatch is a callback, not a context manager.** There is
+  no `with` there, so `grant` takes the body as a function and is always
+  awaited — which is also why the TypeScript side has no `agrant`.
+- **The TypeScript middleware owns the context schema.** LangChain 1.x
+  middleware in JS declares `contextSchema` itself, so the agent does not pass
+  one.
+- **MCP composition is Python-only for now.** The section above pairs this
+  middleware with `keycardai-mcp`; the TypeScript package deliberately has no
+  MCP dependency in v1.
+
 ## A note on tool arguments
 
 Give tools arguments that express **intent**, and keep configuration and clocks
