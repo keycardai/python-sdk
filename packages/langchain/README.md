@@ -417,7 +417,7 @@ Deliberate differences, where the language leaves no honest choice:
 
 - **TypeScript's escape hatch is a callback, not a context manager.** There is
   no `with` there, so `grant` takes the body as a function and is always
-  awaited — which is also why the TypeScript side has no `agrant`.
+  awaited, which is also why the TypeScript side has no `agrant`.
 - **The TypeScript middleware owns the context schema.** LangChain 1.x
   middleware in JS declares `contextSchema` itself, so the agent does not pass
   one.
