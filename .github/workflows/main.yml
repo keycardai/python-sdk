@@ -6,8 +6,12 @@ on:
       - main
       - release/mcp-v1
 
+# One group per pushed commit: a shared group only holds a single pending run,
+# so a newly queued merge cancels the merge waiting behind the running one and
+# that merge's version bump never happens. Same-package bumps stay serialised
+# by the per-package group in bump-package.yml.
 concurrency:
-  group: release-${{ github.ref_name }}
+  group: release-${{ github.ref_name }}-${{ github.sha }}
   cancel-in-progress: false
 
 jobs:
@@ -58,6 +62,9 @@ jobs:
       matrix:
         package: ${{ fromJson(needs.detect-changes.outputs.changed-packages) }}
       max-parallel: 1  # Process packages sequentially to avoid race conditions
+      # One package's refused or failed bump must not cancel its siblings'
+      # bumps: that is how the mcp bump was lost in the 3.0.0 incident rerun.
+      fail-fast: false
     uses: ./.github/workflows/bump-package.yml
     with:
       package_name: ${{ matrix.package.package_name }}

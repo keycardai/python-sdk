@@ -122,4 +122,25 @@ bump_message = "bump: keycardai-starlette $current_version → $new_version"
 major_version_zero = true
 
 [tool.commitizen.customize]
-changelog_pattern = "^(feat|fix|refactor|perf|test|build|ci|revert)\\(keycardai-starlette\\)(!)?:"
+# Scoped bump detection: without bump_pattern/bump_map commitizen falls back to
+# its default classifier, which matches any `feat(...)!:` regardless of scope.
+changelog_pattern = "^(feat|fix|refactor|perf|test|revert)\\(keycardai-starlette\\)(!)?:"
+bump_pattern = "^((?:feat|fix|refactor|perf|revert|BREAKING[\\- ]CHANGE)\\(keycardai-starlette\\)!?):"
+
+[tool.commitizen.customize.bump_map]
+"^.+\\(keycardai-starlette\\)!$" = "MAJOR"
+"^BREAKING[\\- ]CHANGE" = "MAJOR"
+"^feat" = "MINOR"
+"^fix" = "PATCH"
+"^refactor" = "PATCH"
+"^perf" = "PATCH"
+"^revert" = "PATCH"
+
+[tool.commitizen.customize.bump_map_major_version_zero]
+"^.+\\(keycardai-starlette\\)!$" = "MINOR"
+"^BREAKING[\\- ]CHANGE" = "MINOR"
+"^feat" = "MINOR"
+"^fix" = "PATCH"
+"^refactor" = "PATCH"
+"^perf" = "PATCH"
+"^revert" = "PATCH"

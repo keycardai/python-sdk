@@ -104,4 +104,25 @@ bump_message = "bump: keycardai-a2a $current_version → $new_version"
 major_version_zero = true
 
 [tool.commitizen.customize]
-changelog_pattern = "^(feat|fix|refactor|perf|test|build|ci|revert)\\(keycardai-a2a\\)(!)?:"
+# Scoped bump detection: without bump_pattern/bump_map commitizen falls back to
+# its default classifier, which matches any `feat(...)!:` regardless of scope.
+changelog_pattern = "^(feat|fix|refactor|perf|test|revert)\\(keycardai-a2a\\)(!)?:"
+bump_pattern = "^((?:feat|fix|refactor|perf|revert|BREAKING[\\- ]CHANGE)\\(keycardai-a2a\\)!?):"
+
+[tool.commitizen.customize.bump_map]
+"^.+\\(keycardai-a2a\\)!$" = "MAJOR"
+"^BREAKING[\\- ]CHANGE" = "MAJOR"
+"^feat" = "MINOR"
+"^fix" = "PATCH"
+"^refactor" = "PATCH"
+"^perf" = "PATCH"
+"^revert" = "PATCH"
+
+[tool.commitizen.customize.bump_map_major_version_zero]
+"^.+\\(keycardai-a2a\\)!$" = "MINOR"
+"^BREAKING[\\- ]CHANGE" = "MINOR"
+"^feat" = "MINOR"
+"^fix" = "PATCH"
+"^refactor" = "PATCH"
+"^perf" = "PATCH"
+"^revert" = "PATCH"
