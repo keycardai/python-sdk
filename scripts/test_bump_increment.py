@@ -26,6 +26,7 @@ PACKAGES = {
     "keycardai-a2a": "packages/a2a",
     "keycardai-langchain": "packages/langchain",
     "keycardai-fastmcp": "packages/fastmcp",
+    "keycardai": ".",
 }
 
 CZ_BLOCK = re.compile(

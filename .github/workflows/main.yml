@@ -62,6 +62,9 @@ jobs:
       matrix:
         package: ${{ fromJson(needs.detect-changes.outputs.changed-packages) }}
       max-parallel: 1  # Process packages sequentially to avoid race conditions
+      # One package's refused or failed bump must not cancel its siblings'
+      # bumps: that is how the mcp bump was lost in the 3.0.0 incident rerun.
+      fail-fast: false
     uses: ./.github/workflows/bump-package.yml
     with:
       package_name: ${{ matrix.package.package_name }}
