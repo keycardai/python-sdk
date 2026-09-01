@@ -72,6 +72,114 @@ jobs:
       - name: Test release tooling
         run: just test-release-tooling
 
+  # Version matrix for packages/langchain only (ECO-287). lint-and-test already
+  # covers latest resolutions on Python 3.12, so these legs only add the cases
+  # that job cannot see: the declared floors, one real customer pin set, and the
+  # mcp 1.x/2.x resolution clash from the ECO-213 audit.
+  langchain-version-matrix:
+    runs-on: ubuntu-latest
+    name: langchain (${{ matrix.leg }})
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - leg: floors
+            python-version: "3.12"
+          - leg: customer-pins
+            python-version: "3.13"
+          - leg: mcp-resolution-clash
+            python-version: "3.12"
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          # Tags drive uv-dynamic-versioning, so the built packages carry their
+          # real versions in the resolution printout.
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      # --no-sources keeps keycardai-oauth coming from the index at its declared
+      # floor instead of the workspace checkout: the floor is what users install.
+      - name: Floors resolution
+        if: matrix.leg == 'floors'
+        run: |
+          uv venv .venv-leg --python "${{ matrix.python-version }}"
+          source .venv-leg/bin/activate
+          uv pip install --no-sources --resolution lowest-direct "./packages/langchain[test]"
+          uv pip list
+          cd packages/langchain && pytest tests/ -v
+
+      - name: Customer pins (langchain 1.3.13, langgraph 1.2.11)
+        if: matrix.leg == 'customer-pins'
+        run: |
+          uv venv .venv-leg --python "${{ matrix.python-version }}"
+          source .venv-leg/bin/activate
+          uv pip install "./packages/langchain[test]" "langchain==1.3.13" "langgraph==1.2.11"
+          uv pip list
+          cd packages/langchain && pytest tests/ -v
+
+      # Installation check, not a test suite: langchain-mcp-adapters declares an
+      # uncapped mcp>=1.24 while keycardai-mcp holds mcp>=2.0,<3.0, so the three
+      # packages have to land on one coherent mcp.
+      - name: MCP resolution clash
+        if: matrix.leg == 'mcp-resolution-clash'
+        run: |
+          uv venv .venv-leg --python "${{ matrix.python-version }}"
+          source .venv-leg/bin/activate
+          uv pip install "./packages/langchain" "./packages/mcp" langchain-mcp-adapters
+          uv pip list
+          python - <<'PY'
+          import importlib.metadata as md
+
+          watched = [
+              "mcp",
+              "mcp-types",
+              "langchain-mcp-adapters",
+              "keycardai-mcp",
+              "keycardai-langchain",
+              "keycardai-oauth",
+              "langchain",
+              "langchain-core",
+              "langgraph",
+          ]
+          resolved = {}
+          for name in watched:
+              try:
+                  resolved[name] = md.version(name)
+              except md.PackageNotFoundError:
+                  continue
+              print(f"resolved {name}=={resolved[name]}")
+
+          mcp_version = resolved["mcp"]
+          mcp_major = int(mcp_version.split(".")[0])
+          if mcp_major != 2:
+              raise SystemExit(
+                  f"resolver backtracked to mcp {mcp_version}; expected a single mcp 2.x. "
+                  f"Resolution was: {resolved}"
+              )
+          types_version = resolved.get("mcp-types")
+          if types_version and types_version.split(".")[0] != str(mcp_major):
+              raise SystemExit(
+                  f"incoherent mcp install: mcp {mcp_version} with mcp-types {types_version}"
+              )
+
+          import keycardai.langchain  # noqa: F401
+          import keycardai.mcp  # noqa: F401
+          import langchain_mcp_adapters  # noqa: F401
+          import mcp  # noqa: F401
+
+          print(f"mcp {mcp_version}: keycardai-langchain, keycardai-mcp and langchain-mcp-adapters all import")
+          PY
+
   release-preview:
     runs-on: ubuntu-latest
     needs: [validate-commits, lint-and-test]

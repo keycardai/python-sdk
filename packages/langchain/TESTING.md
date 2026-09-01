@@ -34,7 +34,7 @@ cd packages/langchain && uv run --extra test pytest tests/ -v
 |---|---|---|
 | Keycard-protected MCP server via `langchain-mcp-adapters` interceptors | deferred | [ECO-219](https://linear.app/keycardlabs/issue/ECO-219) (the `[mcp]` extra does not exist yet) |
 | Live-zone smoke for the exchange paths (gated, not per-PR) | out of this repo | templates eval ([keycardai/templates#28](https://github.com/keycardai/templates/pull/28), [ECO-313](https://linear.app/keycardlabs/issue/ECO-313)) plus the deployed `langchain-fly-demo` |
-| Version matrix: langchain/langgraph floors, mcp 1.x vs 2.x resolution | deferred | [ECO-287](https://linear.app/keycardlabs/issue/ECO-287) (CI runs latest resolutions only today) |
+| Version matrix: langchain/langgraph floors, mcp 1.x vs 2.x resolution | covered | `langchain-version-matrix` job in `.github/workflows/pr.yml`: floors leg (`uv pip install --resolution lowest-direct`), customer pin leg (langchain 1.3.13 / langgraph 1.2.11 on Python 3.13), and the mcp resolution clash check against `langchain-mcp-adapters` ([ECO-287](https://linear.app/keycardlabs/issue/ECO-287)) |
 
 Live coverage is deliberately not carried by this repo, so ECO-288 is canceled: the
 templates eval drives the on-behalf-of exchange through this package weekly inside the
