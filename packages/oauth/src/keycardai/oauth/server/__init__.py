@@ -16,6 +16,7 @@ Credential Providers:
     WorkloadIdentity: Platform-signed OIDC token from a pluggable IdentityTokenSource
     FileTokenSource, GCPMetadataTokenSource, FlyTokenSource: Built-in token sources
     EKSWorkloadIdentity: Deprecated alias for WorkloadIdentity with a FileTokenSource
+    discover_credential: Build the credential described by KEYCARD_* environment variables
 
 Infrastructure:
     ClientFactory, DefaultClientFactory: OAuth client creation
@@ -34,6 +35,7 @@ from .credentials import (
     IdentityTokenSource,
     WebIdentity,
     WorkloadIdentity,
+    discover_credential,
 )
 from .token_exchange import exchange_tokens_for_resources
 from .verifier import AccessToken, TokenVerifier
@@ -55,4 +57,5 @@ __all__ = [
     "IdentityTokenSource",
     "WebIdentity",
     "WorkloadIdentity",
+    "discover_credential",
 ]

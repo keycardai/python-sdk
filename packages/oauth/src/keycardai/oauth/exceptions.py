@@ -12,6 +12,15 @@ References:
 
 from dataclasses import dataclass
 
+# OAuth error codes where a retry cannot help: the authorization server said
+# no on policy grounds, the caller lacks the delegated authorization it asked
+# for, or the client credentials themselves are wrong. Every other exchange
+# failure (transport faults, rate limits, 5xx, malformed responses) is treated
+# as retryable.
+PERMANENT_ERROR_CODES: frozenset[str] = frozenset(
+    {"access_denied", "insufficient_authorization", "invalid_client"}
+)
+
 
 class OAuthError(Exception):
     """Base class for all OAuth 2.0 errors."""
@@ -19,6 +28,17 @@ class OAuthError(Exception):
     def __init__(self, message: str, cause: Exception | None = None):
         super().__init__(message)
         self.cause = cause
+
+    @property
+    def retryable(self) -> bool:
+        """Whether repeating the failed operation unchanged could succeed.
+
+        False by default: configuration, authentication, and other
+        client-side faults require a code or config change. Subclasses
+        raised on the token exchange paths (OAuthProtocolError,
+        OAuthHttpError, NetworkError) derive the value from the failure.
+        """
+        return False
 
 
 @dataclass
@@ -62,6 +82,11 @@ class OAuthHttpError(OAuthError):
     def __str__(self) -> str:
         return f"HTTP {self.status_code} during {self.operation} (retriable: {self.retriable})"
 
+    @property
+    def retryable(self) -> bool:
+        """True for 429 and 5xx responses, False for other 4xx responses."""
+        return self.retriable
+
 
 @dataclass
 class OAuthProtocolError(OAuthError):
@@ -95,6 +120,25 @@ class OAuthProtocolError(OAuthError):
             message += f" - {error_description}"
 
         super().__init__(message)
+
+    @property
+    def retryable(self) -> bool:
+        """Whether the OAuth error code leaves room for a retry to succeed.
+
+        False for the permanent denials in PERMANENT_ERROR_CODES, where no
+        retry can change the outcome:
+
+        - ``access_denied``: zone policy denied the request.
+        - ``insufficient_authorization``: the caller lacks the delegated
+          authorization the exchange requires.
+        - ``invalid_client``: client authentication failed.
+
+        True for every other code, including ``invalid_response`` for
+        malformed server responses, so transport-shaped failures stay
+        retryable. Independent of the legacy ``retriable`` attribute, which
+        is always False for protocol errors.
+        """
+        return self.error not in PERMANENT_ERROR_CODES
 
 
 class AuthorizationDeniedError(OAuthProtocolError):
@@ -148,6 +192,11 @@ class NetworkError(OAuthError):
             else f"Network error: {cause}"
         )
         super().__init__(message, cause)
+
+    @property
+    def retryable(self) -> bool:
+        """Mirrors ``retriable``: True unless the transport marked the fault permanent."""
+        return self.retriable
 
 
 class ConfigError(OAuthError):
