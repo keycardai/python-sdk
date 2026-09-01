@@ -489,12 +489,12 @@ class KeycardGrantMiddleware(AgentMiddleware):
             f"Tell the user to open the URL above to {action}. Copy it into your "
             "reply exactly as written, character for character: do not shorten it, "
             "rewrite it, wrap it in other text, or describe it in words. Then ask "
-            f"the user to say once they are done, and call {fields['tool']} again."
+            f"the user to tell you once they are done, and call {fields['tool']} again."
         )
         return ToolMessage(
             content=content,
             name=fields["tool"] or None,
-            tool_call_id=str(request.tool_call.get("id", "")),
+            tool_call_id=str(request.tool_call.get("id") or ""),
             status="error",
         )
 
