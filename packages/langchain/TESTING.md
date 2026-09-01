@@ -33,8 +33,13 @@ cd packages/langchain && uv run --extra test pytest tests/ -v
 | Row | Status | Where |
 |---|---|---|
 | Keycard-protected MCP server via `langchain-mcp-adapters` interceptors | deferred | [ECO-219](https://linear.app/keycardlabs/issue/ECO-219) (the `[mcp]` extra does not exist yet) |
-| Live-zone smoke for the exchange paths (gated, not per-PR) | deferred | [ECO-288](https://linear.app/keycardlabs/issue/ECO-288) |
+| Live-zone smoke for the exchange paths (gated, not per-PR) | out of this repo | templates eval ([keycardai/templates#28](https://github.com/keycardai/templates/pull/28), [ECO-313](https://linear.app/keycardlabs/issue/ECO-313)) plus the deployed `langchain-fly-demo` |
 | Version matrix: langchain/langgraph floors, mcp 1.x vs 2.x resolution | deferred | [ECO-287](https://linear.app/keycardlabs/issue/ECO-287) (CI runs latest resolutions only today) |
+
+Live coverage is deliberately not carried by this repo, so ECO-288 is canceled: the
+templates eval drives the on-behalf-of exchange through this package weekly inside the
+`agent-python-langchain` template against a real zone. The deployed `langchain-fly-demo`
+remains the standing production evidence for as-itself and the audit actor difference.
 
 ## Interrupt flow
 
