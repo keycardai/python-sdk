@@ -244,7 +244,8 @@ rather than to a consent page that cannot fix it. The `sign_in_required`
 payload carries a `reason` field (`missing_identity` or
 `subject_token_expired`) so a chat surface can word the prompt accordingly.
 
-Both require a checkpointer. Two details worth knowing:
+Both require a checkpointer, because pausing a run is what a checkpointer makes
+possible. Two details worth knowing:
 
 - **Resume needs no new token.** Consent changes the grant in the zone, not the
   token in your session, so the existing subject token exchanges successfully
@@ -254,6 +255,35 @@ Both require a checkpointer. Two details worth knowing:
 
 Scope granularity falls out of this for free: if a user has granted read but
 not write, the read call succeeds and the write call is the one that pauses.
+
+### Without a checkpointer: `interrupt_on_auth=False`
+
+Deployments that keep no graph state have nothing to resume, so the interrupt is
+not available to them. Set `interrupt_on_auth=False` and the same failure is
+delivered to the model as failed tool output instead of pausing the run:
+
+```python
+keycard = KeycardGrantMiddleware(
+    zone_url=...,
+    resources=[CALENDAR],
+    sign_in_url="https://your-app.example/signin",
+    authorization_url=lambda resources: f"https://your-app.example/authorize?r={resources[0]}",
+    interrupt_on_auth=False,  # no checkpointer needed
+)
+```
+
+The tool output carries the same `kind`, `reason` and URL the interrupt payload
+would, worded so the model relays the URL to the user verbatim rather than
+paraphrasing it. The run finishes normally, with the link in the assistant's
+reply; the user authorizes out of band, and their next turn retries the tool,
+which now succeeds. Nothing resumes mid-run, so there is no bounded retry loop
+here.
+
+Reach for it when your agent is stateless (a plain HTTP handler, a queue
+worker, a Slack or email surface with no persisted thread), or when the auth
+step belongs in the conversation instead of in a paused-run UI. Keep the
+default when you run with a checkpointer: a pause is stricter, since the model
+never gets a turn between the failure and the retry.
 
 ## MCP tools in the same agent
 
