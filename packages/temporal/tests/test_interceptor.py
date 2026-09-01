@@ -279,13 +279,11 @@ async def test_client_credentials_transient_failure_propagates(oauth_calls):
         await chain.execute_activity(call(flaky))
 
 
-async def test_grant_configuration_error_is_listable_as_non_retryable(oauth_calls):
-    # GrantConfigurationError is retryable by default; the type name is the
-    # contract callers put in RetryPolicy.non_retryable_error_types.
-    from temporalio.common import RetryPolicy
-
-    policy = RetryPolicy(non_retryable_error_types=["GrantConfigurationError"])
-    assert GrantConfigurationError.__name__ in policy.non_retryable_error_types
+async def test_grant_configuration_error_carries_its_contractual_name(oauth_calls):
+    # The class NAME is what callers list in RetryPolicy.non_retryable_error_types;
+    # temporalio matches by name, and the live mapping is pinned end to end in
+    # test_history_hygiene.py::test_grant_configuration_error_fails_fast_when_listed_non_retryable.
+    assert GrantConfigurationError.__name__ == "GrantConfigurationError"
 
 
 # --- on-behalf-of: the exchange path ----------------------------------------

@@ -52,6 +52,17 @@ async def main(client):
 
 With no `credential` argument, `KeycardInterceptor` discovers one from the environment: `KEYCARD_CLIENT_ID` and `KEYCARD_CLIENT_SECRET`, or `KEYCARD_APPLICATION_CREDENTIAL_TYPE=eks_workload_identity` with the token file. Any `keycardai.oauth.server.ApplicationCredential` can also be passed explicitly.
 
+## Keycard setup
+
+In your Keycard zone, once:
+
+1. Create an application for the worker with a credential (a `ClientSecret`, or any workload identity credential the worker's platform supports).
+2. Create the resource the activities will call. For plain client-credentials issuance, the Zone Provider is enough as its credential provider: nothing exchanges from its tokens.
+3. Add the resource to the application's dependencies. App-only issuance needs the dependency; with no user there is no consent step.
+4. For on-behalf-of activities, one more piece of zone topology: the exchange rule requires the exchanging application to provide the resource the subject token is audienced to, so the worker's application needs a small anchor resource of its own, with user sessions audienced to it.
+
+The resource identifier in `@grant(...)` must match the console registration byte for byte; a trailing character difference reads as a different resource and policy denies it.
+
 ## Identity modes
 
 - `@grant(resource)`: the application acts as itself (client credentials). Requires a `ClientSecret` credential.

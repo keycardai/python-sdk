@@ -184,3 +184,79 @@ async def test_no_token_anywhere_in_history(temporal_env, monkeypatch):
         assert piece not in joined
     assert "session-for-alice" not in joined
     assert "worker-secret" not in joined
+
+
+@workflow.defn
+class MisconfiguredWorkflow:
+    @workflow.run
+    async def run(self, order: Order) -> str:
+        from temporalio.common import RetryPolicy
+
+        receipt = await workflow.execute_activity(
+            post_ledger_entry_obo,
+            order,
+            start_to_close_timeout=timedelta(seconds=10),
+            retry_policy=RetryPolicy(
+                non_retryable_error_types=["GrantConfigurationError"],
+            ),
+        )
+        return receipt.approved_by
+
+
+@grant(RESOURCE)  # Order.approver_id carries the Subject() marker: on-behalf-of
+@activity.defn
+async def post_ledger_entry_obo(order: Order) -> Receipt:
+    token = access().access_token
+    return Receipt(order.order_id, order.approver_id, len(token))
+
+
+async def test_grant_configuration_error_fails_fast_when_listed_non_retryable(
+    temporal_env, monkeypatch
+):
+    """The class NAME is the retry-policy contract: a worker configured
+    without a subject_token_provider raises GrantConfigurationError before the
+    activity body, and listing that name in non_retryable_error_types must
+    stop retries after one attempt, through temporalio's real name mapping."""
+    monkeypatch.setattr(kt, "AsyncClient", StubOAuthClient)
+    client: Client = temporal_env.client
+    task_queue = f"keycard-misconfig-{uuid.uuid4()}"
+    # The declaration is valid; the worker configuration disagrees: no
+    # subject_token_provider, so the on-behalf-of grant cannot be honored.
+    interceptor = KeycardInterceptor(
+        "https://zone.test",
+        credential=ClientSecret(("worker-id", "worker-secret")),
+    )
+    order = Order(order_id="ord-43", approver_id="alice")
+
+    async with Worker(
+        client,
+        task_queue=task_queue,
+        workflows=[MisconfiguredWorkflow],
+        activities=[post_ledger_entry_obo],
+        interceptors=[interceptor],
+    ):
+        handle = await client.start_workflow(
+            MisconfiguredWorkflow.run,
+            order,
+            id=f"misconfig-{uuid.uuid4()}",
+            task_queue=task_queue,
+        )
+        from temporalio.client import WorkflowFailureError
+
+        with pytest.raises(WorkflowFailureError) as failure:
+            await handle.result()
+
+    from temporalio.exceptions import ActivityError, ApplicationError
+
+    cause = failure.value.cause
+    assert isinstance(cause, ActivityError)
+    assert isinstance(cause.cause, ApplicationError)
+    assert cause.cause.type == "GrantConfigurationError"
+
+    history = await handle.fetch_history()
+    attempts = sum(
+        1
+        for event in history.events
+        if event.HasField("activity_task_started_event_attributes")
+    )
+    assert attempts == 1
