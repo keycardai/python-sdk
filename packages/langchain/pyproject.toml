@@ -30,9 +30,28 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
+# Inbound authentication for a served agent (keycardai.langchain.auth).
+# langgraph-sdk already arrives transitively through langgraph, but this module
+# imports it directly, so it is declared. starlette is the genuinely new one:
+# the bearer challenge needs an exception class that keeps response headers,
+# which is why the module (and both imports) sit behind an extra.
+serve = [
+    "langgraph-sdk>=0.4.2",
+    "starlette>=0.40.0",
+]
 test = [
     "pytest>=8.4.1",
     "pytest-asyncio>=1.1.0",
+    # The serve extra's own dependencies, repeated rather than referenced as
+    # keycardai-langchain[serve] so a test install never reaches the index for
+    # this package.
+    "langgraph-sdk>=0.4.2",
+    "starlette>=0.40.0",
+    # The auth suite dispatches through the server's own handler resolution and
+    # user normalization rather than a local reimplementation. Test-only, and
+    # the suite skips itself where these cannot install (both need Python 3.11).
+    "langgraph-api>=0.13.2 ; python_version >= '3.11'",
+    "langgraph-runtime-inmem>=0.33.2 ; python_version >= '3.11'",
 ]
 
 [project.urls]

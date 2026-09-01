@@ -20,7 +20,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable, Coroutine, Itera
 from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 from weakref import WeakKeyDictionary
 
 from langchain_core.messages import ToolMessage
@@ -32,6 +32,50 @@ from keycardai.oauth.server.credentials import ApplicationCredential, ClientSecr
 from keycardai.oauth.server.token_exchange import exchange_tokens_for_resources
 from langchain.agents.middleware import AgentMiddleware
 from langchain.agents.middleware.types import ToolCallRequest
+
+AUTH_USER_KEY = "langgraph_auth_user"
+SUBJECT_TOKEN_FIELD = "subject_token"
+OWNER_KEY = "owner"
+
+
+@dataclass(frozen=True)
+class Caller:
+    """A verified caller of a served run: who they are, and the bearer they sent."""
+
+    identity: str
+    subject_token: str
+
+
+def _auth_user_field(user: Any, name: str) -> Any:
+    """Read one field off the served user, which is mapping-like and attribute-like."""
+    get = getattr(user, "get", None)
+    if callable(get):
+        value = get(name)
+        if value is not None:
+            return value
+    return getattr(user, name, None)
+
+
+def caller_from_config(config: Any) -> Caller | None:
+    """The caller whose bearer authenticated this run, or None if there is none.
+
+    A LangGraph server that authenticates requests (see
+    `keycardai.langchain.auth`) delivers the verified user to the run as
+    `config["configurable"]["langgraph_auth_user"]`. This is the read side of
+    that channel: request-scoped, written only by the server, so two callers on
+    one deployment never see each other.
+    """
+    if not isinstance(config, dict):
+        return None
+    configurable = config.get("configurable") or {}
+    user = configurable.get(AUTH_USER_KEY)
+    if user is None:
+        return None
+    identity = _auth_user_field(user, "identity")
+    subject_token = _auth_user_field(user, SUBJECT_TOKEN_FIELD)
+    if not identity or not subject_token:
+        return None
+    return Caller(identity=str(identity), subject_token=str(subject_token))
 
 
 @dataclass
@@ -130,6 +174,14 @@ class KeycardGrantMiddleware(AgentMiddleware):
             `sign_in_required` interrupt linking here, instead of failing.
             The payload's `reason` field says which case it was. The whole
             flow then lives in the chat: sign in, resume.
+        identity_source: Where the identity for a tool call comes from.
+            `"context"` (default) reads the agent's runtime context, which the
+            caller supplies per invocation. `"auth_user"` reads the verified
+            caller the LangGraph server put on the run config, for an agent
+            served behind `keycardai.langchain.auth`: identity and subject
+            token then come only from a verified bearer, never from the
+            request body, and a run with no verified caller resolves to no
+            identity. Mutually exclusive with fallback_identity.
         fallback_identity: Identity used when the runtime context carries
             none. Pass a callable to resolve it per tool call, so a sign-in
             that happens mid-run is picked up on resume without a restart.
@@ -155,6 +207,7 @@ class KeycardGrantMiddleware(AgentMiddleware):
         request_scopes: str | list[str] | dict[str, str | list[str]] | None = None,
         authorization_url: str | Callable[[list[str]], str] | None = None,
         sign_in_url: str | None = None,
+        identity_source: Literal["context", "auth_user"] = "context",
         fallback_identity: KeycardIdentity
         | Callable[[], KeycardIdentity | None]
         | None = None,
@@ -170,6 +223,18 @@ class KeycardGrantMiddleware(AgentMiddleware):
             raise ValueError(
                 "Pass application_credential or client_id/client_secret, not both"
             )
+        if identity_source not in ("context", "auth_user"):
+            raise ValueError(
+                "identity_source must be 'context' or 'auth_user', "
+                f"got {identity_source!r}"
+            )
+        if identity_source == "auth_user" and fallback_identity is not None:
+            raise ValueError(
+                "identity_source='auth_user' takes its identity from the verified "
+                "caller on the run config, so fallback_identity would be a second, "
+                "unverified source. Pass one or the other."
+            )
+        self._identity_source = identity_source
         self._zone_url = zone_url
         self._resources = list(resources)
         if application_credential is not None:
@@ -257,7 +322,16 @@ class KeycardGrantMiddleware(AgentMiddleware):
 
         Resolved per call: a sign-in that happens mid-run (via the
         sign_in_required interrupt) is picked up on resume.
+
+        Under identity_source="auth_user" the runtime context is ignored
+        entirely and the verified caller on the run config is the only source,
+        so a caller cannot name an identity in the request body.
         """
+        if self._identity_source == "auth_user":
+            caller = caller_from_config(getattr(request.runtime, "config", None))
+            if caller is None:
+                return None
+            return KeycardIdentity(subject_token=caller.subject_token)
         identity = getattr(request.runtime, "context", None)
         if identity is not None and (
             getattr(identity, "subject_token", None)
