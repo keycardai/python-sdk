@@ -17,6 +17,7 @@ test: build
     just test-package fastmcp
     just test-package a2a
     just test-package langchain
+    just test-package temporal
 
 # Run tests for a specific package
 test-package PACKAGE:
@@ -40,6 +41,7 @@ test-coverage: build
     cd packages/fastmcp && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=60
     cd packages/a2a && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=55
     cd packages/langchain && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=85
+    cd packages/temporal && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=85
 
 check:
     uv run ruff check

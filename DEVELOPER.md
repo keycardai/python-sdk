@@ -82,7 +82,8 @@ python-sdk/
 ├── packages/              # Individual packages
 │   ├── oauth/            # OAuth 2.0 implementation
 │   ├── mcp/              # Core MCP utilities
-│   └── fastmcp/          # FastMCP integration
+│   ├── fastmcp/          # FastMCP integration
+│   └── temporal/         # Temporal integration
 ├── src/                   # Workspace-level source
 └── uv.lock               # Shared lockfile
 ```
@@ -126,6 +127,7 @@ We use [Conventional Commits](https://www.conventionalcommits.org/) with specifi
 - `keycardai-oauth`: Changes to the OAuth package
 - `keycardai-mcp`: Changes to the core MCP package  
 - `keycardai-fastmcp`: Changes to the FastMCP integration
+- `keycardai-temporal`: Changes to the Temporal integration (`packages/temporal`)
 - `deps`: Dependency updates
 - `docs`: Documentation updates
 
