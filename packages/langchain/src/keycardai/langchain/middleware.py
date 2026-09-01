@@ -123,7 +123,8 @@ class KeycardGrantMiddleware(AgentMiddleware):
             LangGraph interrupt instead of recording a silent error. The
             interrupt payload carries this URL (str, or callable taking the
             failed resource URLs) for the user to establish the grant; on
-            resume the exchange is retried. Requires a checkpointer.
+            resume the exchange is retried. Requires a checkpointer unless
+            `interrupt_on_auth=False`.
         sign_in_url: When set, a run that carries no identity, or whose
             subject token has already expired, pauses with a
             `sign_in_required` interrupt linking here, instead of failing.
@@ -132,6 +133,12 @@ class KeycardGrantMiddleware(AgentMiddleware):
         fallback_identity: Identity used when the runtime context carries
             none. Pass a callable to resolve it per tool call, so a sign-in
             that happens mid-run is picked up on resume without a restart.
+        interrupt_on_auth: How an unmet authorization requirement reaches the
+            user. True (default) pauses the run with a LangGraph interrupt,
+            which requires a checkpointer. False sends the same payload to the
+            model as failed tool output instead, so the model relays the URL in
+            its reply; the user authorizes out of band and the next user turn
+            retries the tool. No checkpointer involved, and no in-run resume.
         client: Injectable AsyncClient (tests). When set, zone_url is unused
             and the client is reused as-is.
     """
@@ -151,6 +158,7 @@ class KeycardGrantMiddleware(AgentMiddleware):
         fallback_identity: KeycardIdentity
         | Callable[[], KeycardIdentity | None]
         | None = None,
+        interrupt_on_auth: bool = True,
         client: AsyncClient | None = None,
     ) -> None:
         super().__init__()
@@ -175,6 +183,7 @@ class KeycardGrantMiddleware(AgentMiddleware):
         self._authorization_url = authorization_url
         self._sign_in_url = sign_in_url
         self._fallback_identity = fallback_identity
+        self._interrupt_on_auth = interrupt_on_auth
         self._injected_client = client
         self._loop_clients: WeakKeyDictionary[
             asyncio.AbstractEventLoop, AsyncClient
@@ -435,18 +444,77 @@ class KeycardGrantMiddleware(AgentMiddleware):
             return self._interrupt_payload(failed, access)
         return None
 
+    def _auth_fallback_fields(
+        self, payload: dict[str, Any], request: ToolCallRequest
+    ) -> dict[str, str]:
+        """The interrupt payload reduced to the fields tool output carries.
+
+        `reason` is already on a `sign_in_required` payload; a consent payload
+        has one implicit kind of failure, so it reads as `consent_required`.
+        """
+        kind = str(payload["type"])
+        return {
+            "kind": kind,
+            "reason": str(
+                payload.get(
+                    "reason",
+                    "consent_required" if kind == "authorization_required" else kind,
+                )
+            ),
+            "url": str(payload.get("sign_in_url") or payload.get("authorization_url")),
+            "tool": str(request.tool_call.get("name", "")),
+        }
+
+    def _auth_fallback_message(
+        self, access: AccessContext, request: ToolCallRequest
+    ) -> ToolMessage | None:
+        """Failed tool output standing in for the interrupt, or None if none is due.
+
+        Written for a model that must hand the URL to the user: the URL sits on
+        its own line, and the instruction is to reproduce it verbatim, because
+        a paraphrased or shortened authorization URL does not authorize
+        anything.
+        """
+        payload = self._pending_interrupt(access, request)
+        if payload is None:
+            return None
+        fields = self._auth_fallback_fields(payload, request)
+        action = (
+            "sign in" if fields["kind"] == "sign_in_required" else "grant this access"
+        )
+        content = (
+            f"{fields['kind']}: the tool {fields['tool']} cannot run yet "
+            f"(reason: {fields['reason']}).\n"
+            f"{fields['url']}\n"
+            f"Tell the user to open the URL above to {action}. Copy it into your "
+            "reply exactly as written, character for character: do not shorten it, "
+            "rewrite it, wrap it in other text, or describe it in words. Then ask "
+            f"the user to say once they are done, and call {fields['tool']} again."
+        )
+        return ToolMessage(
+            content=content,
+            name=fields["tool"] or None,
+            tool_call_id=str(request.tool_call.get("id", "")),
+            status="error",
+        )
+
     async def awrap_tool_call(
         self,
         request: ToolCallRequest,
         handler: Callable[[ToolCallRequest], Awaitable[ToolMessage | Command[Any]]],
     ) -> ToolMessage | Command[Any]:
         access = await self._build_access(request)
-        for _ in range(self._MAX_AUTHORIZATION_ATTEMPTS):
-            payload = self._pending_interrupt(access, request)
-            if payload is None:
-                break
-            interrupt(payload)
-            access = await self._build_access(request)
+        if self._interrupt_on_auth:
+            for _ in range(self._MAX_AUTHORIZATION_ATTEMPTS):
+                payload = self._pending_interrupt(access, request)
+                if payload is None:
+                    break
+                interrupt(payload)
+                access = await self._build_access(request)
+        else:
+            fallback = self._auth_fallback_message(access, request)
+            if fallback is not None:
+                return fallback
         token = _current_access.set(access)
         try:
             return await handler(request)
@@ -459,12 +527,17 @@ class KeycardGrantMiddleware(AgentMiddleware):
         handler: Callable[[ToolCallRequest], ToolMessage | Command[Any]],
     ) -> ToolMessage | Command[Any]:
         access = self._run_sync(self._build_access(request))
-        for _ in range(self._MAX_AUTHORIZATION_ATTEMPTS):
-            payload = self._pending_interrupt(access, request)
-            if payload is None:
-                break
-            interrupt(payload)
-            access = self._run_sync(self._build_access(request))
+        if self._interrupt_on_auth:
+            for _ in range(self._MAX_AUTHORIZATION_ATTEMPTS):
+                payload = self._pending_interrupt(access, request)
+                if payload is None:
+                    break
+                interrupt(payload)
+                access = self._run_sync(self._build_access(request))
+        else:
+            fallback = self._auth_fallback_message(access, request)
+            if fallback is not None:
+                return fallback
         token = _current_access.set(access)
         try:
             return handler(request)

@@ -81,9 +81,13 @@ class StubExchangeClient:
         )
 
 
+TOOL_BODY_RUNS: list[str] = []
+
+
 @tool
 def read_delegated_token(resource: str) -> str:
     """Read the delegated Keycard token for a resource."""
+    TOOL_BODY_RUNS.append(resource)
     access = get_access_context()
     if access.has_error():
         return f"GLOBAL_ERROR: {access.get_error()}"
@@ -124,12 +128,11 @@ def build_agent(stub: StubExchangeClient, **middleware_kwargs) -> object:
     middleware = KeycardGrantMiddleware(
         resources=[RESOURCE], client=stub, **middleware_kwargs
     )
-    checkpointer = (
-        InMemorySaver()
-        if middleware_kwargs.get("authorization_url")
+    pauses = middleware_kwargs.get("interrupt_on_auth", True) and (
+        middleware_kwargs.get("authorization_url")
         or middleware_kwargs.get("sign_in_url")
-        else None
     )
+    checkpointer = InMemorySaver() if pauses else None
     return create_agent(
         model=scripted_model(),
         tools=[read_delegated_token],
@@ -551,3 +554,183 @@ def test_grant_rejects_tool_name_and_resources_together() -> None:
             resources=[RESOURCE],
         ):
             pass
+
+
+SIGN_IN_URL = "https://consent.example/"
+CONSENT_URL = "https://consent.example/authorize"
+
+
+def fallback_agent(stub: StubExchangeClient, **middleware_kwargs) -> object:
+    """An agent in tool-output mode, deliberately built with no checkpointer."""
+    return build_agent(stub, interrupt_on_auth=False, **middleware_kwargs)
+
+
+def fallback_fields(content: str) -> dict[str, str]:
+    """The kind, reason and url a model reads off the fallback tool output."""
+    head, url = content.splitlines()[:2]
+    kind, _, rest = head.partition(":")
+    return {
+        "kind": kind,
+        "reason": rest.split("(reason: ")[1].rstrip(")."),
+        "url": url,
+    }
+
+
+def test_sign_in_falls_back_to_tool_output_without_a_checkpointer() -> None:
+    stub = StubExchangeClient()
+    agent = fallback_agent(stub, sign_in_url=SIGN_IN_URL, authorization_url=CONSENT_URL)
+
+    result = agent.invoke(PROMPT)
+
+    message = last_tool_message(result)
+    assert not result.get("__interrupt__")
+    assert message.status == "error"
+    assert fallback_fields(message.content) == {
+        "kind": "sign_in_required",
+        "reason": "missing_identity",
+        "url": SIGN_IN_URL,
+    }
+    assert not stub.exchange_calls
+
+
+def test_consent_falls_back_to_tool_output_without_a_checkpointer() -> None:
+    stub = StubExchangeClient()
+    stub.granted = False
+    agent = fallback_agent(stub, authorization_url=CONSENT_URL)
+
+    result = agent.invoke(PROMPT, context=KeycardIdentity(subject_token="caller-token"))
+
+    message = last_tool_message(result)
+    assert not result.get("__interrupt__")
+    assert message.status == "error"
+    assert fallback_fields(message.content) == {
+        "kind": "authorization_required",
+        "reason": "consent_required",
+        "url": CONSENT_URL,
+    }
+
+
+def test_expired_subject_token_falls_back_with_the_expiry_reason() -> None:
+    stub = StubExchangeClient()
+    agent = fallback_agent(stub, sign_in_url=SIGN_IN_URL, authorization_url=CONSENT_URL)
+
+    result = agent.invoke(
+        PROMPT, context=KeycardIdentity(subject_token=jwt_with_exp(time.time() - 60))
+    )
+
+    assert fallback_fields(last_tool_message(result).content) == {
+        "kind": "sign_in_required",
+        "reason": "subject_token_expired",
+        "url": SIGN_IN_URL,
+    }
+    assert not stub.exchange_calls, "an expired token must not be sent for exchange"
+
+
+def test_fallback_output_never_runs_the_wrapped_tool() -> None:
+    """Tool output replaces the interrupt, so it must keep the same invariant:
+    the handler does not run, and the model gets no partial result."""
+    stub = StubExchangeClient()
+    stub.granted = False
+    agent = fallback_agent(stub, authorization_url=CONSENT_URL)
+    TOOL_BODY_RUNS.clear()
+
+    result = agent.invoke(PROMPT, context=KeycardIdentity(subject_token="caller-token"))
+
+    assert not TOOL_BODY_RUNS, "tool ran before authorization resolved"
+    assert "TOKEN:" not in last_tool_message(result).content
+
+
+def test_fallback_tells_the_model_to_relay_the_url_verbatim() -> None:
+    stub = StubExchangeClient()
+    stub.granted = False
+    agent = fallback_agent(stub, authorization_url=CONSENT_URL)
+
+    result = agent.invoke(PROMPT, context=KeycardIdentity(subject_token="caller-token"))
+
+    content = last_tool_message(result).content
+    assert f"\n{CONSENT_URL}\n" in content, "the URL must stand alone on its own line"
+    assert "exactly as written" in content
+    assert "read_delegated_token" in content
+
+
+async def test_fallback_output_is_identical_on_the_async_path() -> None:
+    stub = StubExchangeClient()
+    stub.granted = False
+    agent = fallback_agent(stub, authorization_url=CONSENT_URL)
+    TOOL_BODY_RUNS.clear()
+
+    result = await agent.ainvoke(
+        PROMPT, context=KeycardIdentity(subject_token="caller-token")
+    )
+
+    assert not TOOL_BODY_RUNS, "tool ran before authorization resolved"
+    message = last_tool_message(result)
+    assert message.status == "error"
+    assert fallback_fields(message.content) == {
+        "kind": "authorization_required",
+        "reason": "consent_required",
+        "url": CONSENT_URL,
+    }
+
+
+async def test_sign_in_fallback_is_identical_on_the_async_path() -> None:
+    stub = StubExchangeClient()
+    agent = fallback_agent(stub, sign_in_url=SIGN_IN_URL, authorization_url=CONSENT_URL)
+
+    result = await agent.ainvoke(PROMPT)
+
+    assert fallback_fields(last_tool_message(result).content) == {
+        "kind": "sign_in_required",
+        "reason": "missing_identity",
+        "url": SIGN_IN_URL,
+    }
+
+
+def _no_identity(stub: StubExchangeClient) -> KeycardIdentity | None:
+    return None
+
+
+def _valid_identity(stub: StubExchangeClient) -> KeycardIdentity:
+    stub.granted = False
+    return KeycardIdentity(subject_token="caller-token")
+
+
+def _expired_identity(stub: StubExchangeClient) -> KeycardIdentity:
+    return KeycardIdentity(subject_token=jwt_with_exp(time.time() - 60))
+
+
+@pytest.mark.parametrize(
+    ("case", "identity_for", "expected_kind"),
+    [
+        ("sign-in", _no_identity, "sign_in_required"),
+        ("consent", _valid_identity, "authorization_required"),
+        ("expired", _expired_identity, "sign_in_required"),
+    ],
+)
+def test_fallback_output_carries_the_interrupt_payload_fields(
+    case: str, identity_for, expected_kind: str
+) -> None:
+    """Parity is the contract: the two modes differ in delivery only, so the
+    same failure must reach the user with the same kind, reason and url."""
+    urls = {"sign_in_url": SIGN_IN_URL, "authorization_url": CONSENT_URL}
+
+    interrupt_stub = StubExchangeClient()
+    interrupt_agent = build_agent(interrupt_stub, **urls)
+    interrupted = interrupt_agent.invoke(
+        PROMPT,
+        {"configurable": {"thread_id": f"parity-{case}"}},
+        context=identity_for(interrupt_stub),
+    )
+    payload = interrupted["__interrupt__"][0].value
+
+    fallback_stub = StubExchangeClient()
+    fallback = fallback_agent(fallback_stub, **urls).invoke(
+        PROMPT, context=identity_for(fallback_stub)
+    )
+
+    assert payload["type"] == expected_kind
+    assert fallback_fields(last_tool_message(fallback).content) == {
+        "kind": payload["type"],
+        "reason": payload.get("reason", "consent_required"),
+        "url": payload.get("sign_in_url") or payload.get("authorization_url"),
+    }

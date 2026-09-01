@@ -48,7 +48,7 @@ remains the standing production evidence for as-itself and the audit actor diffe
 | Interrupt payload shape (`authorization_required`, `sign_in_required` + `reason`) | covered | `test_authorization_interrupt_pauses_then_resumes`, `test_sign_in_interrupt_picks_up_identity_without_a_restart`, `test_expired_subject_token_pauses_for_sign_in_not_consent` |
 | Resume retries the grant and the tool proceeds | covered | same two resume tests |
 | Nothing side-effectful runs before the interrupt resolves | covered | `test_no_tool_executes_before_an_interrupt_resolves` |
-| Checkpointer-less fallback auth tool | deferred | remaining scope of [ECO-220](https://linear.app/keycardlabs/issue/ECO-220) (interrupts shipped; the fallback tool did not) |
+| Checkpointer-less fallback auth tool | covered | `test_sign_in_falls_back_to_tool_output_without_a_checkpointer`, `test_consent_falls_back_to_tool_output_without_a_checkpointer`, `test_expired_subject_token_falls_back_with_the_expiry_reason`, `test_fallback_output_never_runs_the_wrapped_tool`, `test_fallback_tells_the_model_to_relay_the_url_verbatim`, `test_fallback_output_is_identical_on_the_async_path`, `test_sign_in_fallback_is_identical_on_the_async_path`, `test_fallback_output_carries_the_interrupt_payload_fields` (payload parity, all three failures) |
 
 ## E2E
 
