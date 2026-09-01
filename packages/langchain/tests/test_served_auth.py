@@ -177,6 +177,16 @@ async def test_default_path_verifies_against_the_zone_at_this_resource(
     assert result["permissions"] == ["email"]
 
 
+async def test_trailing_slash_zone_url_still_verifies(monkeypatch) -> None:
+    """Zone tokens carry no trailing slash in their issuer, and the verifier
+    matches issuers exactly, so the configured slash must never reach it."""
+    built = install_fake_zone_verifier(monkeypatch, {"email": ADA, "sub": "abc"})
+    hook = zone_authenticator(zone_url=f"{ZONE}/", resource=RESOURCE)
+    result = await hook(headers=headers("Bearer token-a"))
+    assert built == [{"issuer": ZONE, "audience": RESOURCE}]
+    assert result["identity"] == ADA
+
+
 async def test_identity_falls_back_to_the_subject_claim(monkeypatch) -> None:
     install_fake_zone_verifier(monkeypatch, {"sub": "user-abc"})
     hook = zone_authenticator(zone_url=ZONE, resource=RESOURCE)

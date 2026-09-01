@@ -153,6 +153,10 @@ def zone_authenticator(
         raise ValueError("zone_authenticator requires a zone_url")
     if not resource:
         raise ValueError("zone_authenticator requires a resource (the token audience)")
+    # Zone tokens carry no trailing slash in their issuer, and the verifier
+    # matches issuers exactly, so a slash on the configured zone_url would
+    # reject every token while the challenge names a correct-looking URL.
+    zone_url = zone_url.rstrip("/")
     metadata_url = _metadata_url(zone_url)
     verifier: VerifyToken | None = verify
 
