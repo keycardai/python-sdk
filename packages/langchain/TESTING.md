@@ -28,6 +28,30 @@ cd packages/langchain && uv run --extra test pytest tests/ -v
 | Multi-zone credential selection: issuer-keyed, fail-closed | deferred | [ECO-286](https://linear.app/keycardlabs/issue/ECO-286) (not implemented; middleware is single-zone today) |
 | Testing seams themselves, including the resource-pinned form | covered | `tests/test_testing_seam.py` (all five) |
 
+## Inbound authentication (served agents)
+
+Hermetic: verification runs through the injectable `verify` seam, so no zone and
+no network. Authorization rows dispatch through the server's own handler
+resolution, user normalization and owner filter matcher
+(`langgraph_api.auth.custom`, `langgraph_runtime_inmem.ops`), so a row passes
+only if a deployment would behave that way. All rows live in
+`tests/test_served_auth.py`.
+
+| Row | Status | Where |
+|---|---|---|
+| Valid bearer yields the verified identity and the raw bearer as `subject_token` | covered | `test_valid_bearer_yields_identity_and_raw_token` |
+| Missing, malformed and invalid bearers are 401 with a `WWW-Authenticate` challenge naming the zone metadata URL | covered | `test_missing_bearer_is_challenged`, `test_invalid_bearer_is_challenged`, `test_non_bearer_authorization_is_challenged` |
+| Rejection is starlette's `HTTPException`, not the SDK's, which drops headers and coerces statuses | covered | `test_rejection_is_the_starlette_exception_that_keeps_headers` |
+| An unexpected verifier failure is still a challenge, never a 500 | covered | `test_an_exploding_verifier_is_a_challenge_not_a_500` |
+| Owner stamped on thread and run creation from the verified identity, unspoofable from the request body | covered | `test_thread_creation_stamps_the_owner`, `test_body_supplied_owner_cannot_be_forged` |
+| Cross-owner thread read and cross-owner resume filtered out | covered | `test_cross_owner_thread_read_is_filtered`, `test_cross_owner_resume_is_filtered` |
+| Store namespaces owner-prefixed, dot-free, distinct per caller, and scoped even on prefix-less listing | covered | `test_store_items_are_scoped_to_the_caller`, `test_store_owner_segments_are_distinct_per_caller`, `test_prefixless_namespace_listing_is_scoped_to_the_caller` |
+| Unmatched resource and action pairs denied (the framework fails open), assistant reads still open | covered | `test_unmatched_resource_action_pairs_are_denied`, `test_assistant_reads_stay_open_to_authenticated_callers` |
+| Studio user denied | covered | `test_studio_user_is_denied` |
+| `identity_source="auth_user"` grants under the verified caller end to end, two callers never cross, caller-supplied context ignored | covered | `test_auth_user_mode_grants_under_the_verified_caller`, `test_auth_user_mode_keeps_two_callers_apart`, `test_auth_user_mode_ignores_caller_supplied_context` |
+| Configuration guards: unknown identity source, and a second identity source alongside `auth_user` | covered | `test_unknown_identity_source_is_rejected`, `test_auth_user_mode_rejects_a_second_identity_source`, `test_caller_from_config_needs_both_identity_and_token` |
+| Live two-user acceptance on a real zone and a real deployment | out of this repo | `langchain-fly-demo` ([ECO-238](https://linear.app/keycardlabs/issue/ECO-238)), which swaps to this surface once it releases |
+
 ## Integration
 
 | Row | Status | Where |

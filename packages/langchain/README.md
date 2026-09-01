@@ -201,6 +201,105 @@ keycard = KeycardGrantMiddleware(
 )
 ```
 
+## Serving many callers: per-caller authentication
+
+The patterns above answer "what does this run act as". A deployed agent has a
+second question: who is calling. Without an answer, one deployment holds one
+identity, so the last caller to sign in acts for everybody.
+
+`keycardai.langchain.auth` closes that half for a LangGraph server. It verifies
+each caller's own zone-issued bearer per request, hands the run that identity
+plus the raw bearer, and scopes threads, runs and store items to their owner.
+
+Install the `serve` extra, which adds `langgraph-sdk` and `starlette`:
+
+```bash
+pip install "keycardai-langchain[serve]"
+```
+
+`auth.py` in your app:
+
+```python
+from langgraph_sdk import Auth
+
+from keycardai.langchain.auth import (
+    install_owner_authorization,
+    zone_authenticator,
+)
+
+auth = Auth()
+auth.authenticate(
+    zone_authenticator(
+        zone_url="https://your-zone.keycard.cloud",
+        resource="https://your-agent.example",
+    )
+)
+install_owner_authorization(auth)
+```
+
+Then point the middleware at the caller the server verified, instead of at
+per-run context:
+
+```python
+keycard = KeycardGrantMiddleware(
+    zone_url="https://your-zone.keycard.cloud",
+    resources=[CALENDAR],
+    identity_source="auth_user",
+)
+```
+
+`identity_source="auth_user"` reads the verified caller from
+`config["configurable"]["langgraph_auth_user"]`, which the server populates per
+request. Nothing in the request body can name an identity, and no identity
+state is shared between callers. A run that reaches the middleware without a
+verified caller resolves to no identity, which is the usual missing-identity
+error or sign-in interrupt.
+
+`install_owner_authorization` covers what authentication alone does not:
+authentication says who is calling but grants no ownership, so without it any
+valid caller can read and resume any other caller's thread. It stamps the
+verified owner on thread, run and store writes (never taking it from the
+request body), filters reads, updates, searches and deletes by that owner,
+prefixes store namespaces with a digest of the owner, denies Studio users, and
+denies every unmatched resource and action pair, because LangGraph's
+authorization handlers otherwise fail open.
+
+### langgraph.json
+
+```json
+{
+  "dependencies": ["."],
+  "graphs": { "agent": "./app/graph.py:graph" },
+  "auth": {
+    "path": "./app/auth.py:auth",
+    "disable_studio_auth": true
+  }
+}
+```
+
+`disable_studio_auth: true` is required, not optional. With it unset, a request
+carrying the `x-auth-scheme: langsmith` header skips your hook entirely under
+`langgraph dev` and arrives as the built-in `langgraph-studio-user`, which is
+an unauthenticated path into the deployment.
+
+### Operational notes
+
+These routes serve without the authentication hook running, so treat them as
+public and keep caller data off them:
+
+- `/ok`
+- `/info`
+- `/docs`
+- `/openapi.json`
+- `/metrics`
+- `GET /ui/*`
+- `/noauth*`
+
+Verified identity is request-scoped, so concurrent callers never mix. Real
+concurrency, however, needs the server configured for it: with the default
+`--n-jobs-per-worker 1`, two callers are served correctly but one after the
+other. Raise it above 1 to run their runs in parallel.
+
 ## Errors are data, not exceptions
 
 A missing grant is normal operation in a brokered setup, so the `AccessContext`
