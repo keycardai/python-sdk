@@ -114,20 +114,34 @@ class ChecksGateTests(unittest.TestCase):
     def test_verdict_prefers_failure_over_pending(self) -> None:
         data = {
             "statusCheckRollup": [
-                {"status": "IN_PROGRESS", "conclusion": None},
-                {"status": "COMPLETED", "conclusion": "FAILURE"},
+                {"name": "socket-scan", "status": "IN_PROGRESS", "conclusion": None},
+                {"name": "lint-and-test", "status": "COMPLETED", "conclusion": "FAILURE"},
             ]
         }
-        self.assertEqual(bump_package.checks_verdict(data), "FAILURE")
+        self.assertEqual(
+            bump_package.checks_verdict(data), ("FAILURE", "lint-and-test")
+        )
 
     def test_verdict_is_pending_while_any_check_runs(self) -> None:
         data = {
             "statusCheckRollup": [
-                {"status": "COMPLETED", "conclusion": "SUCCESS"},
-                {"status": "QUEUED", "conclusion": None},
+                {"name": "lint-and-test", "status": "COMPLETED", "conclusion": "SUCCESS"},
+                {"name": "release-preview", "status": "QUEUED", "conclusion": None},
             ]
         }
-        self.assertEqual(bump_package.checks_verdict(data), "PENDING")
+        self.assertEqual(
+            bump_package.checks_verdict(data), ("PENDING", "release-preview")
+        )
+
+    def test_unregistered_rollup_is_pending_not_success(self) -> None:
+        # A fresh commit (a just-opened PR, or a just-rebuilt bump branch) has
+        # no registered check runs; that must read as pending, never passing.
+        self.assertEqual(
+            bump_package.checks_verdict({"statusCheckRollup": []}), ("PENDING", None)
+        )
+        self.assertEqual(
+            bump_package.checks_verdict({"statusCheckRollup": None}), ("PENDING", None)
+        )
 
     @mock.patch.object(bump_package.time, "sleep")
     @mock.patch.object(bump_package.time, "time", return_value=0)
@@ -142,16 +156,16 @@ class ChecksGateTests(unittest.TestCase):
                     "state": "OPEN",
                     "headRefOid": HEAD,
                     "statusCheckRollup": [
-                        {"status": "COMPLETED", "conclusion": "FAILURE"}
+                        {"name": "lint-and-test", "status": "COMPLETED", "conclusion": "FAILURE"}
                     ],
                 }
             ),
             "",
         )
 
-        head = bump_package.wait_for_checks("keycardai/python-sdk", 250)
+        outcome = bump_package.wait_for_checks("keycardai/python-sdk", 250)
 
-        self.assertIsNone(head)
+        self.assertIsNone(outcome)
         self.assertEqual(refs_api_calls(run_command), [])
 
     @mock.patch.object(bump_package.time, "sleep")
@@ -167,18 +181,41 @@ class ChecksGateTests(unittest.TestCase):
                     "state": "OPEN",
                     "headRefOid": HEAD,
                     "statusCheckRollup": [
-                        {"status": "IN_PROGRESS", "conclusion": None}
+                        {"name": "lint-and-test", "status": "IN_PROGRESS", "conclusion": None}
                     ],
                 }
             ),
             "",
         )
 
-        head = bump_package.wait_for_checks(
+        outcome = bump_package.wait_for_checks(
             "keycardai/python-sdk", 250, timeout_seconds=1
         )
 
-        self.assertIsNone(head)
+        self.assertIsNone(outcome)
+
+    @mock.patch.object(bump_package.time, "sleep")
+    @mock.patch.object(bump_package.time, "time", side_effect=[0, 10_000])
+    @mock.patch.object(bump_package, "run_command")
+    def test_fresh_commit_with_no_registered_checks_times_out_instead_of_merging(
+        self, run_command, _time, _sleep
+    ) -> None:
+        # The read that races Actions' check registration: a rebuilt bump
+        # branch (or a PR read too early) reports an empty rollup.
+        run_command.return_value = (
+            0,
+            json.dumps(
+                {"state": "OPEN", "headRefOid": HEAD, "statusCheckRollup": []}
+            ),
+            "",
+        )
+
+        outcome = bump_package.wait_for_checks(
+            "keycardai/python-sdk", 250, timeout_seconds=1
+        )
+
+        self.assertIsNone(outcome)
+        self.assertEqual(refs_api_calls(run_command), [])
 
     @mock.patch.object(bump_package, "fast_forward_target")
     @mock.patch.object(bump_package, "wait_for_checks", return_value=None)
@@ -187,7 +224,8 @@ class ChecksGateTests(unittest.TestCase):
     ) -> None:
         merge_sha = bump_package.merge_bump_pr(
             "keycardai/python-sdk", 250, "bump/main/keycardai-mcp-2.2.0", "main",
-            BASE, ["pyproject.toml"], "bump: keycardai-mcp → 2.2.0", "Auto-bump.",
+            BASE, "packages/mcp", ["pyproject.toml"],
+            "bump: keycardai-mcp → 2.2.0", "Auto-bump.",
         )
         self.assertIsNone(merge_sha)
         fast_forward_target.assert_not_called()
@@ -199,34 +237,37 @@ class StrictFastForwardTests(unittest.TestCase):
     @mock.patch.object(bump_package, "verify_pr_merged")
     @mock.patch.object(bump_package, "rebase_bump_branch", return_value=False)
     @mock.patch.object(bump_package, "get_live_branch_sha", return_value=MOVED)
-    @mock.patch.object(bump_package, "wait_for_checks", return_value=HEAD)
+    @mock.patch.object(bump_package, "wait_for_checks", return_value={"head": HEAD})
     @mock.patch.object(bump_package, "run_command")
     def test_guard_refuses_when_target_moved(
         self, run_command, _checks, _live, rebase_bump_branch, verify_pr_merged
     ) -> None:
         merge_sha = bump_package.merge_bump_pr(
             "keycardai/python-sdk", 250, "bump/main/keycardai-mcp-2.2.0", "main",
-            BASE, ["pyproject.toml"], "bump: keycardai-mcp → 2.2.0", "Auto-bump.",
+            BASE, "packages/mcp", ["pyproject.toml"],
+            "bump: keycardai-mcp → 2.2.0", "Auto-bump.",
         )
 
         self.assertIsNone(merge_sha)
         self.assertEqual(refs_api_calls(run_command), [])
         rebase_bump_branch.assert_called_once_with(
             "keycardai/python-sdk", "bump/main/keycardai-mcp-2.2.0", BASE, MOVED,
-            ["pyproject.toml"], "bump: keycardai-mcp → 2.2.0", "Auto-bump.",
+            "packages/mcp", ["pyproject.toml"],
+            "bump: keycardai-mcp → 2.2.0", "Auto-bump.",
         )
         verify_pr_merged.assert_not_called()
 
     @mock.patch.object(bump_package, "verify_pr_merged", return_value=HEAD)
     @mock.patch.object(bump_package, "get_live_branch_sha", return_value=BASE)
-    @mock.patch.object(bump_package, "wait_for_checks", return_value=HEAD)
+    @mock.patch.object(bump_package, "wait_for_checks", return_value={"head": HEAD})
     @mock.patch.object(bump_package, "run_command", return_value=(0, "{}", ""))
     def test_fast_forward_never_forces_the_target_ref(
         self, run_command, _checks, _live, _verify
     ) -> None:
         merge_sha = bump_package.merge_bump_pr(
             "keycardai/python-sdk", 250, "bump/main/keycardai-mcp-2.2.0", "main",
-            BASE, ["pyproject.toml"], "bump: keycardai-mcp → 2.2.0", "Auto-bump.",
+            BASE, "packages/mcp", ["pyproject.toml"],
+            "bump: keycardai-mcp → 2.2.0", "Auto-bump.",
         )
 
         self.assertEqual(merge_sha, HEAD)
@@ -247,6 +288,7 @@ class StrictFastForwardTests(unittest.TestCase):
 
         rebuilt = bump_package.rebase_bump_branch(
             "keycardai/python-sdk", "bump/main/keycardai-mcp-2.2.0", BASE, MOVED,
+            "packages/mcp",
             ["packages/mcp/pyproject.toml", "packages/mcp/CHANGELOG.md"],
             "bump: keycardai-mcp → 2.2.0", "Auto-bump.",
         )
@@ -254,6 +296,97 @@ class StrictFastForwardTests(unittest.TestCase):
         self.assertFalse(rebuilt)
         self.assertEqual(refs_api_calls(run_command), [])
         create_signed_commit_on_branch.assert_not_called()
+
+    @mock.patch.object(bump_package, "create_signed_commit_on_branch", return_value=True)
+    @mock.patch.object(bump_package, "run_command")
+    def test_rebuild_refuses_when_target_changed_package_sources(
+        self, run_command, create_signed_commit_on_branch
+    ) -> None:
+        # A same-package commit that merged mid-run must never ship under the
+        # stale version and changelog, even when it left the bumped files alone.
+        run_command.return_value = (0, "packages/mcp/src/client.py\nREADME.md", "")
+
+        rebuilt = bump_package.rebase_bump_branch(
+            "keycardai/python-sdk", "bump/main/keycardai-mcp-2.2.0", BASE, MOVED,
+            "packages/mcp",
+            ["packages/mcp/pyproject.toml", "packages/mcp/CHANGELOG.md"],
+            "bump: keycardai-mcp → 2.2.0", "Auto-bump.",
+        )
+
+        self.assertFalse(rebuilt)
+        self.assertEqual(refs_api_calls(run_command), [])
+        create_signed_commit_on_branch.assert_not_called()
+
+    @mock.patch.object(bump_package, "create_signed_commit_on_branch", return_value=True)
+    @mock.patch.object(bump_package, "run_command")
+    def test_rebuild_proceeds_when_target_changes_are_unrelated(
+        self, run_command, create_signed_commit_on_branch
+    ) -> None:
+        run_command.side_effect = [
+            (0, "README.md\ndocs/guide.md", ""),  # compare old base...new base
+            (0, "", ""),  # force-move the bump branch
+        ]
+
+        rebuilt = bump_package.rebase_bump_branch(
+            "keycardai/python-sdk", "bump/main/keycardai-mcp-2.2.0", BASE, MOVED,
+            "packages/mcp",
+            ["packages/mcp/pyproject.toml", "packages/mcp/CHANGELOG.md"],
+            "bump: keycardai-mcp → 2.2.0", "Auto-bump.",
+        )
+
+        self.assertTrue(rebuilt)
+        calls = refs_api_calls(run_command)
+        self.assertEqual(len(calls), 1)
+        command = calls[0]
+        self.assertIn(
+            "repos/keycardai/python-sdk/git/refs/heads/bump/main/keycardai-mcp-2.2.0",
+            command,
+        )
+        self.assertIn("force=true", command)
+        create_signed_commit_on_branch.assert_called_once()
+
+    @mock.patch.object(bump_package, "verify_pr_merged", return_value=HEAD)
+    @mock.patch.object(bump_package, "fast_forward_target", return_value=True)
+    @mock.patch.object(bump_package, "wait_for_pr_stable", return_value=True)
+    @mock.patch.object(bump_package, "rebase_bump_branch", return_value=True)
+    @mock.patch.object(bump_package, "get_live_branch_sha", side_effect=[MOVED, MOVED])
+    @mock.patch.object(bump_package, "wait_for_checks", return_value={"head": HEAD})
+    def test_rebuild_reenters_the_stable_wait_before_rereading_checks(
+        self, wait_for_checks, _live, _rebase, wait_for_pr_stable, _ff, _verify
+    ) -> None:
+        merge_sha = bump_package.merge_bump_pr(
+            "keycardai/python-sdk", 250, "bump/main/keycardai-mcp-2.2.0", "main",
+            BASE, "packages/mcp", ["pyproject.toml"],
+            "bump: keycardai-mcp → 2.2.0", "Auto-bump.",
+        )
+
+        self.assertEqual(merge_sha, HEAD)
+        wait_for_pr_stable.assert_called_once_with(250)
+        self.assertEqual(wait_for_checks.call_count, 2)
+
+    @mock.patch.object(bump_package, "verify_pr_merged", return_value=HEAD)
+    @mock.patch.object(bump_package, "wait_for_pr_stable", return_value=True)
+    @mock.patch.object(bump_package, "rebase_bump_branch", return_value=True)
+    @mock.patch.object(bump_package, "fast_forward_target", side_effect=[False, True])
+    @mock.patch.object(
+        bump_package, "get_live_branch_sha", side_effect=[BASE, MOVED, MOVED]
+    )
+    @mock.patch.object(bump_package, "wait_for_checks", return_value={"head": HEAD})
+    def test_ff_refusal_reprobes_the_live_tip_and_rebuilds(
+        self, _checks, _live, fast_forward_target, rebase_bump_branch, _stable, _verify
+    ) -> None:
+        # The guard window race: main moves between the live read and the
+        # PATCH, GitHub 422s the strict update, and the run recovers by
+        # rebuilding on the new tip instead of aborting.
+        merge_sha = bump_package.merge_bump_pr(
+            "keycardai/python-sdk", 250, "bump/main/keycardai-mcp-2.2.0", "main",
+            BASE, "packages/mcp", ["pyproject.toml"],
+            "bump: keycardai-mcp → 2.2.0", "Auto-bump.",
+        )
+
+        self.assertEqual(merge_sha, HEAD)
+        rebase_bump_branch.assert_called_once()
+        self.assertEqual(fast_forward_target.call_count, 2)
 
 
 class MergeVerificationTests(unittest.TestCase):
@@ -293,7 +426,7 @@ class MergeVerificationTests(unittest.TestCase):
     @mock.patch.object(bump_package, "verify_pr_merged", return_value=None)
     @mock.patch.object(bump_package, "fast_forward_target", return_value=True)
     @mock.patch.object(bump_package, "get_live_branch_sha", return_value=BASE)
-    @mock.patch.object(bump_package, "wait_for_checks", return_value=HEAD)
+    @mock.patch.object(bump_package, "wait_for_checks", return_value={"head": HEAD})
     @mock.patch.object(bump_package, "create_bump_pr", return_value=250)
     @mock.patch.object(bump_package, "create_signed_commit_on_branch", return_value=True)
     @mock.patch.object(bump_package, "create_remote_branch", return_value=True)
@@ -335,6 +468,146 @@ class MergeVerificationTests(unittest.TestCase):
             bump_package.bump_package("keycardai-mcp", "packages/mcp")
         )
         create_and_push_tag.assert_not_called()
+
+
+class ExternalMergeTests(unittest.TestCase):
+    """A PR merged by someone else mid-wait is adopted, not treated as failure."""
+
+    @mock.patch.object(bump_package, "run_command")
+    def test_human_merge_during_checks_wait_is_adopted(self, run_command) -> None:
+        run_command.return_value = (
+            0,
+            json.dumps(
+                {
+                    "state": "MERGED",
+                    "mergeCommit": {"oid": MOVED},
+                    "statusCheckRollup": [],
+                }
+            ),
+            "",
+        )
+
+        outcome = bump_package.wait_for_checks("keycardai/python-sdk", 250)
+
+        self.assertEqual(outcome, {"merged": MOVED})
+
+    @mock.patch.object(bump_package, "verify_pr_merged")
+    @mock.patch.object(bump_package, "fast_forward_target")
+    @mock.patch.object(bump_package, "wait_for_checks", return_value={"merged": MOVED})
+    def test_external_merge_skips_the_ref_update_and_returns_its_sha(
+        self, _checks, fast_forward_target, verify_pr_merged
+    ) -> None:
+        merge_sha = bump_package.merge_bump_pr(
+            "keycardai/python-sdk", 250, "bump/main/keycardai-mcp-2.2.0", "main",
+            BASE, "packages/mcp", ["pyproject.toml"],
+            "bump: keycardai-mcp → 2.2.0", "Auto-bump.",
+        )
+
+        self.assertEqual(merge_sha, MOVED)
+        fast_forward_target.assert_not_called()
+        verify_pr_merged.assert_not_called()
+
+    @mock.patch.object(bump_package.time, "sleep")
+    @mock.patch.object(bump_package, "run_command")
+    def test_closed_pr_aborts_the_wait(self, run_command, _sleep) -> None:
+        run_command.return_value = (0, json.dumps({"state": "CLOSED"}), "")
+
+        self.assertIsNone(bump_package.wait_for_checks("keycardai/python-sdk", 250))
+
+
+class BranchLifecycleTests(unittest.TestCase):
+    """A stale bump branch is reused, and a released one is deleted."""
+
+    @mock.patch.object(bump_package, "run_command")
+    def test_stale_branch_from_failed_run_is_force_moved_not_fatal(
+        self, run_command
+    ) -> None:
+        run_command.side_effect = [
+            (1, "", "HTTP 422: Reference already exists"),
+            (0, "", ""),
+        ]
+
+        self.assertTrue(
+            bump_package.create_remote_branch(
+                "keycardai/python-sdk", "bump/main/keycardai-mcp-2.2.0", BASE
+            )
+        )
+        recover = run_command.call_args_list[1][0][0]
+        self.assertIn("PATCH", recover)
+        self.assertIn(
+            "repos/keycardai/python-sdk/git/refs/heads/bump/main/keycardai-mcp-2.2.0",
+            recover,
+        )
+        self.assertIn(f"sha={BASE}", recover)
+        self.assertIn("force=true", recover)
+
+    @mock.patch.object(
+        bump_package, "run_command", return_value=(1, "", "HTTP 403 Forbidden")
+    )
+    def test_other_branch_creation_errors_still_fail(self, run_command) -> None:
+        self.assertFalse(
+            bump_package.create_remote_branch(
+                "keycardai/python-sdk", "bump/main/keycardai-mcp-2.2.0", BASE
+            )
+        )
+        self.assertEqual(len(run_command.call_args_list), 1)
+
+    @mock.patch.object(bump_package, "wait_for_pr_stable", return_value=True)
+    @mock.patch.object(
+        bump_package,
+        "run_command",
+        return_value=(
+            1,
+            "",
+            'a pull request for branch "bump/main/keycardai-mcp-2.2.0" into branch '
+            '"main" already exists:\nhttps://github.com/keycardai/python-sdk/pull/311',
+        ),
+    )
+    def test_existing_open_pr_is_reused(self, _run_command, _stable) -> None:
+        pr_number = bump_package.create_bump_pr(
+            "bump/main/keycardai-mcp-2.2.0", "main", "keycardai-mcp", "2.2.0"
+        )
+        self.assertEqual(pr_number, 311)
+
+    @mock.patch.object(bump_package, "delete_remote_branch")
+    @mock.patch.object(bump_package, "create_and_push_tag", return_value=True)
+    @mock.patch.object(bump_package, "merge_bump_pr", return_value=HEAD)
+    @mock.patch.object(bump_package, "create_bump_pr", return_value=250)
+    @mock.patch.object(bump_package, "create_signed_commit_on_branch", return_value=True)
+    @mock.patch.object(bump_package, "create_remote_branch", return_value=True)
+    @mock.patch.object(bump_package, "get_modified_files", return_value=["pyproject.toml"])
+    @mock.patch.object(bump_package, "get_branch_sha", return_value=BASE)
+    @mock.patch.object(bump_package, "cz_bump_files_only", return_value="2.2.0")
+    @mock.patch.object(bump_package, "recover_untagged_bump", return_value=None)
+    @mock.patch.object(bump_package, "get_repo_slug", return_value="keycardai/python-sdk")
+    @mock.patch.object(bump_package, "pull_branch", return_value=True)
+    @mock.patch.object(bump_package, "configure_git")
+    def test_branch_is_deleted_after_verified_merge_and_tag(self, *mocks) -> None:
+        delete_remote_branch = mocks[-1]
+
+        self.assertTrue(bump_package.bump_package("keycardai-mcp", "packages/mcp"))
+        delete_remote_branch.assert_called_once_with(
+            "keycardai/python-sdk", "bump/main/keycardai-mcp-2.2.0"
+        )
+
+    @mock.patch.object(bump_package, "delete_remote_branch")
+    @mock.patch.object(bump_package, "create_and_push_tag", return_value=False)
+    @mock.patch.object(bump_package, "merge_bump_pr", return_value=HEAD)
+    @mock.patch.object(bump_package, "create_bump_pr", return_value=250)
+    @mock.patch.object(bump_package, "create_signed_commit_on_branch", return_value=True)
+    @mock.patch.object(bump_package, "create_remote_branch", return_value=True)
+    @mock.patch.object(bump_package, "get_modified_files", return_value=["pyproject.toml"])
+    @mock.patch.object(bump_package, "get_branch_sha", return_value=BASE)
+    @mock.patch.object(bump_package, "cz_bump_files_only", return_value="2.2.0")
+    @mock.patch.object(bump_package, "recover_untagged_bump", return_value=None)
+    @mock.patch.object(bump_package, "get_repo_slug", return_value="keycardai/python-sdk")
+    @mock.patch.object(bump_package, "pull_branch", return_value=True)
+    @mock.patch.object(bump_package, "configure_git")
+    def test_branch_survives_a_failed_tag_push(self, *mocks) -> None:
+        delete_remote_branch = mocks[-1]
+
+        self.assertFalse(bump_package.bump_package("keycardai-mcp", "packages/mcp"))
+        delete_remote_branch.assert_not_called()
 
 
 if __name__ == "__main__":
