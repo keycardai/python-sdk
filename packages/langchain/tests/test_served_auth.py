@@ -254,6 +254,21 @@ async def test_cross_owner_thread_read_is_filtered(dispatch) -> None:
     assert not inmem_ops._check_filter_match(thread["metadata"], other)
 
 
+async def test_cross_owner_thread_update_is_filtered(dispatch) -> None:
+    """The specific update handler replaces the generic threads filter for
+    its action, so it must return the owner filter itself: a stamp-only
+    handler would let an attacker update, and thereby steal, other callers'
+    threads."""
+    thread = {"thread_id": "t-1", "metadata": {}}
+    await dispatch(user(ADA), "threads", "create", thread)
+    update = {"thread_id": "t-1", "metadata": {"note": "mine now"}}
+    filters = await dispatch(user(GRACE), "threads", "update", update)
+    assert not inmem_ops._check_filter_match(thread["metadata"], filters)
+    # The stamp still ran, so even the attempt carries the attacker's own
+    # identity, never a body-supplied one.
+    assert update["metadata"]["owner"] == GRACE
+
+
 async def test_cross_owner_resume_is_filtered(dispatch) -> None:
     thread = {"thread_id": "t-1", "metadata": {}}
     await dispatch(user(ADA), "threads", "create", thread)
