@@ -721,7 +721,6 @@ class EKSWorkloadIdentity(WorkloadIdentity):
             ) from e
 
 
-
 # Values accepted in KEYCARD_APPLICATION_CREDENTIAL_TYPE by discover_credential.
 CREDENTIAL_TYPE_CLIENT_SECRET = "client_secret"
 CREDENTIAL_TYPE_WORKLOAD_IDENTITY = "workload_identity"

@@ -37,6 +37,8 @@ class OAuthError(Exception):
         client-side faults require a code or config change. Subclasses
         raised on the token exchange paths (OAuthProtocolError,
         OAuthHttpError, NetworkError) derive the value from the failure.
+        Read-only by design: the classification derives from the error
+        itself and cannot be reassigned on an instance.
         """
         return False
 
@@ -47,6 +49,9 @@ class OAuthHttpError(OAuthError):
 
     Raised for HTTP status codes indicating server or client errors.
     Includes deterministic retriability classification.
+
+    The ``retriable`` attribute is legacy; prefer the ``retryable``
+    property for retry decisions. For this class the two agree.
     """
 
     status_code: int
@@ -94,6 +99,10 @@ class OAuthProtocolError(OAuthError):
 
     Represents structured error responses as defined in OAuth 2.0 specifications.
     Protocol errors are never retriable as they indicate client-side issues.
+
+    The ``retriable`` attribute is a legacy constructor flag, always False
+    here; prefer the ``retryable`` property, which classifies by the OAuth
+    error code.
     """
 
     error: str
@@ -170,6 +179,9 @@ class NetworkError(OAuthError):
     """Transport/network failures with retry guidance.
 
     Covers connection failures, timeouts, and other network-level issues.
+
+    The ``retriable`` attribute is a legacy constructor flag; prefer the
+    ``retryable`` property, which is always True for network faults.
     """
 
     cause: Exception
@@ -195,8 +207,15 @@ class NetworkError(OAuthError):
 
     @property
     def retryable(self) -> bool:
-        """Mirrors ``retriable``: True unless the transport marked the fault permanent."""
-        return self.retriable
+        """Always True: network transport faults are transient by classification.
+
+        A failure that is permanent reaches the consumer as a protocol or
+        HTTP error, never as a NetworkError, so repeating the operation can
+        always help here. Independent of the legacy ``retriable``
+        constructor flag, which the built-in httpx transports set to False
+        for every transport failure.
+        """
+        return True
 
 
 class ConfigError(OAuthError):
