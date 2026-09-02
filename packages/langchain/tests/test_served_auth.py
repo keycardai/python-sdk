@@ -231,6 +231,20 @@ async def test_body_supplied_owner_cannot_be_forged(dispatch) -> None:
     assert filters == {"owner": ADA}
 
 
+async def test_thread_update_stamps_the_owner(dispatch) -> None:
+    thread = {"thread_id": "t-1", "metadata": {}}
+    await dispatch(user(ADA), "threads", "create", thread)
+    # The body names another identity; the stamp must overwrite it before the
+    # server merges the update into the thread's metadata.
+    update = {"thread_id": "t-1", "metadata": {"owner": GRACE}}
+    filters = await dispatch(user(ADA), "threads", "update", update)
+    assert update["metadata"]["owner"] == ADA
+    assert filters == {"owner": ADA}
+    thread["metadata"].update(update["metadata"])
+    assert inmem_ops._check_filter_match(thread["metadata"], {"owner": ADA})
+    assert not inmem_ops._check_filter_match(thread["metadata"], {"owner": GRACE})
+
+
 async def test_cross_owner_thread_read_is_filtered(dispatch) -> None:
     thread = {"thread_id": "t-1", "metadata": {}}
     await dispatch(user(ADA), "threads", "create", thread)
@@ -238,6 +252,21 @@ async def test_cross_owner_thread_read_is_filtered(dispatch) -> None:
     other = await dispatch(user(GRACE), "threads", "read", {"thread_id": "t-1"})
     assert inmem_ops._check_filter_match(thread["metadata"], own)
     assert not inmem_ops._check_filter_match(thread["metadata"], other)
+
+
+async def test_cross_owner_thread_update_is_filtered(dispatch) -> None:
+    """The specific update handler replaces the generic threads filter for
+    its action, so it must return the owner filter itself: a stamp-only
+    handler would let an attacker update, and thereby steal, other callers'
+    threads."""
+    thread = {"thread_id": "t-1", "metadata": {}}
+    await dispatch(user(ADA), "threads", "create", thread)
+    update = {"thread_id": "t-1", "metadata": {"note": "mine now"}}
+    filters = await dispatch(user(GRACE), "threads", "update", update)
+    assert not inmem_ops._check_filter_match(thread["metadata"], filters)
+    # The stamp still ran, so even the attempt carries the attacker's own
+    # identity, never a body-supplied one.
+    assert update["metadata"]["owner"] == GRACE
 
 
 async def test_cross_owner_resume_is_filtered(dispatch) -> None:
