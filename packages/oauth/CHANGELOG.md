@@ -1,3 +1,9 @@
+## 0.26.0-keycardai-oauth (2026-09-02)
+
+
+- feat(keycardai-oauth): retryable errors and credential discovery from env (#264)
+- Two additive keycardai-oauth features from Ben's review of the Temporal work. ECO-357: a retryable property on the typed exchange errors, derived from the OAuth error code, with the permanent set (access_denied, insufficient_authorization, invalid_client) documented and NetworkError always retryable. ECO-358: discover_credential builds the right ApplicationCredential from canonical env vars, failing loudly on ambiguous or empty configuration. Consumers swap in follow-ups. Note for EKS deployments: IRSA injects AWS_WEB_IDENTITY_TOKEN_FILE automatically, so client-secret-only setups pin KEYCARD_APPLICATION_CREDENTIAL_TYPE=client_secret when adopting discovery.
+
 ## 0.25.0-keycardai-oauth (2026-08-29)
 
 
