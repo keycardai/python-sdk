@@ -12,6 +12,15 @@ References:
 
 from dataclasses import dataclass
 
+# OAuth error codes where a retry cannot help: the authorization server said
+# no on policy grounds, the caller lacks the delegated authorization it asked
+# for, or the client credentials themselves are wrong. Every other exchange
+# failure (transport faults, rate limits, 5xx, malformed responses) is treated
+# as retryable.
+PERMANENT_ERROR_CODES: frozenset[str] = frozenset(
+    {"access_denied", "insufficient_authorization", "invalid_client"}
+)
+
 
 class OAuthError(Exception):
     """Base class for all OAuth 2.0 errors."""
@@ -20,6 +29,19 @@ class OAuthError(Exception):
         super().__init__(message)
         self.cause = cause
 
+    @property
+    def retryable(self) -> bool:
+        """Whether repeating the failed operation unchanged could succeed.
+
+        False by default: configuration, authentication, and other
+        client-side faults require a code or config change. Subclasses
+        raised on the token exchange paths (OAuthProtocolError,
+        OAuthHttpError, NetworkError) derive the value from the failure.
+        Read-only by design: the classification derives from the error
+        itself and cannot be reassigned on an instance.
+        """
+        return False
+
 
 @dataclass
 class OAuthHttpError(OAuthError):
@@ -27,6 +49,9 @@ class OAuthHttpError(OAuthError):
 
     Raised for HTTP status codes indicating server or client errors.
     Includes deterministic retriability classification.
+
+    The ``retriable`` attribute is legacy; prefer the ``retryable``
+    property for retry decisions. For this class the two agree.
     """
 
     status_code: int
@@ -62,6 +87,11 @@ class OAuthHttpError(OAuthError):
     def __str__(self) -> str:
         return f"HTTP {self.status_code} during {self.operation} (retriable: {self.retriable})"
 
+    @property
+    def retryable(self) -> bool:
+        """True for 429 and 5xx responses, False for other 4xx responses."""
+        return self.retriable
+
 
 @dataclass
 class OAuthProtocolError(OAuthError):
@@ -69,6 +99,10 @@ class OAuthProtocolError(OAuthError):
 
     Represents structured error responses as defined in OAuth 2.0 specifications.
     Protocol errors are never retriable as they indicate client-side issues.
+
+    The ``retriable`` attribute is a legacy constructor flag, always False
+    here; prefer the ``retryable`` property, which classifies by the OAuth
+    error code.
     """
 
     error: str
@@ -95,6 +129,25 @@ class OAuthProtocolError(OAuthError):
             message += f" - {error_description}"
 
         super().__init__(message)
+
+    @property
+    def retryable(self) -> bool:
+        """Whether the OAuth error code leaves room for a retry to succeed.
+
+        False for the permanent denials in PERMANENT_ERROR_CODES, where no
+        retry can change the outcome:
+
+        - ``access_denied``: zone policy denied the request.
+        - ``insufficient_authorization``: the caller lacks the delegated
+          authorization the exchange requires.
+        - ``invalid_client``: client authentication failed.
+
+        True for every other code, including ``invalid_response`` for
+        malformed server responses, so transport-shaped failures stay
+        retryable. Independent of the legacy ``retriable`` attribute, which
+        is always False for protocol errors.
+        """
+        return self.error not in PERMANENT_ERROR_CODES
 
 
 class AuthorizationDeniedError(OAuthProtocolError):
@@ -126,6 +179,9 @@ class NetworkError(OAuthError):
     """Transport/network failures with retry guidance.
 
     Covers connection failures, timeouts, and other network-level issues.
+
+    The ``retriable`` attribute is a legacy constructor flag; prefer the
+    ``retryable`` property, which is always True for network faults.
     """
 
     cause: Exception
@@ -148,6 +204,18 @@ class NetworkError(OAuthError):
             else f"Network error: {cause}"
         )
         super().__init__(message, cause)
+
+    @property
+    def retryable(self) -> bool:
+        """Always True: network transport faults are transient by classification.
+
+        A failure that is permanent reaches the consumer as a protocol or
+        HTTP error, never as a NetworkError, so repeating the operation can
+        always help here. Independent of the legacy ``retriable``
+        constructor flag, which the built-in httpx transports set to False
+        for every transport failure.
+        """
+        return True
 
 
 class ConfigError(OAuthError):

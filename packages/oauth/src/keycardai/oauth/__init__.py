@@ -33,6 +33,7 @@ Example:
 
 from .client import AsyncClient, Client
 from .exceptions import (
+    PERMANENT_ERROR_CODES,
     AuthenticationError,
     AuthorizationDeniedError,
     ConfigError,
@@ -91,6 +92,7 @@ __all__ = [
     "JWKSFetchError",
     "JWKSKeyNotFoundError",
     "InvalidTokenError",
+    "PERMANENT_ERROR_CODES",
     # === Data Models ===
     "TokenResponse",
     "ClientRegistrationResponse",

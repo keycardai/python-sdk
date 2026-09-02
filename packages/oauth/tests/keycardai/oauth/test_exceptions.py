@@ -1,8 +1,12 @@
 """Tests for OAuth 2.0 exception hierarchy."""
 
+import httpx
+import pytest
 
 from keycardai.oauth.exceptions import (
+    PERMANENT_ERROR_CODES,
     AuthenticationError,
+    AuthorizationDeniedError,
     ConfigError,
     NetworkError,
     OAuthError,
@@ -216,3 +220,91 @@ class TestExceptionIntegration:
         assert error1.status_code == error2.status_code
         assert error1.response_body == error2.response_body
         assert error1.operation == error2.operation
+
+
+class TestRetryable:
+    """Retry classification derived from the failure, independent of ``retriable``."""
+
+    @pytest.mark.parametrize("code", sorted(PERMANENT_ERROR_CODES))
+    @pytest.mark.parametrize(
+        "error_cls", [OAuthProtocolError, TokenExchangeError, AuthorizationDeniedError]
+    )
+    def test_permanent_codes_are_not_retryable(self, error_cls, code):
+        assert error_cls(error=code, operation="POST /token").retryable is False
+
+    def test_permanent_code_set(self):
+        assert PERMANENT_ERROR_CODES == {
+            "access_denied",
+            "insufficient_authorization",
+            "invalid_client",
+        }
+
+    @pytest.mark.parametrize(
+        "code", ["invalid_response", "server_error", "temporarily_unavailable"]
+    )
+    @pytest.mark.parametrize(
+        "error_cls", [OAuthProtocolError, TokenExchangeError, AuthorizationDeniedError]
+    )
+    def test_other_protocol_codes_are_retryable(self, error_cls, code):
+        error = error_cls(error=code, operation="POST /token (exchange)")
+        assert error.retryable is True
+        assert error.retriable is False
+
+    @pytest.mark.parametrize("status_code", [429, 500, 502, 503])
+    def test_transport_shaped_http_failures_are_retryable(self, status_code):
+        assert OAuthHttpError(status_code=status_code).retryable is True
+
+    def test_http_client_errors_are_not_retryable(self):
+        assert OAuthHttpError(status_code=400).retryable is False
+
+    def test_network_error_is_retryable_even_when_transport_says_retriable_false(self):
+        # The built-in httpx transports construct NetworkError with
+        # retriable=False for every transport failure; retryable must still
+        # classify the fault as transient.
+        error = NetworkError(
+            cause=httpx.ConnectTimeout("connect timed out"),
+            operation="POST https://sts.example/token",
+            retriable=False,
+        )
+        assert error.retriable is False
+        assert error.retryable is True
+        assert NetworkError(cause=ConnectionError("boom")).retryable is True
+
+    def test_transport_raise_path_yields_retryable_network_error(self, monkeypatch):
+        # Exercise the real HttpxTransport raise site rather than a
+        # hand-built NetworkError.
+        from keycardai.oauth.http._transports import HttpxTransport
+        from keycardai.oauth.http.transport import HttpRequest
+        from keycardai.oauth.types.models import ClientConfig
+
+        class FailingHttpxClient:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def request(self, *args, **kwargs):
+                raise httpx.ConnectError("connection refused")
+
+        monkeypatch.setattr(httpx, "Client", FailingHttpxClient)
+        transport = HttpxTransport(config=ClientConfig())
+        with pytest.raises(NetworkError) as exc_info:
+            transport.request_raw(
+                HttpRequest(
+                    method="POST",
+                    url="https://sts.example/token",
+                    headers={},
+                    body=b"",
+                )
+            )
+        assert exc_info.value.retriable is False
+        assert exc_info.value.retryable is True
+
+    def test_base_errors_default_to_not_retryable(self):
+        assert OAuthError("x").retryable is False
+        assert ConfigError("x").retryable is False
+        assert AuthenticationError("x").retryable is False

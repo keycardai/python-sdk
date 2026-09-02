@@ -10,13 +10,16 @@ Credential Providers:
 - WebIdentity: Private key JWT client assertion (RFC 7523)
 - WorkloadIdentity: Platform-signed OIDC token from a pluggable IdentityTokenSource
 - EKSWorkloadIdentity: Deprecated alias for WorkloadIdentity with a FileTokenSource
+
+Use discover_credential() to build the credential described by the standard
+KEYCARD_* environment variables.
 """
 
 import inspect
 import os
 import uuid
 import warnings
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from typing import Protocol
 
 import httpx
@@ -34,6 +37,7 @@ from keycardai.oauth.types.oauth import GrantType, TokenEndpointAuthMethod
 
 from .exceptions import (
     ClientSecretConfigurationError,
+    CredentialDiscoveryError,
     EKSWorkloadIdentityConfigurationError,
     EKSWorkloadIdentityRuntimeError,
     WorkloadIdentityConfigurationError,
@@ -716,3 +720,121 @@ class EKSWorkloadIdentity(WorkloadIdentity):
                 error_details=f"Error reading token file: {str(e)}",
             ) from e
 
+
+# Values accepted in KEYCARD_APPLICATION_CREDENTIAL_TYPE by discover_credential.
+CREDENTIAL_TYPE_CLIENT_SECRET = "client_secret"
+CREDENTIAL_TYPE_WORKLOAD_IDENTITY = "workload_identity"
+_LEGACY_CREDENTIAL_TYPES = {"eks_workload_identity": CREDENTIAL_TYPE_WORKLOAD_IDENTITY}
+_SUPPORTED_CREDENTIAL_TYPES = (
+    CREDENTIAL_TYPE_CLIENT_SECRET,
+    CREDENTIAL_TYPE_WORKLOAD_IDENTITY,
+)
+
+
+def discover_credential(env: Mapping[str, str] | None = None) -> ApplicationCredential:
+    """Build the ApplicationCredential described by standard environment variables.
+
+    Environment variables read:
+        KEYCARD_CLIENT_ID, KEYCARD_CLIENT_SECRET: together build a
+            ClientSecret. KEYCARD_CLIENT_ID alone is also attached to a
+            WorkloadIdentity as its client_id (token-federation credentials
+            are resolved by it).
+        KEYCARD_EKS_WORKLOAD_IDENTITY_TOKEN_FILE,
+        AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE, AWS_WEB_IDENTITY_TOKEN_FILE,
+        AZURE_FEDERATED_TOKEN_FILE: any one of them (the FileTokenSource
+            discovery list, shared with the TypeScript SDK) builds a
+            WorkloadIdentity over a FileTokenSource.
+        KEYCARD_APPLICATION_CREDENTIAL_TYPE: optional, one of
+            ``client_secret`` or ``workload_identity`` (``eks_workload_identity``
+            is accepted as a legacy alias). Selects the credential type when
+            more than one is configured; any other value is rejected.
+
+    WebIdentity needs a stable server name and key storage, so it is not
+    discovered here; construct it explicitly.
+
+    Args:
+        env: Mapping to read instead of os.environ.
+
+    Raises:
+        CredentialDiscoveryError: No supported credential is configured, more
+            than one is configured without KEYCARD_APPLICATION_CREDENTIAL_TYPE
+            choosing between them, a client id or secret is present without
+            the other, or the requested type is unknown or not satisfiable.
+        WorkloadIdentityConfigurationError: The token file named by the
+            environment is missing or empty.
+    """
+    if env is None:
+        env = os.environ
+
+    client_id = env.get("KEYCARD_CLIENT_ID") or None
+    client_secret = env.get("KEYCARD_CLIENT_SECRET") or None
+    token_file_var = next(
+        (name for name in FileTokenSource.default_env_var_names if env.get(name)),
+        None,
+    )
+
+    resolvable: list[str] = []
+    if client_id and client_secret:
+        resolvable.append(CREDENTIAL_TYPE_CLIENT_SECRET)
+    if token_file_var:
+        resolvable.append(CREDENTIAL_TYPE_WORKLOAD_IDENTITY)
+
+    requested = env.get("KEYCARD_APPLICATION_CREDENTIAL_TYPE") or None
+    if requested is not None:
+        requested = _LEGACY_CREDENTIAL_TYPES.get(requested, requested)
+        if requested not in _SUPPORTED_CREDENTIAL_TYPES:
+            raise CredentialDiscoveryError(
+                f"Unknown KEYCARD_APPLICATION_CREDENTIAL_TYPE: {requested}. "
+                f"Supported: {', '.join(_SUPPORTED_CREDENTIAL_TYPES)}. "
+                "For web identity, construct WebIdentity(...) explicitly.",
+                resolvable=resolvable,
+            )
+        if requested == CREDENTIAL_TYPE_CLIENT_SECRET and (
+            not client_id or not client_secret
+        ):
+            raise CredentialDiscoveryError(
+                "KEYCARD_APPLICATION_CREDENTIAL_TYPE=client_secret requires both "
+                "KEYCARD_CLIENT_ID and KEYCARD_CLIENT_SECRET",
+                resolvable=resolvable,
+            )
+        if requested == CREDENTIAL_TYPE_WORKLOAD_IDENTITY and not token_file_var:
+            raise CredentialDiscoveryError(
+                "KEYCARD_APPLICATION_CREDENTIAL_TYPE=workload_identity requires a "
+                "token file path in one of: "
+                f"{', '.join(FileTokenSource.default_env_var_names)}",
+                resolvable=resolvable,
+            )
+        selected = requested
+    else:
+        if client_secret and not client_id:
+            raise CredentialDiscoveryError(
+                "KEYCARD_CLIENT_SECRET is set without KEYCARD_CLIENT_ID",
+                resolvable=resolvable,
+            )
+        if not resolvable:
+            raise CredentialDiscoveryError(
+                "No application credential found in the environment. Set "
+                "KEYCARD_CLIENT_ID and KEYCARD_CLIENT_SECRET for a client secret "
+                "credential, or a token file path in one of "
+                f"{', '.join(FileTokenSource.default_env_var_names)} for a "
+                "workload identity credential.",
+            )
+        if len(resolvable) > 1:
+            raise CredentialDiscoveryError(
+                "Ambiguous application credential configuration: the environment "
+                f"can build {' and '.join(resolvable)}. Set "
+                "KEYCARD_APPLICATION_CREDENTIAL_TYPE to choose one.",
+                resolvable=resolvable,
+            )
+        selected = resolvable[0]
+
+    if selected == CREDENTIAL_TYPE_CLIENT_SECRET and client_id and client_secret:
+        return ClientSecret((client_id, client_secret))
+    if token_file_var is None:
+        raise CredentialDiscoveryError(
+            "No workload identity token file path in the environment",
+            resolvable=resolvable,
+        )
+    return WorkloadIdentity(
+        FileTokenSource(token_file_path=env[token_file_var]), client_id=client_id
+    )

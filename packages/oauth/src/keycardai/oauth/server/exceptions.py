@@ -655,6 +655,30 @@ class ClientSecretConfigurationError(OAuthServerError):
         super().__init__(message, details=details)
 
 
+class CredentialDiscoveryError(OAuthServerError):
+    """Raised when discover_credential cannot pick one credential from the environment.
+
+    The environment is either empty (no supported credential is configured),
+    ambiguous (more than one credential type is configured and
+    KEYCARD_APPLICATION_CREDENTIAL_TYPE does not choose between them),
+    incomplete (a client id without its secret, or the reverse), or names
+    an unknown or unsupported credential type.
+
+    Attributes:
+        resolvable: Credential type names that the environment could build.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        resolvable: list[str] | None = None,
+        details: dict | None = None,
+    ):
+        self.resolvable = resolvable or []
+        super().__init__(message, details=details)
+
+
 __all__ = [
     # Base exception
     "OAuthServerError",
@@ -662,6 +686,9 @@ __all__ = [
     "AuthProviderConfigurationError",
     "OAuthClientConfigurationError",
     "ClientSecretConfigurationError",
+    "CredentialDiscoveryError",
+    "WorkloadIdentityConfigurationError",
+    "WorkloadIdentityRuntimeError",
     "EKSWorkloadIdentityConfigurationError",
     # Runtime errors
     "EKSWorkloadIdentityRuntimeError",
