@@ -491,17 +491,25 @@ OAuthError (base)
 └── AuthenticationError     # Authentication failures
 ```
 
-### Retriable vs Non-Retriable Errors
+### Retryable vs Non-Retryable Errors
 
-| Exception | Retriable | Condition |
-|-----------|-----------|-----------|
+Every exception exposes a `retryable` property: whether repeating the failed
+operation unchanged could succeed.
+
+| Exception | `retryable` | Condition |
+|-----------|-------------|-----------|
 | `OAuthHttpError` | Yes | HTTP 429 (rate limit) or 5xx (server error) |
 | `OAuthHttpError` | No | HTTP 4xx (client error, except 429) |
-| `OAuthProtocolError` | No | OAuth protocol violations |
-| `TokenExchangeError` | No | Token exchange failures |
-| `NetworkError` | Yes | Connection timeouts, DNS failures |
+| `OAuthProtocolError` / `TokenExchangeError` | No | Error code in `PERMANENT_ERROR_CODES` (`access_denied`, `insufficient_authorization`, `invalid_client`) |
+| `OAuthProtocolError` / `TokenExchangeError` | Yes | Any other OAuth error code |
+| `NetworkError` | Yes | Always: transport faults are transient, permanent failures surface as protocol or HTTP errors |
 | `ConfigError` | No | Invalid configuration (requires code fix) |
 | `AuthenticationError` | No | Invalid credentials |
+
+If you use the older `retriable` attribute: it is a legacy constructor flag,
+while `retryable` is the classification derived from the failure (the OAuth
+error code for protocol errors, the status code for HTTP errors, and always
+True on `NetworkError`). Prefer `retryable` for retry decisions.
 
 ### Error Handling Patterns
 
@@ -525,9 +533,9 @@ with Client("https://oauth.example.com", auth=BasicAuth(...)) as client:
             audience="https://api.example.com"
         )
     except OAuthHttpError as e:
-        if e.retriable:
+        if e.retryable:
             # HTTP 429 or 5xx - implement backoff and retry
-            print(f"Retriable HTTP error (status {e.status_code}): {e}")
+            print(f"Retryable HTTP error (status {e.status_code}): {e}")
         else:
             # HTTP 4xx - fix the request
             print(f"Client error: {e.response_body}")
@@ -540,8 +548,8 @@ with Client("https://oauth.example.com", auth=BasicAuth(...)) as client:
             print(f"More info: {e.error_uri}")
 
     except NetworkError as e:
-        # Connection issues - usually retriable
-        print(f"Network error (retriable: {e.retriable}): {e.cause}")
+        # Connection issues are transient: retryable is always True here
+        print(f"Network error (retryable: {e.retryable}): {e.cause}")
 
     except ConfigError as e:
         # Configuration issue - fix code
@@ -559,7 +567,7 @@ import time
 from keycardai.oauth import Client, BasicAuth, OAuthHttpError, NetworkError
 
 def exchange_with_retry(client, max_attempts=3, base_delay=1.0):
-    """Exchange token with exponential backoff for retriable errors."""
+    """Exchange token with exponential backoff for retryable errors."""
     for attempt in range(max_attempts):
         try:
             return client.exchange_token(
@@ -568,7 +576,7 @@ def exchange_with_retry(client, max_attempts=3, base_delay=1.0):
                 audience="https://api.example.com"
             )
         except (OAuthHttpError, NetworkError) as e:
-            if not e.retriable or attempt == max_attempts - 1:
+            if not e.retryable or attempt == max_attempts - 1:
                 raise
             delay = base_delay * (2 ** attempt)
             print(f"Attempt {attempt + 1} failed, retrying in {delay}s...")
