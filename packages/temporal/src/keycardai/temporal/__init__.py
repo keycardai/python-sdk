@@ -37,7 +37,6 @@ from __future__ import annotations
 
 import contextvars
 import inspect
-import os
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, fields
 from typing import Annotated, Any, get_args, get_origin, get_type_hints
@@ -54,15 +53,18 @@ from temporalio.worker import (
 # validation. Passing them through here (as Temporal's sentry sample does)
 # lets workflow-defining files import this package normally.
 with workflow.unsafe.imports_passed_through():
-    from keycardai.oauth import AsyncClient, TokenResponse
+    from keycardai.oauth import PERMANENT_ERROR_CODES, AsyncClient, TokenResponse
     from keycardai.oauth.server import (
         AccessContext,
         ApplicationCredential,
         ClientSecret,
-        EKSWorkloadIdentity,
+        discover_credential,
         exchange_tokens_for_resources,
     )
-    from keycardai.oauth.server.exceptions import ResourceAccessError
+    from keycardai.oauth.server.exceptions import (
+        CredentialDiscoveryError,
+        ResourceAccessError,
+    )
 
 __all__ = [
     "AccessContext",
@@ -235,12 +237,6 @@ def _build_extractor(
     return extractor
 
 
-# OAuth error codes where a retry cannot help: policy said no, or the
-# client credentials themselves are wrong. Everything else stays retryable.
-_PERMANENT_DENIAL_CODES = frozenset(
-    {"access_denied", "insufficient_authorization", "invalid_client"}
-)
-
 # The SDK AccessContext holding this execution's minted token, plus the
 # granted resource so access() stays zero-argument.
 _ctx: contextvars.ContextVar[tuple[AccessContext, str]] = contextvars.ContextVar(
@@ -309,35 +305,6 @@ def access() -> TokenResponse:
     return ctx.access(resource)
 
 
-def _discover_credential() -> ApplicationCredential | None:
-    """Env-var credential discovery, mirroring keycardai-mcp / keycardai-fastmcp.
-
-    ``KEYCARD_CLIENT_ID`` + ``KEYCARD_CLIENT_SECRET`` build a
-    :class:`ClientSecret`; ``KEYCARD_APPLICATION_CREDENTIAL_TYPE=eks_workload_identity``
-    (or the EKS token-file env vars being present) builds workload identity.
-    ``WebIdentity`` needs a stable server name, so pass it explicitly instead.
-    """
-    client_id = os.getenv("KEYCARD_CLIENT_ID")
-    client_secret = os.getenv("KEYCARD_CLIENT_SECRET")
-    if client_id and client_secret:
-        return ClientSecret((client_id, client_secret))
-
-    credential_type = os.getenv("KEYCARD_APPLICATION_CREDENTIAL_TYPE")
-    if credential_type == "eks_workload_identity":
-        return EKSWorkloadIdentity(
-            token_file_path=os.getenv("KEYCARD_EKS_WORKLOAD_IDENTITY_TOKEN_FILE")
-        )
-    if credential_type is not None:
-        raise ValueError(
-            f"Unknown KEYCARD_APPLICATION_CREDENTIAL_TYPE: {credential_type}. "
-            "Supported: eks_workload_identity. For web identity, pass "
-            "credential=WebIdentity(...) explicitly."
-        )
-    if any(os.getenv(name) for name in EKSWorkloadIdentity.default_env_var_names):
-        return EKSWorkloadIdentity()
-    return None
-
-
 class KeycardInterceptor(Interceptor):
     """Worker interceptor that mints a fresh Keycard token per activity execution.
 
@@ -346,14 +313,24 @@ class KeycardInterceptor(Interceptor):
             Token endpoints are discovered from it.
         credential: How this application authenticates to the zone:
             ``ClientSecret``, ``WebIdentity``, or ``WorkloadIdentity`` from
-            ``keycardai.oauth.server``. When omitted, discovered from the
-            environment (``KEYCARD_CLIENT_ID``/``KEYCARD_CLIENT_SECRET``,
-            ``KEYCARD_APPLICATION_CREDENTIAL_TYPE``), the same convention as
-            keycardai-mcp and keycardai-fastmcp.
+            ``keycardai.oauth.server``. When omitted,
+            :func:`keycardai.oauth.server.discover_credential` builds it from
+            the canonical environment variables: ``KEYCARD_CLIENT_ID`` and
+            ``KEYCARD_CLIENT_SECRET`` for a client secret, a workload identity
+            token file variable for workload identity, and
+            ``KEYCARD_APPLICATION_CREDENTIAL_TYPE`` (``client_secret`` or
+            ``workload_identity``) to choose when the environment can build
+            more than one.
         subject_token_provider: Resolves an identity reference to that user's
             current session token. Required for on-behalf-of activities
             (``subject_from=...`` or a ``Subject()`` marker); not used by
             app-as-itself or ``impersonate=True`` grants.
+
+    Raises:
+        GrantConfigurationError: ``credential`` was omitted and the
+            environment describes no credential, an incomplete one, or an
+            ambiguous set that ``KEYCARD_APPLICATION_CREDENTIAL_TYPE`` does
+            not choose between.
     """
 
     def __init__(
@@ -362,13 +339,13 @@ class KeycardInterceptor(Interceptor):
         credential: ApplicationCredential | None = None,
         subject_token_provider: SubjectTokenProvider | None = None,
     ) -> None:
-        credential = credential if credential is not None else _discover_credential()
         if credential is None:
-            raise ValueError(
-                "No Keycard credential. Pass credential=... or set "
-                "KEYCARD_CLIENT_ID/KEYCARD_CLIENT_SECRET (or "
-                "KEYCARD_APPLICATION_CREDENTIAL_TYPE) in the environment."
-            )
+            try:
+                credential = discover_credential()
+            except CredentialDiscoveryError as e:
+                # Same taxonomy as every other worker-configuration problem
+                # in this package, so retry policies see one error class.
+                raise GrantConfigurationError(str(e)) from e
         self._credential = credential
         # One client for the worker's lifetime: endpoint discovery runs once
         # and is cached on the instance. Tokens are still minted per call;
@@ -417,7 +394,7 @@ class _KeycardActivityInboundInterceptor(ActivityInboundInterceptor):
                 )
             except Exception as e:
                 code = getattr(e, "error", None)
-                if code in _PERMANENT_DENIAL_CODES:
+                if code in PERMANENT_ERROR_CODES:
                     raise ApplicationError(
                         f"Keycard denied {grant.resource}: {code}",
                         type="KeycardAccessDenied",
@@ -490,7 +467,9 @@ def _raise_on_mint_error(ctx: AccessContext, resource: str) -> None:
     err = ctx.get_resource_error(resource) or ctx.get_error() or {}
     code = err.get("code")
     detail = err.get("description") or err.get("raw_error") or err.get("message") or ""
-    if code in _PERMANENT_DENIAL_CODES:
+    # Permanent denials come from keycardai.oauth: the same set that drives
+    # OAuthProtocolError.retryable (equivalence pinned in the tests).
+    if code in PERMANENT_ERROR_CODES:
         raise ApplicationError(
             f"Keycard denied {resource}: {code}: {detail}",
             type="KeycardAccessDenied",

@@ -50,7 +50,15 @@ async def main(client):
         ...
 ```
 
-With no `credential` argument, `KeycardInterceptor` discovers one from the environment: `KEYCARD_CLIENT_ID` and `KEYCARD_CLIENT_SECRET`, or `KEYCARD_APPLICATION_CREDENTIAL_TYPE=eks_workload_identity` with the token file. Any `keycardai.oauth.server.ApplicationCredential` can also be passed explicitly.
+### Credential discovery
+
+With no `credential` argument, `KeycardInterceptor` calls `keycardai.oauth.server.discover_credential()`, the SDK-wide environment convention:
+
+- `KEYCARD_CLIENT_ID` and `KEYCARD_CLIENT_SECRET` together build a `ClientSecret`.
+- A token file named by `KEYCARD_EKS_WORKLOAD_IDENTITY_TOKEN_FILE`, `AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE`, `AWS_WEB_IDENTITY_TOKEN_FILE`, or `AZURE_FEDERATED_TOKEN_FILE` builds a `WorkloadIdentity`.
+- `KEYCARD_APPLICATION_CREDENTIAL_TYPE` (`client_secret` or `workload_identity`; `eks_workload_identity` is a legacy alias) names the type to use, and wins over everything else in the environment.
+
+When the environment can build more than one credential and the type variable does not choose between them, the worker fails at startup with `GrantConfigurationError` instead of guessing. EKS IRSA injects `AWS_WEB_IDENTITY_TOKEN_FILE` into pods automatically, so a worker meant to use a client secret on EKS must set `KEYCARD_APPLICATION_CREDENTIAL_TYPE=client_secret`. Any `keycardai.oauth.server.ApplicationCredential` can also be passed explicitly, which skips discovery entirely.
 
 ## Keycard setup
 

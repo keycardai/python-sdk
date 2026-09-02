@@ -286,6 +286,20 @@ async def test_grant_configuration_error_carries_its_contractual_name(oauth_call
     assert GrantConfigurationError.__name__ == "GrantConfigurationError"
 
 
+def test_permanent_denial_set_matches_oauth_retryable_property():
+    # The classifier consumes keycardai.oauth's PERMANENT_ERROR_CODES; the
+    # same set drives OAuthProtocolError.retryable. Pin the equivalence so
+    # the day the set and the property drift apart, this package notices.
+    from keycardai.oauth import PERMANENT_ERROR_CODES
+    from keycardai.oauth.exceptions import OAuthProtocolError
+
+    assert PERMANENT_ERROR_CODES, "permanent-code set must not be empty"
+    for code in [*sorted(PERMANENT_ERROR_CODES), "invalid_request", "server_error"]:
+        assert OAuthProtocolError(error=code).retryable == (
+            code not in PERMANENT_ERROR_CODES
+        ), code
+
+
 # --- on-behalf-of: the exchange path ----------------------------------------
 
 
@@ -312,8 +326,25 @@ def test_obo_with_a_wrong_parameter_name_fails_at_decoration():
 
 # --- credential-type polymorphism -------------------------------------------
 
+# Every environment variable keycardai.oauth's discover_credential reads.
+_CREDENTIAL_ENV_VARS = (
+    "KEYCARD_CLIENT_ID",
+    "KEYCARD_CLIENT_SECRET",
+    "KEYCARD_APPLICATION_CREDENTIAL_TYPE",
+    "KEYCARD_EKS_WORKLOAD_IDENTITY_TOKEN_FILE",
+    "AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE",
+    "AWS_WEB_IDENTITY_TOKEN_FILE",
+    "AZURE_FEDERATED_TOKEN_FILE",
+)
+
+
+def _clear_credential_env(monkeypatch):
+    for var in _CREDENTIAL_ENV_VARS:
+        monkeypatch.delenv(var, raising=False)
+
 
 async def test_credential_discovered_from_env(oauth_calls, monkeypatch):
+    _clear_credential_env(monkeypatch)
     monkeypatch.setenv("KEYCARD_CLIENT_ID", "env-id")
     monkeypatch.setenv("KEYCARD_CLIENT_SECRET", "env-secret")
     chain = KeycardInterceptor("https://zone.test").intercept_activity(RecordingNext())
@@ -322,38 +353,66 @@ async def test_credential_discovered_from_env(oauth_calls, monkeypatch):
 
 
 def test_no_credential_anywhere_fails_at_construction(monkeypatch):
-    for var in (
-        "KEYCARD_CLIENT_ID",
-        "KEYCARD_CLIENT_SECRET",
-        "KEYCARD_APPLICATION_CREDENTIAL_TYPE",
-        "KEYCARD_EKS_WORKLOAD_IDENTITY_TOKEN_FILE",
-        "AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE",
-        "AWS_WEB_IDENTITY_TOKEN_FILE",
-    ):
-        monkeypatch.delenv(var, raising=False)
-    with pytest.raises(ValueError, match="credential"):
+    _clear_credential_env(monkeypatch)
+    with pytest.raises(GrantConfigurationError, match="credential"):
         KeycardInterceptor("https://zone.test")
 
 
 def test_unknown_credential_type_fails_at_construction(monkeypatch):
-    monkeypatch.delenv("KEYCARD_CLIENT_ID", raising=False)
-    monkeypatch.delenv("KEYCARD_CLIENT_SECRET", raising=False)
+    _clear_credential_env(monkeypatch)
     monkeypatch.setenv("KEYCARD_APPLICATION_CREDENTIAL_TYPE", "web_identity")
-    with pytest.raises(ValueError, match="web_identity"):
+    with pytest.raises(GrantConfigurationError, match="web_identity"):
         KeycardInterceptor("https://zone.test")
 
 
-def test_eks_workload_identity_discovered_from_env(oauth_calls, monkeypatch, tmp_path):
-    from keycardai.oauth.server import EKSWorkloadIdentity
+def test_workload_identity_discovered_from_env(oauth_calls, monkeypatch, tmp_path):
+    # eks_workload_identity is the legacy alias for workload_identity; both
+    # build a WorkloadIdentity over the token file.
+    from keycardai.oauth.server import WorkloadIdentity
 
     token_file = tmp_path / "token"
     token_file.write_text("assertion")
-    monkeypatch.delenv("KEYCARD_CLIENT_ID", raising=False)
-    monkeypatch.delenv("KEYCARD_CLIENT_SECRET", raising=False)
+    _clear_credential_env(monkeypatch)
     monkeypatch.setenv("KEYCARD_APPLICATION_CREDENTIAL_TYPE", "eks_workload_identity")
     monkeypatch.setenv("KEYCARD_EKS_WORKLOAD_IDENTITY_TOKEN_FILE", str(token_file))
     interceptor = KeycardInterceptor("https://zone.test")
-    assert isinstance(interceptor._credential, EKSWorkloadIdentity)
+    assert isinstance(interceptor._credential, WorkloadIdentity)
+
+
+def test_ambiguous_credential_env_fails_at_construction(monkeypatch, tmp_path):
+    # EKS IRSA injects AWS_WEB_IDENTITY_TOKEN_FILE into pods, so a worker
+    # holding a client secret sees two buildable credentials. Discovery must
+    # reject the ambiguity at startup instead of silently picking one, and
+    # KEYCARD_APPLICATION_CREDENTIAL_TYPE=client_secret must resolve it.
+    token_file = tmp_path / "irsa-token"
+    token_file.write_text("assertion")
+    _clear_credential_env(monkeypatch)
+    monkeypatch.setenv("KEYCARD_CLIENT_ID", "env-id")
+    monkeypatch.setenv("KEYCARD_CLIENT_SECRET", "env-secret")
+    monkeypatch.setenv("AWS_WEB_IDENTITY_TOKEN_FILE", str(token_file))
+    with pytest.raises(GrantConfigurationError, match="Ambiguous"):
+        KeycardInterceptor("https://zone.test")
+
+    monkeypatch.setenv("KEYCARD_APPLICATION_CREDENTIAL_TYPE", "client_secret")
+    interceptor = KeycardInterceptor("https://zone.test")
+    assert isinstance(interceptor._credential, ClientSecret)
+
+
+def test_credential_type_switch_wins_over_client_secret(monkeypatch, tmp_path):
+    # KEYCARD_APPLICATION_CREDENTIAL_TYPE wins over everything: with both
+    # credential kinds configured, naming workload_identity must not fall
+    # back to the client secret.
+    from keycardai.oauth.server import WorkloadIdentity
+
+    token_file = tmp_path / "token"
+    token_file.write_text("assertion")
+    _clear_credential_env(monkeypatch)
+    monkeypatch.setenv("KEYCARD_CLIENT_ID", "env-id")
+    monkeypatch.setenv("KEYCARD_CLIENT_SECRET", "env-secret")
+    monkeypatch.setenv("AWS_WEB_IDENTITY_TOKEN_FILE", str(token_file))
+    monkeypatch.setenv("KEYCARD_APPLICATION_CREDENTIAL_TYPE", "workload_identity")
+    interceptor = KeycardInterceptor("https://zone.test")
+    assert isinstance(interceptor._credential, WorkloadIdentity)
 
 
 async def test_client_credentials_grant_requires_client_secret(oauth_calls):
