@@ -231,6 +231,20 @@ async def test_body_supplied_owner_cannot_be_forged(dispatch) -> None:
     assert filters == {"owner": ADA}
 
 
+async def test_thread_update_stamps_the_owner(dispatch) -> None:
+    thread = {"thread_id": "t-1", "metadata": {}}
+    await dispatch(user(ADA), "threads", "create", thread)
+    # The body names another identity; the stamp must overwrite it before the
+    # server merges the update into the thread's metadata.
+    update = {"thread_id": "t-1", "metadata": {"owner": GRACE}}
+    filters = await dispatch(user(ADA), "threads", "update", update)
+    assert update["metadata"]["owner"] == ADA
+    assert filters == {"owner": ADA}
+    thread["metadata"].update(update["metadata"])
+    assert inmem_ops._check_filter_match(thread["metadata"], {"owner": ADA})
+    assert not inmem_ops._check_filter_match(thread["metadata"], {"owner": GRACE})
+
+
 async def test_cross_owner_thread_read_is_filtered(dispatch) -> None:
     thread = {"thread_id": "t-1", "metadata": {}}
     await dispatch(user(ADA), "threads", "create", thread)

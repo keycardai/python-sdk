@@ -223,8 +223,9 @@ def install_owner_authorization(auth: Auth) -> Auth:
     without these handlers any valid caller can read and resume any other
     caller's thread. Installs, on the passed `Auth` object:
 
-    - owner metadata stamped on thread, run and store writes, taken from the
-      verified identity and never from the request body,
+    - owner metadata stamped on thread creation, run creation and thread
+      updates, taken from the verified identity and never from the request
+      body, so an update cannot reassign ownership,
     - reads, updates, searches and deletes filtered by that owner,
     - store namespaces prefixed with a digest of the owner, injected even when
       the request carries no namespace at all, so a prefix-less
@@ -250,10 +251,18 @@ def install_owner_authorization(auth: Auth) -> Auth:
         """Runs and resumes: this owner filter is what stops a cross-owner resume."""
         return _stamp(ctx, value)
 
+    async def stamp_thread_update_owner(
+        ctx: Auth.types.AuthContext, value: Auth.types.on.threads.update.value
+    ) -> dict[str, str]:
+        """The server merges the update's metadata into the thread, so without
+        the stamp a caller could hand their own thread to another identity (or
+        lock themselves out) by writing `metadata.owner` in the body."""
+        return _stamp(ctx, value)
+
     async def own_threads_only(
         ctx: Auth.types.AuthContext, value: MutableMapping[str, Any]
     ) -> dict[str, str]:
-        """Thread and run reads, updates, searches and deletes, scoped to the owner."""
+        """Thread and run reads, searches and deletes, scoped to the owner."""
         return {OWNER_KEY: _owner(ctx)}
 
     async def own_store_namespace_only(
@@ -287,6 +296,7 @@ def install_owner_authorization(auth: Auth) -> Auth:
 
     auth.on.threads.create(stamp_thread_owner)
     auth.on.threads.create_run(stamp_run_owner)
+    auth.on.threads.update(stamp_thread_update_owner)
     auth.on.threads(own_threads_only)
     auth.on.store(own_store_namespace_only)
     auth.on.assistants.read(read_assistants)
@@ -298,7 +308,7 @@ def install_owner_authorization(auth: Auth) -> Auth:
 def _stamp(
     ctx: Auth.types.AuthContext, value: MutableMapping[str, Any]
 ) -> dict[str, str]:
-    """Record the owner on the resource being created, and filter on it."""
+    """Record the owner on the resource being written, and filter on it."""
     owner = _owner(ctx)
     metadata = value.get("metadata")
     if metadata is None:

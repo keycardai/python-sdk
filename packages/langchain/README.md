@@ -258,8 +258,9 @@ error or sign-in interrupt.
 `install_owner_authorization` covers what authentication alone does not:
 authentication says who is calling but grants no ownership, so without it any
 valid caller can read and resume any other caller's thread. It stamps the
-verified owner on thread, run and store writes (never taking it from the
-request body), filters reads, updates, searches and deletes by that owner,
+verified owner on thread creation, run creation and thread updates (never
+taking it from the request body, so an update cannot reassign ownership),
+filters reads, updates, searches and deletes by that owner,
 prefixes store namespaces with a digest of the owner, denies Studio users, and
 denies every unmatched resource and action pair, because LangGraph's
 authorization handlers otherwise fail open.
