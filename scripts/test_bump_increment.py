@@ -26,6 +26,7 @@ PACKAGES = {
     "keycardai-a2a": "packages/a2a",
     "keycardai-langchain": "packages/langchain",
     "keycardai-fastmcp": "packages/fastmcp",
+    "keycardai-temporal": "packages/temporal",
     "keycardai": ".",
 }
 
@@ -169,6 +170,17 @@ class ScopedIncrementTests(unittest.TestCase):
         with SyntheticRepo("keycardai-oauth", "0.25.0") as repo:
             repo.commit("feat(keycardai-oauth)!: multi-resource web-app flow")
             self.assertEqual(repo.dry_run_version(), "0.26.0")
+
+    def test_temporal_bumps_only_on_its_own_scope(self) -> None:
+        with SyntheticRepo("keycardai-temporal", "0.1.0") as repo:
+            repo.commit("feat(keycardai-oauth)!: multi-resource web-app flow")
+            repo.commit("fix(keycardai-mcp): restore MCP 2.x HTTP connections")
+            repo.commit("chore: add the keycardai-temporal package")
+            self.assertIsNone(repo.dry_run_version())
+            repo.commit("fix(keycardai-temporal): reset the context on failure")
+            self.assertEqual(repo.dry_run_version(), "0.1.1")
+            repo.commit("feat(keycardai-temporal)!: rename the grant decorator")
+            self.assertEqual(repo.dry_run_version(), "0.2.0")
 
 
 class NonReleasableCommitTests(unittest.TestCase):
