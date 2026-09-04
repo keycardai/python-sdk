@@ -32,7 +32,14 @@ from keycardai.starlette import (
 from keycardai.starlette.middleware.bearer import KeycardAuthError
 
 
-def _stub_verifier(client_id: str = "test-client", scopes=None) -> MagicMock:
+def _stub_verifier(
+    client_id: str = "test-client",
+    scopes=None,
+    *,
+    sub: str | None = None,
+    sub_profile: str | None = None,
+    keycard_app_id: str | None = None,
+) -> MagicMock:
     """Build a mock TokenVerifier whose verify_token always returns a token."""
     if scopes is None:
         scopes = []
@@ -40,6 +47,9 @@ def _stub_verifier(client_id: str = "test-client", scopes=None) -> MagicMock:
     token.token = "verified-token"
     token.client_id = client_id
     token.scopes = scopes
+    token.sub = sub
+    token.sub_profile = sub_profile
+    token.keycard_app_id = keycard_app_id
     return MagicMock(
         enable_multi_zone=False,
         verify_token=AsyncMock(return_value=token),
@@ -276,6 +286,61 @@ class TestKeycardAuthBackend:
         }
         with pytest.raises(KeycardAuthError):
             await backend.authenticate(HTTPConnection(scope))
+
+    @pytest.mark.asyncio
+    async def test_valid_keycard_token_populates_identity_claims(self):
+        """Spec row 4: the auth context exposes client_id, sub, sub_profile, keycard_app_id."""
+        backend = KeycardAuthBackend(
+            _stub_verifier(
+                client_id="cred-123",
+                scopes=["read"],
+                sub="alice@example.com",
+                sub_profile="user",
+                keycard_app_id="app-456",
+            )
+        )
+        scope = {
+            "type": "http",
+            "headers": [(b"authorization", b"Bearer some-token")],
+            "path": "/api/me",
+            "scheme": "https",
+            "server": ("api.example.com", 443),
+        }
+
+        result = await backend.authenticate(HTTPConnection(scope))
+
+        assert result is not None
+        credentials, user = result
+        assert isinstance(user, KeycardUser)
+        assert user.client_id == "cred-123"
+        assert user.sub == "alice@example.com"
+        assert user.sub_profile == "user"
+        assert user.keycard_app_id == "app-456"
+        assert user.scopes == ["read"]
+        assert "read" in credentials.scopes
+
+    @pytest.mark.asyncio
+    async def test_token_without_keycard_claims_verifies_with_none_identity(self):
+        """A non-Keycard token still authenticates; the Keycard claims are None."""
+        backend = KeycardAuthBackend(
+            _stub_verifier(client_id="other-client", sub="some-subject")
+        )
+        scope = {
+            "type": "http",
+            "headers": [(b"authorization", b"Bearer some-token")],
+            "path": "/api/me",
+            "scheme": "https",
+            "server": ("api.example.com", 443),
+        }
+
+        result = await backend.authenticate(HTTPConnection(scope))
+
+        assert result is not None
+        _, user = result
+        assert user.client_id == "other-client"
+        assert user.sub == "some-subject"
+        assert user.sub_profile is None
+        assert user.keycard_app_id is None
 
     def test_malformed_authorization_header_returns_401_challenge(self):
         provider = AuthProvider(
@@ -654,6 +719,30 @@ class TestKeycardUser:
         assert user.display_name == "my-client"
         assert user.access_token == "tok"
         assert user.zone_id == "zone-1"
+
+    def test_identity_claims_default_to_none(self):
+        user = KeycardUser(
+            access_token="tok",
+            client_id="my-client",
+            zone_id=None,
+            resource_server_url="https://api.example.com/.well-known/oauth-protected-resource/",
+        )
+        assert user.sub is None
+        assert user.sub_profile is None
+        assert user.keycard_app_id is None
+
+    def test_identity_claims_are_exposed(self):
+        user = KeycardUser(
+            access_token="tok",
+            client_id="cred-123",
+            zone_id=None,
+            resource_server_url="https://api.example.com/.well-known/oauth-protected-resource/",
+            sub="app-456",
+            sub_profile="app",
+            keycard_app_id="app-456",
+        )
+        assert user.sub == user.keycard_app_id == "app-456"
+        assert user.sub_profile == "app"
 
 
 class TestPackageHasNoMcpDependency:

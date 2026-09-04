@@ -35,8 +35,24 @@ class AccessToken(BaseModel):
     """Verified access token representation.
 
     This is a local model replacing ``mcp.server.auth.provider.AccessToken``
-    so that the verifier has no MCP dependency.  The fields are identical
-    to the MCP model for drop-in compatibility.
+    so that the verifier has no MCP dependency.  The MCP model's fields are
+    kept for drop-in compatibility, plus the caller's identity claims.
+
+    The identity fields answer different questions, so key on the right one:
+
+    - ``client_id``: the OAuth client that authenticated. Names the credential,
+      which rotates, not the application.
+    - ``keycard_app_id``: the stable Keycard application identifier. Key on
+      this to identify the calling application regardless of grant type or
+      which credential authenticated.
+    - ``sub``: the user on a user-present token, the application on an
+      application token (equal to ``keycard_app_id`` when ``sub_profile`` is
+      ``"app"``).
+    - ``sub_profile``: ``"user"`` when a user authorized access, ``"app"``
+      when an application acts on its own behalf.
+
+    ``sub_profile`` and ``keycard_app_id`` are Keycard claims and are ``None``
+    on a token from another issuer.
     """
 
     token: str
@@ -44,6 +60,9 @@ class AccessToken(BaseModel):
     scopes: list[str]
     expires_at: int | None = None
     resource: str | None = None  # RFC 8707 resource indicator
+    sub: str | None = None
+    sub_profile: str | None = None
+    keycard_app_id: str | None = None
 
 
 class TokenVerifier:
@@ -365,5 +384,8 @@ class TokenVerifier:
             client_id=jwt_access_token.client_id,
             scopes=jwt_access_token.get_scopes(),
             expires_at=jwt_access_token.exp,
+            sub=jwt_access_token.sub,
+            sub_profile=jwt_access_token.get_custom_claim("sub_profile"),
+            keycard_app_id=jwt_access_token.get_custom_claim("keycard_app_id"),
             resource=jwt_access_token.get_custom_claim("resource"),
         )
