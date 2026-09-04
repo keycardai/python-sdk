@@ -7,7 +7,7 @@ requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "Keycard", email = "support@keycard.ai" }]
 dependencies = [
-    "keycardai-oauth>=0.23.0",
+    "keycardai-oauth>=0.26.0",
     "temporalio>=1.32.0",
 ]
 keywords = ["temporal", "workflows", "activities", "oauth", "token-exchange", "authentication", "keycard"]
