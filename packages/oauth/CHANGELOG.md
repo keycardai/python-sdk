@@ -1,3 +1,9 @@
+## 0.27.0-keycardai-oauth (2026-09-05)
+
+
+- feat(keycardai-oauth): expose the caller identity claims on the verified token
+- AccessToken gains sub, sub_profile, and keycard_app_id, populated by the verifier from the verified claims, and keycardai-starlette's KeycardUser carries them through to the auth context. Implements the field set from keycard-sdk-spec specs/server-bearer-auth/bearer-token-verification-middleware.md (unit row 4), with ruby-sdk #24 as the conforming reference. sub_profile and keycard_app_id are Keycard claims, None on tokens from other issuers, so the fields are optional and non-Keycard tokens still verify. Starlette's keycardai-oauth floor rises to 0.27.0 since KeycardUser reads the new fields; the starlette release follows the oauth release. mcp bridges a plain dict and a2a propagates KeycardUser, so neither needed changes.
+
 ## 0.26.0-keycardai-oauth (2026-09-02)
 
 
