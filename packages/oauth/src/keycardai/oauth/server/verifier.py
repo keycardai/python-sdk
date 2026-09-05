@@ -6,12 +6,14 @@ framework-free implementation.
 """
 
 import asyncio
+import threading
 import time
 import warnings
 from typing import Any
 
 from pydantic import AnyHttpUrl, BaseModel
 
+from keycardai.oauth._metadata_cache import MetadataCache
 from keycardai.oauth.exceptions import InvalidTokenError
 from keycardai.oauth.types.models import ClientConfig
 from keycardai.oauth.utils.jwt import (
@@ -27,6 +29,7 @@ from .exceptions import (
     CacheError,
     JWKSDiscoveryError,
     JWKSUriValidationError,
+    OAuthServerError,
     VerifierConfigError,
 )
 
@@ -80,6 +83,7 @@ class TokenVerifier:
         client_factory: ClientFactory | None = None,
         *,
         discovery_ttl: int = 3600,
+        negative_ttl: float = 60.0,
         fetch_timeout: float = 10.0,
         cache_ttl: int | None = None,
     ):
@@ -108,12 +112,18 @@ class TokenVerifier:
         self.allowed_algorithms = allowed_algorithms
         self.key_ttl = key_ttl
         self.discovery_ttl = discovery_ttl
+        self.negative_ttl = negative_ttl
         self.fetch_timeout = fetch_timeout
 
         self._jwks_cache = JWKSCache(ttl=key_ttl, max_size=256)
-        # Discovered jwks_uri per zone, with a discovery_ttl expiry:
-        # cache_key -> (jwks_uri, cached_at).
-        self._discovered_jwks_uris: dict[str, tuple[str, float]] = {}
+        # Discovered jwks_uri per zone: success for discovery_ttl, a deterministic
+        # failure for at most negative_ttl, a transient failure not at all.
+        self._discovered_jwks_uris: dict[
+            str, MetadataCache[str, OAuthServerError]
+        ] = {}
+        # Discovery runs synchronously (off the event loop via to_thread); the
+        # lock lets concurrent cold-cache callers share one request.
+        self._discovery_lock = threading.Lock()
         # De-duplicate concurrent cold-cache key fetches (asyncio, one event loop).
         self._key_inflight: dict[str, asyncio.Future] = {}
 
@@ -142,35 +152,47 @@ class TokenVerifier:
             if self.enable_multi_zone and zone_id:
                 discovery_issuer = self._create_zone_scoped_url(self.issuer, zone_id)
 
-        cached = self._discovered_jwks_uris.get(cache_key)
+        cache = self._discovered_jwks_uris.setdefault(
+            cache_key, MetadataCache(self.discovery_ttl, self.negative_ttl)
+        )
+
+        cached = cache.lookup()
         if cached is not None:
-            cached_uri, cached_at = cached
-            if time.time() - cached_at < self.discovery_ttl:
-                return cached_uri
+            return cached
 
-        try:
-            client = self.client_factory.create_client(
-                discovery_issuer,
-                config=ClientConfig(
-                    enable_metadata_discovery=True,
-                    auto_register_client=False,
-                    timeout=self.fetch_timeout,
-                ),
-            )
-            server_metadata = client.discover_server_metadata()
-            discovered_uri = server_metadata.jwks_uri
-        except Exception as e:
-            raise JWKSDiscoveryError(discovery_issuer, zone_id, cause=e) from e
+        with self._discovery_lock:
+            cached = cache.lookup()
+            if cached is not None:
+                return cached
 
-        if not discovered_uri:
-            raise JWKSDiscoveryError(discovery_issuer, zone_id)
+            try:
+                client = self.client_factory.create_client(
+                    discovery_issuer,
+                    config=ClientConfig(
+                        enable_metadata_discovery=True,
+                        auto_register_client=False,
+                        timeout=self.fetch_timeout,
+                    ),
+                )
+                server_metadata = client.discover_server_metadata()
+                discovered_uri = server_metadata.jwks_uri
+            except Exception as e:
+                error = JWKSDiscoveryError(discovery_issuer, zone_id, cause=e)
+                raise cache.store_failure(error, retryable=error.retryable) from e
 
-        # Security: a discovered jwks_uri must share the issuer's origin, so a
-        # tampered discovery document cannot point key resolution elsewhere.
-        self._assert_same_origin(discovery_issuer, discovered_uri)
+            if not discovered_uri:
+                error = JWKSDiscoveryError(discovery_issuer, zone_id)
+                raise cache.store_failure(error, retryable=error.retryable)
 
-        self._discovered_jwks_uris[cache_key] = (discovered_uri, time.time())
-        return discovered_uri
+            # Security: a discovered jwks_uri must share the issuer's origin, so a
+            # tampered discovery document cannot point key resolution elsewhere.
+            try:
+                self._assert_same_origin(discovery_issuer, discovered_uri)
+            except JWKSUriValidationError as e:
+                cache.store_failure(e, retryable=False)
+                raise
+
+            return cache.store_success(discovered_uri)
 
     def _assert_same_origin(self, issuer: str, jwks_uri: str) -> None:
         issuer_url = AnyHttpUrl(issuer)
@@ -236,19 +258,25 @@ class TokenVerifier:
         if cached_key is not None:
             return cached_key
 
+        # Callers await the shared resolution shielded, so one caller's
+        # cancellation does not cancel (poison) the fetch for the others.
         inflight_key = f"{issuer or 'default'}:{zone_id or 'default'}:{kid}"
-        existing = self._key_inflight.get(inflight_key)
-        if existing is not None:
-            return await existing
+        future = self._key_inflight.get(inflight_key)
+        if future is None:
+            future = asyncio.ensure_future(
+                self._resolve_and_cache_key(kid, algorithm, zone_id, issuer)
+            )
+            self._key_inflight[inflight_key] = future
+            future.add_done_callback(
+                lambda f, key=inflight_key: self._on_key_resolved(key, f)
+            )
+        return await asyncio.shield(future)
 
-        future = asyncio.ensure_future(
-            self._resolve_and_cache_key(kid, algorithm, zone_id, issuer)
-        )
-        self._key_inflight[inflight_key] = future
-        try:
-            return await future
-        finally:
+    def _on_key_resolved(self, inflight_key: str, future: asyncio.Future) -> None:
+        if self._key_inflight.get(inflight_key) is future:
             self._key_inflight.pop(inflight_key, None)
+        if not future.cancelled():
+            future.exception()
 
     async def _resolve_and_cache_key(
         self,
@@ -257,13 +285,17 @@ class TokenVerifier:
         zone_id: str | None = None,
         issuer: str | None = None,
     ) -> JWKSKey:
-        """Discover the jwks_uri, fetch the key for ``kid``, and cache it."""
+        """Discover the jwks_uri, fetch the key for ``kid``, and cache it.
+
+        Discovery uses the synchronous client, so it runs in a worker thread:
+        it must never block the event loop this coroutine runs on.
+        """
         if issuer is not None:
-            jwks_uri = self._discover_jwks_uri(issuer=issuer)
+            jwks_uri = await asyncio.to_thread(self._discover_jwks_uri, issuer=issuer)
         elif self.enable_multi_zone and zone_id:
-            jwks_uri = self._discover_jwks_uri(zone_id=zone_id)
+            jwks_uri = await asyncio.to_thread(self._discover_jwks_uri, zone_id=zone_id)
         else:
-            jwks_uri = self._discover_jwks_uri()
+            jwks_uri = await asyncio.to_thread(self._discover_jwks_uri)
             if zone_id:
                 jwks_uri = self._get_zone_jwks_uri(jwks_uri, zone_id)
 

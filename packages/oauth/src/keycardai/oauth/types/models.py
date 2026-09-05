@@ -443,6 +443,11 @@ class ClientConfig:
 
     enable_metadata_discovery: bool = True
     auto_register_client: bool = False
+    # Discovered metadata is cached for discovery_ttl seconds. A deterministic
+    # discovery failure is remembered for at most negative_ttl seconds (never
+    # longer than discovery_ttl; 0 disables). Transient failures are never cached.
+    discovery_ttl: float = 3600.0
+    negative_ttl: float = 60.0
 
     client_id: str | None = None
     client_name: str = "Keycard OAuth Client"

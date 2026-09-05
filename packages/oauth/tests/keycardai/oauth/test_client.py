@@ -182,6 +182,9 @@ class TestClientInitializationParity:
                 pass
 
 
+_NO_DISCOVERY = ClientConfig(enable_metadata_discovery=False)
+
+
 class TestOverloadEquivalence:
     """Test that all overload forms create equivalent function calls."""
 
@@ -211,7 +214,7 @@ class TestOverloadEquivalence:
 
         with patch('keycardai.oauth.client.register_client') as mock_register:
             mock_register.return_value = Mock()
-            client = Client("https://test.keycard.cloud")
+            client = Client("https://test.keycard.cloud", config=_NO_DISCOVERY)
 
             # Method 1: Using request object
             client.register_client(request_obj)
@@ -245,7 +248,7 @@ class TestOverloadEquivalence:
 
         with patch('keycardai.oauth.client.register_client_async') as mock_register_async:
             mock_register_async.return_value = Mock()
-            async_client = AsyncClient("https://test.keycard.cloud")
+            async_client = AsyncClient("https://test.keycard.cloud", config=_NO_DISCOVERY)
 
             # Method 1: Using request object
             await async_client.register_client(request_obj)
@@ -283,7 +286,7 @@ class TestOverloadEquivalence:
 
         with patch('keycardai.oauth.client.exchange_token') as mock_exchange:
             mock_exchange.return_value = Mock()
-            client = Client("https://test.keycard.cloud")
+            client = Client("https://test.keycard.cloud", config=_NO_DISCOVERY)
 
             # Method 1: Using request object
             client.exchange_token(request_obj)
@@ -316,7 +319,7 @@ class TestOverloadEquivalence:
 
         with patch('keycardai.oauth.client.exchange_token_async') as mock_exchange_async:
             mock_exchange_async.return_value = Mock()
-            async_client = AsyncClient("https://test.keycard.cloud")
+            async_client = AsyncClient("https://test.keycard.cloud", config=_NO_DISCOVERY)
 
             # Method 1: Using request object
             await async_client.exchange_token(request_obj)
@@ -348,7 +351,7 @@ class TestOverloadEquivalence:
 
         with patch('keycardai.oauth.client.client_credentials_grant') as mock_grant:
             mock_grant.return_value = Mock()
-            client = Client("https://test.keycard.cloud")
+            client = Client("https://test.keycard.cloud", config=_NO_DISCOVERY)
 
             # Method 1: Using request object
             client.client_credentials_grant(request_obj)
@@ -380,7 +383,7 @@ class TestOverloadEquivalence:
 
         with patch('keycardai.oauth.client.client_credentials_grant_async') as mock_grant_async:
             mock_grant_async.return_value = Mock()
-            async_client = AsyncClient("https://test.keycard.cloud")
+            async_client = AsyncClient("https://test.keycard.cloud", config=_NO_DISCOVERY)
 
             # Method 1: Using request object
             await async_client.client_credentials_grant(request_obj)
@@ -404,7 +407,7 @@ class TestOverloadEquivalence:
         """Test the sync kwargs form passes client_id into the request."""
         with patch('keycardai.oauth.client.client_credentials_grant') as mock_grant:
             mock_grant.return_value = Mock()
-            client = Client("https://test.keycard.cloud")
+            client = Client("https://test.keycard.cloud", config=_NO_DISCOVERY)
 
             client.client_credentials_grant(
                 client_id="app_123",
@@ -420,7 +423,7 @@ class TestOverloadEquivalence:
         """Test the async kwargs form passes client_id into the request."""
         with patch('keycardai.oauth.client.client_credentials_grant_async') as mock_grant_async:
             mock_grant_async.return_value = Mock()
-            async_client = AsyncClient("https://test.keycard.cloud")
+            async_client = AsyncClient("https://test.keycard.cloud", config=_NO_DISCOVERY)
 
             await async_client.client_credentials_grant(
                 client_id="app_123",
@@ -438,7 +441,7 @@ class TestOverloadEquivalence:
 
         with patch('keycardai.oauth.client.discover_server_metadata') as mock_discover:
             mock_discover.return_value = Mock()
-            client = Client("https://test.keycard.cloud")
+            client = Client("https://test.keycard.cloud", config=_NO_DISCOVERY)
 
             # Method 1: Using request object
             client.discover_server_metadata(request_obj)
@@ -466,7 +469,7 @@ class TestOverloadEquivalence:
 
         with patch('keycardai.oauth.client.discover_server_metadata_async') as mock_discover_async:
             mock_discover_async.return_value = Mock()
-            async_client = AsyncClient("https://test.keycard.cloud")
+            async_client = AsyncClient("https://test.keycard.cloud", config=_NO_DISCOVERY)
 
             # Method 1: Using request object
             await async_client.discover_server_metadata(request_obj)
