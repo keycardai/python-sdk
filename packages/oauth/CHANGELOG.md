@@ -1,3 +1,9 @@
+## 0.28.0-keycardai-oauth (2026-09-05)
+
+
+- feat(keycardai-oauth): metadata failures are not sticky, discovery off the event loop
+- Two fixes in the shared discovery paths. ECO-366 Python mirror: the clients no longer swallow discovery errors and pin convention-derived endpoints; discovery goes through a MetadataCache (success for discovery_ttl, deterministic failures for at most negative_ttl, transients never cached), failures surface as AuthorizationServerDiscoveryError carrying retryable, and concurrent cold-cache callers share one in-flight resolution that no single caller's cancellation can poison. ECO-364: TokenVerifier's JWKS discovery runs via asyncio.to_thread so verify_token never blocks the event loop; the regression test runs the langgraph-dev failure mode under blockbuster and fails with the ticket's exact error if the wrapper is removed. ClientConfig gains discovery_ttl and negative_ttl; the verifier gains negative_ttl. Discovery disabled still resolves convention endpoints; only the silent failure fallback is gone.
+
 ## 0.27.0-keycardai-oauth (2026-09-05)
 
 
