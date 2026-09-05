@@ -115,7 +115,24 @@ class KeycardUser(BaseUser):
 
     Surfaces the standard Starlette ``BaseUser`` interface plus Keycard
     specifics (``access_token``, ``zone_id``) needed by ``@auth.grant()``
-    for delegated token exchange.
+    for delegated token exchange, and the caller's identity claims from the
+    verified token.
+
+    The identity fields answer different questions, so key on the right one:
+
+    - ``client_id``: the OAuth client that authenticated. Names the credential,
+      which rotates, not the application.
+    - ``keycard_app_id``: the stable Keycard application identifier. Key on
+      this to identify the calling application regardless of grant type or
+      which credential authenticated.
+    - ``sub``: the user on a user-present token, the application on an
+      application token (equal to ``keycard_app_id`` when ``sub_profile`` is
+      ``"app"``).
+    - ``sub_profile``: ``"user"`` when a user authorized access, ``"app"``
+      when an application acts on its own behalf.
+
+    ``sub_profile`` and ``keycard_app_id`` are Keycard claims and are ``None``
+    on a token from another issuer.
     """
 
     def __init__(
@@ -126,9 +143,15 @@ class KeycardUser(BaseUser):
         zone_id: str | None,
         resource_server_url: str,
         scopes: Sequence[str] | None = None,
+        sub: str | None = None,
+        sub_profile: str | None = None,
+        keycard_app_id: str | None = None,
     ):
         self.access_token = access_token
         self.client_id = client_id
+        self.sub = sub
+        self.sub_profile = sub_profile
+        self.keycard_app_id = keycard_app_id
         self.zone_id = zone_id
         self.resource_server_url = resource_server_url
         self.scopes = list(scopes or [])
@@ -273,6 +296,9 @@ class KeycardAuthBackend(AuthenticationBackend):
             zone_id=zone_id,
             resource_server_url=resource_server_url,
             scopes=access_token.scopes,
+            sub=access_token.sub,
+            sub_profile=access_token.sub_profile,
+            keycard_app_id=access_token.keycard_app_id,
         )
         credentials = KeycardAuthCredentials(scopes=access_token.scopes)
         return credentials, user

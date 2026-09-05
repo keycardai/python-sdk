@@ -84,12 +84,14 @@ class TestTokenVerifierVerifyToken:
         scope: str = "read write",
         custom_claims: dict = None,
         aud: str = "test-audience",
+        sub: str = "test-subject",
     ) -> Mock:
         """Create a mock JWTAccessToken for testing."""
         current_time = int(time.time())
         token = Mock(spec=JWTAccessToken)
         token.exp = exp if exp is not None else current_time + 3600  # 1 hour future
         token.iss = iss
+        token.sub = sub
         token.client_id = client_id
         token.scope = scope
         token.aud = aud
@@ -221,6 +223,70 @@ class TestTokenVerifierVerifyToken:
             assert result is not None
             assert result.resource == "api.example.com"
             mock_jwt_token.get_custom_claim.assert_called_with("resource")
+
+    @pytest.mark.asyncio
+    async def test_verify_token_exposes_keycard_identity_claims(self):
+        """A zone-minted token populates sub, sub_profile, keycard_app_id and client_id."""
+        verifier = TokenVerifier(
+            issuer="https://test-issuer.com",
+            jwks_uri="https://example.com/.well-known/jwks.json"
+        )
+
+        mock_key = JWKSKey(
+            key="mock-public-key",
+            timestamp=time.time(),
+            algorithm="RS256"
+        )
+        mock_jwt_token = self.create_mock_jwt_access_token(
+            client_id="cred-123",
+            sub="alice@example.com",
+            custom_claims={"sub_profile": "user", "keycard_app_id": "app-456"},
+        )
+        mock_claims = self.create_unverified_claims()
+
+        with patch.object(verifier, '_get_verification_key', new_callable=AsyncMock) as mock_get_key, \
+             patch('keycardai.oauth.server.verifier.get_claims', return_value=mock_claims), \
+             patch('keycardai.oauth.server.verifier.parse_jwt_access_token') as mock_parse:
+
+            mock_get_key.return_value = mock_key
+            mock_parse.return_value = mock_jwt_token
+
+            result = await verifier.verify_token("test.jwt.token")
+
+            assert result.client_id == "cred-123"
+            assert result.sub == "alice@example.com"
+            assert result.sub_profile == "user"
+            assert result.keycard_app_id == "app-456"
+
+    @pytest.mark.asyncio
+    async def test_verify_token_without_keycard_claims_leaves_them_none(self):
+        """A non-Keycard token verifies with sub_profile and keycard_app_id None."""
+        verifier = TokenVerifier(
+            issuer="https://test-issuer.com",
+            jwks_uri="https://example.com/.well-known/jwks.json"
+        )
+
+        mock_key = JWKSKey(
+            key="mock-public-key",
+            timestamp=time.time(),
+            algorithm="RS256"
+        )
+        mock_jwt_token = self.create_mock_jwt_access_token(sub="some-subject")
+        mock_claims = self.create_unverified_claims()
+
+        with patch.object(verifier, '_get_verification_key', new_callable=AsyncMock) as mock_get_key, \
+             patch('keycardai.oauth.server.verifier.get_claims', return_value=mock_claims), \
+             patch('keycardai.oauth.server.verifier.parse_jwt_access_token') as mock_parse:
+
+            mock_get_key.return_value = mock_key
+            mock_parse.return_value = mock_jwt_token
+
+            result = await verifier.verify_token("test.jwt.token")
+
+            assert result.client_id == "test-client"
+            assert result.sub == "some-subject"
+            assert result.sub_profile is None
+            assert result.keycard_app_id is None
 
     @pytest.mark.asyncio
     async def test_verify_token_expired_token(self):
