@@ -5,12 +5,10 @@ import threading
 import warnings
 from typing import Any, overload
 
+from ._metadata_cache import MetadataCache
 from .exceptions import (
-    AuthenticationError,
+    AuthorizationServerDiscoveryError,
     ConfigError,
-    NetworkError,
-    OAuthHttpError,
-    OAuthProtocolError,
 )
 from .http._context import build_http_context
 from .http._transports import HttpxAsyncTransport, HttpxTransport
@@ -324,11 +322,79 @@ class AsyncClient:
         self._client_secret = None
         self._discovered_endpoints: Endpoints | None = None
         self._discovered_metadata: AuthorizationServerMetadata | None = None
+        self._metadata_cache: MetadataCache[
+            AuthorizationServerMetadata, AuthorizationServerDiscoveryError
+        ] = MetadataCache(self.config.discovery_ttl, self.config.negative_ttl)
+        self._discovery_task: asyncio.Task[AuthorizationServerMetadata] | None = None
 
     @property
     def base_url(self) -> str:
         """Deprecated alias for :attr:`issuer`. Use ``issuer`` instead."""
         return self.issuer
+
+    async def _resolve_metadata(self) -> AuthorizationServerMetadata | None:
+        """Return discovered metadata, or None when discovery is disabled.
+
+        Success is cached for ``discovery_ttl``; a deterministic failure is
+        remembered for at most ``negative_ttl``; a transient failure caches
+        nothing. Concurrent cold-cache callers share one in-flight discovery
+        task that no single caller's cancellation can cancel.
+
+        Raises:
+            AuthorizationServerDiscoveryError: discovery failed or the metadata
+                omits ``token_endpoint``. Never falls back to a guessed endpoint.
+        """
+        if not self.config.enable_metadata_discovery:
+            return None
+
+        cached = self._metadata_cache.lookup()
+        if cached is not None:
+            return cached
+
+        task = self._discovery_task
+        if task is None:
+            task = asyncio.ensure_future(self._discover_and_store())
+            self._discovery_task = task
+            task.add_done_callback(self._on_discovery_done)
+        return await asyncio.shield(task)
+
+    def _on_discovery_done(self, task: asyncio.Task[AuthorizationServerMetadata]) -> None:
+        if self._discovery_task is task:
+            self._discovery_task = None
+        if not task.cancelled():
+            task.exception()
+
+    async def _discover_and_store(self) -> AuthorizationServerMetadata:
+        try:
+            metadata = await self.discover_server_metadata()
+        except Exception as e:
+            raise self._store_discovery_failure(
+                AuthorizationServerDiscoveryError(self.issuer, cause=e)
+            ) from e
+        return self._store_discovered_metadata(metadata)
+
+    def _store_discovery_failure(
+        self, error: AuthorizationServerDiscoveryError
+    ) -> AuthorizationServerDiscoveryError:
+        return self._metadata_cache.store_failure(error, retryable=error.retryable)
+
+    def _store_discovered_metadata(
+        self, metadata: AuthorizationServerMetadata
+    ) -> AuthorizationServerMetadata:
+        overrides_token = self._endpoint_overrides and self._endpoint_overrides.token
+        if not metadata.token_endpoint and not overrides_token:
+            raise self._store_discovery_failure(
+                AuthorizationServerDiscoveryError(
+                    self.issuer,
+                    f"Authorization server {self.issuer} does not advertise a token_endpoint",
+                )
+            )
+        self._metadata_cache.store_success(metadata)
+        self._discovered_metadata = metadata
+        self._discovered_endpoints = resolve_endpoints(
+            self.issuer, self._endpoint_overrides, metadata
+        )
+        return metadata
 
     async def _ensure_initialized(self) -> None:
         """Ensure client is fully initialized with discovery and registration.
@@ -338,6 +404,11 @@ class AsyncClient:
         2. Client registration (if auto_register_client is True)
 
         Uses async lock for concurrent operation safety.
+
+        Raises:
+            AuthorizationServerDiscoveryError: metadata discovery failed. The
+                client is left uninitialized and the next call discovers again
+                (a deterministic failure is remembered for ``negative_ttl``).
         """
         if self._initialized:
             return
@@ -350,27 +421,13 @@ class AsyncClient:
             if self._initialized:
                 return
 
-            if self.config.enable_metadata_discovery:
-                try:
-                    metadata = await self.discover_server_metadata()
-                    self._discovered_metadata = metadata
-                    self._discovered_endpoints = resolve_endpoints(
-                        self.issuer,
-                        self._endpoint_overrides,
-                        metadata
-                    )
-                except (OAuthHttpError, OAuthProtocolError, NetworkError, AuthenticationError):
-                    self._discovered_endpoints = resolve_endpoints(
-                        self.issuer,
-                        self._endpoint_overrides,
-                        None
-                    )
-            else:
-                self._discovered_endpoints = self._endpoints
+            metadata = await self._resolve_metadata()
+            endpoints = resolve_endpoints(self.issuer, self._endpoint_overrides, metadata)
+            self._discovered_endpoints = endpoints
 
             if self.config.auto_register_client:
                 ctx = build_http_context(
-                    endpoint=self._discovered_endpoints.register,
+                    endpoint=endpoints.register,
                     transport=self.transport,
                     auth=self.auth_strategy,
                     issuer=self.issuer,
@@ -473,11 +530,12 @@ class AsyncClient:
     async def _get_current_endpoints(self) -> "Endpoints":
         """Get current endpoints from cached discovery.
 
-        Returns endpoints resolved during initialization. This avoids repeating
-        discovery on every operation and ensures consistent endpoint usage.
+        Discovered metadata is reused until ``discovery_ttl`` elapses, then
+        re-discovered on the next call.
         """
         await self._ensure_initialized()
-        return self._discovered_endpoints or self._endpoints
+        metadata = await self._resolve_metadata()
+        return resolve_endpoints(self.issuer, self._endpoint_overrides, metadata)
 
     @overload
     async def register_client(
@@ -685,7 +743,7 @@ class AsyncClient:
 
         if metadata is None:
             await self._ensure_initialized()
-            metadata = self._discovered_metadata or await self.discover_server_metadata()
+            metadata = await self._resolve_metadata() or await self.discover_server_metadata()
 
         ctx = build_http_context(
             endpoint=resolve_userinfo_endpoint(metadata),
@@ -1093,11 +1151,69 @@ class Client:
         self._client_secret = None
         self._discovered_endpoints: Endpoints | None = None
         self._discovered_metadata: AuthorizationServerMetadata | None = None
+        self._metadata_cache: MetadataCache[
+            AuthorizationServerMetadata, AuthorizationServerDiscoveryError
+        ] = MetadataCache(self.config.discovery_ttl, self.config.negative_ttl)
+        self._discovery_lock = threading.Lock()
 
     @property
     def base_url(self) -> str:
         """Deprecated alias for :attr:`issuer`. Use ``issuer`` instead."""
         return self.issuer
+
+    def _resolve_metadata(self) -> AuthorizationServerMetadata | None:
+        """Return discovered metadata, or None when discovery is disabled.
+
+        Success is cached for ``discovery_ttl``; a deterministic failure is
+        remembered for at most ``negative_ttl``; a transient failure caches
+        nothing. Concurrent cold-cache threads serialize on one lock so a
+        single discovery request serves all of them.
+
+        Raises:
+            AuthorizationServerDiscoveryError: discovery failed or the metadata
+                omits ``token_endpoint``. Never falls back to a guessed endpoint.
+        """
+        if not self.config.enable_metadata_discovery:
+            return None
+
+        cached = self._metadata_cache.lookup()
+        if cached is not None:
+            return cached
+
+        with self._discovery_lock:
+            cached = self._metadata_cache.lookup()
+            if cached is not None:
+                return cached
+            try:
+                metadata = self.discover_server_metadata()
+            except Exception as e:
+                raise self._store_discovery_failure(
+                    AuthorizationServerDiscoveryError(self.issuer, cause=e)
+                ) from e
+            return self._store_discovered_metadata(metadata)
+
+    def _store_discovery_failure(
+        self, error: AuthorizationServerDiscoveryError
+    ) -> AuthorizationServerDiscoveryError:
+        return self._metadata_cache.store_failure(error, retryable=error.retryable)
+
+    def _store_discovered_metadata(
+        self, metadata: AuthorizationServerMetadata
+    ) -> AuthorizationServerMetadata:
+        overrides_token = self._endpoint_overrides and self._endpoint_overrides.token
+        if not metadata.token_endpoint and not overrides_token:
+            raise self._store_discovery_failure(
+                AuthorizationServerDiscoveryError(
+                    self.issuer,
+                    f"Authorization server {self.issuer} does not advertise a token_endpoint",
+                )
+            )
+        self._metadata_cache.store_success(metadata)
+        self._discovered_metadata = metadata
+        self._discovered_endpoints = resolve_endpoints(
+            self.issuer, self._endpoint_overrides, metadata
+        )
+        return metadata
 
     def _ensure_initialized(self) -> None:
         """Ensure client is fully initialized with discovery and registration.
@@ -1107,6 +1223,11 @@ class Client:
         2. Client registration (if auto_register_client is True)
 
         Uses double-check locking pattern for performance.
+
+        Raises:
+            AuthorizationServerDiscoveryError: metadata discovery failed. The
+                client is left uninitialized and the next call discovers again
+                (a deterministic failure is remembered for ``negative_ttl``).
         """
         # Fast path: already initialized
         if self._initialized:
@@ -1118,32 +1239,14 @@ class Client:
             if self._initialized:
                 return
 
-            # Perform endpoint discovery first
-            if self.config.enable_metadata_discovery:
-                try:
-                    metadata = self.discover_server_metadata()
-                    self._discovered_metadata = metadata
-                    self._discovered_endpoints = resolve_endpoints(
-                        self.issuer,
-                        self._endpoint_overrides,
-                        metadata
-                    )
-                except (OAuthHttpError, OAuthProtocolError, NetworkError, AuthenticationError):
-                    # Discovery failed, use defaults
-                    self._discovered_endpoints = resolve_endpoints(
-                        self.issuer,
-                        self._endpoint_overrides,
-                        None
-                    )
-            else:
-                # Discovery disabled, use current endpoints
-                self._discovered_endpoints = self._endpoints
+            metadata = self._resolve_metadata()
+            endpoints = resolve_endpoints(self.issuer, self._endpoint_overrides, metadata)
+            self._discovered_endpoints = endpoints
 
             # Perform client registration if configured
             if self.config.auto_register_client:
-                # Use discovered endpoints directly to avoid circular dependency
                 ctx = build_http_context(
-                    endpoint=self._discovered_endpoints.register,
+                    endpoint=endpoints.register,
                     transport=self.transport,
                     auth=self.auth_strategy,
                     issuer=self.issuer,
@@ -1169,11 +1272,12 @@ class Client:
     def _get_current_endpoints(self) -> "Endpoints":
         """Get current endpoints from cached discovery.
 
-        Returns endpoints resolved during initialization. This avoids repeating
-        discovery on every operation and ensures consistent endpoint usage.
+        Discovered metadata is reused until ``discovery_ttl`` elapses, then
+        re-discovered on the next call.
         """
         self._ensure_initialized()
-        return self._discovered_endpoints or self._endpoints
+        metadata = self._resolve_metadata()
+        return resolve_endpoints(self.issuer, self._endpoint_overrides, metadata)
 
     @property
     def client_id(self) -> str | None:
@@ -1420,7 +1524,7 @@ class Client:
 
         if metadata is None:
             self._ensure_initialized()
-            metadata = self._discovered_metadata or self.discover_server_metadata()
+            metadata = self._resolve_metadata() or self.discover_server_metadata()
 
         ctx = build_http_context(
             endpoint=resolve_userinfo_endpoint(metadata),

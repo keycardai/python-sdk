@@ -218,6 +218,59 @@ class NetworkError(OAuthError):
         return True
 
 
+def classify_discovery_failure(cause: Exception | None) -> bool:
+    """Return the ``retryable`` classification of a metadata discovery failure.
+
+    Transient failures (network, timeout, HTTP 5xx, HTTP 429) are retryable
+    and must never be cached. Everything else, including a malformed
+    discovery document, an issuer mismatch, and a document missing a required
+    field (``cause`` is None), is deterministic and not retryable. A malformed
+    metadata document is deterministic here even though a malformed token
+    response classifies retryable by its ``invalid_response`` code.
+    """
+    if cause is None:
+        return False
+    if isinstance(cause, OAuthHttpError):
+        return cause.retryable
+    if isinstance(cause, OAuthProtocolError):
+        return False
+    if isinstance(cause, NetworkError):
+        return True
+    if isinstance(cause, OAuthError):
+        return cause.retryable
+    return True
+
+
+class AuthorizationServerDiscoveryError(OAuthError):
+    """Authorization server metadata discovery failed.
+
+    Raised by the client when the token endpoint (or the metadata it is read
+    from) cannot be discovered. The client never substitutes a
+    convention-derived endpoint for a failed discovery. ``retryable`` follows
+    the underlying failure: transient causes are True, deterministic causes
+    (other 4xx, issuer mismatch, malformed metadata, missing
+    ``token_endpoint``) are False.
+    """
+
+    def __init__(
+        self,
+        issuer: str,
+        message: str | None = None,
+        *,
+        cause: Exception | None = None,
+    ):
+        if message is None:
+            message = f"Failed to discover authorization server metadata for {issuer}"
+            if cause is not None:
+                message += f": {cause}"
+        super().__init__(message, cause)
+        self.issuer = issuer
+
+    @property
+    def retryable(self) -> bool:
+        return classify_discovery_failure(self.cause)
+
+
 class ConfigError(OAuthError):
     """Client configuration errors.
 

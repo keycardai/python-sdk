@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from keycardai.oauth.exceptions import classify_discovery_failure
+
 
 class OAuthServerError(Exception):
     """Base exception for all Keycard OAuth server errors.
@@ -195,7 +197,14 @@ class JWKSValidationError(OAuthServerError):
 
 
 class JWKSDiscoveryError(OAuthServerError):
-    """JWKS discovery failed, typically due to invalid zone_id or unreachable endpoint."""
+    """JWKS discovery failed, typically due to invalid zone_id or unreachable endpoint.
+
+    ``retryable`` classifies the underlying failure: transient causes (network,
+    timeout, HTTP 5xx, HTTP 429) are True; deterministic causes (other 4xx,
+    malformed metadata, issuer mismatch, metadata missing ``jwks_uri``) are
+    False. Only deterministic failures are remembered by the verifier, for at
+    most ``negative_ttl``.
+    """
 
     def __init__(
         self,
@@ -211,6 +220,11 @@ class JWKSDiscoveryError(OAuthServerError):
         else:
             message = "Failed to discover JWKS endpoints"
         super().__init__(message)
+        self.cause = cause
+
+    @property
+    def retryable(self) -> bool:
+        return classify_discovery_failure(self.cause)
 
 
 class JWKSUriValidationError(OAuthServerError):
