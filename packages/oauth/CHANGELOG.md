@@ -1,3 +1,9 @@
+## 0.29.0-keycardai-oauth (2026-09-07)
+
+
+- feat(keycardai-oauth): align the framework providers onto discover_credential
+- ECO-363. The fastmcp, mcp, and starlette providers ran their own env-discovery dialect (only eks_workload_identity and web_identity selectors, client-secret vars silently winning before the selector was read, zone via KEYCARD_ZONE_ID and KEYCARD_BASE_URL), so KEYCARD_APPLICATION_CREDENTIAL_TYPE=workload_identity per the spec broke a fastmcp deployment. discover_credential is now the single implementation: web_identity becomes a canonical selector with KEYCARD_WEB_IDENTITY_KEY_STORAGE_DIR as a resolvable source under the existing ambiguity rules, CredentialDiscoveryError carries typed reason constants, and the three providers call the factory, mapping ABSENT to their no-credential path. Behavior change with migration notes in each provider changelog: client-secret vars beside another credential source no longer win silently; startup fails with the ambiguity error naming KEYCARD_APPLICATION_CREDENTIAL_TYPE as the remedy. KEYCARD_ZONE_URL is canonical; KEYCARD_ZONE_ID and KEYCARD_BASE_URL keep working with a DeprecationWarning. Provider floors rise to keycardai-oauth 0.29.0; oauth releases first and the providers follow via dispatched bumps.
+
 ## 0.28.0-keycardai-oauth (2026-09-05)
 
 
