@@ -97,10 +97,6 @@ your_app.routes.append(Mount(
         request_handler=request_handler,
         rpc_url="/jsonrpc",
         context_builder=KeycardServerCallContextBuilder(),
-        # Keycard SDKs in other languages still speak A2A 0.3 (`message/send`
-        # with no A2A-Version header); without this the 1.x dispatcher rejects
-        # them with -32601 MethodNotFound. Interim until all SDKs speak 1.0.
-        enable_v0_3_compat=True,
     ),
     middleware=[
         Middleware(
@@ -115,6 +111,17 @@ your_app.routes.append(Mount(
 Inside your `AgentExecutor.execute(self, context, event_queue)`, read the bearer token via `context.call_context.state["access_token"]` and use it as the subject token in `keycardai-oauth`'s `TokenExchangeRequest` for downstream API calls.
 
 For a runnable greenfield example (no existing app), see `examples/keycard_protected_server/`.
+
+### Protocol version
+
+A server composed this way speaks A2A protocol 1.0: `SendMessage` under an `A2A-Version: 1.0` header. All four Keycard SDKs send that generation, so no compatibility flag is needed between them:
+
+- Python: `keycardai-a2a` 0.3.0 and later
+- TypeScript: `@keycardai/a2a` 0.4.0 and later
+- Go: `github.com/keycardai/go-sdk` v0.22.0 and later (`a2a.DelegationClient`)
+- Ruby: `keycardai-a2a` 0.2.0 and later
+
+A 0.3-generation caller (`message/send` with no `A2A-Version` header) is rejected by the a2a-sdk 1.x dispatcher with `-32601 MethodNotFound`. Such callers should upgrade; if one cannot, pass a2a-sdk's own `enable_v0_3_compat=True` to `create_jsonrpc_routes` yourself. This package no longer enables or recommends it.
 
 ## Relationship to other Keycard packages
 
