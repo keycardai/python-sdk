@@ -1,16 +1,3 @@
-## Unreleased
-
-- test(keycardai-a2a): retire the A2A 0.3 compat guidance (ECO-161 close-out)
-- The README quickstart, the keycard_protected_server example, and the test
-fixtures no longer pass enable_v0_3_compat=True to create_jsonrpc_routes. All
-four Keycard SDKs now send A2A protocol 1.0: keycardai-a2a 0.3.0+ (Python),
-@keycardai/a2a 0.4.0+ (TypeScript), go-sdk v0.22.0+ (Go), keycardai-a2a
-0.2.0+ (Ruby). No package code changes; the flag belongs to a2a-sdk.
-- 0.3-generation callers (message/send, no A2A-Version header) get -32601
-MethodNotFound from a server composed per the README. They must upgrade, or
-the server composer must enable a2a-sdk's enable_v0_3_compat themselves. One
-dispatch test pins that default rejection.
-
 ## 0.4.0-keycardai-a2a (2026-07-28)
 
 
