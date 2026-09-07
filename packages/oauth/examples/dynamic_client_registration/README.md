@@ -29,7 +29,7 @@ python main.py http://kq0sohre3tpcywxjnog16iipay.localdev.keycard.sh
 
 ### Environment variable:
 ```bash
-export ZONE_URL=http://kq0sohre3tpcywxjnog16iipay.localdev.keycard.sh
+export KEYCARD_ZONE_URL=http://kq0sohre3tpcywxjnog16iipay.localdev.keycard.sh
 python main.py
 ```
 

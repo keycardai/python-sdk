@@ -1,5 +1,6 @@
 """Tests for AuthProvider, KeycardAuthBackend, @requires and @auth.grant."""
 
+import warnings
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -15,7 +16,11 @@ from keycardai.oauth.exceptions import (
     JWKSKeyNotFoundError,
 )
 from keycardai.oauth.server import AccessContext
-from keycardai.oauth.server.credentials import ClientSecret
+from keycardai.oauth.server.credentials import (
+    ClientSecret,
+    WebIdentity,
+    WorkloadIdentity,
+)
 from keycardai.oauth.server.exceptions import (
     AuthProviderConfigurationError,
     JWKSDiscoveryError,
@@ -122,6 +127,114 @@ class TestAuthProviderConstruction:
             enable_multi_zone=False,
         )
         assert provider.enable_multi_zone is False
+
+
+class TestAuthProviderEnvironmentDiscovery:
+    """Environment discovery runs through keycardai-oauth's discover_credential."""
+
+    CREDENTIAL_VARS = (
+        "KEYCARD_CLIENT_ID",
+        "KEYCARD_CLIENT_SECRET",
+        "KEYCARD_APPLICATION_CREDENTIAL_TYPE",
+        "KEYCARD_WEB_IDENTITY_KEY_STORAGE_DIR",
+        "KEYCARD_EKS_WORKLOAD_IDENTITY_TOKEN_FILE",
+        "AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE",
+        "AWS_WEB_IDENTITY_TOKEN_FILE",
+        "AZURE_FEDERATED_TOKEN_FILE",
+        "KEYCARD_ZONE_URL",
+        "KEYCARD_ZONE_ID",
+        "KEYCARD_BASE_URL",
+    )
+
+    @pytest.fixture(autouse=True)
+    def clean_env(self, monkeypatch):
+        for name in self.CREDENTIAL_VARS:
+            monkeypatch.delenv(name, raising=False)
+
+    @pytest.fixture
+    def token_file(self, tmp_path):
+        path = tmp_path / "token"
+        path.write_text("test-token")
+        return str(path)
+
+    @pytest.mark.parametrize("selector", ["workload_identity", "eks_workload_identity"])
+    def test_workload_identity_selectors(self, monkeypatch, token_file, selector):
+        monkeypatch.setenv("KEYCARD_APPLICATION_CREDENTIAL_TYPE", selector)
+        monkeypatch.setenv("AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE", token_file)
+        provider = AuthProvider(zone_id="test-zone")
+        assert isinstance(provider.application_credential, WorkloadIdentity)
+
+    def test_web_identity_selector(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("KEYCARD_APPLICATION_CREDENTIAL_TYPE", "web_identity")
+        monkeypatch.setenv("KEYCARD_WEB_IDENTITY_KEY_STORAGE_DIR", str(tmp_path / "keys"))
+        provider = AuthProvider(zone_id="test-zone", server_name="My Server")
+        assert isinstance(provider.application_credential, WebIdentity)
+        assert provider.application_credential._storage.storage_dir == tmp_path / "keys"
+
+    def test_web_identity_from_storage_dir_without_selector(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("KEYCARD_WEB_IDENTITY_KEY_STORAGE_DIR", str(tmp_path / "keys"))
+        provider = AuthProvider(zone_id="test-zone")
+        assert isinstance(provider.application_credential, WebIdentity)
+
+    def test_client_secret_plus_token_file_is_ambiguous(self, monkeypatch, token_file):
+        monkeypatch.setenv("KEYCARD_CLIENT_ID", "cid")
+        monkeypatch.setenv("KEYCARD_CLIENT_SECRET", "csec")
+        monkeypatch.setenv("AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE", token_file)
+        with pytest.raises(AuthProviderConfigurationError) as exc_info:
+            AuthProvider(zone_id="test-zone")
+        assert "Ambiguous" in str(exc_info.value)
+        assert "KEYCARD_APPLICATION_CREDENTIAL_TYPE" in str(exc_info.value)
+
+    def test_client_secret_selector_resolves_ambiguity(self, monkeypatch, token_file):
+        monkeypatch.setenv("KEYCARD_CLIENT_ID", "cid")
+        monkeypatch.setenv("KEYCARD_CLIENT_SECRET", "csec")
+        monkeypatch.setenv("AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE", token_file)
+        monkeypatch.setenv("KEYCARD_APPLICATION_CREDENTIAL_TYPE", "client_secret")
+        provider = AuthProvider(zone_id="test-zone")
+        assert isinstance(provider.application_credential, ClientSecret)
+
+    def test_unknown_selector_raises(self, monkeypatch):
+        monkeypatch.setenv("KEYCARD_APPLICATION_CREDENTIAL_TYPE", "bogus")
+        with pytest.raises(AuthProviderConfigurationError, match="Unknown KEYCARD_APPLICATION_CREDENTIAL_TYPE"):
+            AuthProvider(zone_id="test-zone")
+
+    def test_no_credential_configured_is_none(self):
+        provider = AuthProvider(zone_id="test-zone")
+        assert provider.application_credential is None
+
+    def test_explicit_credential_skips_discovery(self, monkeypatch, token_file):
+        monkeypatch.setenv("KEYCARD_CLIENT_ID", "cid")
+        monkeypatch.setenv("KEYCARD_CLIENT_SECRET", "csec")
+        monkeypatch.setenv("AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE", token_file)
+        explicit = ClientSecret(("explicit", "secret"))
+        provider = AuthProvider(zone_id="test-zone", application_credential=explicit)
+        assert provider.application_credential is explicit
+
+    def test_zone_url_env_does_not_warn(self, monkeypatch):
+        monkeypatch.setenv("KEYCARD_ZONE_URL", "https://env.zone.example.com")
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            provider = AuthProvider()
+        assert provider.zone_url == "https://env.zone.example.com"
+
+    def test_zone_id_env_warns_and_works(self, monkeypatch):
+        monkeypatch.setenv("KEYCARD_ZONE_ID", "env-zone")
+        with pytest.warns(DeprecationWarning, match="KEYCARD_ZONE_ID.*KEYCARD_ZONE_URL"):
+            provider = AuthProvider()
+        assert provider.zone_url == "https://env-zone.keycard.cloud"
+
+    def test_base_url_env_warns_and_works(self, monkeypatch):
+        monkeypatch.setenv("KEYCARD_BASE_URL", "https://env.keycard.example.com")
+        with pytest.warns(DeprecationWarning, match="KEYCARD_BASE_URL.*KEYCARD_ZONE_URL"):
+            provider = AuthProvider(zone_id="test-zone")
+        assert provider.zone_url == "https://test-zone.env.keycard.example.com"
+
+    def test_explicit_zone_id_leaves_env_silent(self, monkeypatch):
+        monkeypatch.setenv("KEYCARD_ZONE_ID", "env-zone")
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            provider = AuthProvider(zone_id="explicit-zone")
+        assert provider.zone_url == "https://explicit-zone.keycard.cloud"
 
 
 class TestAuthProviderInstall:

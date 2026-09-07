@@ -14,14 +14,14 @@ Connects to a Keycard zone and retrieves its OAuth server metadata, which includ
 
 ### Environment variable:
 ```bash
-export ZONE_URL=http://kq0sohre3tpcywxjnog16iipay.localdev.keycard.sh
+export KEYCARD_ZONE_URL=http://kq0sohre3tpcywxjnog16iipay.localdev.keycard.sh
 uv run python main.py
 ```
 
 ### Install and run:
 ```bash
 uv sync
-export ZONE_URL=http://kq0sohre3tpcywxjnog16iipay.localdev.keycard.sh
+export KEYCARD_ZONE_URL=http://kq0sohre3tpcywxjnog16iipay.localdev.keycard.sh
 uv run python main.py
 ```
 

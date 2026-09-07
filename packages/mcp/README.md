@@ -197,16 +197,17 @@ auth_provider = AuthProvider(
 The SDK automatically discovers zone configuration from environment variables:
 
 ```bash
-# Option 1: Set zone_id (URL will be constructed)
-export KEYCARD_ZONE_ID="your-zone-id"
-
-# Option 2: Set explicit zone URL
 export KEYCARD_ZONE_URL="https://your-zone-id.keycard.cloud"
-
-# Option 3: Customize base URL for zone construction
-export KEYCARD_ZONE_ID="your-zone-id"
-export KEYCARD_BASE_URL="https://custom.keycard.example.com"
 ```
+
+`KEYCARD_ZONE_URL` is the canonical variable shared by every Keycard SDK. The
+older `KEYCARD_ZONE_ID` and `KEYCARD_BASE_URL` pair still works but emits a
+`DeprecationWarning` at startup; migrate as follows:
+
+| Deprecated | Canonical replacement |
+|------------|-----------------------|
+| `KEYCARD_ZONE_ID="your-zone-id"` | `KEYCARD_ZONE_URL="https://your-zone-id.keycard.cloud"` |
+| `KEYCARD_ZONE_ID="your-zone-id"` + `KEYCARD_BASE_URL="https://custom.example.com"` | `KEYCARD_ZONE_URL="https://your-zone-id.custom.example.com"` |
 
 ```python
 from keycardai.mcp.server.auth import AuthProvider
@@ -224,21 +225,21 @@ When multiple zone configuration methods are present, the SDK follows this prece
 1. **Explicit `zone_url` parameter** - Always takes priority
 2. **`KEYCARD_ZONE_URL` environment variable** - Direct zone URL
 3. **Explicit `zone_id` parameter** - Combined with base_url to construct zone URL
-4. **`KEYCARD_ZONE_ID` environment variable** - Combined with base_url to construct zone URL
+4. **`KEYCARD_ZONE_ID` environment variable** (deprecated) - Combined with base_url to construct zone URL
 5. **Error** - At least one zone configuration method is required
 
 For `base_url`, the precedence is:
 1. **Explicit `base_url` parameter** - Custom base URL
-2. **`KEYCARD_BASE_URL` environment variable** - Custom base URL from environment
+2. **`KEYCARD_BASE_URL` environment variable** (deprecated) - Custom base URL from environment
 3. **Default: `https://keycard.cloud`** - Standard Keycard cloud URL
 
 ##### Environment Variables Reference
 
 | Environment Variable | Purpose | Default Value |
 |---------------------|---------|---------------|
-| `KEYCARD_ZONE_ID` | Zone identifier for constructing zone URL | None (required if zone_url not set) |
-| `KEYCARD_ZONE_URL` | Complete zone URL (overrides zone_id) | None |
-| `KEYCARD_BASE_URL` | Base URL for zone construction | `https://keycard.cloud` |
+| `KEYCARD_ZONE_URL` | Complete zone URL (canonical) | None (required if zone_id not set) |
+| `KEYCARD_ZONE_ID` | Deprecated: zone identifier for constructing zone URL | None |
+| `KEYCARD_BASE_URL` | Deprecated: base URL for zone construction | `https://keycard.cloud` |
 
 #### Application Credentials for Token Exchange
 
@@ -296,20 +297,22 @@ auth_provider = AuthProvider(
 
 **2. Environment Variable Discovery (Convenient for Development)**
 
-The SDK automatically discovers credentials from environment variables:
+The SDK discovers credentials through `keycardai.oauth.server.discover_credential`,
+the same factory every Keycard SDK implements:
 
 ```bash
 # Option A: Client Credentials
 export KEYCARD_CLIENT_ID="your_client_id"
 export KEYCARD_CLIENT_SECRET="your_client_secret"
 
-# Option B: Explicit Credential Type
+# Option B: Web Identity (a storage dir alone is enough; the selector is optional)
 export KEYCARD_APPLICATION_CREDENTIAL_TYPE="web_identity"
-export KEYCARD_WEB_IDENTITY_KEY_STORAGE_DIR="./mcp_keys"  # Optional
+export KEYCARD_WEB_IDENTITY_KEY_STORAGE_DIR="./mcp_keys"
 
-# Option C: EKS Workload Identity
-export KEYCARD_APPLICATION_CREDENTIAL_TYPE="eks_workload_identity"
-# Optional: Custom token file path (defaults to AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE or AWS_WEB_IDENTITY_TOKEN_FILE)
+# Option C: Workload Identity (eks_workload_identity is accepted as a legacy alias)
+export KEYCARD_APPLICATION_CREDENTIAL_TYPE="workload_identity"
+# Optional: Custom token file path (defaults to AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE,
+# AWS_WEB_IDENTITY_TOKEN_FILE or AZURE_FEDERATED_TOKEN_FILE)
 export KEYCARD_EKS_WORKLOAD_IDENTITY_TOKEN_FILE="/var/run/secrets/token"
 ```
 
@@ -330,10 +333,11 @@ auth_provider = AuthProvider(
 When multiple configuration methods are present, the SDK follows this precedence order (highest to lowest):
 
 1. **Explicit `application_credential` parameter** - Always takes priority
-2. **`KEYCARD_CLIENT_ID` + `KEYCARD_CLIENT_SECRET`** - Client credentials via environment
-3. **`KEYCARD_APPLICATION_CREDENTIAL_TYPE`** - Explicit credential type selection
-4. **`AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE`** - Automatic EKS detection
-5. **None** - No credentials configured (token exchange disabled)
+2. **`KEYCARD_APPLICATION_CREDENTIAL_TYPE`** - Selects the credential type (`client_secret`, `workload_identity`, `web_identity`); its inputs must be present
+3. **Exactly one configured source** - `KEYCARD_CLIENT_ID` + `KEYCARD_CLIENT_SECRET`, an injected token file (`AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE` and friends), or `KEYCARD_WEB_IDENTITY_KEY_STORAGE_DIR`
+4. **None** - No credentials configured (token exchange disabled)
+
+When more than one source is configured and no selector is set (for example client-secret variables beside an EKS-injected token file), startup fails with an ambiguity error instead of silently picking one. Set `KEYCARD_APPLICATION_CREDENTIAL_TYPE` to the type you mean.
 
 ##### Environment Variables Reference
 
@@ -341,8 +345,8 @@ When multiple configuration methods are present, the SDK follows this precedence
 |---------------------|---------|---------|---------------|
 | `KEYCARD_CLIENT_ID` | OAuth client identifier | `ClientSecret` | None |
 | `KEYCARD_CLIENT_SECRET` | OAuth client secret | `ClientSecret` | None |
-| `KEYCARD_APPLICATION_CREDENTIAL_TYPE` | Explicit credential type selection | All | None |
-| `KEYCARD_WEB_IDENTITY_KEY_STORAGE_DIR` | Directory for private key storage | `WebIdentity` | `"./mcp_keys"` |
+| `KEYCARD_APPLICATION_CREDENTIAL_TYPE` | Credential type selection: `client_secret`, `workload_identity`, `web_identity` (`eks_workload_identity` accepted as an alias) | All | None |
+| `KEYCARD_WEB_IDENTITY_KEY_STORAGE_DIR` | Directory for private key storage; its presence discovers `WebIdentity` | `WebIdentity` | `"./mcp_keys"` |
 | `KEYCARD_EKS_WORKLOAD_IDENTITY_TOKEN_FILE` | Custom path to EKS token file | `EKSWorkloadIdentity` | None |
 | `AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE` | Path to EKS token file (AWS default) | `EKSWorkloadIdentity` | None |
 | `AWS_WEB_IDENTITY_TOKEN_FILE` | Path to EKS token file (AWS fallback) | `EKSWorkloadIdentity` | None |

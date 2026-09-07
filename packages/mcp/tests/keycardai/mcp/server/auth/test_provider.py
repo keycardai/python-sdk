@@ -8,6 +8,7 @@ import inspect
 import os
 import shutil
 import tempfile
+import warnings
 from pathlib import Path
 from typing import Any
 from unittest.mock import Mock, patch
@@ -20,12 +21,12 @@ from keycardai.mcp.server.auth import (
     AccessContext,
     AuthProvider,
     ClientSecret,
-    EKSWorkloadIdentity,
     MissingAccessContextError,
     MissingContextError,
     WebIdentity,
 )
 from keycardai.mcp.server.exceptions import AuthProviderConfigurationError
+from keycardai.oauth.server.credentials import WorkloadIdentity
 
 
 class TestGrantDecoratorSignatureValidation:
@@ -732,17 +733,13 @@ class TestAuthProviderCredentialDiscovery:
         assert result is None
 
     @patch.dict(os.environ, {"KEYCARD_CLIENT_SECRET": "test_secret"}, clear=True)
-    def test_discover_ignores_secret_without_client_id(self, mock_client_factory):
-        """Test that only KEYCARD_CLIENT_SECRET without ID is ignored."""
-        auth_provider = AuthProvider(
-            zone_id="test123",
-            client_factory=mock_client_factory
-        )
-
-        result = auth_provider._discover_application_credential(None)
-
-        # Should return None when only client_secret is present
-        assert result is None
+    def test_discover_rejects_secret_without_client_id(self, mock_client_factory):
+        """Test that KEYCARD_CLIENT_SECRET without KEYCARD_CLIENT_ID fails at startup."""
+        with pytest.raises(AuthProviderConfigurationError, match="without KEYCARD_CLIENT_ID"):
+            AuthProvider(
+                zone_id="test123",
+                client_factory=mock_client_factory
+            )
 
     @patch.dict(os.environ, {
         "KEYCARD_APPLICATION_CREDENTIAL_TYPE": "eks_workload_identity",
@@ -750,7 +747,7 @@ class TestAuthProviderCredentialDiscovery:
     }, clear=True)
     @patch("builtins.open", create=True)
     def test_discover_eks_workload_identity_from_type_env(self, mock_open, mock_client_factory):
-        """Test discovery of EKSWorkloadIdentity from credential type env var."""
+        """Test discovery of WorkloadIdentity from credential type env var."""
         # Mock the token file read
         mock_open.return_value.__enter__.return_value.read.return_value = "test_token"
 
@@ -761,8 +758,8 @@ class TestAuthProviderCredentialDiscovery:
 
         result = auth_provider._discover_application_credential(None)
 
-        # Should return EKSWorkloadIdentity instance
-        assert isinstance(result, EKSWorkloadIdentity)
+        # Should return WorkloadIdentity instance
+        assert isinstance(result, WorkloadIdentity)
 
     def test_discover_web_identity_from_type_env(self, mock_client_factory, temp_key_storage):
         """Test discovery of WebIdentity from credential type env var."""
@@ -795,14 +792,15 @@ class TestAuthProviderCredentialDiscovery:
             )
 
         # Check error message contains useful information
-        assert "Unknown application credential type: unknown_type" in str(exc_info.value)
-        assert "eks_workload_identity" in str(exc_info.value)
+        assert "Unknown KEYCARD_APPLICATION_CREDENTIAL_TYPE: unknown_type" in str(exc_info.value)
+        assert "client_secret" in str(exc_info.value)
+        assert "workload_identity" in str(exc_info.value)
         assert "web_identity" in str(exc_info.value)
 
     @patch.dict(os.environ, {"AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE": "/tmp/test_token"}, clear=True)
     @patch("builtins.open", create=True)
     def test_discover_eks_workload_identity_from_token_file_env(self, mock_open, mock_client_factory):
-        """Test discovery of EKSWorkloadIdentity from AWS token file env var."""
+        """Test discovery of WorkloadIdentity from AWS token file env var."""
         # Mock the token file read
         mock_open.return_value.__enter__.return_value.read.return_value = "test_token"
 
@@ -813,8 +811,8 @@ class TestAuthProviderCredentialDiscovery:
 
         result = auth_provider._discover_application_credential(None)
 
-        # Should detect and return EKSWorkloadIdentity
-        assert isinstance(result, EKSWorkloadIdentity)
+        # Should detect and return WorkloadIdentity
+        assert isinstance(result, WorkloadIdentity)
 
     @patch.dict(os.environ, {}, clear=True)
     def test_discover_returns_none_when_no_credentials_found(self, mock_client_factory):
@@ -829,13 +827,33 @@ class TestAuthProviderCredentialDiscovery:
         # Should return None when nothing is configured
         assert result is None
 
+    def test_discover_explicit_type_wins_over_client_credentials(self, mock_client_factory, temp_key_storage):
+        """Test that KEYCARD_APPLICATION_CREDENTIAL_TYPE selects the credential even when client-secret vars are set."""
+        with patch.dict(os.environ, {
+            "KEYCARD_CLIENT_ID": "env_client_id",
+            "KEYCARD_CLIENT_SECRET": "env_secret",
+            "KEYCARD_APPLICATION_CREDENTIAL_TYPE": "web_identity",
+            "KEYCARD_WEB_IDENTITY_KEY_STORAGE_DIR": temp_key_storage
+        }, clear=True):
+            auth_provider = AuthProvider(
+                zone_id="test123",
+                client_factory=mock_client_factory
+            )
+
+            result = auth_provider._discover_application_credential(None)
+
+            # Should return WebIdentity, not ClientSecret
+            assert isinstance(result, WebIdentity)
+
     @patch.dict(os.environ, {
-        "KEYCARD_CLIENT_ID": "env_client_id",
-        "KEYCARD_CLIENT_SECRET": "env_secret",
-        "KEYCARD_APPLICATION_CREDENTIAL_TYPE": "web_identity"
+        "KEYCARD_APPLICATION_CREDENTIAL_TYPE": "workload_identity",
+        "AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE": "/tmp/test_token"
     }, clear=True)
-    def test_discover_priority_client_credentials_over_type(self, mock_client_factory):
-        """Test that KEYCARD_CLIENT_ID/SECRET take priority over credential type."""
+    @patch("builtins.open", create=True)
+    def test_discover_canonical_workload_identity_selector(self, mock_open, mock_client_factory):
+        """Test that the spec-canonical workload_identity selector is accepted."""
+        mock_open.return_value.__enter__.return_value.read.return_value = "test_token"
+
         auth_provider = AuthProvider(
             zone_id="test123",
             client_factory=mock_client_factory
@@ -843,8 +861,54 @@ class TestAuthProviderCredentialDiscovery:
 
         result = auth_provider._discover_application_credential(None)
 
-        # Should return ClientSecret, not WebIdentity
+        assert isinstance(result, WorkloadIdentity)
+
+    @patch.dict(os.environ, {
+        "KEYCARD_CLIENT_ID": "env_client_id",
+        "KEYCARD_CLIENT_SECRET": "env_secret",
+        "AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE": "/tmp/test_token"
+    }, clear=True)
+    def test_discover_client_secret_plus_token_file_is_ambiguous(self, mock_client_factory):
+        """Test that client-secret vars beside an injected token file fail closed with the remedy."""
+        with pytest.raises(AuthProviderConfigurationError) as exc_info:
+            AuthProvider(
+                zone_id="test123",
+                client_factory=mock_client_factory
+            )
+
+        assert "Ambiguous" in str(exc_info.value)
+        assert "KEYCARD_APPLICATION_CREDENTIAL_TYPE" in str(exc_info.value)
+
+    @patch.dict(os.environ, {
+        "KEYCARD_CLIENT_ID": "env_client_id",
+        "KEYCARD_CLIENT_SECRET": "env_secret",
+        "KEYCARD_APPLICATION_CREDENTIAL_TYPE": "client_secret",
+        "AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE": "/tmp/test_token"
+    }, clear=True)
+    def test_discover_client_secret_selector_resolves_ambiguity(self, mock_client_factory):
+        """Test that the one-line remedy from the ambiguity error selects the client secret."""
+        auth_provider = AuthProvider(
+            zone_id="test123",
+            client_factory=mock_client_factory
+        )
+
+        result = auth_provider._discover_application_credential(None)
+
         assert isinstance(result, ClientSecret)
+
+    def test_discover_web_identity_from_storage_dir_without_selector(self, mock_client_factory, temp_key_storage):
+        """Test that KEYCARD_WEB_IDENTITY_KEY_STORAGE_DIR alone discovers WebIdentity."""
+        with patch.dict(os.environ, {
+            "KEYCARD_WEB_IDENTITY_KEY_STORAGE_DIR": temp_key_storage
+        }, clear=True):
+            auth_provider = AuthProvider(
+                zone_id="test123",
+                client_factory=mock_client_factory
+            )
+
+            result = auth_provider._discover_application_credential(None)
+
+            assert isinstance(result, WebIdentity)
 
     @patch.dict(os.environ, {
         "KEYCARD_APPLICATION_CREDENTIAL_TYPE": "eks_workload_identity",
@@ -863,8 +927,8 @@ class TestAuthProviderCredentialDiscovery:
 
         result = auth_provider._discover_application_credential(None)
 
-        # Should return EKSWorkloadIdentity (though both paths lead to same result)
-        assert isinstance(result, EKSWorkloadIdentity)
+        # Should return WorkloadIdentity (though both paths lead to same result)
+        assert isinstance(result, WorkloadIdentity)
 
     def test_discover_provided_credential_ignores_env_vars(self, mock_client_factory, temp_key_storage):
         """Test that provided credential takes absolute priority over env vars."""
@@ -1035,3 +1099,44 @@ class TestAuthProviderZoneConfigurationDiscovery:
             AuthProvider(
                 client_factory=mock_client_factory
             )
+
+    @pytest.mark.parametrize("deprecated_var, value", [
+        ("KEYCARD_ZONE_ID", "env_zone"),
+        ("KEYCARD_BASE_URL", "https://env.keycard.example.com"),
+    ])
+    def test_deprecated_zone_variables_warn_and_work(self, mock_client_factory, deprecated_var, value):
+        """Test that legacy zone variables still configure the zone but emit a DeprecationWarning."""
+        with patch.dict(os.environ, {deprecated_var: value}, clear=True), pytest.warns(DeprecationWarning, match="KEYCARD_ZONE_URL") as record:
+            auth_provider = AuthProvider(
+                zone_id="test_zone" if deprecated_var == "KEYCARD_BASE_URL" else None,
+                client_factory=mock_client_factory
+            )
+
+        assert any(deprecated_var in str(w.message) for w in record)
+        if deprecated_var == "KEYCARD_ZONE_ID":
+            assert auth_provider.zone_url == "https://env_zone.keycard.cloud"
+        else:
+            assert auth_provider.zone_url == "https://test_zone.env.keycard.example.com"
+
+    @patch.dict(os.environ, {"KEYCARD_ZONE_URL": "https://env.zone.example.com"}, clear=True)
+    def test_canonical_zone_url_does_not_warn(self, mock_client_factory):
+        """Test that KEYCARD_ZONE_URL configures the zone without any DeprecationWarning."""
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            auth_provider = AuthProvider(
+                client_factory=mock_client_factory
+            )
+
+        assert auth_provider.zone_url == "https://env.zone.example.com"
+
+    @patch.dict(os.environ, {"KEYCARD_ZONE_ID": "env_zone"}, clear=True)
+    def test_explicit_zone_id_does_not_warn_for_unused_env(self, mock_client_factory):
+        """Test that an explicit zone_id leaves the ignored KEYCARD_ZONE_ID silent."""
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            auth_provider = AuthProvider(
+                zone_id="explicit_zone",
+                client_factory=mock_client_factory
+            )
+
+        assert auth_provider.zone_url == "https://explicit_zone.keycard.cloud"

@@ -903,6 +903,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "blockbuster", marker = "extra == 'test'", specifier = ">=1.5.27" },
     { name = "cryptography", specifier = ">=45.0.7" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "joserfc", specifier = ">=1.6.8" },

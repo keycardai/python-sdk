@@ -49,6 +49,31 @@ async def get_data(request: Request, access: AccessContext):
 Leaving `audience` unset disables the audience check: the verifier accepts any
 token minted by the zone regardless of its `aud` claim.
 
+## Configuration from the environment
+
+`AuthProvider` reads its zone and application credential from the environment
+when they are not passed explicitly.
+
+Zone: set `KEYCARD_ZONE_URL` to the full zone URL. `KEYCARD_ZONE_ID` and
+`KEYCARD_BASE_URL` still work but emit a `DeprecationWarning`; migrate as
+follows:
+
+| Deprecated | Canonical replacement |
+|------------|-----------------------|
+| `KEYCARD_ZONE_ID="abc1234"` | `KEYCARD_ZONE_URL="https://abc1234.keycard.cloud"` |
+| `KEYCARD_ZONE_ID="abc1234"` + `KEYCARD_BASE_URL="https://custom.example.com"` | `KEYCARD_ZONE_URL="https://abc1234.custom.example.com"` |
+
+Application credential: discovery is delegated to
+`keycardai.oauth.server.discover_credential`. `KEYCARD_APPLICATION_CREDENTIAL_TYPE`
+selects `client_secret`, `workload_identity` or `web_identity`
+(`eks_workload_identity` is accepted as a legacy alias). Without a selector,
+exactly one source may be configured: `KEYCARD_CLIENT_ID` +
+`KEYCARD_CLIENT_SECRET`, an injected workload token file
+(`AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE`, `AWS_WEB_IDENTITY_TOKEN_FILE`,
+`AZURE_FEDERATED_TOKEN_FILE` or `KEYCARD_EKS_WORKLOAD_IDENTITY_TOKEN_FILE`), or
+`KEYCARD_WEB_IDENTITY_KEY_STORAGE_DIR`. More than one source with no selector
+fails at startup with an ambiguity error naming the selector as the remedy.
+
 ## How it integrates with Starlette
 
 `AuthProvider.install(app)` does two things:

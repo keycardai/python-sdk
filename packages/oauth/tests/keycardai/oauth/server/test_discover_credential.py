@@ -1,5 +1,7 @@
 """Tests for discover_credential, the env-based ApplicationCredential factory."""
 
+from pathlib import Path
+
 import pytest
 
 from keycardai.oauth import BasicAuth
@@ -7,6 +9,7 @@ from keycardai.oauth.server import discover_credential
 from keycardai.oauth.server.credentials import (
     ClientSecret,
     FileTokenSource,
+    WebIdentity,
     WorkloadIdentity,
 )
 from keycardai.oauth.server.exceptions import (
@@ -18,6 +21,7 @@ ALL_VARS = [
     "KEYCARD_CLIENT_ID",
     "KEYCARD_CLIENT_SECRET",
     "KEYCARD_APPLICATION_CREDENTIAL_TYPE",
+    "KEYCARD_WEB_IDENTITY_KEY_STORAGE_DIR",
     *FileTokenSource.default_env_var_names,
 ]
 
@@ -33,6 +37,11 @@ def token_file(tmp_path):
     path = tmp_path / "token"
     path.write_text("platform-signed-jwt")
     return str(path)
+
+
+@pytest.fixture
+def key_storage_dir(tmp_path):
+    return str(tmp_path / "keys")
 
 
 def test_client_secret_from_env(monkeypatch):
@@ -86,7 +95,40 @@ def test_ambiguous_environment_is_rejected(monkeypatch, token_file):
     monkeypatch.setenv("AWS_WEB_IDENTITY_TOKEN_FILE", token_file)
     with pytest.raises(CredentialDiscoveryError, match="Ambiguous") as exc_info:
         discover_credential()
+    assert exc_info.value.reason == CredentialDiscoveryError.AMBIGUOUS
     assert exc_info.value.resolvable == ["client_secret", "workload_identity"]
+    assert "KEYCARD_APPLICATION_CREDENTIAL_TYPE" in str(exc_info.value)
+
+
+def test_web_identity_from_storage_dir_env(monkeypatch, key_storage_dir):
+    monkeypatch.setenv("KEYCARD_WEB_IDENTITY_KEY_STORAGE_DIR", key_storage_dir)
+    credential = discover_credential(web_identity_server_name="svc")
+    assert isinstance(credential, WebIdentity)
+    assert credential.identity_manager.key_id == "svc"
+    assert credential._storage.storage_dir == Path(key_storage_dir)
+
+
+def test_web_identity_server_name_is_optional(monkeypatch, key_storage_dir):
+    monkeypatch.setenv("KEYCARD_WEB_IDENTITY_KEY_STORAGE_DIR", key_storage_dir)
+    assert isinstance(discover_credential(), WebIdentity)
+
+
+def test_client_secret_and_storage_dir_is_ambiguous(monkeypatch, key_storage_dir):
+    monkeypatch.setenv("KEYCARD_CLIENT_ID", "cid")
+    monkeypatch.setenv("KEYCARD_CLIENT_SECRET", "csecret")
+    monkeypatch.setenv("KEYCARD_WEB_IDENTITY_KEY_STORAGE_DIR", key_storage_dir)
+    with pytest.raises(CredentialDiscoveryError, match="Ambiguous") as exc_info:
+        discover_credential()
+    assert exc_info.value.reason == CredentialDiscoveryError.AMBIGUOUS
+    assert exc_info.value.resolvable == ["client_secret", "web_identity"]
+
+
+def test_token_file_and_storage_dir_is_ambiguous(monkeypatch, token_file, key_storage_dir):
+    monkeypatch.setenv("AWS_WEB_IDENTITY_TOKEN_FILE", token_file)
+    monkeypatch.setenv("KEYCARD_WEB_IDENTITY_KEY_STORAGE_DIR", key_storage_dir)
+    with pytest.raises(CredentialDiscoveryError, match="Ambiguous") as exc_info:
+        discover_credential()
+    assert exc_info.value.resolvable == ["workload_identity", "web_identity"]
 
 
 @pytest.mark.parametrize(
@@ -95,14 +137,26 @@ def test_ambiguous_environment_is_rejected(monkeypatch, token_file):
         ("client_secret", ClientSecret),
         ("workload_identity", WorkloadIdentity),
         ("eks_workload_identity", WorkloadIdentity),
+        ("web_identity", WebIdentity),
     ],
 )
-def test_explicit_type_resolves_ambiguity(monkeypatch, token_file, requested, expected):
+def test_explicit_type_resolves_ambiguity(
+    monkeypatch, token_file, key_storage_dir, requested, expected
+):
     monkeypatch.setenv("KEYCARD_CLIENT_ID", "cid")
     monkeypatch.setenv("KEYCARD_CLIENT_SECRET", "csecret")
     monkeypatch.setenv("AWS_WEB_IDENTITY_TOKEN_FILE", token_file)
+    monkeypatch.setenv("KEYCARD_WEB_IDENTITY_KEY_STORAGE_DIR", key_storage_dir)
     monkeypatch.setenv("KEYCARD_APPLICATION_CREDENTIAL_TYPE", requested)
     assert isinstance(discover_credential(), expected)
+
+
+def test_explicit_web_identity_without_storage_dir_uses_default(monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("KEYCARD_APPLICATION_CREDENTIAL_TYPE", "web_identity")
+    credential = discover_credential()
+    assert isinstance(credential, WebIdentity)
+    assert credential._storage.storage_dir == Path("./server_keys")
 
 
 def test_explicit_workload_identity_prefers_keycard_token_file(monkeypatch, tmp_path):
@@ -119,9 +173,11 @@ def test_explicit_workload_identity_prefers_keycard_token_file(monkeypatch, tmp_
 
 
 def test_unknown_credential_type_is_rejected(monkeypatch):
-    monkeypatch.setenv("KEYCARD_APPLICATION_CREDENTIAL_TYPE", "web_identity")
-    with pytest.raises(CredentialDiscoveryError, match="web_identity"):
+    monkeypatch.setenv("KEYCARD_APPLICATION_CREDENTIAL_TYPE", "vault")
+    with pytest.raises(CredentialDiscoveryError, match="vault") as exc_info:
         discover_credential()
+    assert exc_info.value.reason == CredentialDiscoveryError.UNKNOWN_TYPE
+    assert "web_identity" in str(exc_info.value)
 
 
 def test_unknown_credential_type_wins_over_valid_client_secret(monkeypatch):
@@ -159,3 +215,20 @@ def test_explicit_env_mapping_is_used_instead_of_os_environ(monkeypatch):
     )
     assert isinstance(credential, ClientSecret)
     assert credential.auth.client_id == "explicit"
+
+
+def test_explicit_env_mapping_builds_web_identity(monkeypatch, key_storage_dir):
+    monkeypatch.setenv("KEYCARD_CLIENT_ID", "from-os")
+    monkeypatch.setenv("KEYCARD_CLIENT_SECRET", "from-os")
+    credential = discover_credential(
+        {"KEYCARD_WEB_IDENTITY_KEY_STORAGE_DIR": key_storage_dir},
+        web_identity_server_name="svc",
+    )
+    assert isinstance(credential, WebIdentity)
+    assert credential._storage.storage_dir == Path(key_storage_dir)
+
+
+def test_empty_environment_reason_is_absent():
+    with pytest.raises(CredentialDiscoveryError) as exc_info:
+        discover_credential({})
+    assert exc_info.value.reason == CredentialDiscoveryError.ABSENT

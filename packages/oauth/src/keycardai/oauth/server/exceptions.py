@@ -679,16 +679,26 @@ class CredentialDiscoveryError(OAuthServerError):
     an unknown or unsupported credential type.
 
     Attributes:
+        reason: Which of those cases applied, one of the class constants
+            ABSENT, AMBIGUOUS, INCOMPLETE, UNKNOWN_TYPE, NOT_SATISFIABLE.
         resolvable: Credential type names that the environment could build.
     """
+
+    ABSENT = "absent"
+    AMBIGUOUS = "ambiguous"
+    INCOMPLETE = "incomplete"
+    UNKNOWN_TYPE = "unknown_type"
+    NOT_SATISFIABLE = "not_satisfiable"
 
     def __init__(
         self,
         message: str,
         *,
+        reason: str = ABSENT,
         resolvable: list[str] | None = None,
         details: dict | None = None,
     ):
+        self.reason = reason
         self.resolvable = resolvable or []
         super().__init__(message, details=details)
 
