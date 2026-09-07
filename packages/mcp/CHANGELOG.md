@@ -1,30 +1,38 @@
-## Migration: credential discovery moves to keycardai-oauth (unreleased)
+## 2.3.0-keycardai-mcp (2026-09-07)
 
-`AuthProvider` now discovers its application credential through
-`keycardai.oauth.server.discover_credential` instead of its own environment
-logic. Requires `keycardai-oauth>=0.29.0`.
+## 2.2.0-keycardai-mcp (2026-08-29)
 
-Behavior change: a deployment that sets `KEYCARD_CLIENT_ID` and
-`KEYCARD_CLIENT_SECRET` beside another credential source (the EKS IRSA case,
-where `AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE` or `AWS_WEB_IDENTITY_TOKEN_FILE`
-is injected into the pod) used to pick the client secret silently. It now fails
-at startup with the factory's ambiguity error naming
-`KEYCARD_APPLICATION_CREDENTIAL_TYPE` as the remedy. The one-line fix, if the
-client secret was the intended credential:
 
-```bash
-export KEYCARD_APPLICATION_CREDENTIAL_TYPE=client_secret
-```
+- feat(keycardai-mcp): interrupt-compatible auth mode for the langchain adapter (ECO-332) (#246)
+- * feat(keycardai-mcp): interrupt-compatible auth mode for the langchain adapter
+- An agent that combines keycardai-langchain's KeycardGrantMiddleware with this adapter had two auth UXs: the middleware pauses the run with an `authorization_required` interrupt, while the adapter handed the model auth-request tools. `interrupt_on_auth=True` makes the adapter raise the same payload the middleware's `_interrupt_payload` produces, with MCP servers in place of resource URLs, sourced from the pending challenge of a session whose `requires_user_action` is true. Off by default: the auth-tools path is untouched unless the mode is enabled.
+- Also adds `tool_allowlist`, so a large server cannot flood the model's context, and `get_lazy_tools()` (`list_mcp_tools` / `call_mcp_tool`) for agents whose tool list must exist before any user has connected: they connect on first call and then expose the server's real tool schemas rather than a hand-written wrapper that hides its filtering parameters.
+- Co-Authored-By: Larry Osakwe <larry@keycard.ai>
+- * docs(keycardai-langchain): document MCP tools alongside brokered grants
+- Covers when to use middleware grants versus the MCP client, the empty tool_resources mapping for MCP-backed tools, the shared /auth/mcp/callback route wired to coordinator.handle_completion(...), and the MCP adapter's opt-in interrupt mode.
+- Co-Authored-By: Larry Osakwe <larry@keycard.ai>
+- * docs(keycardai-mcp): fix the build-after-connect snippet
+- get_tools() reads the server list that only __aenter__ (or the lazy
+path) populates; the documented pattern called client.connect() directly
+and returned zero tools every time. Enter the adapter instead.
+- ---------
+- Co-authored-by: devin-ai-keycard <devin-ai@keycard.ai>
+Co-authored-by: Larry Osakwe <larry@keycard.ai>
+Co-authored-by: GitHub Action <action@github.com>
 
-Selector values: `KEYCARD_APPLICATION_CREDENTIAL_TYPE` accepts the canonical
-`client_secret`, `workload_identity` and `web_identity`. The previously
-accepted `eks_workload_identity` keeps working as an alias for
-`workload_identity`. A `KEYCARD_WEB_IDENTITY_KEY_STORAGE_DIR` alone now
-discovers `WebIdentity` without a selector.
+## 2.1.0-keycardai-mcp (2026-08-29)
 
-Zone naming: `KEYCARD_ZONE_URL` is the canonical variable. `KEYCARD_ZONE_ID`
-and `KEYCARD_BASE_URL` keep working but emit a `DeprecationWarning`; see the
-README for the mapping.
+
+- fix(keycardai-mcp): restore MCP 2.x HTTP connections (#247)
+- * fix(keycardai-mcp): restore MCP 2.x HTTP connections
+- Co-Authored-By: Larry Osakwe <larry@keycard.ai>
+- * fix(keycardai-mcp): declare httpx2 as a direct dependency
+- The client imports httpx2 in four modules but only received it
+transitively through mcp.
+- ---------
+- Co-authored-by: devin-ai-keycard <devin-ai@keycard.ai>
+Co-authored-by: Larry Osakwe <larry@keycard.ai>
+Co-authored-by: GitHub Action <action@github.com>
 
 ## 3.0.0-keycardai-mcp (2026-08-30)
 
