@@ -30,10 +30,9 @@ async def example_manual_jsonrpc() -> None:
 
     async with httpx.AsyncClient() as client:
         # A2A 1.0 envelope: CamelCase method name, a required messageId, an
-        # enum-string role, and the A2A-Version header. (A2A 0.3 clients send
-        # "message/send" instead; servers accept those only when built with
-        # enable_v0_3_compat=True, as the sibling keycard_protected_server
-        # example does.)
+        # enum-string role, and the A2A-Version header. This is what every
+        # Keycard SDK sends; a 0.3-generation "message/send" request is
+        # rejected by a 1.x server with -32601 MethodNotFound.
         jsonrpc_request = {
             "jsonrpc": "2.0",
             "id": "1",
