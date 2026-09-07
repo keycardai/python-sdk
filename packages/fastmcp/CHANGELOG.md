@@ -1,30 +1,4 @@
-## Migration: credential discovery moves to keycardai-oauth (unreleased)
-
-`AuthProvider` now discovers its application credential through
-`keycardai.oauth.server.discover_credential` instead of its own environment
-logic. Requires `keycardai-oauth>=0.29.0`.
-
-Behavior change: a deployment that sets `KEYCARD_CLIENT_ID` and
-`KEYCARD_CLIENT_SECRET` beside another credential source (the EKS IRSA case,
-where `AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE` or `AWS_WEB_IDENTITY_TOKEN_FILE`
-is injected into the pod) used to pick the client secret silently. It now fails
-at startup with the factory's ambiguity error naming
-`KEYCARD_APPLICATION_CREDENTIAL_TYPE` as the remedy. The one-line fix, if the
-client secret was the intended credential:
-
-```bash
-export KEYCARD_APPLICATION_CREDENTIAL_TYPE=client_secret
-```
-
-Selector values: `KEYCARD_APPLICATION_CREDENTIAL_TYPE` accepts the canonical
-`client_secret`, `workload_identity` and `web_identity`. The previously
-accepted `eks_workload_identity` keeps working as an alias for
-`workload_identity`. A `KEYCARD_WEB_IDENTITY_KEY_STORAGE_DIR` alone now
-discovers `WebIdentity` without a selector.
-
-Zone naming: `KEYCARD_ZONE_URL` is the canonical variable. `KEYCARD_ZONE_ID`
-and `KEYCARD_BASE_URL` keep working but emit a `DeprecationWarning`; see the
-README for the mapping.
+## 0.7.0-keycardai-fastmcp (2026-09-07)
 
 ## 0.6.0-keycardai-fastmcp (2026-08-27)
 
