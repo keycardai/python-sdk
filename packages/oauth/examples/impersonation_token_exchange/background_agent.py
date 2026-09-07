@@ -80,8 +80,8 @@ def main() -> None:
     )
     parser.add_argument(
         "--zone-url",
-        default=os.getenv("ZONE_URL"),
-        help="Keycard zone URL (env: ZONE_URL)",
+        default=os.getenv("KEYCARD_ZONE_URL"),
+        help="Keycard zone URL (env: KEYCARD_ZONE_URL)",
     )
     parser.add_argument(
         "--client-id",
@@ -105,7 +105,7 @@ def main() -> None:
     args = parser.parse_args()
 
     if not args.zone_url:
-        _error_exit("--zone-url is required (or set ZONE_URL)")
+        _error_exit("--zone-url is required (or set KEYCARD_ZONE_URL)")
     if not args.client_id:
         _error_exit("--client-id is required (or set AGENT_CLIENT_ID)")
     if not args.client_secret:

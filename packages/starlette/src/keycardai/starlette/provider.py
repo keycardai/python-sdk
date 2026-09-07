@@ -47,6 +47,7 @@ Example::
 
 import asyncio
 import os
+import warnings
 from collections.abc import Callable
 from typing import Any
 
@@ -58,10 +59,13 @@ from keycardai.oauth.server.client_factory import ClientFactory, DefaultClientFa
 from keycardai.oauth.server.credentials import (
     ApplicationCredential,
     ClientSecret,
-    EKSWorkloadIdentity,
     WebIdentity,
+    discover_credential,
 )
-from keycardai.oauth.server.exceptions import AuthProviderConfigurationError
+from keycardai.oauth.server.exceptions import (
+    AuthProviderConfigurationError,
+    CredentialDiscoveryError,
+)
 from keycardai.oauth.server.verifier import TokenVerifier
 from keycardai.oauth.types.models import JsonWebKeySet
 from starlette.middleware.authentication import AuthenticationMiddleware
@@ -71,6 +75,19 @@ from starlette.types import ASGIApp
 from .authorization import grant as _grant_factory, requires as _requires_module_func
 from .middleware.bearer import KeycardAuthBackend, keycard_on_error
 from .routers.metadata import auth_metadata_mount
+
+
+def _deprecated_zone_env(name: str) -> str | None:
+    """Read a legacy zone variable, warning that KEYCARD_ZONE_URL replaces it."""
+    value = os.getenv(name)
+    if value:
+        warnings.warn(
+            f"{name} is deprecated and will be removed in a future release; "
+            "set KEYCARD_ZONE_URL to the full zone URL instead.",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+    return value
 
 
 class AuthProvider:
@@ -123,9 +140,9 @@ class AuthProvider:
             enable_dynamic_client_registration: Override automatic registration.
             application_credential: Credential provider for token exchange.
         """
-        zone_id = zone_id or os.getenv("KEYCARD_ZONE_ID")
         zone_url = zone_url or os.getenv("KEYCARD_ZONE_URL")
-        base_url = base_url or os.getenv("KEYCARD_BASE_URL")
+        zone_id = zone_id or _deprecated_zone_env("KEYCARD_ZONE_ID")
+        base_url = base_url or _deprecated_zone_env("KEYCARD_BASE_URL")
         server_url = server_url or os.getenv("SERVER_URL") or os.getenv("MCP_SERVER_URL")
 
         self.base_url = base_url or "https://keycard.cloud"
@@ -182,37 +199,12 @@ class AuthProvider:
         if application_credential is not None:
             return application_credential
 
-        client_id = os.getenv("KEYCARD_CLIENT_ID")
-        client_secret = os.getenv("KEYCARD_CLIENT_SECRET")
-        if client_id and client_secret:
-            return ClientSecret((client_id, client_secret))
-
-        application_credential_type = os.getenv(
-            "KEYCARD_APPLICATION_CREDENTIAL_TYPE"
-        )
-        if application_credential_type == "eks_workload_identity":
-            custom_token_file_path = os.getenv(
-                "KEYCARD_EKS_WORKLOAD_IDENTITY_TOKEN_FILE"
-            )
-            return EKSWorkloadIdentity(token_file_path=custom_token_file_path)
-        elif application_credential_type == "web_identity":
-            key_storage_dir = os.getenv("KEYCARD_WEB_IDENTITY_KEY_STORAGE_DIR")
-            return WebIdentity(
-                server_name=self.server_name,
-                storage_dir=key_storage_dir,
-            )
-        elif application_credential_type is not None:
-            raise AuthProviderConfigurationError(
-                message=f"Unknown application credential type: {application_credential_type}. Supported types: eks_workload_identity, web_identity"
-            )
-
-        if any(
-            os.getenv(env_name)
-            for env_name in EKSWorkloadIdentity.default_env_var_names
-        ):
-            return EKSWorkloadIdentity()
-
-        return None
+        try:
+            return discover_credential(web_identity_server_name=self.server_name)
+        except CredentialDiscoveryError as e:
+            if e.reason == CredentialDiscoveryError.ABSENT:
+                return None
+            raise AuthProviderConfigurationError(message=str(e)) from e
 
     def _create_zone_scoped_url(self, base_url: str, zone_id: str) -> str:
         base_url_obj = AnyHttpUrl(base_url)

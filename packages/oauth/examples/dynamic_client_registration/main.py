@@ -20,7 +20,7 @@ def generate_client_name() -> str:
 
 
 def main():
-    with Client(os.getenv("ZONE_URL")) as client:
+    with Client(os.getenv("KEYCARD_ZONE_URL")) as client:
         response = client.register_client(
             client_name=f"MyService-{generate_client_name()}",
         )

@@ -40,7 +40,7 @@ cp .env.example .env
 
 Set up the following in Keycard Console:
 
-1. **Set `ZONE_URL`** in `.env` to your Keycard zone URL from the Zone Settings.
+1. **Set `KEYCARD_ZONE_URL`** in `.env` to your Keycard zone URL from the Zone Settings.
 2. **Create a provider** (e.g. `https://github.com` as the identity provider).
 3. **Create a resource** (e.g. `https://api.github.com`) and link it to the provider.
 4. **Create a Landing Page application**

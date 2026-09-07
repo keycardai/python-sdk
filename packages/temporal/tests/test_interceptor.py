@@ -335,6 +335,7 @@ _CREDENTIAL_ENV_VARS = (
     "AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE",
     "AWS_WEB_IDENTITY_TOKEN_FILE",
     "AZURE_FEDERATED_TOKEN_FILE",
+    "KEYCARD_WEB_IDENTITY_KEY_STORAGE_DIR",
 )
 
 
@@ -360,8 +361,8 @@ def test_no_credential_anywhere_fails_at_construction(monkeypatch):
 
 def test_unknown_credential_type_fails_at_construction(monkeypatch):
     _clear_credential_env(monkeypatch)
-    monkeypatch.setenv("KEYCARD_APPLICATION_CREDENTIAL_TYPE", "web_identity")
-    with pytest.raises(GrantConfigurationError, match="web_identity"):
+    monkeypatch.setenv("KEYCARD_APPLICATION_CREDENTIAL_TYPE", "bogus")
+    with pytest.raises(GrantConfigurationError, match="bogus"):
         KeycardInterceptor("https://zone.test")
 
 

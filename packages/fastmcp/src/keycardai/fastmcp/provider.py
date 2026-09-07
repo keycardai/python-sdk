@@ -34,6 +34,7 @@ from keycardai.oauth.server import (
     ClientSecret,
     EKSWorkloadIdentity,
     WebIdentity,
+    discover_credential,
 )
 from keycardai.oauth.server.client_factory import (
     ClientFactory,
@@ -43,6 +44,7 @@ from keycardai.oauth.server.exceptions import (
     AuthProviderConfigurationError,
     AuthProviderInternalError,
     AuthProviderRemoteError,
+    CredentialDiscoveryError,
     ResourceAccessError,
 )
 from keycardai.oauth.types.models import TokenExchangeRequest, TokenResponse
@@ -82,6 +84,20 @@ __all__ = [
     "introspect",
     "override_access_context",
 ]
+
+
+def _deprecated_zone_env(name: str) -> str | None:
+    """Read a legacy zone variable, warning that KEYCARD_ZONE_URL replaces it."""
+    value = os.getenv(name)
+    if value:
+        warnings.warn(
+            f"{name} is deprecated and will be removed in a future release; "
+            "set KEYCARD_ZONE_URL to the full zone URL instead.",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+    return value
+
 
 logger = logging.getLogger(__name__)
 
@@ -706,9 +722,9 @@ class AuthProvider:
             AuthProviderRemoteError: If cannot connect to Keycard zone (check zone configuration or contact support)
         """
         # Discover configuration from environment variables with explicit parameters taking priority
-        zone_id = zone_id or os.getenv("KEYCARD_ZONE_ID")
         zone_url = zone_url or os.getenv("KEYCARD_ZONE_URL")
-        base_url = base_url or os.getenv("KEYCARD_BASE_URL")
+        zone_id = zone_id or _deprecated_zone_env("KEYCARD_ZONE_ID")
+        base_url = base_url or _deprecated_zone_env("KEYCARD_BASE_URL")
         mcp_server_url = mcp_server_url or os.getenv("MCP_SERVER_URL")
 
         if zone_url is None and zone_id is None:
@@ -772,32 +788,12 @@ class AuthProvider:
         if application_credential is not None:
             return application_credential
 
-        # discover environment variables
-        client_id = os.getenv("KEYCARD_CLIENT_ID")
-        client_secret = os.getenv("KEYCARD_CLIENT_SECRET")
-        if client_id and client_secret:
-            return ClientSecret((client_id, client_secret))
-
-        application_credential_type = os.getenv("KEYCARD_APPLICATION_CREDENTIAL_TYPE")
-        if application_credential_type == "eks_workload_identity":
-            custom_token_file_path = os.getenv("KEYCARD_EKS_WORKLOAD_IDENTITY_TOKEN_FILE")
-            return EKSWorkloadIdentity(token_file_path=custom_token_file_path)
-        elif application_credential_type == "web_identity":
-            key_storage_dir = os.getenv("KEYCARD_WEB_IDENTITY_KEY_STORAGE_DIR")
-            return WebIdentity(
-                mcp_server_name=self.mcp_server_name,
-                storage_dir=key_storage_dir,
-            )
-        elif application_credential_type is not None:
-            raise AuthProviderConfigurationError(
-                message=f"Unknown application credential type: {application_credential_type}. Supported types: eks_workload_identity, web_identity"
-            )
-
-        # detect workload identity from environment variables
-        if any(os.getenv(env_name) for env_name in EKSWorkloadIdentity.default_env_var_names):
-            return EKSWorkloadIdentity()
-
-        return None
+        try:
+            return discover_credential(web_identity_server_name=self.mcp_server_name)
+        except CredentialDiscoveryError as e:
+            if e.reason == CredentialDiscoveryError.ABSENT:
+                return None
+            raise AuthProviderConfigurationError(message=str(e)) from e
 
     def _handle_client_creation_error(self, auth, exception: Exception | None = None) -> None:
         """Handle client creation errors with appropriate exception type.

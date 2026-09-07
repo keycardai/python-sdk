@@ -5,7 +5,7 @@ from keycardai.oauth.client import Client
 
 def main():
     print("Hello from discover-server-metadata!")
-    with Client(os.getenv("ZONE_URL")) as client:
+    with Client(os.getenv("KEYCARD_ZONE_URL")) as client:
         metadata = client.discover_server_metadata()
         print(metadata)
 
