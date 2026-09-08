@@ -1,3 +1,10 @@
+## 0.30.0-keycardai-oauth (2026-09-08)
+
+
+- feat(keycardai-oauth): record retryable in exchange_tokens_for_resources error dicts
+- ECO-361. The typed errors' retryable property (ECO-357) was unreachable on the main mint path: exchange_tokens_for_resources flattened every captured failure into a string dict, so consumers re-derived retryability by matching codes against a copied PERMANENT_ERROR_CODES list. The capture site now records retryable as a real boolean via the new error_retryable helper (exported from keycardai.oauth.server), AccessContext widens to Mapping[str, str | bool] parameters so existing dict[str, str] callers keep typechecking, temporal's interceptor reads the field instead of its copied code list (equivalence test retired), and langchain's _grant_as_self records the same field for shape parity. Temporal and langchain oauth floors rise to 0.30.0.
+- Behavior change, deliberate: six failure shapes that consumers historically retried are now classified permanent and stop retrying: HTTP 400, 401, 403, and 404 responses with a non-OAuth body, plus configuration errors (ConfigError) and authentication errors (AuthenticationError). Retrying any of them repeats the same refusal; each case is pinned in tests. Transient failures (network faults, 5xx, 429, unclassified errors) stay retryable and are never reclassified.
+
 ## 0.29.0-keycardai-oauth (2026-09-07)
 
 
