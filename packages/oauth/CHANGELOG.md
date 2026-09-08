@@ -1,3 +1,10 @@
+## 0.31.0-keycardai-oauth (2026-09-08)
+
+
+- feat(keycardai-oauth): pool httpx clients in the transports
+- ECO-329. Both transports constructed and closed an httpx client inside every request, so a long-lived keycardai client paid a fresh TCP and TLS handshake per call: per tool call under the langchain middleware, per activity under the temporal interceptor. Each transport now creates its httpx client lazily and reuses it, closing through the new close()/aclose() on transports and clients (the context-manager exits now do real work). The async transport tracks its owning event loop and builds a fresh client when a request arrives on another loop, since an httpx AsyncClient cannot cross loops; a client owned by a foreign loop is dropped to garbage collection rather than unsafely closed. Injected transports are never closed by the client. The module-level PKCE helper and the WIF token sources keep per-request clients: nothing owns the former's lifecycle, and the latter talk to metadata endpoints on other hosts, one over a unix domain socket.
+- Observable behavior change: a pooled connection can die between requests, so a first attempt after idle can surface a transport error a fresh-client design could not. Those classify retryable=True.
+
 ## 0.30.0-keycardai-oauth (2026-09-08)
 
 
