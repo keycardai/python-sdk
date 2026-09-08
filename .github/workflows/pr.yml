@@ -109,8 +109,10 @@ jobs:
 
       # --no-sources keeps keycardai-oauth coming from the index at its declared
       # floor instead of the workspace checkout: the floor is what users install.
+      # The floors-bootstrap label skips this leg for the same reason it skips
+      # the sibling-floors check: the keycardai-oauth floor is not on PyPI yet.
       - name: Floors resolution
-        if: matrix.leg == 'floors'
+        if: matrix.leg == 'floors' && !contains(github.event.pull_request.labels.*.name, 'floors-bootstrap')
         run: |
           uv venv .venv-leg --python "${{ matrix.python-version }}"
           source .venv-leg/bin/activate
