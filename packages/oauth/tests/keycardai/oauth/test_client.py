@@ -120,6 +120,42 @@ class TestAsyncClientContextManager:
                 mock_init.assert_called_once()
 
 
+_NO_INIT = ClientConfig(enable_metadata_discovery=False, auto_register_client=False)
+
+
+class TestClientClose:
+    """close() / aclose() reach the owned transport and skip injected ones."""
+
+    def test_sync_exit_closes_owned_transport(self):
+        client = Client("https://test.example.com", config=_NO_INIT)
+        with patch.object(client.transport, "close") as mock_close:
+            with client:
+                pass
+        mock_close.assert_called_once()
+
+    def test_sync_close_skips_injected_transport(self):
+        transport = Mock()
+        client = Client("https://test.example.com", transport=transport, config=_NO_INIT)
+        client.close()
+        transport.close.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_async_exit_closes_owned_transport(self):
+        client = AsyncClient("https://test.example.com", config=_NO_INIT)
+        with patch.object(client.transport, "aclose", new_callable=AsyncMock) as mock_close:
+            async with client:
+                pass
+        mock_close.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_async_close_skips_injected_transport(self):
+        transport = Mock()
+        transport.aclose = AsyncMock()
+        client = AsyncClient("https://test.example.com", transport=transport, config=_NO_INIT)
+        await client.aclose()
+        transport.aclose.assert_not_awaited()
+
+
 class TestIssuerArgument:
     """The canonical constructor parameter is `issuer`; `base_url` is a deprecated alias."""
 

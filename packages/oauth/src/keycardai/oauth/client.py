@@ -467,14 +467,26 @@ class AsyncClient:
     async def __aexit__(self, exc_type, exc_value, traceback) -> None:
         """Exit async context manager.
 
-        The default client does own resource cleanup. Noop.
+        Closes the transport this client owns (see :meth:`aclose`).
 
         Args:
             exc_type: Exception type (if any)
             exc_value: Exception value (if any)
             traceback: Exception traceback (if any)
         """
-        pass
+        await self.aclose()
+
+    async def aclose(self) -> None:
+        """Close the pooled HTTP connections held by this client's transport.
+
+        Only a transport the client created itself is closed; an injected
+        transport belongs to its owner. Closing is optional: an unclosed
+        client releases its connections when it is garbage collected. The
+        client stays usable after ``aclose()``; the next request opens a
+        fresh connection pool.
+        """
+        if self._owns_transport and isinstance(self.transport, HttpxAsyncTransport):
+            await self.transport.aclose()
 
     async def get_client_id(self) -> str | None:
         """Get the client ID obtained from registration.
@@ -1848,4 +1860,16 @@ class Client:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        pass
+        self.close()
+
+    def close(self) -> None:
+        """Close the pooled HTTP connections held by this client's transport.
+
+        Only a transport the client created itself is closed; an injected
+        transport belongs to its owner. Closing is optional: an unclosed
+        client releases its connections when it is garbage collected. The
+        client stays usable after ``close()``; the next request opens a
+        fresh connection pool.
+        """
+        if self._owns_transport and isinstance(self.transport, HttpxTransport):
+            self.transport.close()
