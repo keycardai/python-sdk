@@ -109,8 +109,14 @@ jobs:
 
       # --no-sources keeps keycardai-oauth coming from the index at its declared
       # floor instead of the workspace checkout: the floor is what users install.
+      # Two skips, mirroring the sibling-floors job. The floors-bootstrap label
+      # covers a sequenced feature PR whose raised floor is not on PyPI yet, and
+      # bump PRs (release-app author on a bump/ branch) skip because the oauth
+      # bump publishes the very version this leg would install. keycardai-*
+      # floor precision on bump PRs stays with the sibling-floors job, and a
+      # bump never changes the external floors this leg exists to test.
       - name: Floors resolution
-        if: matrix.leg == 'floors'
+        if: ${{ matrix.leg == 'floors' && !contains(github.event.pull_request.labels.*.name, 'floors-bootstrap') && !(github.event.pull_request.user.login == 'keycard-sdk-release[bot]' && startsWith(github.event.pull_request.head.ref, 'bump/')) }}
         run: |
           uv venv .venv-leg --python "${{ matrix.python-version }}"
           source .venv-leg/bin/activate

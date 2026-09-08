@@ -29,7 +29,10 @@ from langgraph.types import Command, interrupt
 from keycardai.oauth import AsyncClient, ClientConfig, NoneAuth
 from keycardai.oauth.server.access_context import AccessContext
 from keycardai.oauth.server.credentials import ApplicationCredential, ClientSecret
-from keycardai.oauth.server.token_exchange import exchange_tokens_for_resources
+from keycardai.oauth.server.token_exchange import (
+    error_retryable,
+    exchange_tokens_for_resources,
+)
 from langchain.agents.middleware import AgentMiddleware
 from langchain.agents.middleware.types import ToolCallRequest
 
@@ -402,8 +405,9 @@ class KeycardGrantMiddleware(AgentMiddleware):
                 token = await client.client_credentials_grant(**kwargs)
                 access.set_token(resource, token)
             except Exception as e:
-                error: dict[str, str] = {
-                    "message": f"Client credentials grant failed for {resource}"
+                error: dict[str, str | bool] = {
+                    "message": f"Client credentials grant failed for {resource}",
+                    "retryable": error_retryable(e),
                 }
                 if hasattr(e, "error"):
                     error["code"] = e.error

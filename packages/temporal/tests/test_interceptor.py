@@ -22,11 +22,13 @@ from temporalio.worker import ExecuteActivityInput
 
 from keycardai import temporal as kt
 from keycardai.oauth import TokenExchangeRequest
-from keycardai.oauth.server import ClientSecret
+from keycardai.oauth.exceptions import ConfigError, OAuthProtocolError
+from keycardai.oauth.server import AccessContext, ClientSecret
 from keycardai.temporal import (
     GrantConfigurationError,
     KeycardInterceptor,
     Subject,
+    _raise_on_mint_error,
     access,
     grant,
 )
@@ -90,13 +92,9 @@ class StubOAuthClient:
         return SimpleNamespace(access_token=f"imp-tok-{len(self.calls)}")
 
 
-class OAuthDenial(Exception):
-    """Shaped like the SDK's OAuthProtocolError: carries ``.error``."""
-
-    def __init__(self, error: str):
-        super().__init__(error)
-        self.error = error
-        self.error_description = None
+def OAuthDenial(error: str) -> OAuthProtocolError:
+    """The SDK's own typed error: ``.error`` plus the ``retryable`` property."""
+    return OAuthProtocolError(error=error)
 
 
 class AssertionCredential:
@@ -286,18 +284,51 @@ async def test_grant_configuration_error_carries_its_contractual_name(oauth_call
     assert GrantConfigurationError.__name__ == "GrantConfigurationError"
 
 
-def test_permanent_denial_set_matches_oauth_retryable_property():
-    # The classifier consumes keycardai.oauth's PERMANENT_ERROR_CODES; the
-    # same set drives OAuthProtocolError.retryable. Pin the equivalence so
-    # the day the set and the property drift apart, this package notices.
-    from keycardai.oauth import PERMANENT_ERROR_CODES
-    from keycardai.oauth.exceptions import OAuthProtocolError
+def test_mint_error_dict_with_retryable_false_is_a_permanent_application_error():
+    ctx = AccessContext()
+    ctx.set_resource_error(
+        RESOURCE, {"message": "boom", "code": "invalid_client", "retryable": False}
+    )
+    with pytest.raises(ApplicationError, match="invalid_client") as exc:
+        _raise_on_mint_error(ctx, RESOURCE)
+    assert exc.value.non_retryable
+    assert exc.value.type == "KeycardAccessDenied"
 
-    assert PERMANENT_ERROR_CODES, "permanent-code set must not be empty"
-    for code in [*sorted(PERMANENT_ERROR_CODES), "invalid_request", "server_error"]:
-        assert OAuthProtocolError(error=code).retryable == (
-            code not in PERMANENT_ERROR_CODES
-        ), code
+
+def test_mint_error_dict_with_retryable_true_lets_the_retry_policy_govern():
+    ctx = AccessContext()
+    ctx.set_resource_error(
+        RESOURCE,
+        {"message": "boom", "raw_error": "zone unreachable", "retryable": True},
+    )
+    with pytest.raises(ApplicationError, match="zone unreachable") as exc:
+        _raise_on_mint_error(ctx, RESOURCE)
+    assert not exc.value.non_retryable
+    assert exc.value.type == "KeycardMintFailed"
+
+
+def test_mint_error_dict_without_retryable_is_treated_as_retryable():
+    ctx = AccessContext()
+    ctx.set_resource_error(RESOURCE, {"message": "boom", "code": "access_denied"})
+    with pytest.raises(ApplicationError) as exc:
+        _raise_on_mint_error(ctx, RESOURCE)
+    assert not exc.value.non_retryable
+    assert exc.value.type == "KeycardMintFailed"
+
+
+async def test_client_credentials_permanent_typed_error_is_non_retryable(oauth_calls):
+    # A typed error that is permanent but not a denial: classified by the
+    # exception's retryable property, not by its OAuth code.
+    @grant(RESOURCE)
+    async def misconfigured() -> None:
+        raise AssertionError("body must not run")
+
+    StubOAuthClient.fail_with = ConfigError("token endpoint missing")
+    chain = inbound()
+    with pytest.raises(ApplicationError, match="ConfigError") as exc:
+        await chain.execute_activity(call(misconfigured))
+    assert exc.value.non_retryable
+    assert exc.value.type == "KeycardAccessDenied"
 
 
 # --- on-behalf-of: the exchange path ----------------------------------------
