@@ -472,9 +472,9 @@ def _raise_on_mint_error(ctx: AccessContext, resource: str) -> None:
     # keycardai.oauth classifies the captured failure; a dict without the
     # field predates the classification and is treated as retryable.
     if err.get("retryable", True) is False:
+        summary = f"{code}: {detail}" if code else detail
         raise ApplicationError(
-            f"Keycard grant for {resource} failed permanently: "
-            f"{code or detail}: {detail}",
+            f"Keycard grant for {resource} failed permanently: {summary}",
             type="KeycardAccessDenied",
             non_retryable=True,
         )
