@@ -5,6 +5,7 @@ Errors are stored per-resource rather than raised, enabling
 partial-success scenarios where some resources succeed while others fail.
 """
 
+from collections.abc import Mapping
 from typing import Any
 
 from keycardai.oauth.types.models import TokenResponse
@@ -21,8 +22,8 @@ class AccessContext:
 
     def __init__(self, access_tokens: dict[str, TokenResponse] | None = None):
         self._access_tokens: dict[str, TokenResponse] = access_tokens or {}
-        self._resource_errors: dict[str, dict[str, str]] = {}
-        self._error: dict[str, str] | None = None
+        self._resource_errors: dict[str, dict[str, str | bool]] = {}
+        self._error: dict[str, str | bool] | None = None
 
     def set_bulk_tokens(self, access_tokens: dict[str, TokenResponse]):
         """Set access tokens for resources."""
@@ -33,14 +34,19 @@ class AccessContext:
         self._access_tokens[resource] = token
         self._resource_errors.pop(resource, None)
 
-    def set_resource_error(self, resource: str, error: dict[str, str]):
-        """Set error for a specific resource."""
-        self._resource_errors[resource] = error
+    def set_resource_error(self, resource: str, error: Mapping[str, str | bool]):
+        """Set error for a specific resource.
+
+        The mapping carries string fields (``message``, ``code``,
+        ``description``, ``raw_error``) plus ``retryable``, a bool, when the
+        capture site could classify the failure.
+        """
+        self._resource_errors[resource] = dict(error)
         self._access_tokens.pop(resource, None)
 
-    def set_error(self, error: dict[str, str]):
+    def set_error(self, error: Mapping[str, str | bool]):
         """Set error that affects all resources."""
-        self._error = error
+        self._error = dict(error)
 
     def has_resource_error(self, resource: str) -> bool:
         """Check if a specific resource has an error."""
@@ -58,11 +64,11 @@ class AccessContext:
         """Get a snapshot of all errors: the per-resource map and the global error."""
         return {"resources": self._resource_errors.copy(), "error": self._error}
 
-    def get_error(self) -> dict[str, str] | None:
+    def get_error(self) -> dict[str, str | bool] | None:
         """Get global error if any."""
         return self._error
 
-    def get_resource_error(self, resource: str) -> dict[str, str] | None:
+    def get_resource_error(self, resource: str) -> dict[str, str | bool] | None:
         """Get error for a specific resource."""
         return self._resource_errors.get(resource)
 

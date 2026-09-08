@@ -37,7 +37,7 @@ from .credentials import (
     WorkloadIdentity,
     discover_credential,
 )
-from .token_exchange import exchange_tokens_for_resources
+from .token_exchange import error_retryable, exchange_tokens_for_resources
 from .verifier import AccessToken, TokenVerifier
 
 __all__ = [
@@ -46,6 +46,7 @@ __all__ = [
     "AccessToken",
     "TokenVerifier",
     # === Token Exchange ===
+    "error_retryable",
     "exchange_tokens_for_resources",
     # === Credential Providers ===
     "ApplicationCredential",

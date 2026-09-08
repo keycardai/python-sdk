@@ -4,8 +4,18 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from keycardai.oauth.exceptions import (
+    AuthenticationError,
+    ConfigError,
+    NetworkError,
+    OAuthHttpError,
+    OAuthProtocolError,
+)
 from keycardai.oauth.server.access_context import AccessContext
-from keycardai.oauth.server.token_exchange import exchange_tokens_for_resources
+from keycardai.oauth.server.token_exchange import (
+    error_retryable,
+    exchange_tokens_for_resources,
+)
 from keycardai.oauth.types.models import TokenExchangeRequest, TokenResponse
 
 
@@ -166,3 +176,76 @@ async def test_application_credential_sets_scope():
         request_scopes="read",
     )
     assert captured["exchange"]["https://api.example.com"].scope == "read"
+
+
+# --- retryable classification recorded in the error dict ---------------------
+
+
+async def _capture_failure(error: Exception) -> dict[str, str | bool]:
+    client = AsyncMock()
+    client.exchange_token.side_effect = error
+    ctx = AccessContext()
+    await exchange_tokens_for_resources(
+        client=client,
+        resources=["https://api.example.com"],
+        subject_token="tok",
+        access_context=ctx,
+    )
+    recorded = ctx.get_resource_error("https://api.example.com")
+    assert recorded is not None
+    return recorded
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("error", "expected"),
+    [
+        pytest.param(
+            OAuthProtocolError(error="access_denied"), False, id="access_denied"
+        ),
+        pytest.param(
+            OAuthProtocolError(error="invalid_response"), True, id="invalid_response"
+        ),
+        pytest.param(NetworkError("dns failed"), True, id="network"),
+        pytest.param(OAuthHttpError(status_code=503), True, id="http_503"),
+        pytest.param(OAuthHttpError(status_code=401), False, id="http_401"),
+        pytest.param(ConfigError("no endpoint"), False, id="config"),
+        pytest.param(ValueError("unexpected"), True, id="plain_exception_default"),
+    ],
+)
+async def test_error_dict_carries_retryable_from_the_exception(error, expected):
+    recorded = await _capture_failure(error)
+    assert recorded["retryable"] is expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [400, 401, 403, 404])
+async def test_http_4xx_with_non_oauth_body_is_permanent(status):
+    # Historically consumers retried these; the typed property classifies them
+    # permanent from the status and the dict now carries that decision.
+    recorded = await _capture_failure(
+        OAuthHttpError(status_code=status, response_body="<html>nope</html>")
+    )
+    assert recorded["retryable"] is False
+    assert "code" not in recorded
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error", [ConfigError("bad"), AuthenticationError("bad")])
+async def test_config_and_authentication_errors_are_permanent(error):
+    recorded = await _capture_failure(error)
+    assert recorded["retryable"] is False
+
+
+def test_error_retryable_defaults_true_without_the_property():
+    assert error_retryable(RuntimeError("boom")) is True
+    assert error_retryable(OAuthProtocolError(error="invalid_client")) is False
+
+
+def test_set_error_accepts_plain_string_dicts():
+    ctx = AccessContext()
+    legacy: dict[str, str] = {"message": "boom", "code": "missing_identity"}
+    ctx.set_error(legacy)
+    ctx.set_resource_error("https://api.example.com", legacy)
+    assert ctx.get_error() == legacy
+    assert ctx.get_resource_error("https://api.example.com") == legacy

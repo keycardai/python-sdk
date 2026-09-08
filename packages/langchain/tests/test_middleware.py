@@ -25,6 +25,8 @@ from keycardai.langchain import (
     get_access_context,
 )
 from keycardai.oauth import TokenResponse
+from keycardai.oauth.exceptions import NetworkError, OAuthProtocolError
+from keycardai.oauth.server import AccessContext
 from keycardai.oauth.types.models import TokenExchangeRequest
 
 RESOURCE = "https://api.example.test"
@@ -50,6 +52,7 @@ class StubExchangeClient:
         self.self_calls: list[dict[str, str]] = []
         self.granted = True
         self.self_granted = True
+        self.self_error: Exception | None = None
         self.denied_resources: set[str] = set()
 
     async def exchange_token(self, request: TokenExchangeRequest) -> TokenResponse:
@@ -73,6 +76,8 @@ class StubExchangeClient:
 
     async def client_credentials_grant(self, request=None, **kwargs) -> TokenResponse:
         self.self_calls.append(kwargs)
+        if self.self_error is not None:
+            raise self.self_error
         if not self.self_granted:
             raise RuntimeError("policy denies this application self access")
         return TokenResponse(
@@ -278,6 +283,26 @@ def test_as_self_denial_is_an_error_never_an_interrupt() -> None:
     content = last_tool_message(result).content
     assert "RESOURCE_ERROR" in content
     assert "Client credentials grant failed" in content
+
+
+@pytest.mark.parametrize(
+    ("error", "expected"),
+    [
+        (OAuthProtocolError(error="access_denied"), False),
+        (NetworkError("zone unreachable"), True),
+        (RuntimeError("policy denies this application self access"), True),
+    ],
+)
+def test_as_self_failure_dict_carries_retryable(error, expected) -> None:
+    """The dict has the same shape exchange_tokens_for_resources records."""
+    stub = StubExchangeClient()
+    stub.self_error = error
+    middleware = KeycardGrantMiddleware(resources=[RESOURCE], client=stub)
+    access = asyncio.run(middleware._grant_as_self([RESOURCE], AccessContext()))
+    recorded = access.get_resource_error(RESOURCE)
+    assert recorded is not None
+    assert recorded["retryable"] is expected
+    assert "Client credentials grant failed" in recorded["message"]
 
 
 def test_zone_url_is_required_without_an_injected_client() -> None:

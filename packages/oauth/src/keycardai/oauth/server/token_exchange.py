@@ -12,6 +12,17 @@ from .access_context import AccessContext
 from .credentials import ApplicationCredential
 
 
+def error_retryable(error: Exception) -> bool:
+    """Return the ``retryable`` classification of a captured exchange failure.
+
+    Reads the exception's ``retryable`` property when it has one. An exception
+    without the property is treated as transport-shaped, so retryable, until
+    proven otherwise: the same doctrine ``classify_discovery_failure`` applies.
+    """
+    retryable = getattr(error, "retryable", None)
+    return retryable if isinstance(retryable, bool) else True
+
+
 async def exchange_tokens_for_resources(
     *,
     client: AsyncClient,
@@ -103,8 +114,9 @@ async def exchange_tokens_for_resources(
 
             access_tokens[resource] = token_response
         except Exception as e:
-            error_dict: dict[str, str] = {
+            error_dict: dict[str, str | bool] = {
                 "message": f"Token exchange failed for {resource}",
+                "retryable": error_retryable(e),
             }
             if hasattr(e, "error"):
                 error_dict["code"] = e.error

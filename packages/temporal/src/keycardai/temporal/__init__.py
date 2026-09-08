@@ -53,12 +53,13 @@ from temporalio.worker import (
 # validation. Passing them through here (as Temporal's sentry sample does)
 # lets workflow-defining files import this package normally.
 with workflow.unsafe.imports_passed_through():
-    from keycardai.oauth import PERMANENT_ERROR_CODES, AsyncClient, TokenResponse
+    from keycardai.oauth import AsyncClient, TokenResponse
     from keycardai.oauth.server import (
         AccessContext,
         ApplicationCredential,
         ClientSecret,
         discover_credential,
+        error_retryable,
         exchange_tokens_for_resources,
     )
     from keycardai.oauth.server.exceptions import (
@@ -393,10 +394,11 @@ class _KeycardActivityInboundInterceptor(ActivityInboundInterceptor):
                     resource=grant.resource
                 )
             except Exception as e:
-                code = getattr(e, "error", None)
-                if code in PERMANENT_ERROR_CODES:
+                if not error_retryable(e):
+                    code = getattr(e, "error", None) or type(e).__name__
                     raise ApplicationError(
-                        f"Keycard denied {grant.resource}: {code}",
+                        f"Keycard grant for {grant.resource} failed permanently: "
+                        f"{code}: {e}",
                         type="KeycardAccessDenied",
                         non_retryable=True,
                     ) from e
@@ -467,11 +469,12 @@ def _raise_on_mint_error(ctx: AccessContext, resource: str) -> None:
     err = ctx.get_resource_error(resource) or ctx.get_error() or {}
     code = err.get("code")
     detail = err.get("description") or err.get("raw_error") or err.get("message") or ""
-    # Permanent denials come from keycardai.oauth: the same set that drives
-    # OAuthProtocolError.retryable (equivalence pinned in the tests).
-    if code in PERMANENT_ERROR_CODES:
+    # keycardai.oauth classifies the captured failure; a dict without the
+    # field predates the classification and is treated as retryable.
+    if err.get("retryable", True) is False:
         raise ApplicationError(
-            f"Keycard denied {resource}: {code}: {detail}",
+            f"Keycard grant for {resource} failed permanently: "
+            f"{code or detail}: {detail}",
             type="KeycardAccessDenied",
             non_retryable=True,
         )
