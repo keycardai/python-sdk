@@ -708,6 +708,198 @@ async def test_impersonation_denial_is_non_retryable(oauth_calls):
     assert exc.value.non_retryable
 
 
+# --- multi-resource grants --------------------------------------------------
+
+STORE = "urn:test:store"
+EMBEDDER = "urn:test:embedder"
+
+
+@grant(STORE, EMBEDDER)
+async def paired_activity() -> tuple[str, str]:
+    return access(STORE).access_token, access(EMBEDDER).access_token
+
+
+async def test_single_grant_bare_access_still_returns_the_token(oauth_calls):
+    chain = inbound()
+    assert await chain.execute_activity(call(granted_activity)) == "cc-tok-1"
+
+
+async def test_multi_grant_mints_every_resource_and_selects_by_name(oauth_calls):
+    chain = inbound()
+    tokens = await chain.execute_activity(call(paired_activity))
+    assert tokens == ("cc-tok-1", "cc-tok-2")
+    assert oauth_calls == [
+        ("client_credentials", STORE),
+        ("client_credentials", EMBEDDER),
+    ]
+
+
+async def test_bare_access_under_a_multi_grant_names_the_resources(oauth_calls):
+    @grant(STORE, EMBEDDER)
+    async def ambiguous() -> str:
+        return access().access_token
+
+    chain = inbound()
+    with pytest.raises(GrantConfigurationError, match="access\\(resource\\)"):
+        await chain.execute_activity(call(ambiguous))
+
+
+async def test_access_by_name_works_under_a_single_grant(oauth_calls):
+    @grant(STORE)
+    async def named() -> str:
+        return access(STORE).access_token
+
+    chain = inbound()
+    assert await chain.execute_activity(call(named)) == "cc-tok-1"
+
+
+async def test_access_to_an_undeclared_resource_fails(oauth_calls):
+    @grant(STORE)
+    async def wrong() -> str:
+        return access(EMBEDDER).access_token
+
+    chain = inbound()
+    with pytest.raises(GrantConfigurationError, match="does not declare"):
+        await chain.execute_activity(call(wrong))
+
+
+def test_duplicate_resources_fail_at_decoration():
+    with pytest.raises(GrantConfigurationError, match="more than once"):
+
+        @grant(STORE, EMBEDDER, STORE)
+        async def doubled() -> None: ...
+
+
+def test_grant_without_resources_fails_at_decoration():
+    with pytest.raises(GrantConfigurationError, match="at least one"):
+
+        @grant()
+        async def empty() -> None: ...
+
+
+class PerResourceStub(StubOAuthClient):
+    """Exchanges succeed or fail per resource, so one grant can mix outcomes."""
+
+    failures: dict[str, Exception] = {}
+
+    async def exchange_token(self, request):
+        if request.resource in self.failures:
+            raise self.failures[request.resource]
+        return await super().exchange_token(request)
+
+
+@pytest.fixture
+def per_resource(oauth_calls, monkeypatch) -> list:
+    PerResourceStub.failures = {}
+    monkeypatch.setattr(kt, "AsyncClient", PerResourceStub)
+    return oauth_calls
+
+
+async def test_one_denial_among_several_fails_non_retryable_naming_it(per_resource):
+    ran: list = []
+
+    @grant(STORE, EMBEDDER, subject_from="approver")
+    async def paired(approver: str) -> None:
+        ran.append(True)
+
+    PerResourceStub.failures = {EMBEDDER: OAuthDenial("access_denied")}
+    chain = inbound(subject_token_provider=session_lookup)
+    with pytest.raises(ApplicationError, match=EMBEDDER) as exc:
+        await chain.execute_activity(call(paired, "alice"))
+    assert exc.value.non_retryable
+    assert exc.value.type == "KeycardAccessDenied"
+    assert ran == []
+    # The store minted; the denial still fails the whole activity.
+    assert per_resource == [("exchange", "session-token-for-alice", STORE)]
+
+
+async def test_denial_wins_over_a_transient_failure_in_the_same_grant(per_resource):
+    @grant(STORE, EMBEDDER, subject_from="approver")
+    async def paired(approver: str) -> None:
+        raise AssertionError("body must not run")
+
+    PerResourceStub.failures = {
+        STORE: ConnectionError("zone unreachable"),
+        EMBEDDER: OAuthDenial("access_denied"),
+    }
+    chain = inbound(subject_token_provider=session_lookup)
+    with pytest.raises(ApplicationError, match=EMBEDDER) as exc:
+        await chain.execute_activity(call(paired, "alice"))
+    assert exc.value.non_retryable
+
+
+async def test_one_transient_failure_among_several_stays_retryable(per_resource):
+    @grant(STORE, EMBEDDER, subject_from="approver")
+    async def paired(approver: str) -> None:
+        raise AssertionError("body must not run")
+
+    PerResourceStub.failures = {STORE: ConnectionError("zone unreachable")}
+    chain = inbound(subject_token_provider=session_lookup)
+    with pytest.raises(ApplicationError, match=STORE) as exc:
+        await chain.execute_activity(call(paired, "alice"))
+    assert not exc.value.non_retryable
+    assert exc.value.type == "KeycardMintFailed"
+
+
+async def test_obo_passes_the_full_resource_list_in_one_call(oauth_calls, monkeypatch):
+    calls: list = []
+
+    async def recording_exchange(**kwargs):
+        calls.append(kwargs["resources"])
+        for r in kwargs["resources"]:
+            kwargs["access_context"].set_token(
+                r, SimpleNamespace(access_token=f"tok-{r}")
+            )
+        return kwargs["access_context"]
+
+    monkeypatch.setattr(kt, "exchange_tokens_for_resources", recording_exchange)
+
+    @grant(STORE, EMBEDDER, subject_from="approver")
+    async def paired(approver: str) -> tuple[str, str]:
+        return access(STORE).access_token, access(EMBEDDER).access_token
+
+    chain = inbound(subject_token_provider=session_lookup)
+    tokens = await chain.execute_activity(call(paired, "alice"))
+    assert tokens == (f"tok-{STORE}", f"tok-{EMBEDDER}")
+    assert calls == [[STORE, EMBEDDER]]
+
+
+async def test_impersonation_mints_every_resource_as_the_same_subject(oauth_calls):
+    @grant(STORE, EMBEDDER, subject_from="approver", impersonate=True)
+    async def paired(approver: str) -> tuple[str, str]:
+        return access(STORE).access_token, access(EMBEDDER).access_token
+
+    chain = inbound()
+    tokens = await chain.execute_activity(call(paired, "alice"))
+    assert tokens == ("imp-tok-1", "imp-tok-2")
+    assert oauth_calls == [
+        ("impersonate", "alice", STORE),
+        ("impersonate", "alice", EMBEDDER),
+    ]
+
+
+async def test_client_credentials_stops_at_the_first_failure(oauth_calls, monkeypatch):
+    class FirstFails(StubOAuthClient):
+        async def client_credentials_grant(self, resource: str):
+            if resource == STORE:
+                raise OAuthDenial("invalid_client")
+            return await super().client_credentials_grant(resource)
+
+    monkeypatch.setattr(kt, "AsyncClient", FirstFails)
+    ran: list = []
+
+    @grant(STORE, EMBEDDER)
+    async def paired() -> None:
+        ran.append(True)
+
+    chain = inbound()
+    with pytest.raises(ApplicationError, match=STORE) as exc:
+        await chain.execute_activity(call(paired))
+    assert exc.value.non_retryable
+    assert ran == []
+    assert oauth_calls == []  # the embedder was never requested
+
+
 # --- composition with the Temporal decorators -------------------------------
 
 
@@ -717,7 +909,7 @@ def test_grant_composes_with_activity_defn():
     async def decorated(approver: str) -> None: ...
 
     declared = getattr(decorated, kt._GRANT_ATTR)
-    assert declared.resource == RESOURCE
+    assert declared.resources == (RESOURCE,)
     assert declared.resolve_extractor() is not None  # on-behalf-of mode
     assert declared.impersonate is False
 
