@@ -5,8 +5,8 @@ plugin by a stand-in that does what ``ModelActivity`` does: ask the provider
 for a model on every call. The one real dependency exercised is the ``openai``
 client itself (part of the extra), against an httpx mock transport, because
 the whole design rests on it awaiting the key callback before each request.
-Tests needing the Agents SDK skip when it is not installed; the workspace
-cannot carry it (openai-agents pins mcp<2 while keycardai-mcp needs mcp>=2).
+Tests needing ``openai`` or the Agents SDK skip when the extra is not installed
+(the sibling-floors CI job installs the base wheel only).
 """
 
 from __future__ import annotations
@@ -189,7 +189,7 @@ def mock_openai(seen: list[str]) -> httpx.AsyncClient:
 
 
 async def test_openai_client_sends_the_minted_key_and_picks_up_a_refresh(mints):
-    from openai import AsyncOpenAI
+    AsyncOpenAI = pytest.importorskip("openai").AsyncOpenAI
 
     seen: list[str] = []
     k = key(refresh=timedelta(minutes=5))
