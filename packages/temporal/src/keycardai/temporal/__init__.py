@@ -41,7 +41,7 @@ import contextvars
 import inspect
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, fields
-from typing import Annotated, Any, get_args, get_origin, get_type_hints
+from typing import Annotated, Any, NoReturn, get_args, get_origin, get_type_hints
 
 from temporalio import workflow
 from temporalio.exceptions import ApplicationError
@@ -337,6 +337,20 @@ def access(resource: str | None = None) -> TokenResponse:
     return ctx.access(resource)
 
 
+def _worker_credential(
+    credential: ApplicationCredential | None,
+) -> ApplicationCredential:
+    """The explicit credential, or the one the environment describes."""
+    if credential is not None:
+        return credential
+    try:
+        return discover_credential()
+    except CredentialDiscoveryError as e:
+        # Same taxonomy as every other worker-configuration problem in this
+        # package, so retry policies see one error class.
+        raise GrantConfigurationError(str(e)) from e
+
+
 class KeycardInterceptor(Interceptor):
     """Worker interceptor that mints fresh Keycard tokens per activity execution.
 
@@ -371,13 +385,7 @@ class KeycardInterceptor(Interceptor):
         credential: ApplicationCredential | None = None,
         subject_token_provider: SubjectTokenProvider | None = None,
     ) -> None:
-        if credential is None:
-            try:
-                credential = discover_credential()
-            except CredentialDiscoveryError as e:
-                # Same taxonomy as every other worker-configuration problem
-                # in this package, so retry policies see one error class.
-                raise GrantConfigurationError(str(e)) from e
+        credential = _worker_credential(credential)
         self._credential = credential
         # One client for the worker's lifetime: endpoint discovery runs once
         # and is cached on the instance. Tokens are still minted per call;
@@ -428,15 +436,7 @@ class _KeycardActivityInboundInterceptor(ActivityInboundInterceptor):
                         resource=resource
                     )
                 except Exception as e:
-                    if not error_retryable(e):
-                        code = getattr(e, "error", None) or type(e).__name__
-                        raise ApplicationError(
-                            f"Keycard grant for {resource} failed permanently: "
-                            f"{code}: {e}",
-                            type="KeycardAccessDenied",
-                            non_retryable=True,
-                        ) from e
-                    raise  # transient: the activity retry policy governs it
+                    _raise_for_grant_failure(resource, e)
                 ctx.set_token(resource, resp)
         elif grant.impersonate:
             # client.impersonate() authenticates only at the HTTP layer, and
@@ -495,6 +495,22 @@ class _KeycardActivityInboundInterceptor(ActivityInboundInterceptor):
             return await self.next.execute_activity(input)
         finally:
             _ctx.reset(token)
+
+
+def _raise_for_grant_failure(resource: str, e: Exception) -> NoReturn:
+    """Classify a failed client-credentials grant the way the interceptor does.
+
+    Permanent failures become the non-retryable ``KeycardAccessDenied``;
+    transient ones re-raise as-is so the activity retry policy governs them.
+    """
+    if not error_retryable(e):
+        code = getattr(e, "error", None) or type(e).__name__
+        raise ApplicationError(
+            f"Keycard grant for {resource} failed permanently: {code}: {e}",
+            type="KeycardAccessDenied",
+            non_retryable=True,
+        ) from e
+    raise e
 
 
 def _raise_on_mint_error(ctx: AccessContext, *resources: str) -> None:
