@@ -137,12 +137,70 @@ interceptor = KeycardInterceptor(
 )
 ```
 
+## The OpenAI Agents plugin
+
+`temporalio.contrib.openai_agents.OpenAIAgentsPlugin` runs every model call as an activity of its own, registered by the plugin before any of your activities exist, so neither `@grant` nor the interceptor can hand it a credential. `keycardai.temporal.openai_agents.KeycardOpenAIProvider` fills that seat: a `ModelProvider` whose OpenAI client resolves its key through Keycard on each request instead of reading `OPENAI_API_KEY` once at startup.
+
+```bash
+pip install "keycardai-temporal[openai-agents]" "temporalio[openai-agents]"
+```
+
+The intended end state for a worker: the interceptor once, `@grant` on each activity, and the plugin configured through Keycard for the model.
+
+```python
+from datetime import timedelta
+
+from temporalio.client import Client
+from temporalio.contrib.openai_agents import ModelActivityParameters, OpenAIAgentsPlugin
+from temporalio.worker import Worker
+
+from keycardai.temporal import KeycardInterceptor, access, grant
+from keycardai.temporal.openai_agents import KeycardOpenAIProvider
+
+ZONE = "https://your-zone.keycard.cloud"
+
+
+@grant("urn:mongodb:atlas:orders")
+async def load_orders(customer_id: str) -> list[dict]:
+    return await atlas_client(access().access_token).find(customer_id)
+
+
+async def main() -> None:
+    client = await Client.connect(
+        "localhost:7233",
+        plugins=[
+            OpenAIAgentsPlugin(
+                model_params=ModelActivityParameters(
+                    start_to_close_timeout=timedelta(seconds=60)
+                ),
+                model_provider=KeycardOpenAIProvider(
+                    ZONE, "urn:vault:openai-api-key", refresh=timedelta(minutes=5)
+                ),
+            )
+        ],
+    )
+    worker = Worker(
+        client,
+        task_queue="orders",
+        workflows=[OrderWorkflow],
+        activities=[load_orders],
+        interceptors=[KeycardInterceptor(ZONE)],
+    )
+    await worker.run()
+```
+
+`KeycardOpenAIProvider(zone_url, resource, credential=None, *, refresh=timedelta(minutes=5), base_url=None, use_responses=None)` takes the zone URL and the identifier of the resource whose vault holds the OpenAI key. The credential is the same as the interceptor's: an explicit `ApplicationCredential`, or the one `discover_credential()` finds in the environment when omitted. It must be a `ClientSecret`, as for any client-credentials `@grant`; other credential types raise `GrantConfigurationError` at construction.
+
+Refresh: the key is minted with a client-credentials grant on the first model call, not at worker startup, and reused for `refresh` (or the grant's `expires_in`, whichever is shorter). The next model call after the window mints again, so a key rotated in Keycard reaches the worker within one refresh window, with no restart. Concurrent model calls on an expired cache share one mint. A permanent grant failure fails the model activity with the same non-retryable `KeycardAccessDenied` a `@grant` activity would raise; a transient one is left to the model activity's retry policy. The plugin requires an explicit `start_to_close_timeout` or `schedule_to_close_timeout` whenever a custom provider is set.
+
+The optional dependencies (`openai-agents`, `openai`) are imported only inside `keycardai.temporal.openai_agents`, and only when a provider is built; `import keycardai.temporal` stays free of them. Without the extra installed, building a provider raises an `ImportError` naming it. `temporalio[openai-agents]` itself stays yours to install, since its version is pinned by your worker, not by this package.
+
 ## Design notes
 
 - Tokens never touch durable state. Workflow history is replayable and permanent, so unlike header-based context-propagation interceptors, nothing is written to activity headers, arguments, or return values. The token exists only inside one execution's context. This is also why on-behalf-of activities receive an identity reference instead of a token: the session lookup and exchange happen at the edge, inside the execution, so a session revoked mid-workflow is never replayed from state.
 - A mint failure for any declared resource raises before the activity body runs, and there is no fallback path. Tokens live in the SDK's shared `AccessContext` (the same container `keycardai-mcp` uses), but where that idiom is non-throwing, the interceptor converts recorded errors into raises on purpose: in Temporal, raising is the error channel.
 - Transient mint failures are retryable; permanent failures are not. The classification is `keycardai-oauth`'s: every typed error carries a `retryable` property, and `exchange_tokens_for_resources` records it in the error dict it stores on the `AccessContext`. Network failures, 5xx and 429 responses, and unclassified errors let the activity retry policy govern what happens next, while permanent failures (`access_denied`, `insufficient_authorization`, `invalid_client`, other 4xx responses, configuration and authentication errors) raise `ApplicationError(type="KeycardAccessDenied", non_retryable=True)` immediately. Misdeclarations surface as `GrantConfigurationError`, retryable by default so a worker redeploy with the fix lets the next retry succeed; list `"GrantConfigurationError"` in the retry policy's `non_retryable_error_types` to give up sooner.
-- No token caching, per Keycard's credential rules; per-call mint is the contract. One OAuth client is created per worker and reused; only the tokens are fresh.
+- No token caching, per Keycard's credential rules; per-call mint is the contract. One OAuth client is created per worker and reused; only the tokens are fresh. The one exception is the OpenAI Agents provider's model key, which is a vaulted third-party secret rather than a Keycard token: it is reused for a short `refresh` window rather than minted per request, and re-minted after it, so rotation still propagates without a restart.
 - The package wraps its own `keycardai` imports in `workflow.unsafe.imports_passed_through()`, the idiom from Temporal's sentry sample, so consumers import it normally even in files that define workflows.
 - Works with async activities and with sync activities on the thread-pool executor (the Temporal SDK copies contextvars into the thread). Sync activities on a process-pool executor are not supported because contextvars do not cross processes.
 
@@ -152,4 +210,4 @@ interceptor = KeycardInterceptor(
 cd packages/temporal && uv run --extra test pytest tests/ -v
 ```
 
-`tests/test_interceptor.py` drives the interceptor chain directly with the OAuth client stubbed. `tests/test_history_hygiene.py` runs a real workflow against a local Temporal dev server (downloaded by `temporalio` on first use), then scans the recorded history, including base64-decoded payloads, and asserts the minted token appears nowhere. Neither needs a Keycard zone.
+`tests/test_interceptor.py` drives the interceptor chain directly with the OAuth client stubbed. `tests/test_openai_agents.py` covers the OpenAI Agents provider with the OAuth client stubbed and the clock faked; two tests that need the Agents SDK and the real plugin skip unless the `openai-agents` extra (and `temporalio[openai-agents]`) is installed. `tests/test_history_hygiene.py` runs a real workflow against a local Temporal dev server (downloaded by `temporalio` on first use), then scans the recorded history, including base64-decoded payloads, and asserts the minted token appears nowhere. Neither needs a Keycard zone.

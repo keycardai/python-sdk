@@ -26,6 +26,10 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
+openai-agents = [
+    "openai-agents>=0.20.0",
+    "openai>=2.45.0",
+]
 test = [
     "pytest>=8.4.1",
     "pytest-asyncio>=1.1.0",
