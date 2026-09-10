@@ -1,12 +1,14 @@
 """Per-call Keycard token minting for Temporal Python workers.
 
-An activity declares the resource it needs with ``@grant``. The worker's
-:class:`KeycardInterceptor` mints a fresh token for every activity execution
-through keycardai-oauth, and :func:`access` returns it inside the activity.
-A mint failure raises before the activity body runs; the activity retry
-policy governs what happens next.
+An activity declares the resources it needs with ``@grant``. The worker's
+:class:`KeycardInterceptor` mints a fresh token for every declared resource
+on every activity execution through keycardai-oauth, and :func:`access`
+returns them inside the activity. Minting is all-or-nothing: a failure for
+any declared resource raises before the activity body runs, and the
+activity retry policy governs what happens next.
 
-Three identity modes:
+Three identity modes, each applied per activity, so one subject covers every
+resource in the grant:
 
 - ``@grant(resource)``: the application acts as itself (client credentials).
 - On-behalf-of: the activity input carries an identity reference (a user id,
@@ -111,7 +113,7 @@ _Extractor = Callable[[ExecuteActivityInput], Any]
 
 @dataclass(frozen=True)
 class _Grant:
-    resource: str
+    resources: tuple[str, ...]
     # Memoized: returns the identity-reference extractor, or None for
     # app-as-itself. Usually resolved at decoration time; resolution is
     # deferred to first execution only when type hints hold forward
@@ -238,19 +240,25 @@ def _build_extractor(
     return extractor
 
 
-# The SDK AccessContext holding this execution's minted token, plus the
-# granted resource so access() stays zero-argument.
-_ctx: contextvars.ContextVar[tuple[AccessContext, str]] = contextvars.ContextVar(
-    "keycard_access"
+# The SDK AccessContext holding this execution's minted tokens, plus the
+# granted resources so access() stays zero-argument for a single grant.
+_ctx: contextvars.ContextVar[tuple[AccessContext, tuple[str, ...]]] = (
+    contextvars.ContextVar("keycard_access")
 )
 
 
 def grant(
-    resource: str,
+    *resources: str,
     subject_from: str | Callable | None = None,
     impersonate: bool = False,
 ) -> Callable:
-    """Declare the resource an activity needs a token for.
+    """Declare the resources an activity needs tokens for.
+
+    ``@grant("res-a", "res-b")`` mints a token for every listed resource
+    before the body runs, all under the one identity the grant declares. At
+    least one resource is required and duplicates are rejected at decoration
+    time. Inside the body, ``access()`` returns the token of a single-resource
+    grant and ``access(resource)`` selects one under a multi-resource grant.
 
     With no ``subject_from`` and no ``Subject()`` marker, the application
     acts as itself. Otherwise the located value is the identity reference of
@@ -265,6 +273,13 @@ def grant(
     the user's session. Impersonation is a privileged, policy-gated operation;
     see the README for what the zone must allow.
     """
+    if not resources:
+        raise GrantConfigurationError("@grant needs at least one resource.")
+    duplicates = sorted({r for r in resources if resources.count(r) > 1})
+    if duplicates:
+        raise GrantConfigurationError(
+            f"@grant lists {duplicates} more than once; each resource once."
+        )
 
     def deco(fn: Callable) -> Callable:
         def build() -> _Extractor | None:
@@ -284,30 +299,46 @@ def grant(
             # Forward references not resolvable yet (PEP 563): validate at
             # first execution instead of decoration.
             resolve = _memoized(build)
-        setattr(fn, _GRANT_ATTR, _Grant(resource, resolve, impersonate))
+        setattr(fn, _GRANT_ATTR, _Grant(resources, resolve, impersonate))
         return fn
 
     return deco
 
 
-def access() -> TokenResponse:
-    """Return the token minted for this call, inside a ``@grant`` activity.
+def access(resource: str | None = None) -> TokenResponse:
+    """Return a token minted for this call, inside a ``@grant`` activity.
+
+    With no argument, returns the token of a single-resource grant; under a
+    multi-resource grant the resource must be named. ``access(resource)``
+    returns that resource's token and works under any grant that declares it.
 
     Never put the response (or ``.access_token``) in an activity's return
     value, an argument, or a signal: those land in durable workflow history.
     """
     try:
-        ctx, resource = _ctx.get()
+        ctx, resources = _ctx.get()
     except LookupError:
         raise RuntimeError(
             "No Keycard access in context. Is the activity decorated with "
             "@grant and the worker running KeycardInterceptor?"
         ) from None
+    if resource is None:
+        if len(resources) != 1:
+            raise GrantConfigurationError(
+                f"access() needs a resource under a @grant of {list(resources)}; "
+                "call access(resource)."
+            )
+        resource = resources[0]
+    elif resource not in resources:
+        raise GrantConfigurationError(
+            f"access({resource!r}) names a resource the @grant of "
+            f"{list(resources)} does not declare."
+        )
     return ctx.access(resource)
 
 
 class KeycardInterceptor(Interceptor):
-    """Worker interceptor that mints a fresh Keycard token per activity execution.
+    """Worker interceptor that mints fresh Keycard tokens per activity execution.
 
     Args:
         zone_url: Keycard zone issuer URL (``https://<zone-id>.keycard.cloud``).
@@ -389,21 +420,24 @@ class _KeycardActivityInboundInterceptor(ActivityInboundInterceptor):
                     "(client credentials), which requires a ClientSecret "
                     f"credential; the worker has {type(self._credential).__name__}."
                 )
-            try:
-                resp = await self._client.client_credentials_grant(
-                    resource=grant.resource
-                )
-            except Exception as e:
-                if not error_retryable(e):
-                    code = getattr(e, "error", None) or type(e).__name__
-                    raise ApplicationError(
-                        f"Keycard grant for {grant.resource} failed permanently: "
-                        f"{code}: {e}",
-                        type="KeycardAccessDenied",
-                        non_retryable=True,
-                    ) from e
-                raise  # transient: the activity retry policy governs it
-            ctx.set_token(grant.resource, resp)
+            # One resource at a time; the first failure stops the loop, so
+            # the body never sees partial credentials.
+            for resource in grant.resources:
+                try:
+                    resp = await self._client.client_credentials_grant(
+                        resource=resource
+                    )
+                except Exception as e:
+                    if not error_retryable(e):
+                        code = getattr(e, "error", None) or type(e).__name__
+                        raise ApplicationError(
+                            f"Keycard grant for {resource} failed permanently: "
+                            f"{code}: {e}",
+                            type="KeycardAccessDenied",
+                            non_retryable=True,
+                        ) from e
+                    raise  # transient: the activity retry policy governs it
+                ctx.set_token(resource, resp)
         elif grant.impersonate:
             # client.impersonate() authenticates only at the HTTP layer, and
             # the SDK requires client-credentials auth for it. Assertion
@@ -421,17 +455,17 @@ class _KeycardActivityInboundInterceptor(ActivityInboundInterceptor):
             # path but required by the helper's signature.
             await exchange_tokens_for_resources(
                 client=self._client,
-                resources=[grant.resource],
+                resources=list(grant.resources),
                 subject_token="",
                 access_context=ctx,
                 user_identifier=extractor(input),
             )
-            _raise_on_mint_error(ctx, grant.resource)
+            _raise_on_mint_error(ctx, *grant.resources)
         else:
             subject_token = await self._resolve_subject(extractor, input)
             await exchange_tokens_for_resources(
                 client=self._client,
-                resources=[grant.resource],
+                resources=list(grant.resources),
                 subject_token=subject_token,
                 access_context=ctx,
                 application_credential=self._credential,
@@ -439,7 +473,7 @@ class _KeycardActivityInboundInterceptor(ActivityInboundInterceptor):
             # The helper records failures on the context instead of raising.
             # Surface them here so the activity still fails before its body,
             # with the right retryability.
-            _raise_on_mint_error(ctx, grant.resource)
+            _raise_on_mint_error(ctx, *grant.resources)
         return ctx
 
     async def _resolve_subject(
@@ -456,17 +490,27 @@ class _KeycardActivityInboundInterceptor(ActivityInboundInterceptor):
         declared = getattr(input.fn, _GRANT_ATTR, None)
         if declared is None:
             return await self.next.execute_activity(input)
-        token = _ctx.set((await self._mint(declared, input), declared.resource))
+        token = _ctx.set((await self._mint(declared, input), declared.resources))
         try:
             return await self.next.execute_activity(input)
         finally:
             _ctx.reset(token)
 
 
-def _raise_on_mint_error(ctx: AccessContext, resource: str) -> None:
+def _raise_on_mint_error(ctx: AccessContext, *resources: str) -> None:
+    """Raise for the first failed resource, permanent failures first.
+
+    All-or-nothing: with several resources minted, any permanent denial
+    fails the activity as non-retryable even when the others minted;
+    otherwise the first transient failure raises retryable.
+    """
     if not ctx.has_errors():
         return
-    err = ctx.get_resource_error(resource) or ctx.get_error() or {}
+    failed = [(r, e) for r in resources if (e := ctx.get_resource_error(r))]
+    if not failed:
+        failed = [(resources[0], ctx.get_error() or {})]
+    permanent = [(r, e) for r, e in failed if e.get("retryable", True) is False]
+    resource, err = (permanent or failed)[0]
     code = err.get("code")
     detail = err.get("description") or err.get("raw_error") or err.get("message") or ""
     # keycardai.oauth classifies the captured failure; a dict without the

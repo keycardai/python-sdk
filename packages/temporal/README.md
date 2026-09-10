@@ -2,7 +2,7 @@
 
 Per-call Keycard token minting for Temporal Python workers, built on `keycardai-oauth`.
 
-An activity declares the resource it needs with `@grant(resource)`, the worker's `KeycardInterceptor` mints a fresh token for every activity execution, and `access()` returns it inside the activity. Nothing is written to workflow history.
+An activity declares the resources it needs with `@grant(resource, ...)`, the worker's `KeycardInterceptor` mints a fresh token for each of them on every activity execution, and `access()` returns them inside the activity. Nothing is written to workflow history.
 
 ```bash
 pip install keycardai-temporal
@@ -19,6 +19,7 @@ from temporalio.worker import Worker
 from keycardai.temporal import KeycardInterceptor, access, grant
 
 LEDGER = "https://ledger.example.com"
+PRICING = "https://pricing.example.com"
 
 
 @grant(LEDGER)
@@ -27,6 +28,15 @@ async def post_entry(order_id: str) -> str:
     token = access().access_token  # fresh for this execution only
     ...  # call the ledger with the token
     return "posted"
+
+
+@grant(LEDGER, PRICING)  # several resources, minted together
+@activity.defn
+async def reprice(order_id: str) -> str:
+    ledger_token = access(LEDGER).access_token
+    pricing_token = access(PRICING).access_token
+    ...
+    return "repriced"
 
 
 @workflow.defn
@@ -44,7 +54,7 @@ async def main(client):
         client,
         task_queue="settlement",
         workflows=[SettlementWorkflow],
-        activities=[post_entry],
+        activities=[post_entry, reprice],
         interceptors=[interceptor],
     ):
         ...
@@ -71,11 +81,19 @@ In your Keycard zone, once:
 
 The resource identifier in `@grant(...)` must match the console registration byte for byte; a trailing character difference reads as a different resource and policy denies it.
 
+## Several resources per activity
+
+`@grant("res-a", "res-b")` takes any number of resources as positional arguments (at least one; duplicates are rejected at decoration time). Every declared resource is minted before the body runs, under the one identity the grant declares. Inside the body, `access()` with no argument returns the token of a single-resource grant; under a multi-resource grant it raises `GrantConfigurationError`, and `access(resource)` selects the token by name. `access(resource)` also works under a single-resource grant when the name matches.
+
+Minting is all-or-nothing: the body never runs with partial credentials. If any declared resource fails permanently, the activity fails with the non-retryable `KeycardAccessDenied` error naming that resource, even when the others minted. Otherwise the first transient failure raises the retryable `KeycardMintFailed` naming its resource, and the activity retry policy governs what happens next.
+
 ## Identity modes
 
-- `@grant(resource)`: the application acts as itself (client credentials). Requires a `ClientSecret` credential.
-- `@grant(resource, subject_from=...)`: the application acts on behalf of a user. The activity input carries an identity reference (a user id, never a token). The interceptor's `subject_token_provider`, an application-supplied session lookup, returns that user's current session token, and an RFC 8693 exchange turns it into a token for the resource.
-- `@grant(resource, subject_from=..., impersonate=True)`: impersonation, for workflows that outlive the user's session. The located value is a stable user identifier (email or oid) sent directly to the zone, which mints a short-lived substitute-user token. No session lookup runs and no `subject_token_provider` is needed. This is a different trust model from delegation: the worker asserts who the user is, and zone policy is the control. It requires a confidential client, application consent set to implicit, the resource declared as a dependency of the application, a prior delegated grant established by the user for the resource, and zone policy that explicitly permits the application to impersonate (forbidden by default). Prefer live delegation whenever the user's session is still expected to exist.
+The identity mode is per activity: one subject applies to every resource in the grant.
+
+- `@grant(resource, ...)`: the application acts as itself (client credentials). Requires a `ClientSecret` credential.
+- `@grant(resource, ..., subject_from=...)`: the application acts on behalf of a user. The activity input carries an identity reference (a user id, never a token). The interceptor's `subject_token_provider`, an application-supplied session lookup, returns that user's current session token, and an RFC 8693 exchange turns it into a token for each resource.
+- `@grant(resource, ..., subject_from=..., impersonate=True)`: impersonation, for workflows that outlive the user's session. The located value is a stable user identifier (email or oid) sent directly to the zone, which mints a short-lived substitute-user token for each resource. No session lookup runs and no `subject_token_provider` is needed. This is a different trust model from delegation: the worker asserts who the user is, and zone policy is the control. It requires a confidential client, application consent set to implicit, each resource declared as a dependency of the application, a prior delegated grant established by the user for each resource, and zone policy that explicitly permits the application to impersonate (forbidden by default). Prefer live delegation whenever the user's session is still expected to exist.
 
 ### Locating the identity reference
 
@@ -122,7 +140,7 @@ interceptor = KeycardInterceptor(
 ## Design notes
 
 - Tokens never touch durable state. Workflow history is replayable and permanent, so unlike header-based context-propagation interceptors, nothing is written to activity headers, arguments, or return values. The token exists only inside one execution's context. This is also why on-behalf-of activities receive an identity reference instead of a token: the session lookup and exchange happen at the edge, inside the execution, so a session revoked mid-workflow is never replayed from state.
-- A mint failure raises before the activity body runs, and there is no fallback path. Tokens live in the SDK's shared `AccessContext` (the same container `keycardai-mcp` uses), but where that idiom is non-throwing, the interceptor converts recorded errors into raises on purpose: in Temporal, raising is the error channel.
+- A mint failure for any declared resource raises before the activity body runs, and there is no fallback path. Tokens live in the SDK's shared `AccessContext` (the same container `keycardai-mcp` uses), but where that idiom is non-throwing, the interceptor converts recorded errors into raises on purpose: in Temporal, raising is the error channel.
 - Transient mint failures are retryable; permanent failures are not. The classification is `keycardai-oauth`'s: every typed error carries a `retryable` property, and `exchange_tokens_for_resources` records it in the error dict it stores on the `AccessContext`. Network failures, 5xx and 429 responses, and unclassified errors let the activity retry policy govern what happens next, while permanent failures (`access_denied`, `insufficient_authorization`, `invalid_client`, other 4xx responses, configuration and authentication errors) raise `ApplicationError(type="KeycardAccessDenied", non_retryable=True)` immediately. Misdeclarations surface as `GrantConfigurationError`, retryable by default so a worker redeploy with the fix lets the next retry succeed; list `"GrantConfigurationError"` in the retry policy's `non_retryable_error_types` to give up sooner.
 - No token caching, per Keycard's credential rules; per-call mint is the contract. One OAuth client is created per worker and reused; only the tokens are fresh.
 - The package wraps its own `keycardai` imports in `workflow.unsafe.imports_passed_through()`, the idiom from Temporal's sentry sample, so consumers import it normally even in files that define workflows.
