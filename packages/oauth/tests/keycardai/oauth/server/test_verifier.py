@@ -994,3 +994,43 @@ class TestTokenVerifierInflightDedup:
         assert call_count == 1
         assert all(r.key == "mock-public-key" for r in results)
         assert all(r.algorithm == "RS256" for r in results)
+
+
+class TestZoneJwksUri:
+    """Zone-scoped JWKS URL construction for a single-zone verifier given a zone id."""
+
+    def test_prefixes_host_with_zone_id(self):
+        verifier = TokenVerifier(issuer="https://keycard.cloud")
+        assert (
+            verifier._get_zone_jwks_uri(
+                "https://keycard.cloud/.well-known/jwks.json", "zone123"
+            )
+            == "https://zone123.keycard.cloud/.well-known/jwks.json"
+        )
+
+    def test_keeps_explicit_port_and_query(self):
+        verifier = TokenVerifier(issuer="https://keycard.cloud")
+        assert (
+            verifier._get_zone_jwks_uri(
+                "http://localhost:8443/jwks?v=1", "zone123"
+            )
+            == "http://zone123.localhost:8443/jwks?v=1"
+        )
+
+    @pytest.mark.asyncio
+    async def test_single_zone_verify_token_for_zone_reaches_zone_scoped_jwks(self):
+        """A single-zone verifier handed a zone id derives the zone JWKS URL instead of crashing."""
+        verifier = TokenVerifier(
+            issuer="https://keycard.cloud",
+            jwks_uri="https://keycard.cloud/.well-known/jwks.json",
+        )
+        seen: dict[str, str] = {}
+
+        async def fake_get_jwks_key(kid, jwks_uri, timeout=None):
+            seen["jwks_uri"] = jwks_uri
+            return "pem"
+
+        with patch("keycardai.oauth.server.verifier.get_jwks_key", side_effect=fake_get_jwks_key):
+            await verifier._resolve_and_cache_key("kid1", "RS256", zone_id="zone123")
+
+        assert seen["jwks_uri"] == "https://zone123.keycard.cloud/.well-known/jwks.json"
