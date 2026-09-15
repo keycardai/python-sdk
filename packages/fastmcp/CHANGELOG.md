@@ -1,3 +1,5 @@
+## 0.7.1-keycardai-fastmcp (2026-09-15)
+
 ## 0.7.0-keycardai-fastmcp (2026-09-07)
 
 ### Migration: credential discovery moves to keycardai-oauth
