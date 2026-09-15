@@ -1,3 +1,14 @@
+## 0.31.1-keycardai-oauth (2026-09-15)
+
+
+- fix(keycardai-oauth): build the zone JWKS URL without mutating AnyHttpUrl (#299)
+- _get_zone_jwks_uri assigned AnyHttpUrl.host, which pydantic exposes read-only,
+so a single-zone TokenVerifier handed a zone id (verify_token_for_zone, or an
+explicit jwks_uri plus zone_id) raised AttributeError before fetching keys.
+Build the zone-prefixed URL with urllib instead. Tests cover the plain host,
+an explicit port with a query string, and the verifier path that reaches it.
+- Co-authored-by: GitHub Action <action@github.com>
+
 ## 0.31.0-keycardai-oauth (2026-09-08)
 
 
