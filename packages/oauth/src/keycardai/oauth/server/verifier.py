@@ -10,6 +10,7 @@ import threading
 import time
 import warnings
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 from pydantic import AnyHttpUrl, BaseModel
 
@@ -234,12 +235,13 @@ class TokenVerifier:
         return (kid, algorithm)
 
     def _get_zone_jwks_uri(self, jwks_uri: str, zone_id: str) -> str:
-        jwks_url = AnyHttpUrl(jwks_uri)
-        jwks_zone_host = jwks_url.host.replace(
-            jwks_url.host, f"{zone_id}.{jwks_url.host}"
-        )
-        jwks_url.host = jwks_zone_host
-        return jwks_url.to_string()
+        # Prefix the host with the zone id. Built with urllib rather than by
+        # assigning AnyHttpUrl.host, which pydantic exposes read-only.
+        parsed = urlsplit(jwks_uri)
+        netloc = f"{zone_id}.{parsed.hostname or ''}"
+        if parsed.port is not None:
+            netloc += f":{parsed.port}"
+        return urlunsplit(parsed._replace(netloc=netloc))
 
     async def _get_verification_key(
         self, token: str, zone_id: str | None = None, issuer: str | None = None
