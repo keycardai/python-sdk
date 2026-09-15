@@ -9,7 +9,7 @@ OAuth 2.0 operations, providing comprehensive support for:
 - Authorization Server Metadata Discovery (RFC 8414)
 """
 
-from dataclasses import dataclass, field
+from dataclasses import astuple, dataclass, field
 from typing import Any
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
@@ -431,7 +431,7 @@ class Endpoints:
     authorize: str | None = None
 
 
-@dataclass
+@dataclass(eq=False)
 class ResolvedEndpoints(Endpoints):
     """Endpoints after overrides, discovery, and defaults have been applied.
 
@@ -444,6 +444,13 @@ class ResolvedEndpoints(Endpoints):
     register: str
     par: str
     authorize: str
+
+    def __eq__(self, other: object) -> bool:
+        # Dataclass equality is class-strict; keep the pre-existing contract
+        # that a resolved set equals a plain Endpoints carrying the same URLs.
+        if not isinstance(other, Endpoints):
+            return NotImplemented
+        return astuple(self) == astuple(other)
 
 
 @dataclass

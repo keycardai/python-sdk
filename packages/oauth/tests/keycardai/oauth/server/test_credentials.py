@@ -310,6 +310,33 @@ class TestWebIdentity:
             WebIdentity(server_name="Test Server", storage_dir=str(explicit))
 
 
+class TestWebIdentityAuthInfoValidation:
+    """auth_info values are validated as present, not just as keys."""
+
+    def test_set_client_config_without_resource_server_url_raises(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            provider = WebIdentity(mcp_server_name="Test Server", storage_dir=tmpdir)
+            with pytest.raises(ValueError, match="resource_server_url"):
+                provider.set_client_config(
+                    ClientConfig(),
+                    {"resource_client_id": "https://mcp.example.com"},
+                )
+
+    @pytest.mark.asyncio
+    async def test_prepare_token_exchange_request_with_none_resource_client_id_raises(
+        self, mock_client
+    ):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            provider = WebIdentity(mcp_server_name="Test Server", storage_dir=tmpdir)
+            with pytest.raises(ValueError, match="auth_info with 'resource_client_id' is required"):
+                await provider.prepare_token_exchange_request(
+                    client=mock_client,
+                    subject_token="test_access_token",
+                    resource="https://api.example.com",
+                    auth_info={"resource_client_id": None},
+                )
+
+
 class TestEKSWorkloadIdentity:
     """Test EKSWorkloadIdentity for EKS workload identity tokens."""
 

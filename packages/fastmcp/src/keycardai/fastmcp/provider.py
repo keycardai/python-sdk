@@ -18,7 +18,17 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from functools import wraps
 from types import UnionType
-from typing import Annotated, Any, NoReturn, Union, get_args, get_origin, get_type_hints
+from typing import (
+    Annotated,
+    Any,
+    NoReturn,
+    Protocol,
+    Union,
+    get_args,
+    get_origin,
+    get_type_hints,
+    runtime_checkable,
+)
 from urllib.parse import urlparse
 
 from pydantic import AnyHttpUrl
@@ -49,6 +59,7 @@ from keycardai.oauth.server.exceptions import (
     CredentialDiscoveryError,
     ResourceAccessError,
 )
+from keycardai.oauth.server.private_key import PrivateKeyManager
 from keycardai.oauth.types.models import TokenExchangeRequest, TokenResponse
 from keycardai.oauth.utils.jwt import extract_scopes, get_claims
 
@@ -631,6 +642,13 @@ class GrantDependency(Dependency[AccessContext]):
         return wrapper
 
 
+@runtime_checkable
+class _IdentityManagerCredential(Protocol):
+    """Credential that signs client assertions with a stable key (WebIdentity and lookalikes)."""
+
+    identity_manager: PrivateKeyManager
+
+
 class AuthProvider:
     """Keycard authentication provider for FastMCP.
 
@@ -1093,7 +1111,7 @@ class AuthProvider:
                     # identifier that changes on every restart and cannot be pre-registered.
                     _resource_client_id = (
                         self.application_credential.identity_manager.key_id
-                        if isinstance(self.application_credential, WebIdentity)
+                        if isinstance(self.application_credential, _IdentityManagerCredential)
                         else self.client.config.client_id or ""
                     )
                     _auth_info = {

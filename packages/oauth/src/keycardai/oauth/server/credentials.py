@@ -20,7 +20,7 @@ import os
 import uuid
 import warnings
 from collections.abc import Awaitable, Callable, Mapping
-from typing import Protocol, runtime_checkable
+from typing import Protocol, cast, runtime_checkable
 
 import httpx
 
@@ -533,23 +533,27 @@ class WorkloadIdentity:
             raise WorkloadIdentityConfigurationError(
                 "identity token source must not be None"
             )
-        if not callable(getattr(source, "identity_token", None)) and not callable(
-            source
-        ):
-            raise WorkloadIdentityConfigurationError(
-                "identity token source must provide identity_token() or be callable"
-            )
+        # Resolve the fetch callable once, here, so construction and every
+        # later exchange agree on what counts as a source: an object exposing
+        # a callable identity_token (including __getattr__ proxies), or a
+        # bare callable.
+        fetch: Callable[[], Awaitable[str] | str] | None = getattr(
+            source, "identity_token", None
+        )
+        if not callable(fetch):
+            if not callable(source):
+                raise WorkloadIdentityConfigurationError(
+                    "identity token source must provide identity_token() or be callable"
+                )
+            # callable() just proved it; ty cannot narrow a Protocol union on that.
+            fetch = cast("Callable[[], Awaitable[str] | str]", source)
+        self._fetch: Callable[[], Awaitable[str] | str] = fetch
         self._source = source
         self.client_id = client_id
 
     async def _fetch_identity_token(self) -> str:
-        fetch: Callable[[], Awaitable[str] | str]
-        if isinstance(self._source, IdentityTokenSource):
-            fetch = self._source.identity_token
-        else:
-            fetch = self._source
         try:
-            result = fetch()
+            result = self._fetch()
             token = await result if inspect.isawaitable(result) else result
         except (WorkloadIdentityConfigurationError, WorkloadIdentityRuntimeError):
             raise
