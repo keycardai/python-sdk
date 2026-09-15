@@ -338,29 +338,36 @@ class Session:
         if self._connected:
             await self.disconnect()
 
-        if self._connection is None:
+        connection = self._connection
+        if connection is None:
             try:
-                self._connection = create_connection(
+                connection = create_connection(
                     server_name=self.server_name,
                     server_config=self.server_config,
                     context=self.context,
                     coordinator=self.coordinator,
                     server_storage=self.server_storage
                 )
+                if connection is None:
+                    raise ValueError(
+                        f"Unsupported transport for server {self.server_name}"
+                    )
             except Exception as e:
                 await self._handle_connection_failure(e)
                 return
+            self._connection = connection
 
         self._set_status(SessionStatus.CONNECTING, "establishing transport connection")
         try:
-            read_stream, write_stream = await self._connection.start()
+            read_stream, write_stream = await connection.start()
         except Exception as e:
             await self._handle_connection_failure(e)
             return
 
         try:
-            self._session = ClientSession(read_stream, write_stream)
-            await self._session.__aenter__()
+            session = ClientSession(read_stream, write_stream)
+            self._session = session
+            await session.__aenter__()
             self._connected = True
         except Exception as e:
             logger.error(f"Failed to create MCP session: {e}", exc_info=True)
@@ -368,7 +375,7 @@ class Session:
             self._set_status(SessionStatus.FAILED, f"session creation failed: {str(e)[:100]}")
             return
 
-        await self._initialize_session(_retry_after_auth)
+        await self._initialize_session(session, _retry_after_auth)
 
     async def _handle_connection_failure(self, error: Exception) -> None:
         """
@@ -403,7 +410,7 @@ class Session:
             finally:
                 self._session = None
 
-    async def _initialize_session(self, retry_after_auth: bool) -> None:
+    async def _initialize_session(self, session: ClientSession, retry_after_auth: bool) -> None:
         """
         Initialize the MCP session and handle authentication.
 
@@ -411,12 +418,13 @@ class Session:
         Does not raise exceptions - communicates via status instead.
 
         Args:
+            session: The freshly entered MCP client session
             retry_after_auth: Whether to retry connection once after auth completion
         """
         self._set_status(SessionStatus.AUTHENTICATING, "initializing session")
 
         try:
-            await self._session.initialize()
+            await session.initialize()
             self._set_status(SessionStatus.CONNECTED, "session initialized")
             # Reaching CONNECTED means auth works, so any pending-auth record
             # still stored for this session is stale by definition (e.g. a

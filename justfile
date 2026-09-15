@@ -53,9 +53,14 @@ fix-all:
     uv run ruff check --fix --unsafe-fixes
 
 
-# Run type checker on all files
+# Type check every package's src/ (tests and examples stay out for now).
+# Syncs everything first so optional imports resolve. packages/fastmcp checks
+# against its own environment for the same reason it builds separately.
 typecheck:
-    uv run --frozen ty check
+    uv sync --all-packages --all-extras
+    cd packages/fastmcp && uv sync --extra test
+    uv run --frozen ty check packages/oauth/src packages/starlette/src packages/mcp/src packages/a2a/src packages/langchain/src packages/temporal/src
+    uv run --frozen ty check --project packages/fastmcp --python packages/fastmcp/.venv packages/fastmcp/src
 
 # Validate commit messages for PR
 validate-commits BASE_BRANCH="origin/main":

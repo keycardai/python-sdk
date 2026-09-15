@@ -1,11 +1,15 @@
 """Type definitions for MCP client public interfaces."""
 
-from typing import NamedTuple, NotRequired, TypedDict
+from typing import NamedTuple, TypedDict
 
 from mcp import Tool
 
 
-class AuthChallenge(TypedDict):
+class _AuthChallengeRequired(TypedDict):
+    server: str  # Always present - the server name requiring auth
+
+
+class AuthChallenge(_AuthChallengeRequired, total=False):
     """
     Authentication challenge details for a server requiring authentication.
 
@@ -28,10 +32,9 @@ class AuthChallenge(TypedDict):
         ...     if 'authorization_url' in challenge:
         ...         print(f"Open: {challenge['authorization_url']}")
     """
-    server: str  # Always present - the server name requiring auth
-    authorization_url: NotRequired[str]  # URL for browser-based auth flows
-    state: NotRequired[str]  # CSRF protection token for auth flows
-    # Additional strategy-specific fields may be present as NotRequired
+    authorization_url: str  # URL for browser-based auth flows
+    state: str  # CSRF protection token for auth flows
+    # Additional strategy-specific fields may be present; all are optional
 
 
 class ToolInfo(NamedTuple):

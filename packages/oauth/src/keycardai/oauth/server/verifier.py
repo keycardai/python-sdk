@@ -77,7 +77,7 @@ class TokenVerifier:
         issuer: str | list[str],
         required_scopes: list[str] | None = None,
         jwks_uri: str | None = None,
-        allowed_algorithms: list[str] = None,
+        allowed_algorithms: list[str] | None = None,
         key_ttl: int = 300,
         enable_multi_zone: bool = False,
         audience: str | dict[str, str] | None = None,

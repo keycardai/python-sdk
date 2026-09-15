@@ -27,6 +27,7 @@ from langchain_core.messages import ToolMessage
 from langgraph.types import Command, interrupt
 
 from keycardai.oauth import AsyncClient, ClientConfig, NoneAuth
+from keycardai.oauth.exceptions import OAuthProtocolError
 from keycardai.oauth.server.access_context import AccessContext
 from keycardai.oauth.server.credentials import ApplicationCredential, ClientSecret
 from keycardai.oauth.server.token_exchange import (
@@ -261,7 +262,9 @@ class KeycardGrantMiddleware(AgentMiddleware):
 
     def _resolve_fallback(self) -> KeycardIdentity | None:
         fallback = self._fallback_identity
-        return fallback() if callable(fallback) else fallback
+        if isinstance(fallback, KeycardIdentity) or fallback is None:
+            return fallback
+        return fallback()
 
     def _new_client(self) -> AsyncClient:
         auth = (
@@ -359,7 +362,7 @@ class KeycardGrantMiddleware(AgentMiddleware):
 
     async def _client_auth_fields(
         self, client: AsyncClient, resource: str
-    ) -> dict[str, str]:
+    ) -> dict[str, str | None]:
         """Client-authentication fields the credential puts in the request body.
 
         Assertion-based credentials (WorkloadIdentity, WebIdentity) carry no
@@ -378,7 +381,7 @@ class KeycardGrantMiddleware(AgentMiddleware):
         prepared = await self._credential.prepare_token_exchange_request(
             client=client, subject_token="client-credentials", resource=resource
         )
-        fields: dict[str, str] = {}
+        fields: dict[str, str | None] = {}
         if prepared.client_assertion:
             fields["client_assertion"] = prepared.client_assertion
             fields["client_assertion_type"] = prepared.client_assertion_type
@@ -409,11 +412,11 @@ class KeycardGrantMiddleware(AgentMiddleware):
                     "message": f"Client credentials grant failed for {resource}",
                     "retryable": error_retryable(e),
                 }
-                if hasattr(e, "error"):
+                if isinstance(e, OAuthProtocolError):
                     error["code"] = e.error
-                if getattr(e, "error_description", None):
-                    error["description"] = e.error_description
-                if "code" not in error:
+                    if e.error_description:
+                        error["description"] = e.error_description
+                else:
                     error["raw_error"] = str(e)
                 access.set_resource_error(resource, error)
         return access

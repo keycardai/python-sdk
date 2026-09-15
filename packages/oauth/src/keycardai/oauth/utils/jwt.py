@@ -32,10 +32,10 @@ JWT Access Token Benefits:
 
 import base64
 import json
-from typing import Any
+from typing import Any, Literal
 
 from joserfc import jwt as jose_jwt
-from joserfc.jwk import import_key
+from joserfc.jwk import ECKey, OctKey, OKPKey, RSAKey, import_key
 from pydantic import BaseModel
 
 from ..exceptions import JWKSError, JWKSFetchError, JWKSKeyNotFoundError
@@ -47,7 +47,9 @@ from ..types.models import ClientConfig
 # it emits a SecurityWarning about implicit key types. Derive the key type from
 # the JWS algorithm so PEM imports stay quiet and unambiguous. Importing from a
 # JWK dict does not need this since the dict carries its own "kty".
-_ALG_KEY_TYPE = {
+_KeyType = Literal["oct", "RSA", "EC", "OKP"]
+
+_ALG_KEY_TYPE: dict[str, _KeyType] = {
     "RS": "RSA",
     "PS": "RSA",
     "ES": "EC",
@@ -56,11 +58,18 @@ _ALG_KEY_TYPE = {
 }
 
 
-def _key_type_for_algorithm(algorithm: str) -> str:
+def _key_type_for_algorithm(algorithm: str) -> _KeyType:
     key_type = _ALG_KEY_TYPE.get(algorithm[:2])
     if key_type is None:
         raise ValueError(f"Unsupported JWT algorithm: {algorithm}")
     return key_type
+
+
+def _jwk_to_pem(jwk: OctKey | RSAKey | ECKey | OKPKey) -> str:
+    """PEM-encode a JWKS public key. Symmetric keys have no PEM form."""
+    if isinstance(jwk, OctKey):
+        raise JWKSFetchError("JWKS key is symmetric (kty=oct); expected a public key")
+    return jwk.as_pem().decode("utf-8")
 
 
 def build_substitute_user_token(identifier: str) -> str:
@@ -505,7 +514,6 @@ def parse_jwt_access_token(
             scope=scope_string,
             authorization_details=claims.get("authorization_details"),
             custom_claims=custom_claims,
-            _raw=jwt_token,
         )
     except Exception as e:
         raise ValueError(f"Failed to create JWTAccessToken model: {e}") from e
@@ -574,13 +582,11 @@ async def get_jwks_key(
         if kid:
             for key_data in keys:
                 if key_data.get("kid") == kid:
-                    jwk = import_key(key_data)
-                    return jwk.as_pem().decode("utf-8")
+                    return _jwk_to_pem(import_key(key_data))
             raise JWKSKeyNotFoundError(f"Key ID '{kid}' not found")
         else:
             if len(keys) == 1:
-                jwk = import_key(keys[0])
-                return jwk.as_pem().decode("utf-8")
+                return _jwk_to_pem(import_key(keys[0]))
             elif len(keys) > 1:
                 raise JWKSKeyNotFoundError("Multiple keys in JWKS but no key ID (kid) in token")
             else:

@@ -35,20 +35,22 @@ from pydantic import BaseModel, Field
 # This is needed because CrewAI calls tools synchronously but we may be
 # in an async context (e.g., when using async MCP client)
 try:
-    import nest_asyncio
+    # ty: crewai pins mcp<2.0 so its stack (nest_asyncio included) is absent here (ECO-198)
+    import nest_asyncio  # ty: ignore[unresolved-import]
     nest_asyncio.apply()
 except ImportError:
     # nest_asyncio not installed - will fail if nesting occurs
     pass
 
 try:
-    from crewai.tools import BaseTool
+    # ty: crewai pins mcp<2.0 and cannot install next to this package (ECO-198)
+    from crewai.tools import BaseTool  # ty: ignore[unresolved-import]
 except ImportError:
     raise ImportError(
         "CrewAI is not installed. Install it with: pip install 'keycardai-mcp[crewai]'"
     ) from None
 
-from keycardai.mcp.client import Client
+from keycardai.mcp.client import AuthChallenge, Client
 
 logger = logging.getLogger(__name__)
 
@@ -139,7 +141,7 @@ class CrewAIClient:
         """
         self._mcp_client = mcp_client
         self._auth_tool_handler = auth_tool_handler or DefaultAuthToolHandler()
-        self._pending_challenges: list[dict[str, Any]] = []
+        self._pending_challenges: list[AuthChallenge] = []
         self._authenticated_servers: list[str] = []
         self._auth_hook_closure = auth_hook_closure
         self._tools_cache: list[BaseTool] = []
@@ -516,7 +518,7 @@ The following services require user authorization: {', '.join(pending_services)}
             def __init__(
                 self,
                 auth_handler: AuthToolHandler,
-                challenges: list[dict[str, Any]],
+                challenges: list[AuthChallenge],
                 **kwargs
             ):
                 super().__init__(**kwargs)

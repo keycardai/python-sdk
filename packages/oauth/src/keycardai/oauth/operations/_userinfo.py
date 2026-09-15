@@ -20,6 +20,7 @@ from ..exceptions import (
 )
 from ..http._context import HTTPContext
 from ..http._wire import HttpRequest, HttpResponse
+from ..http.transport import AsyncHTTPTransport, HTTPTransport
 from ..types.models import (
     AuthorizationServerMetadata,
     UserInfoRequest,
@@ -178,7 +179,7 @@ def parse_userinfo_http_response(res: HttpResponse) -> UserInfoResponse:
 
 def fetch_userinfo(
     request: UserInfoRequest,
-    context: HTTPContext,
+    context: HTTPContext[HTTPTransport],
 ) -> UserInfoResponse:
     """Fetch the signed-in user's claims from the UserInfo endpoint (sync version).
 
@@ -204,7 +205,7 @@ def fetch_userinfo(
 
 async def fetch_userinfo_async(
     request: UserInfoRequest,
-    context: HTTPContext,
+    context: HTTPContext[AsyncHTTPTransport],
 ) -> UserInfoResponse:
     """Fetch the signed-in user's claims from the UserInfo endpoint (async version).
 

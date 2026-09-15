@@ -11,13 +11,24 @@ from __future__ import annotations
 import inspect
 import logging
 import os
+import types
 import warnings
 from collections.abc import Callable
 from contextlib import contextmanager
 from contextvars import ContextVar
 from functools import wraps
 from types import UnionType
-from typing import Annotated, Any, Union, get_args, get_origin, get_type_hints
+from typing import (
+    Annotated,
+    Any,
+    NoReturn,
+    Protocol,
+    Union,
+    get_args,
+    get_origin,
+    get_type_hints,
+    runtime_checkable,
+)
 from urllib.parse import urlparse
 
 from pydantic import AnyHttpUrl
@@ -28,6 +39,7 @@ from fastmcp.server.auth import RemoteAuthProvider
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.server.dependencies import get_access_token, get_context
 from keycardai.oauth import AsyncClient, Client
+from keycardai.oauth.exceptions import OAuthProtocolError
 from keycardai.oauth.http.auth import NoneAuth
 from keycardai.oauth.server import (
     ApplicationCredential,
@@ -47,6 +59,7 @@ from keycardai.oauth.server.exceptions import (
     CredentialDiscoveryError,
     ResourceAccessError,
 )
+from keycardai.oauth.server.private_key import PrivateKeyManager
 from keycardai.oauth.types.models import TokenExchangeRequest, TokenResponse
 from keycardai.oauth.utils.jwt import extract_scopes, get_claims
 
@@ -112,7 +125,15 @@ def introspect(self, message, *args, **kwargs):
         self._log(INTROSPECT, message, args, **kwargs)
 
 # Add introspect method to Logger class
-logging.Logger.introspect = introspect
+# stdlib's Logger stub cannot see this runtime monkeypatch; call sites use introspect(logger, ...)
+logging.Logger.introspect = introspect  # ty: ignore[unresolved-attribute]
+
+
+def _func_name(fn: Callable[..., object]) -> str:
+    """Callable is not guaranteed a __name__ (partials, callable instances)."""
+    if isinstance(fn, (types.FunctionType, types.MethodType, type)):
+        return fn.__name__
+    return repr(fn)
 
 # Configure logger to respect KEYCARD_LOG_LEVEL environment variable
 _log_level = os.getenv("KEYCARD_LOG_LEVEL", "").upper()
@@ -563,12 +584,12 @@ class GrantDependency(Dependency[AccessContext]):
         ctx_param = _find_param_of_type(func, Context)
         if access_param is None and ctx_param is None:
             raise MissingContextError(
-                function_name=func.__name__,
+                function_name=_func_name(func),
                 parameters=list(inspect.signature(func).parameters.keys())
             )
         if access_param is None:
             warnings.warn(
-                f"Tool '{func.__name__}' uses the grant decorator without declaring "
+                f"Tool '{_func_name(func)}' uses the grant decorator without declaring "
                 "an AccessContext parameter; reading the result via "
                 'ctx.get_state("keycardai") is deprecated. Declare a parameter '
                 "like `access: AccessContext = auth_provider.grant(...)` instead.",
@@ -583,7 +604,7 @@ class GrantDependency(Dependency[AccessContext]):
             _ctx = _get_context(*args, **kwargs) or _current_context_or_none()
             if _ctx is None and access_param is None:
                 raise MissingContextError(
-                    function_name=func.__name__,
+                    function_name=_func_name(func),
                     parameters=[type(arg).__name__ for arg in args] + list(kwargs.keys()),
                     runtime_context=True
                 )
@@ -597,7 +618,7 @@ class GrantDependency(Dependency[AccessContext]):
             if access_param is not None:
                 kwargs[access_param] = _access_context
 
-            logger.debug(f"Executing decorated function: {func.__name__}")
+            logger.debug(f"Executing decorated function: {_func_name(func)}")
             return await _call_func(is_async_func, func, *args, **kwargs)
 
         if access_param is not None:
@@ -605,7 +626,8 @@ class GrantDependency(Dependency[AccessContext]):
             # public signature so FastMCP excludes it from the tool schema
             # and never treats it as a user-supplied argument.
             signature = inspect.signature(func)
-            wrapper.__signature__ = signature.replace(
+            # typeshed's functools._Wrapped declares no __signature__ slot; inspect honors it at runtime
+            wrapper.__signature__ = signature.replace(  # ty: ignore[unresolved-attribute]
                 parameters=[
                     parameter
                     for name, parameter in signature.parameters.items()
@@ -618,6 +640,13 @@ class GrantDependency(Dependency[AccessContext]):
                 if name != access_param
             }
         return wrapper
+
+
+@runtime_checkable
+class _IdentityManagerCredential(Protocol):
+    """Credential that signs client assertions with a stable key (WebIdentity and lookalikes)."""
+
+    identity_manager: PrivateKeyManager
 
 
 class AuthProvider:
@@ -762,12 +791,13 @@ class AuthProvider:
             self.auth = NoneAuth()
 
         try:
-            self.client: AsyncClient | None = self.client_factory.create_async_client(self.zone_url, auth=self.auth)
+            client = self.client_factory.create_async_client(self.zone_url, auth=self.auth)
         except Exception as e:
             self._handle_client_creation_error(self.auth, e)
 
-        if self.client is None:
+        if client is None:
             self._handle_client_creation_error(self.auth)
+        self.client: AsyncClient = client
 
         try:
             self.jwks_uri = self._discover_jwks_uri(self.client_factory.create_client(self.zone_url))
@@ -795,7 +825,7 @@ class AuthProvider:
                 return None
             raise AuthProviderConfigurationError(message=str(e)) from e
 
-    def _handle_client_creation_error(self, auth, exception: Exception | None = None) -> None:
+    def _handle_client_creation_error(self, auth, exception: Exception | None = None) -> NoReturn:
         """Handle client creation errors with appropriate exception type.
 
         Args:
@@ -804,26 +834,31 @@ class AuthProvider:
         """
         if self._is_custom_factory:
             # Custom factory failure - this is a configuration issue
-            error_kwargs = {
-                "zone_url": self.zone_url,
-                "factory_type": type(self.client_factory).__name__
-            }
+            factory_type = type(self.client_factory).__name__
             if exception:
-                raise AuthProviderConfigurationError(**error_kwargs) from exception
+                raise AuthProviderConfigurationError(
+                    zone_url=self.zone_url, factory_type=factory_type
+                ) from exception
             else:
-                raise AuthProviderConfigurationError(**error_kwargs)
+                raise AuthProviderConfigurationError(
+                    zone_url=self.zone_url, factory_type=factory_type
+                )
         else:
             # Default factory should never fail due to lazy initialization
             # This would indicate a serious internal issue
-            error_kwargs = {
-                "zone_url": self.zone_url,
-                "auth_type": type(auth).__name__ if auth else "NoneAuth",
-                "component": "default_client_factory"
-            }
+            auth_type = type(auth).__name__ if auth else "NoneAuth"
             if exception:
-                raise AuthProviderInternalError(**error_kwargs) from exception
+                raise AuthProviderInternalError(
+                    zone_url=self.zone_url,
+                    auth_type=auth_type,
+                    component="default_client_factory",
+                ) from exception
             else:
-                raise AuthProviderInternalError(**error_kwargs)
+                raise AuthProviderInternalError(
+                    zone_url=self.zone_url,
+                    auth_type=auth_type,
+                    component="default_client_factory",
+                )
 
     def _build_zone_url(self, zone_url: str | None, zone_id: str | None, base_url: str | None) -> str:
         """Build the zone URL from the provided parameters.
@@ -1053,7 +1088,7 @@ class AuthProvider:
                     "message": "No authentication token available. Please ensure you're properly authenticated.",
                 })
                 return _access_context
-            logger.introspect(f"User token retrieved: {get_token_debug_info(_user_token.token)}")
+            introspect(logger, f"User token retrieved: {get_token_debug_info(_user_token.token)}")
         except Exception as e:
             logger.error("Failed to get access token")
             _access_context.set_error({
@@ -1076,7 +1111,7 @@ class AuthProvider:
                     # identifier that changes on every restart and cannot be pre-registered.
                     _resource_client_id = (
                         self.application_credential.identity_manager.key_id
-                        if hasattr(self.application_credential, "identity_manager")
+                        if isinstance(self.application_credential, _IdentityManagerCredential)
                         else self.client.config.client_id or ""
                     )
                     _auth_info = {
@@ -1105,17 +1140,17 @@ class AuthProvider:
 
                 _access_tokens[resource] = _token_response
                 logger.debug(f"Token exchange successful for {resource}")
-                logger.introspect(f"Token details for {resource}: {get_token_debug_info(_token_response.access_token)}")
+                introspect(logger, f"Token details for {resource}: {get_token_debug_info(_token_response.access_token)}")
             except Exception as e:
                 logger.error(f"Token exchange failed for {resource}")
                 _error_dict: dict[str, str] = {
                     "message": f"Token exchange failed for {resource}",
                 }
-                if hasattr(e, "error"):
+                if isinstance(e, OAuthProtocolError):
                     _error_dict["code"] = e.error
-                if hasattr(e, "error_description") and e.error_description:
-                    _error_dict["description"] = e.error_description
-                if not hasattr(e, "error"):
+                    if e.error_description:
+                        _error_dict["description"] = e.error_description
+                else:
                     _error_dict["raw_error"] = str(e)
                 _access_context.set_resource_error(resource, _error_dict)
                 return _access_context

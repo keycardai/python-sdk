@@ -3,6 +3,7 @@ import json
 from ..exceptions import OAuthHttpError, OAuthProtocolError
 from ..http._context import HTTPContext
 from ..http._wire import HttpRequest, HttpResponse
+from ..http.transport import AsyncHTTPTransport, HTTPTransport
 from ..types.models import ClientRegistrationRequest, ClientRegistrationResponse
 
 
@@ -125,13 +126,13 @@ def parse_client_registration_http_response(res: HttpResponse) -> ClientRegistra
         headers=dict(res.headers),
     )
 
-def register_client(request: ClientRegistrationRequest, context: HTTPContext) -> ClientRegistrationResponse:
+def register_client(request: ClientRegistrationRequest, context: HTTPContext[HTTPTransport]) -> ClientRegistrationResponse:
     """Register a new OAuth 2.0 client with the authorization server (RFC 7591)."""
     http_req = build_client_registration_http_request(request, context)
     http_res = context.transport.request_raw(http_req, timeout=context.timeout)
     return parse_client_registration_http_response(http_res)
 
-async def register_client_async(request: ClientRegistrationRequest, context: HTTPContext) -> ClientRegistrationResponse:
+async def register_client_async(request: ClientRegistrationRequest, context: HTTPContext[AsyncHTTPTransport]) -> ClientRegistrationResponse:
     """Register a new OAuth 2.0 client with the authorization server (RFC 7591) - async version."""
     http_req = build_client_registration_http_request(request, context)
     http_res = await context.transport.request_raw(http_req, timeout=context.timeout)

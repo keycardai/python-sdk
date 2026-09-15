@@ -49,7 +49,7 @@ import asyncio
 import os
 import warnings
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 from pydantic import AnyHttpUrl
 
@@ -69,7 +69,7 @@ from keycardai.oauth.server.exceptions import (
 from keycardai.oauth.server.verifier import TokenVerifier
 from keycardai.oauth.types.models import JsonWebKeySet
 from starlette.middleware.authentication import AuthenticationMiddleware
-from starlette.routing import Mount, Route
+from starlette.routing import BaseRoute
 from starlette.types import ASGIApp
 
 from .authorization import grant as _grant_factory, requires as _requires_module_func
@@ -89,6 +89,13 @@ def _deprecated_zone_env(name: str) -> str | None:
         )
     return value
 
+
+
+@runtime_checkable
+class _JwksCredential(Protocol):
+    """Credential that publishes a JWKS (WebIdentity and private-key credentials)."""
+
+    def get_jwks(self) -> JsonWebKeySet: ...
 
 class AuthProvider:
     """Keycard authentication provider for Starlette and FastAPI applications.
@@ -184,9 +191,7 @@ class AuthProvider:
             self.auth = NoneAuth()
 
         self.jwks: JsonWebKeySet | None = None
-        if self.application_credential and hasattr(
-            self.application_credential, "get_jwks"
-        ):
+        if isinstance(self.application_credential, _JwksCredential):
             self.jwks = self.application_credential.get_jwks()
 
         self.enable_private_key_identity = isinstance(
@@ -225,7 +230,8 @@ class AuthProvider:
         self, auth_info: dict[str, str | None]
     ) -> AsyncClient | None:
         client = None
-        client_key = self._get_client_key(auth_info["zone_id"])
+        zone_id = auth_info["zone_id"]
+        client_key = self._get_client_key(zone_id)
         if client_key in self._clients and self._clients[client_key] is not None:
             return self._clients[client_key]
 
@@ -249,17 +255,15 @@ class AuthProvider:
                         )
                     )
 
-                if self.enable_multi_zone and auth_info["zone_id"]:
-                    base_url = self._create_zone_scoped_url(
-                        self.base_url, auth_info["zone_id"]
-                    )
-                else:
+                if self.enable_multi_zone and zone_id:
+                    base_url = self._create_zone_scoped_url(self.base_url, zone_id)
+                elif self.zone_url is not None:
                     base_url = self.zone_url
+                else:
+                    raise AuthProviderConfigurationError()
 
                 auth_strategy = self.auth
-                if isinstance(self.auth, MultiZoneBasicAuth) and auth_info[
-                    "zone_id"
-                ]:
+                if isinstance(self.auth, MultiZoneBasicAuth) and zone_id:
                     # Multi-zone credentials are keyed by the zone's issuer
                     # URL, which is the same zone-scoped URL the client is
                     # created against.
@@ -299,7 +303,7 @@ class AuthProvider:
             client_factory=self.client_factory,
         )
 
-    def get_routes(self, app: ASGIApp) -> list[Mount | Route]:
+    def get_routes(self, app: ASGIApp) -> list[BaseRoute]:
         """Get OAuth metadata routes and protected app mount.
 
         Returns a list of routes suitable for ``Starlette(routes=...)``.

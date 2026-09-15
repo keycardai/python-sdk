@@ -5,7 +5,10 @@ with exchanged tokens for one or more target resources. This is the core
 orchestration that both MCP's @grant() and Starlette's @protect() delegate to.
 """
 
+from collections.abc import Mapping
+
 from keycardai.oauth import AsyncClient
+from keycardai.oauth.exceptions import OAuthProtocolError
 from keycardai.oauth.types.models import TokenExchangeRequest, TokenResponse
 
 from .access_context import AccessContext
@@ -30,7 +33,7 @@ async def exchange_tokens_for_resources(
     subject_token: str,
     access_context: AccessContext,
     application_credential: ApplicationCredential | None = None,
-    auth_info: dict[str, str] | None = None,
+    auth_info: Mapping[str, str | None] | None = None,
     user_identifier: str | None = None,
     request_scopes: str | list[str] | dict[str, str | list[str]] | None = None,
 ) -> AccessContext:
@@ -118,11 +121,11 @@ async def exchange_tokens_for_resources(
                 "message": f"Token exchange failed for {resource}",
                 "retryable": error_retryable(e),
             }
-            if hasattr(e, "error"):
+            if isinstance(e, OAuthProtocolError):
                 error_dict["code"] = e.error
-            if hasattr(e, "error_description") and e.error_description:
-                error_dict["description"] = e.error_description
-            if not hasattr(e, "error"):
+                if e.error_description:
+                    error_dict["description"] = e.error_description
+            else:
                 error_dict["raw_error"] = str(e)
 
             access_context.set_resource_error(resource, error_dict)

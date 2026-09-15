@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import functools
 import inspect
+import types
 from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Any
 
@@ -37,6 +38,13 @@ from .middleware.bearer import (
 
 if TYPE_CHECKING:
     from .provider import AuthProvider
+
+
+def _qualname(fn: Callable[..., object]) -> str:
+    """Callable is not guaranteed a __qualname__ (partials, callable instances)."""
+    if isinstance(fn, (types.FunctionType, types.MethodType, type)):
+        return fn.__qualname__
+    return repr(fn)
 
 
 def _find_request(args: tuple, kwargs: dict) -> Request | None:
@@ -91,7 +99,7 @@ def requires(
         if request_index is None:
             raise TypeError(
                 f"@keycardai.starlette.requires expects a 'request' "
-                f"parameter on {func.__qualname__}"
+                f"parameter on {_qualname(func)}"
             )
 
         if is_async_callable(func):
@@ -302,7 +310,8 @@ def grant(
 
             return await _invoke(func, is_async, args, kwargs)
 
-        wrapper.__signature__ = _safe_signature_for_fastapi(func)  # type: ignore[attr-defined]
+        # typeshed's functools._Wrapped declares no __signature__ slot; inspect honors it at runtime
+        wrapper.__signature__ = _safe_signature_for_fastapi(func)  # ty: ignore[unresolved-attribute]
         return wrapper
 
     return decorator

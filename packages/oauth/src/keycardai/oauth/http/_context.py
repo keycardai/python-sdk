@@ -7,13 +7,16 @@ objects, we create a more maintainable and scalable API.
 """
 
 from dataclasses import dataclass
+from typing import Generic, TypeVar
 
 from .auth import AuthStrategy
 from .transport import AsyncHTTPTransport, HTTPTransport
 
+TransportT = TypeVar("TransportT", HTTPTransport, AsyncHTTPTransport)
+
 
 @dataclass(frozen=True)
-class HTTPContext:
+class HTTPContext(Generic[TransportT]):
     """HTTP context for OAuth 2.0 operations.
 
     Encapsulates HTTP-related concerns for OAuth operations to reduce
@@ -34,7 +37,7 @@ class HTTPContext:
     """
 
     endpoint: str
-    transport: HTTPTransport | AsyncHTTPTransport
+    transport: TransportT
     auth: AuthStrategy
     timeout: float | None = None
     retries: int = 0
@@ -44,14 +47,14 @@ class HTTPContext:
 
 def build_http_context(
     endpoint: str,
-    transport: HTTPTransport | AsyncHTTPTransport,
+    transport: TransportT,
     auth: AuthStrategy,
     user_agent: str,
     custom_headers: dict[str, str] | None = None,
     timeout: float | None = None,
     additional_headers: dict[str, str] | None = None,
     issuer: str | None = None,
-) -> HTTPContext:
+) -> HTTPContext[TransportT]:
     """Build HTTPContext with headers from configuration.
 
     Pure function to create HTTPContext with proper header management.

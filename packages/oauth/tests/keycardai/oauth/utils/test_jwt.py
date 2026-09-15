@@ -774,3 +774,22 @@ class TestJWTCryptographicIntegration:
 
         scopes = extract_scopes(extracted_claims)
         assert scopes == ["read", "write", "admin"]
+
+
+class TestSymmetricJwksKey:
+    @pytest.mark.asyncio
+    @patch("keycardai.oauth.utils.jwt.HttpxAsyncTransport")
+    @patch("keycardai.oauth.utils.jwt.ClientConfig")
+    async def test_oct_key_raises_jwks_fetch_error(self, mock_config_class, mock_transport_class):
+        """A kty=oct entry has no PEM form; surface it as the JWKS error callers already handle."""
+        mock_response = Mock()
+        mock_response.status = 200
+        mock_response.body = json.dumps(
+            {"keys": [{"kid": "key1", "kty": "oct", "k": "c2VjcmV0LXNlY3JldC1zZWNyZXQ"}]}
+        ).encode()
+        mock_transport = AsyncMock()
+        mock_transport.request_raw.return_value = mock_response
+        mock_transport_class.return_value = mock_transport
+
+        with pytest.raises(JWKSFetchError, match="symmetric"):
+            await get_jwks_key("key1", "https://example.com/.well-known/jwks.json")

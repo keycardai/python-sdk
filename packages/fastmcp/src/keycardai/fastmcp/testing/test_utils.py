@@ -1,6 +1,7 @@
 from contextlib import contextmanager
 
 from keycardai.oauth.types.models import TokenResponse
+from keycardai.oauth.types.oauth import TokenType
 
 from ..provider import AccessContext, override_access_context
 
@@ -27,7 +28,7 @@ class _MockAccessContext(AccessContext):
         ):
             return TokenResponse(
                 access_token=self._default_token,
-                token_type="Bearer",
+                token_type=TokenType.BEARER,
             )
         try:
             return super().access(resource)
@@ -102,7 +103,7 @@ def mock_access_context(
         for resource, token in resource_tokens.items():
             access_context.set_token(
                 resource,
-                TokenResponse(access_token=token, token_type="Bearer"),
+                TokenResponse(access_token=token, token_type=TokenType.BEARER),
             )
 
     with override_access_context(access_context):

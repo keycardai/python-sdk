@@ -11,6 +11,7 @@ from urllib.parse import urlencode
 from ..exceptions import OAuthHttpError, OAuthProtocolError
 from ..http._context import HTTPContext
 from ..http._wire import HttpRequest, HttpResponse
+from ..http.transport import AsyncHTTPTransport, HTTPTransport
 from ..types.models import TokenResponse
 from ..utils.pkce import PKCEChallenge
 
@@ -197,7 +198,7 @@ def exchange_authorization_code(
     redirect_uri: str,
     code_verifier: str,
     client_id: str | None = None,
-    context: HTTPContext,
+    context: HTTPContext[HTTPTransport],
     resource: str | None = None,
 ) -> TokenResponse:
     """Exchange an authorization code for tokens (sync).
@@ -235,7 +236,7 @@ async def exchange_authorization_code_async(
     redirect_uri: str,
     code_verifier: str,
     client_id: str | None = None,
-    context: HTTPContext,
+    context: HTTPContext[AsyncHTTPTransport],
     resource: str | None = None,
 ) -> TokenResponse:
     """Exchange an authorization code for tokens (async).

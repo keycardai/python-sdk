@@ -414,3 +414,34 @@ class TestFlyTokenSource:
             server.close()
             await server.wait_closed()
             shutil.rmtree(socket_dir, ignore_errors=True)
+
+
+class _ProxySource:
+    """Exposes identity_token only through __getattr__, like a lazy delegating wrapper."""
+
+    def __init__(self, token: str) -> None:
+        self._token = token
+
+    def __getattr__(self, name: str):
+        if name == "identity_token":
+            async def fetch() -> str:
+                return self._token
+
+            return fetch
+        raise AttributeError(name)
+
+
+@pytest.mark.asyncio
+async def test_proxy_source_accepted_at_construction_is_used_at_fetch_time():
+    """The predicate that admits a source at construction is the one used on every exchange."""
+    credential = WorkloadIdentity(_ProxySource("platform-signed-jwt"))
+    assert await credential._fetch_identity_token() == "platform-signed-jwt"
+
+
+@pytest.mark.asyncio
+async def test_bare_async_callable_source_still_works():
+    async def fetch() -> str:
+        return "platform-signed-jwt"
+
+    credential = WorkloadIdentity(fetch)
+    assert await credential._fetch_identity_token() == "platform-signed-jwt"

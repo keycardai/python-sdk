@@ -54,6 +54,7 @@ class LocalAuthCoordinator(AuthCoordinator):
 
         # Initialize base coordinator with endpoint manager
         super().__init__(backend, endpoint_manager)
+        self._local_endpoint_manager = endpoint_manager
 
         # Set completion handler on endpoint manager
         # The manager will call handle_completion when requests arrive
@@ -70,6 +71,5 @@ class LocalAuthCoordinator(AuthCoordinator):
 
         Delegates to LocalEndpointManager for graceful shutdown.
         """
-        if self.endpoint_manager:
-            await self.endpoint_manager.shutdown()
+        await self._local_endpoint_manager.shutdown()
 
