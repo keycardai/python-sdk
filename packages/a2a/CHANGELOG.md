@@ -1,3 +1,9 @@
+## 0.4.1-keycardai-a2a (2026-09-15)
+
+
+- test(keycardai-a2a): retire the A2A 0.3 compat guidance
+- ECO-161 close-out. All four Keycard SDKs send A2A protocol 1.0, verified against the tags: keycardai-a2a 0.3.0+ (Python), @keycardai/a2a 0.4.0+ (typescript-sdk #173), go-sdk v0.22.0+ (#47), ruby keycardai-a2a 0.2.0+ (#33). The README quickstart, both examples, and the test fixtures no longer pass a2a-sdk's enable_v0_3_compat, and a new README section names the shipped versions and tells 0.3-generation callers to upgrade or enable upstream's flag themselves. One dispatch test pins the boundary: message/send gets -32601 MethodNotFound by default and never reaches the executor. No package code changes, so this test-scoped commit cuts no release.
+
 ## 0.4.0-keycardai-a2a (2026-07-28)
 
 
