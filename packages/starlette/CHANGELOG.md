@@ -1,3 +1,5 @@
+## 0.14.1-keycardai-starlette (2026-09-15)
+
 ## 0.14.0-keycardai-starlette (2026-09-07)
 
 ### Migration: credential discovery moves to keycardai-oauth
