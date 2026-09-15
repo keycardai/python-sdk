@@ -10,6 +10,7 @@ from urllib.parse import urlencode
 from ..exceptions import OAuthHttpError, OAuthProtocolError
 from ..http._context import HTTPContext
 from ..http._wire import HttpRequest, HttpResponse
+from ..http.transport import AsyncHTTPTransport, HTTPTransport
 from ..types.models import ClientCredentialsRequest, TokenResponse
 
 
@@ -128,7 +129,7 @@ def parse_client_credentials_http_response(res: HttpResponse) -> TokenResponse:
 
 def client_credentials_grant(
     request: ClientCredentialsRequest,
-    context: HTTPContext,
+    context: HTTPContext[HTTPTransport],
 ) -> TokenResponse:
     """Perform OAuth 2.0 Client Credentials Grant (sync version).
 
@@ -161,7 +162,7 @@ def client_credentials_grant(
 
 async def client_credentials_grant_async(
     request: ClientCredentialsRequest,
-    context: HTTPContext,
+    context: HTTPContext[AsyncHTTPTransport],
 ) -> TokenResponse:
     """Perform OAuth 2.0 Client Credentials Grant (async version).
 

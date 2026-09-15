@@ -9,6 +9,8 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Any
 
+from ..types import AuthChallenge
+
 logger = logging.getLogger(__name__)
 
 
@@ -28,7 +30,7 @@ class AuthToolHandler(ABC):
         self,
         service: str,
         reason: str,
-        challenge: dict[str, Any],
+        challenge: AuthChallenge,
     ) -> str:
         """
         Handle an authentication request.
@@ -75,7 +77,7 @@ class DefaultAuthToolHandler(AuthToolHandler):
         self,
         service: str,
         reason: str,
-        challenge: dict[str, Any],
+        challenge: AuthChallenge,
     ) -> str:
         """Return formatted auth message for agent to display."""
         auth_url = challenge.get("authorization_url", "")
@@ -134,7 +136,7 @@ class SlackAuthToolHandler(AuthToolHandler):
         self,
         service: str,
         reason: str,
-        challenge: dict[str, Any],
+        challenge: AuthChallenge,
     ) -> str:
         """Send auth link via Slack message."""
         auth_url = challenge.get("authorization_url", "")
@@ -193,7 +195,7 @@ class ConsoleAuthToolHandler(AuthToolHandler):
         self,
         service: str,
         reason: str,
-        challenge: dict[str, Any],
+        challenge: AuthChallenge,
     ) -> str:
         """Print auth link to console."""
         auth_url = challenge.get("authorization_url", "")

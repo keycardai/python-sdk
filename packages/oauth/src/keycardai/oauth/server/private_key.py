@@ -320,7 +320,8 @@ class PrivateKeyManager:
 
     def get_client_jwks_url(self, resource_server_url: str) -> str:
         resource_url = AnyHttpUrl(resource_server_url)
-        base_url = f"{resource_url.scheme}://{resource_url.host.rstrip('/')}"
+        host = (resource_url.host or "").rstrip("/")
+        base_url = f"{resource_url.scheme}://{host}"
         if resource_url.port not in [443, 80]:
             base_url += ":" + str(resource_url.port)
         return f"{base_url}/.well-known/jwks.json"

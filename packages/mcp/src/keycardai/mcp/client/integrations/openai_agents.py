@@ -24,6 +24,7 @@ from mcp.types import (
 
 from ..client import Client
 from ..exceptions import MCPClientError
+from ..types import AuthChallenge
 from .auth_tools import AuthToolHandler, DefaultAuthToolHandler
 
 logger = logging.getLogger(__name__)
@@ -270,7 +271,7 @@ class OpenAIAgentsClient:
         """
         self._mcp_client = mcp_client
         self._auth_tool_handler = auth_tool_handler or DefaultAuthToolHandler()
-        self._pending_challenges: list[dict[str, Any]] = []
+        self._pending_challenges: list[AuthChallenge] = []
         self._authenticated_servers: list[str] = []
         self._auth_hook_closure = auth_hook_closure
         self.auth_prompt = auth_prompt
@@ -286,7 +287,7 @@ class OpenAIAgentsClient:
 
         self._pending_challenges = await self._mcp_client.get_auth_challenges()
 
-        if self._pending_challenges:
+        if self._pending_challenges and self._auth_hook_closure:
             try:
                 await self._auth_hook_closure()
             except Exception as e:
@@ -519,4 +520,9 @@ def create_client(
         >>> async with get_client(mcp_client, auth_tool_handler=handler) as client:
         ...     # Auth links will be printed to console
     """
-    return OpenAIAgentsClient(mcp_client, auth_tool_handler, auth_hook_closure, tool_result_parser)
+    return OpenAIAgentsClient(
+        mcp_client,
+        auth_tool_handler=auth_tool_handler,
+        auth_hook_closure=auth_hook_closure,
+        tool_result_parser=tool_result_parser,
+    )

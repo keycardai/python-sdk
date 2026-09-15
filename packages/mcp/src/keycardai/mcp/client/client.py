@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, cast
 
 from mcp import Tool
 from mcp.types import CallToolResult, PaginatedRequestParams
@@ -166,10 +166,11 @@ class Client:
             session = self.sessions[session_name]
             challenge = await session.get_auth_challenge()
             if challenge:
-                auth_challenges.append({
-                    **challenge,
-                    "server": session_name
-                })
+                # The strategy hands back an untyped dict; the merge is the
+                # AuthChallenge shape by construction (server is always set).
+                auth_challenges.append(
+                    cast(AuthChallenge, {**challenge, "server": session_name})
+                )
 
         return auth_challenges
 

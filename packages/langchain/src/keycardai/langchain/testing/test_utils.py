@@ -7,6 +7,7 @@ from contextlib import contextmanager
 
 from keycardai.oauth.server.access_context import AccessContext
 from keycardai.oauth.types.models import TokenResponse
+from keycardai.oauth.types.oauth import TokenType
 
 from ..middleware import _current_access
 
@@ -52,7 +53,7 @@ def mock_access_context(
     else:
         for resource, token in (resource_tokens or {}).items():
             context.set_token(
-                resource, TokenResponse(access_token=token, token_type="Bearer")
+                resource, TokenResponse(access_token=token, token_type=TokenType.BEARER)
             )
         for resource, message in (resource_errors or {}).items():
             context.set_resource_error(
@@ -80,5 +81,7 @@ class _AnyResourceAccessContext(AccessContext):
             and not self.has_errors()
             and resource not in self.get_successful_resources()
         ):
-            return TokenResponse(access_token=self._default_token, token_type="Bearer")
+            return TokenResponse(
+                access_token=self._default_token, token_type=TokenType.BEARER
+            )
         return super().access(resource)

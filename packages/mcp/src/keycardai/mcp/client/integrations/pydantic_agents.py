@@ -14,9 +14,12 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from pydantic import BaseModel, Field, create_model
-from pydantic_ai import Tool
+
+# ty: pydantic-ai pins mcp<2.0 transitively and cannot install next to this package (ECO-198)
+from pydantic_ai import Tool  # ty: ignore[unresolved-import]
 
 from ..client import Client
+from ..types import AuthChallenge
 from .auth_tools import AuthToolHandler, DefaultAuthToolHandler
 
 logger = logging.getLogger(__name__)
@@ -61,7 +64,7 @@ class PydanticAIClient:
         """
         self._mcp_client = mcp_client
         self._auth_tool_handler = auth_tool_handler or DefaultAuthToolHandler()
-        self._pending_challenges: list[dict[str, Any]] = []
+        self._pending_challenges: list[AuthChallenge] = []
         self._authenticated_servers: list[str] = []
         self._auth_hook_closure = auth_hook_closure
         self._tools_cache: list[Tool[Any]] = []
@@ -268,7 +271,7 @@ The following services require user authorization: {", ".join(pending_services)}
         properties = json_schema.get("properties", {})
         required = json_schema.get("required", [])
 
-        field_definitions = {}
+        field_definitions: dict[str, Any] = {}
         for field_name, field_info in properties.items():
             field_type = self._json_type_to_python(field_info.get("type", "string"))
             field_description = field_info.get("description", "")

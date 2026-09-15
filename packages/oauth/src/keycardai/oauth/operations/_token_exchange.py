@@ -10,6 +10,7 @@ from urllib.parse import urlencode
 from ..exceptions import OAuthHttpError, OAuthProtocolError
 from ..http._context import HTTPContext
 from ..http._wire import HttpRequest, HttpResponse
+from ..http.transport import AsyncHTTPTransport, HTTPTransport
 from ..types.models import TokenExchangeRequest, TokenResponse
 
 
@@ -130,7 +131,7 @@ def parse_token_exchange_http_response(res: HttpResponse) -> TokenResponse:
 
 def exchange_token(
     request: TokenExchangeRequest,
-    context: HTTPContext,
+    context: HTTPContext[HTTPTransport],
 ) -> TokenResponse:
     """Perform OAuth 2.0 Token Exchange (sync version).
 
@@ -163,7 +164,7 @@ def exchange_token(
 
 async def exchange_token_async(
     request: TokenExchangeRequest,
-    context: HTTPContext,
+    context: HTTPContext[AsyncHTTPTransport],
 ) -> TokenResponse:
     """Perform OAuth 2.0 Token Exchange (async version).
 

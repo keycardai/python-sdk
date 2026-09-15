@@ -66,6 +66,9 @@ jobs:
       - name: Run linting and formatting checks
         run: just check
 
+      - name: Run type checker
+        run: just typecheck
+
       - name: Run tests with coverage
         run: just test-coverage
 

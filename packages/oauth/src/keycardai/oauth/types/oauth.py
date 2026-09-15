@@ -395,7 +395,7 @@ class OAuth2DefaultEndpoints:
     """
 
     @classmethod
-    def construct_url(cls, base_url: str, endpoint: "OAuth2DefaultEndpoints") -> str:
+    def construct_url(cls, base_url: str, endpoint: str) -> str:
         """Construct a complete OAuth 2.0 endpoint URL from base URL and endpoint path.
 
         Args:

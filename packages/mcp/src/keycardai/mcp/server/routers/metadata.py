@@ -6,7 +6,7 @@ Canonical import: ``from keycardai.starlette.routers import protected_router``
 
 from collections.abc import Sequence
 
-from starlette.routing import Route
+from starlette.routing import BaseRoute
 from starlette.types import ASGIApp
 
 from keycardai.oauth.server.verifier import TokenVerifier
@@ -28,7 +28,7 @@ def protected_mcp_router(
     verifier: TokenVerifier,
     enable_multi_zone: bool = False,
     jwks: JsonWebKeySet | None = None,
-) -> Sequence[Route]:
+) -> Sequence[BaseRoute]:
     """Backward-compatible wrapper that accepts ``mcp_app`` kwarg.
 
     Delegates to ``protected_router(app=...)`` from keycardai-starlette.

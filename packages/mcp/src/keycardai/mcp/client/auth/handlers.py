@@ -3,7 +3,7 @@
 import asyncio
 import warnings
 from collections.abc import Awaitable, Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, overload
 
 from httpx import AsyncClient
 
@@ -248,6 +248,16 @@ class CompletionHandlerRegistry:
         self._handlers: dict[str, CompletionHandlerFunc] = {}
         self._client_factories: dict[str, ClientFactory] = {}
         self._default_client_factory: ClientFactory | None = None
+
+    @overload
+    def register(
+        self, name: str, handler: CompletionHandlerFunc
+    ) -> CompletionHandlerFunc: ...
+
+    @overload
+    def register(
+        self, name: str, handler: None = None
+    ) -> Callable[[CompletionHandlerFunc], CompletionHandlerFunc]: ...
 
     def register(
         self,

@@ -20,7 +20,7 @@ import os
 import uuid
 import warnings
 from collections.abc import Awaitable, Callable, Mapping
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 import httpx
 
@@ -54,7 +54,8 @@ async def _get_token_exchange_audience(client: AsyncClient) -> str:
     """Get the token exchange audience from server metadata."""
     if not client._initialized:
         await client._ensure_initialized()
-    return client._discovered_endpoints.token
+    endpoints = client._discovered_endpoints or client._endpoints
+    return endpoints.token
 
 
 class ApplicationCredential(Protocol):
@@ -72,7 +73,7 @@ class ApplicationCredential(Protocol):
     def set_client_config(
         self,
         config: ClientConfig,
-        auth_info: dict[str, str],
+        auth_info: Mapping[str, str | None],
     ) -> ClientConfig:
         """Configure OAuth client settings for this identity type."""
         ...
@@ -82,7 +83,7 @@ class ApplicationCredential(Protocol):
         client: AsyncClient,
         subject_token: str,
         resource: str,
-        auth_info: dict[str, str] | None = None,
+        auth_info: Mapping[str, str | None] | None = None,
     ) -> TokenExchangeRequest:
         """Prepare a token exchange request with identity-specific parameters."""
         ...
@@ -134,7 +135,7 @@ class ClientSecret:
     def set_client_config(
         self,
         config: ClientConfig,
-        auth_info: dict[str, str],
+        auth_info: Mapping[str, str | None],
     ) -> ClientConfig:
         return config
 
@@ -143,7 +144,7 @@ class ClientSecret:
         client: AsyncClient,
         subject_token: str,
         resource: str,
-        auth_info: dict[str, str] | None = None,
+        auth_info: Mapping[str, str | None] | None = None,
     ) -> TokenExchangeRequest:
         return TokenExchangeRequest(
             subject_token=subject_token,
@@ -229,12 +230,17 @@ class WebIdentity:
     def set_client_config(
         self,
         config: ClientConfig,
-        auth_info: dict[str, str],
+        auth_info: Mapping[str, str | None],
     ) -> ClientConfig:
+        resource_server_url = auth_info.get("resource_server_url")
+        if resource_server_url is None:
+            raise ValueError(
+                "auth_info with 'resource_server_url' is required for WebIdentity"
+            )
         config.client_id = auth_info["resource_client_id"]
         config.auto_register_client = False
         config.client_jwks_url = self.identity_manager.get_client_jwks_url(
-            auth_info["resource_server_url"]
+            resource_server_url
         )
         config.client_token_endpoint_auth_method = (
             TokenEndpointAuthMethod.PRIVATE_KEY_JWT
@@ -258,16 +264,17 @@ class WebIdentity:
         client: AsyncClient,
         subject_token: str,
         resource: str,
-        auth_info: dict[str, str] | None = None,
+        auth_info: Mapping[str, str | None] | None = None,
     ) -> TokenExchangeRequest:
-        if not auth_info or "resource_client_id" not in auth_info:
+        resource_client_id = auth_info.get("resource_client_id") if auth_info else None
+        if resource_client_id is None:
             raise ValueError(
                 "auth_info with 'resource_client_id' is required for WebIdentity"
             )
 
         audience = await _get_token_exchange_audience(client)
         client_assertion = self.identity_manager.create_client_assertion(
-            issuer=auth_info["resource_client_id"],
+            issuer=resource_client_id,
             audience=audience,
         )
 
@@ -288,6 +295,7 @@ WORKLOAD_IDENTITY_SOURCE_FLY = "fly"
 WORKLOAD_IDENTITY_SOURCE_CUSTOM = "custom"
 
 
+@runtime_checkable
 class IdentityTokenSource(Protocol):
     """Supplies a platform-signed OIDC token for use as a client assertion.
 
@@ -535,8 +543,10 @@ class WorkloadIdentity:
         self.client_id = client_id
 
     async def _fetch_identity_token(self) -> str:
-        fetch = getattr(self._source, "identity_token", None)
-        if not callable(fetch):
+        fetch: Callable[[], Awaitable[str] | str]
+        if isinstance(self._source, IdentityTokenSource):
+            fetch = self._source.identity_token
+        else:
             fetch = self._source
         try:
             result = fetch()
@@ -561,7 +571,7 @@ class WorkloadIdentity:
     def set_client_config(
         self,
         config: ClientConfig,
-        auth_info: dict[str, str],
+        auth_info: Mapping[str, str | None],
     ) -> ClientConfig:
         return config
 
@@ -570,7 +580,7 @@ class WorkloadIdentity:
         client: AsyncClient,
         subject_token: str,
         resource: str,
-        auth_info: dict[str, str] | None = None,
+        auth_info: Mapping[str, str | None] | None = None,
     ) -> TokenExchangeRequest:
         assertion = await self._fetch_identity_token()
 
@@ -620,19 +630,17 @@ class EKSWorkloadIdentity(WorkloadIdentity):
         token_file_path: str | None = None,
         env_var_name: str | None = None,
     ):
-        if token_file_path is not None:
-            self.token_file_path = token_file_path
-            self.env_var_name = env_var_name
-        else:
-            self.token_file_path, self.env_var_name = self._get_token_file_path(
-                env_var_name
-            )
-            if not self.token_file_path:
+        if token_file_path is None:
+            token_file_path, matched_env_var = self._get_token_file_path(env_var_name)
+            if not token_file_path:
                 raise EKSWorkloadIdentityConfigurationError(
                     token_file_path=None,
                     env_var_name=env_var_name,
                     error_details="Could not find token file path in environment variables",
                 )
+            env_var_name = matched_env_var
+        self.token_file_path: str = token_file_path
+        self.env_var_name = env_var_name
 
         self._validate_token_file()
         super().__init__(source=self._read_token_async)
@@ -642,20 +650,17 @@ class EKSWorkloadIdentity(WorkloadIdentity):
 
     def _get_token_file_path(
         self, env_var_name: str | None
-    ) -> tuple[str, str]:
+    ) -> tuple[str | None, str | None]:
         env_names = (
             self.default_env_var_names
             if env_var_name is None
             else [env_var_name, *self.default_env_var_names]
         )
-        return next(
-            (
-                (os.environ.get(env_name), env_name)
-                for env_name in env_names
-                if os.environ.get(env_name)
-            ),
-            (None, None),
-        )
+        for env_name in env_names:
+            value = os.environ.get(env_name)
+            if value:
+                return value, env_name
+        return None, None
 
     def _validate_token_file(self) -> None:
         try:

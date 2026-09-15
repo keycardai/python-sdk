@@ -9,6 +9,7 @@ import json
 from ..exceptions import OAuthHttpError, OAuthProtocolError
 from ..http._context import HTTPContext
 from ..http._wire import HttpRequest, HttpResponse
+from ..http.transport import AsyncHTTPTransport, HTTPTransport
 from ..types.models import AuthorizationServerMetadata, ServerMetadataRequest
 from ..types.oauth import WellKnownEndpoint
 
@@ -162,7 +163,7 @@ def parse_discovery_http_response(
 
 def discover_server_metadata(
     request: ServerMetadataRequest,
-    context: HTTPContext,
+    context: HTTPContext[HTTPTransport],
 ) -> AuthorizationServerMetadata:
     """Discover OAuth 2.0 authorization server metadata (sync version).
 
@@ -191,7 +192,7 @@ def discover_server_metadata(
 
 async def discover_server_metadata_async(
     request: ServerMetadataRequest,
-    context: HTTPContext,
+    context: HTTPContext[AsyncHTTPTransport],
 ) -> AuthorizationServerMetadata:
     """Discover OAuth 2.0 authorization server metadata (async version).
 

@@ -432,6 +432,21 @@ class Endpoints:
 
 
 @dataclass
+class ResolvedEndpoints(Endpoints):
+    """Endpoints after overrides, discovery, and defaults have been applied.
+
+    Every URL is populated; the client never dispatches against an unset one.
+    """
+
+    token: str
+    introspect: str
+    revoke: str
+    register: str
+    par: str
+    authorize: str
+
+
+@dataclass
 class ClientConfig:
     """Comprehensive client configuration with enterprise defaults."""
 

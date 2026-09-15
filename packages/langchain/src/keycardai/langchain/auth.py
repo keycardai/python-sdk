@@ -277,14 +277,14 @@ def install_owner_authorization(auth: Auth) -> Auth:
         return None
 
     async def read_assistants(
-        ctx: Auth.types.AuthContext, value: MutableMapping[str, Any]
+        ctx: Auth.types.AuthContext, value: Auth.types.on.assistants.read.value
     ) -> None:
         """Assistants are the deployment's static graph config, not caller data."""
         _owner(ctx)
         return None
 
     async def search_assistants(
-        ctx: Auth.types.AuthContext, value: MutableMapping[str, Any]
+        ctx: Auth.types.AuthContext, value: Auth.types.on.assistants.search.value
     ) -> None:
         _owner(ctx)
         return None
@@ -306,7 +306,12 @@ def install_owner_authorization(auth: Auth) -> Auth:
 
 
 def _stamp(
-    ctx: Auth.types.AuthContext, value: MutableMapping[str, Any]
+    ctx: Auth.types.AuthContext,
+    value: (
+        Auth.types.on.threads.create.value
+        | Auth.types.on.threads.create_run.value
+        | Auth.types.on.threads.update.value
+    ),
 ) -> dict[str, str]:
     """Record the owner on the resource being written, and filter on it."""
     owner = _owner(ctx)

@@ -9,13 +9,15 @@ When upstream mcp.ClientSession adds new methods, update this stub to include th
 """
 
 from datetime import timedelta
+from enum import Enum
 from typing import Any, Protocol
 
-from mcp.shared.message import ClientMessageMetadata, ServerMessageMetadata
-from mcp.shared.session import ReceiveResultT, SendNotificationT, SendRequestT
+from mcp.client.session import ReceiveResultT
+from mcp.shared.message import ClientMessageMetadata
 from mcp.types import (
-    AnyUrl,
     CallToolResult,
+    ClientNotification,
+    ClientRequest,
     CompleteResult,
     EmptyResult,
     GetPromptResult,
@@ -28,10 +30,39 @@ from mcp.types import (
     PaginatedRequestParams,
     PromptReference,
     ReadResourceResult,
+    Request,
     ResourceTemplateReference,
 )
+from pydantic import AnyUrl, TypeAdapter
 
+from .auth.events import CompletionEvent
 from .context import Context
+
+class SessionStatus(Enum):
+    """Status tracking for the Session lifecycle."""
+
+    INITIALIZING = "initializing"
+    CONNECTING = "connecting"
+    AUTHENTICATING = "authenticating"
+    AUTH_PENDING = "auth_pending"
+    CONNECTED = "connected"
+    DISCONNECTING = "disconnecting"
+    DISCONNECTED = "disconnected"
+    AUTH_FAILED = "auth_failed"
+    CONNECTION_FAILED = "connection_failed"
+    SERVER_UNREACHABLE = "server_unreachable"
+    FAILED = "failed"
+    RECONNECTING = "reconnecting"
+
+class SessionStatusCategory:
+    """Helper for checking status categories."""
+
+    ACTIVE_STATES: set[SessionStatus]
+    DISCONNECTED_STATES: set[SessionStatus]
+    FAILURE_STATES: set[SessionStatus]
+    PENDING_STATES: set[SessionStatus]
+    TERMINAL_STATES: set[SessionStatus]
+    RECOVERABLE_STATES: set[SessionStatus]
 
 # Type for progress callback (matching upstream)
 class ProgressFnT(Protocol):
@@ -54,6 +85,7 @@ class Session:
     context: Context
     coordinator: Any  # AuthCoordinator (avoiding circular import)
     server_storage: Any  # NamespacedStorage
+    status: SessionStatus
 
     def __init__(
         self,
@@ -77,6 +109,19 @@ class Session:
     def connected(self) -> bool:
         """Whether the session is currently connected."""
         ...
+
+    @property
+    def is_operational(self) -> bool: ...
+    @property
+    def is_connecting(self) -> bool: ...
+    @property
+    def requires_user_action(self) -> bool: ...
+    @property
+    def can_retry(self) -> bool: ...
+    @property
+    def is_failed(self) -> bool: ...
+    async def on_completion_handled(self, event: CompletionEvent) -> None: ...
+    async def check_connection_health(self) -> bool: ...
 
     # ===== Custom Session Methods =====
 
@@ -271,11 +316,11 @@ class Session:
         """Send a tools/call request with optional progress callback support."""
         ...
 
-    async def send_notification(self, notification: ~SendNotificationT, related_request_id: str | int | None = None) -> None:
+    async def send_notification(self, notification: ClientNotification) -> None:
         """Emits a notification, which is a one-way message that does not expect"""
         ...
 
-    async def send_request(self, request: ~SendRequestT, result_type: type[~ReceiveResultT], request_read_timeout_seconds: timedelta | None = None, metadata: ClientMessageMetadata | ServerMessageMetadata | None = None, progress_callback: ProgressFnT | None = None) -> ~ReceiveResultT:
+    async def send_request(self, request: ClientRequest | Request[Any, Any], result_type: type[ReceiveResultT] | TypeAdapter[ReceiveResultT], request_read_timeout_seconds: float | None = None, metadata: ClientMessageMetadata | None = None, progress_callback: ProgressFnT | None = None) -> ReceiveResultT:
         """Sends a request and wait for a response. Raises an McpError if the"""
         ...
 

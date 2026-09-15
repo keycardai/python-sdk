@@ -39,9 +39,17 @@ from __future__ import annotations
 
 import contextvars
 import inspect
+import types
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, fields
-from typing import Annotated, Any, NoReturn, get_args, get_origin, get_type_hints
+from typing import (
+    Annotated,
+    Any,
+    NoReturn,
+    get_args,
+    get_origin,
+    get_type_hints,
+)
 
 from temporalio import workflow
 from temporalio.exceptions import ApplicationError
@@ -108,6 +116,13 @@ class Subject:
     """
 
 
+
+def _qualname(fn: Callable[..., object]) -> str:
+    """Callable is not guaranteed a __qualname__ (partials, callable instances)."""
+    if isinstance(fn, (types.FunctionType, types.MethodType, type)):
+        return fn.__qualname__
+    return repr(fn)
+
 _Extractor = Callable[[ExecuteActivityInput], Any]
 
 
@@ -142,7 +157,7 @@ def _bind(fn: Callable, sig: inspect.Signature, input: ExecuteActivityInput):
     try:
         bound = sig.bind(*input.args)
     except TypeError as e:
-        raise GrantConfigurationError(f"{fn.__qualname__}: {e}") from None
+        raise GrantConfigurationError(f"{_qualname(fn)}: {e}") from None
     bound.apply_defaults()
     return bound
 
@@ -169,7 +184,7 @@ def _marker_extractor(fn: Callable, sig: inspect.Signature) -> _Extractor | None
         return None
     if len(marked) > 1:
         raise GrantConfigurationError(
-            f"{fn.__qualname__}: expected at most one Subject-marked field, "
+            f"{_qualname(fn)}: expected at most one Subject-marked field, "
             f"got {marked}."
         )
     pname, fname = marked[0]
@@ -182,7 +197,7 @@ def _path_extractor(fn: Callable, sig: inspect.Signature, path: str) -> _Extract
     if head not in sig.parameters:
         raise GrantConfigurationError(
             f"@grant(subject_from={path!r}) names a parameter "
-            f"{fn.__qualname__} does not have."
+            f"{_qualname(fn)} does not have."
         )
 
     def extract(input: ExecuteActivityInput) -> Any:
@@ -193,7 +208,7 @@ def _path_extractor(fn: Callable, sig: inspect.Signature, path: str) -> _Extract
             except (AttributeError, KeyError, TypeError):
                 raise GrantConfigurationError(
                     f"@grant(subject_from={path!r}) broke at {part!r} on "
-                    f"{type(value).__name__} in {fn.__qualname__}."
+                    f"{type(value).__name__} in {_qualname(fn)}."
                 ) from None
         return value
 
@@ -206,7 +221,7 @@ def _callable_extractor(fn: Callable, subject_from: Callable) -> _Extractor:
         if inspect.iscoroutine(value):
             value.close()
             raise GrantConfigurationError(
-                f"{fn.__qualname__}: the subject_from callable must be "
+                f"{_qualname(fn)}: the subject_from callable must be "
                 "synchronous; it returned a coroutine."
             )
         return value
@@ -235,7 +250,7 @@ def _build_extractor(
         extractor = _path_extractor(fn, sig, subject_from)
     if _marker_extractor(fn, sig) is not None:
         raise GrantConfigurationError(
-            f"{fn.__qualname__} has both subject_from and a Subject marker; pick one."
+            f"{_qualname(fn)} has both subject_from and a Subject marker; pick one."
         )
     return extractor
 
@@ -286,7 +301,7 @@ def grant(
             extractor = _build_extractor(fn, subject_from)
             if impersonate and extractor is None:
                 raise GrantConfigurationError(
-                    f"{fn.__qualname__}: impersonate=True requires "
+                    f"{_qualname(fn)}: impersonate=True requires "
                     "subject_from or a Subject() marker to locate the user "
                     "identifier."
                 )
@@ -424,7 +439,7 @@ class _KeycardActivityInboundInterceptor(ActivityInboundInterceptor):
             # have no SDK bridge for this path yet.
             if not isinstance(self._credential, ClientSecret):
                 raise GrantConfigurationError(
-                    f"{input.fn.__qualname__} uses @grant without subject_from "
+                    f"{_qualname(input.fn)} uses @grant without subject_from "
                     "(client credentials), which requires a ClientSecret "
                     f"credential; the worker has {type(self._credential).__name__}."
                 )
@@ -446,7 +461,7 @@ class _KeycardActivityInboundInterceptor(ActivityInboundInterceptor):
             # reason instead of the zone's invalid_client.
             if not isinstance(self._credential, ClientSecret):
                 raise GrantConfigurationError(
-                    f"{input.fn.__qualname__} uses @grant(impersonate=True), "
+                    f"{_qualname(input.fn)} uses @grant(impersonate=True), "
                     "which requires a ClientSecret credential; the worker "
                     f"has {type(self._credential).__name__}."
                 )
@@ -481,7 +496,7 @@ class _KeycardActivityInboundInterceptor(ActivityInboundInterceptor):
     ) -> str:
         if self._subject_token_provider is None:
             raise GrantConfigurationError(
-                f"{input.fn.__qualname__} uses an on-behalf-of @grant but "
+                f"{_qualname(input.fn)} uses an on-behalf-of @grant but "
                 "KeycardInterceptor has no subject_token_provider."
             )
         return await self._subject_token_provider(extractor(input))

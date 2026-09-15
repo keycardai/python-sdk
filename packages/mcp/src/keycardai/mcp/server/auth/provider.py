@@ -5,7 +5,7 @@ import os
 import warnings
 from collections.abc import Callable, Sequence
 from functools import wraps
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 from mcp.server.auth.settings import AuthSettings
 from mcp.server.context import ServerRequestContext as RequestContext
@@ -13,10 +13,11 @@ from mcp.server.mcpserver import Context, MCPServer
 from pydantic import AnyHttpUrl
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
-from starlette.routing import Route
+from starlette.routing import BaseRoute
 from starlette.types import ASGIApp
 
 from keycardai.oauth import AsyncClient, ClientConfig
+from keycardai.oauth.exceptions import OAuthProtocolError
 from keycardai.oauth.http.auth import MultiZoneBasicAuth, NoneAuth
 from keycardai.oauth.server.access_context import AccessContext
 from keycardai.oauth.server.client_factory import ClientFactory, DefaultClientFactory
@@ -53,6 +54,13 @@ def _deprecated_zone_env(name: str) -> str | None:
         )
     return value
 
+
+
+@runtime_checkable
+class _JwksCredential(Protocol):
+    """Credential that publishes a JWKS (WebIdentity and private-key credentials)."""
+
+    def get_jwks(self) -> JsonWebKeySet: ...
 
 class AuthProvider:
     """Keycard authentication provider with token exchange capabilities.
@@ -188,7 +196,7 @@ class AuthProvider:
 
         # Extract JWKS if provider supports it (for WebIdentity)
         self.jwks: JsonWebKeySet | None = None
-        if self.application_credential and hasattr(self.application_credential, 'get_jwks'):
+        if isinstance(self.application_credential, _JwksCredential):
             self.jwks = self.application_credential.get_jwks()
 
         # Backward compatibility: detect if using WebIdentity
@@ -233,13 +241,14 @@ class AuthProvider:
             return f"zone:{zone_id}"
         return "default"
 
-    async def _get_or_create_client(self, auth_info: dict[str, str] | None = None) -> AsyncClient | None:
+    async def _get_or_create_client(self, auth_info: dict[str, str | None]) -> AsyncClient | None:
         """
         This method is executed in request context.
         Global lock is used to ensure that only one client is created for zone.
         """
         client = None
-        client_key = self._get_client_key(auth_info["zone_id"])
+        zone_id = auth_info["zone_id"]
+        client_key = self._get_client_key(zone_id)
         if client_key in self._clients and self._clients[client_key] is not None:
             return self._clients[client_key]
 
@@ -264,13 +273,15 @@ class AuthProvider:
                 # Determine the correct base URL for the OAuth client
                 # Single-zone: use self.zone_url (already includes zone_id in hostname)
                 # Multi-zone: construct zone-scoped URL from base_url + zone_id from request
-                if self.enable_multi_zone and auth_info['zone_id']:
-                    base_url = self._create_zone_scoped_url(self.base_url, auth_info['zone_id'])
-                else:
+                if self.enable_multi_zone and zone_id:
+                    base_url = self._create_zone_scoped_url(self.base_url, zone_id)
+                elif self.zone_url is not None:
                     base_url = self.zone_url
+                else:
+                    raise AuthProviderConfigurationError()
 
                 auth_strategy = self.auth
-                if isinstance(self.auth, MultiZoneBasicAuth) and auth_info['zone_id']:
+                if isinstance(self.auth, MultiZoneBasicAuth) and zone_id:
                     # Multi-zone credentials are keyed by the zone's issuer
                     # URL, which is the same zone-scoped URL the client is
                     # created against.
@@ -489,7 +500,7 @@ class AuthProvider:
         """
         def _extract_auth_info_from_context(
             *args, **kwargs
-        ) -> dict[str, str] | None:
+        ) -> dict[str, str | None] | None:
             """Use _var naming to avoid clashing with the args, kwargs."""
             _request_context = _get_request_context(*args, **kwargs)
             if _request_context is None:
@@ -503,7 +514,10 @@ class AuthProvider:
                 # success and an UnauthenticatedUser otherwise. Re-shape it into
                 # the dict the exchange paths below expect (mirroring the
                 # auth_info contract of the removed BearerAuthMiddleware).
-                _user = _request_context.request.user
+                _request = _request_context.request
+                if _request is None:
+                    return None
+                _user = _request.user
                 if _user is None or not getattr(_user, "is_authenticated", False):
                     return None
                 _resource_server_url = getattr(_user, "resource_server_url", None)
@@ -539,7 +553,7 @@ class AuthProvider:
         def _is_access_ctx_in_args(access_ctx_param_index: int, args: tuple) -> bool:
             return access_ctx_param_index < len(args)
 
-        def _get_access_ctx_from_args(_access_ctx_param_index: str, *args) -> tuple:
+        def _get_access_ctx_from_args(_access_ctx_param_index: int, *args) -> tuple:
             if isinstance(args[_access_ctx_param_index], AccessContext):
                 return args, args[_access_ctx_param_index]
             _new_args = (*args[:_access_ctx_param_index], AccessContext(), *args[_access_ctx_param_index + 1:])
@@ -564,7 +578,7 @@ class AuthProvider:
                     _access_ctx = kwargs[_access_ctx_param_info[0]]
                 else:
                     _access_ctx = kwargs[_access_ctx_param_info[0]]
-                _keycardai_auth_info: dict[str, str] | None = None
+                _keycardai_auth_info: dict[str, str | None] | None = None
                 try:
                     _keycardai_auth_info = _extract_auth_info_from_context(*args, **kwargs)
                     if not _keycardai_auth_info:
@@ -659,11 +673,11 @@ class AuthProvider:
                         }
                         if self.enable_private_key_identity and _keycardai_auth_info.get("resource_client_id"):
                             _error_dict["message"] += f" with client id: {_keycardai_auth_info['resource_client_id']}"
-                        if hasattr(e, "error"):
+                        if isinstance(e, OAuthProtocolError):
                             _error_dict["code"] = e.error
-                        if hasattr(e, "error_description") and e.error_description:
-                            _error_dict["description"] = e.error_description
-                        if not hasattr(e, "error"):
+                            if e.error_description:
+                                _error_dict["description"] = e.error_description
+                        else:
                             _error_dict["raw_error"] = str(e)
 
                         _set_error(_error_dict, resource, _access_ctx)
@@ -671,11 +685,12 @@ class AuthProvider:
                 # Set successful tokens on the existing access_context (preserves any resource errors)
                 _access_ctx.set_bulk_tokens(_access_tokens)
                 return await _call_func(_is_async_func, func, *args, **kwargs)
-            wrapper.__signature__ = _get_safe_func_signature(func)
+            # typeshed's functools._Wrapped declares no __signature__ slot; inspect honors it at runtime
+            wrapper.__signature__ = _get_safe_func_signature(func)  # ty: ignore[unresolved-attribute]
             return wrapper
         return decorator
 
-    def get_mcp_router(self, mcp_app: ASGIApp) -> Sequence[Route]:
+    def get_mcp_router(self, mcp_app: ASGIApp) -> Sequence[BaseRoute]:
         """Get MCP router with authentication middleware and metadata endpoints.
 
         This method creates the complete routing structure for a protected MCP server,

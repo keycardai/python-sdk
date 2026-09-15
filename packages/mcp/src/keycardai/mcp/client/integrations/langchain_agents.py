@@ -146,7 +146,7 @@ class LangChainClient:
         """
         self._mcp_client = mcp_client
         self._auth_tool_handler = auth_tool_handler or DefaultAuthToolHandler()
-        self._pending_challenges: list[dict[str, Any]] = []
+        self._pending_challenges: list[AuthChallenge] = []
         self._authenticated_servers: list[str] = []
         self._auth_hook_closure = auth_hook_closure
         self._tools_cache: list[StructuredTool] = []
@@ -347,7 +347,7 @@ The following services require user authorization: {', '.join(pending_services)}
 
         return tool
 
-    def _schema_to_pydantic(self, json_schema: dict, tool_name: str) -> type:
+    def _schema_to_pydantic(self, json_schema: dict, tool_name: str) -> type[BaseModel]:
         """
         Convert JSON schema to Pydantic model for LangChain.
 
@@ -361,7 +361,7 @@ The following services require user authorization: {', '.join(pending_services)}
         properties = json_schema.get("properties", {})
         required = json_schema.get("required", [])
 
-        field_definitions = {}
+        field_definitions: dict[str, Any] = {}
         for field_name, field_info in properties.items():
             field_type = self._json_type_to_python(field_info.get("type", "string"))
             field_description = field_info.get("description", "")
@@ -517,6 +517,7 @@ The following services require user authorization: {', '.join(pending_services)}
                 available = ", ".join(i.tool.name for i in infos)
                 return f"Tool '{tool_name}' not found. Available tools: {available}"
             tool = self._convert_mcp_tool_to_langchain(info.tool, info.server)
+            assert tool.coroutine is not None, "MCP tools are always built with a coroutine"
             return await tool.coroutine(**(arguments or {}))
 
         allowlist_note = (

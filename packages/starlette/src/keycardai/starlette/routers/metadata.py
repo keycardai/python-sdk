@@ -13,7 +13,7 @@ from keycardai.oauth.server.verifier import TokenVerifier
 from keycardai.oauth.types import JsonWebKeySet
 from starlette.middleware import Middleware
 from starlette.middleware.authentication import AuthenticationMiddleware
-from starlette.routing import Mount, Route
+from starlette.routing import BaseRoute, Mount, Route
 from starlette.types import ASGIApp
 
 from ..handlers.jwks import jwks_endpoint
@@ -220,7 +220,7 @@ def protected_router(
     resource_name: str | None = None,
     resource_documentation: str | None = None,
     as_metadata_timeout: float = 10.0,
-) -> Sequence[Route]:
+) -> Sequence[BaseRoute]:
     """Create a protected router with OAuth metadata and bearer auth middleware.
 
     Wraps any ASGI application with bearer token authentication and adds

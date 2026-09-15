@@ -49,6 +49,7 @@ from .types.models import (
     ClientRegistrationRequest,
     ClientRegistrationResponse,
     Endpoints,
+    ResolvedEndpoints,
     ServerMetadataRequest,
     TokenExchangeRequest,
     TokenResponse,
@@ -107,7 +108,7 @@ def resolve_endpoints(
     issuer: str,
     endpoint_overrides: Endpoints | None = None,
     discovered_metadata: "AuthorizationServerMetadata | None" = None,
-) -> Endpoints:
+) -> ResolvedEndpoints:
     """Resolve final endpoint URLs with priority: overrides > discovered > defaults.
 
     Args:
@@ -155,7 +156,14 @@ def resolve_endpoints(
     if not endpoints.par:
         endpoints.par = OAuth2DefaultEndpoints.construct_url(issuer, OAuth2DefaultEndpoints.PUSHED_AUTHORIZATION)
 
-    return endpoints
+    return ResolvedEndpoints(
+        token=endpoints.token,
+        introspect=endpoints.introspect,
+        revoke=endpoints.revoke,
+        register=endpoints.register,
+        par=endpoints.par,
+        authorize=endpoints.authorize,
+    )
 
 
 def create_endpoints_summary(
@@ -320,7 +328,7 @@ class AsyncClient:
 
         self._client_id = None
         self._client_secret = None
-        self._discovered_endpoints: Endpoints | None = None
+        self._discovered_endpoints: ResolvedEndpoints | None = None
         self._discovered_metadata: AuthorizationServerMetadata | None = None
         self._metadata_cache: MetadataCache[
             AuthorizationServerMetadata, AuthorizationServerDiscoveryError
@@ -520,7 +528,7 @@ class AsyncClient:
             )
         return self._client_secret
 
-    async def get_endpoints(self) -> "Endpoints":
+    async def get_endpoints(self) -> ResolvedEndpoints:
         """Get the resolved endpoint URLs.
 
         Returns endpoints resolved during initialization, incorporating
@@ -539,7 +547,7 @@ class AsyncClient:
             )
         return self._discovered_endpoints or self._endpoints
 
-    async def _get_current_endpoints(self) -> "Endpoints":
+    async def _get_current_endpoints(self) -> ResolvedEndpoints:
         """Get current endpoints from cached discovery.
 
         Discovered metadata is reused until ``discovery_ttl`` elapses, then
@@ -553,6 +561,7 @@ class AsyncClient:
     async def register_client(
         self,
         request: ClientRegistrationRequest,
+        /,
     ) -> ClientRegistrationResponse: ...
 
     @overload
@@ -644,6 +653,7 @@ class AsyncClient:
     async def discover_server_metadata(
         self,
         request: ServerMetadataRequest,
+        /,
     ) -> AuthorizationServerMetadata: ...
 
     @overload
@@ -773,6 +783,7 @@ class AsyncClient:
     async def exchange_token(
         self,
         request: TokenExchangeRequest,
+        /,
         *,
         issuer: str | None = None,
     ) -> TokenResponse: ...
@@ -870,6 +881,7 @@ class AsyncClient:
     async def client_credentials_grant(
         self,
         request: ClientCredentialsRequest,
+        /,
         *,
         issuer: str | None = None,
     ) -> TokenResponse: ...
@@ -1161,7 +1173,7 @@ class Client:
         # Will be set during lazy initialization
         self._client_id = None
         self._client_secret = None
-        self._discovered_endpoints: Endpoints | None = None
+        self._discovered_endpoints: ResolvedEndpoints | None = None
         self._discovered_metadata: AuthorizationServerMetadata | None = None
         self._metadata_cache: MetadataCache[
             AuthorizationServerMetadata, AuthorizationServerDiscoveryError
@@ -1281,7 +1293,7 @@ class Client:
             # Mark as initialized
             self._initialized = True
 
-    def _get_current_endpoints(self) -> "Endpoints":
+    def _get_current_endpoints(self) -> ResolvedEndpoints:
         """Get current endpoints from cached discovery.
 
         Discovered metadata is reused until ``discovery_ttl`` elapses, then
@@ -1316,7 +1328,7 @@ class Client:
         return self._client_secret
 
     @property
-    def endpoints(self) -> "Endpoints":
+    def endpoints(self) -> ResolvedEndpoints:
         """Resolved endpoint URLs (lazily initialized).
 
         Returns endpoints resolved during initialization, incorporating
@@ -1334,6 +1346,7 @@ class Client:
     def register_client(
         self,
         request: ClientRegistrationRequest,
+        /,
     ) -> ClientRegistrationResponse: ...
 
     @overload
@@ -1426,6 +1439,7 @@ class Client:
     def discover_server_metadata(
         self,
         request: ServerMetadataRequest,
+        /,
     ) -> AuthorizationServerMetadata: ...
 
     @overload
@@ -1554,6 +1568,7 @@ class Client:
     def exchange_token(
         self,
         request: TokenExchangeRequest,
+        /,
         *,
         issuer: str | None = None,
     ) -> TokenResponse: ...
@@ -1651,6 +1666,7 @@ class Client:
     def client_credentials_grant(
         self,
         request: ClientCredentialsRequest,
+        /,
         *,
         issuer: str | None = None,
     ) -> TokenResponse: ...
