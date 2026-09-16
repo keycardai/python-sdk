@@ -1,3 +1,15 @@
+## 0.5.0-keycardai-a2a (2026-09-16)
+
+
+- feat(keycardai-a2a): typed accessor for the verified caller in executors (#314)
+- Executors read the verified caller as keycard_user(context) -> KeycardUser | None
+instead of context.call_context.state["access_token"], so the token, client_id,
+scopes, and zone_id come back typed and the state key appears once, as a
+module constant shared by the builder and the accessor. The legacy
+access_token state entry is still written for code built against 0.4.x.
+- Co-authored-by: devin-ai-keycard <devin-ai@keycard.ai>
+Co-authored-by: Larry Osakwe <larry@keycard.ai>
+
 ## 0.4.1-keycardai-a2a (2026-09-15)
 
 
