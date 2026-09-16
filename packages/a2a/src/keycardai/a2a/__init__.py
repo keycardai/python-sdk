@@ -8,7 +8,9 @@ This package contributes:
 
 Server-side wiring:
 - ``KeycardServerCallContextBuilder``: a ``ServerCallContextBuilder`` that
-  surfaces the verified bearer token on ``ServerCallContext.state``.
+  surfaces the verified ``KeycardUser`` on ``ServerCallContext.state``.
+- ``keycard_user``: typed accessor executors call on their
+  ``RequestContext`` to read that ``KeycardUser`` back.
 - ``build_agent_card_from_config``: construct a 1.x ``AgentCard``.
 
 For the auth backend itself, use
@@ -38,6 +40,7 @@ from .server import (
     DelegationClientSync,
     KeycardServerCallContextBuilder,
     build_agent_card_from_config,
+    keycard_user,
 )
 
 __all__ = [
@@ -47,4 +50,5 @@ __all__ = [
     "DelegationClientSync",
     "KeycardServerCallContextBuilder",
     "build_agent_card_from_config",
+    "keycard_user",
 ]

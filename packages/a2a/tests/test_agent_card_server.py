@@ -8,6 +8,8 @@ canonical reference composition.
 """
 
 import pytest
+from a2a.server.agent_execution import RequestContext
+from a2a.server.context import ServerCallContext
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.routes import create_agent_card_routes, create_jsonrpc_routes
 from a2a.server.tasks import InMemoryTaskStore
@@ -33,6 +35,7 @@ from keycardai.a2a import (
     AgentServiceConfig,
     KeycardServerCallContextBuilder,
     build_agent_card_from_config,
+    keycard_user,
 )
 
 
@@ -238,6 +241,40 @@ class TestKeycardServerCallContextBuilder:
 
         assert "access_token" not in ctx.state
         assert "keycard_user" not in ctx.state
+
+    def test_keycard_user_reads_back_through_request_context(self):
+        # Round trip: builder stores on the Starlette request, the executor
+        # reads through the RequestContext a2a-sdk hands it, typed.
+        user = KeycardUser(
+            access_token="t-roundtrip",
+            client_id="caller-svc",
+            zone_id="abc123",
+            resource_server_url="https://test.example.com",
+            scopes=["mcp:tools"],
+        )
+        ctx = KeycardServerCallContextBuilder().build(self._make_request(user=user))
+        request_context = RequestContext(call_context=ctx)
+
+        caller = keycard_user(request_context)
+
+        assert caller is user
+        assert caller.access_token == "t-roundtrip"
+        assert caller.client_id == "caller-svc"
+        assert caller.scopes == ["mcp:tools"]
+        assert caller.zone_id == "abc123"
+        assert keycard_user(ctx) is user
+
+    def test_keycard_user_is_none_when_unauthenticated(self):
+        from starlette.authentication import UnauthenticatedUser
+
+        ctx = KeycardServerCallContextBuilder().build(
+            self._make_request(user=UnauthenticatedUser())
+        )
+
+        assert keycard_user(RequestContext(call_context=ctx)) is None
+        assert keycard_user(ctx) is None
+        assert keycard_user(ServerCallContext()) is None
+        assert keycard_user(None) is None
 
 
 class TestOAuthMetadataEndpoints:
