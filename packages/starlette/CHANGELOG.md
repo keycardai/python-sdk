@@ -1,3 +1,25 @@
+## 0.14.2-keycardai-starlette (2026-09-16)
+
+
+- fix(keycardai-starlette): stop rewriting the proxied authorization_endpoint (SDK-3) (#316)
+- * fix(keycardai-starlette): stop rewriting the proxied authorization_endpoint (SDK-3)
+- The authorization-server metadata proxy returned the upstream document with
+resource=<origin> appended to authorization_endpoint, a shim for MCP clients
+on the 2025-03-26 authorization spec. The proxy now returns the upstream
+document unmodified, per keycard-sdk-spec oauth-metadata-endpoints spec-version 2.
+- Co-Authored-By: Larry Osakwe <larry@keycard.ai>
+- * fix(keycardai-starlette): raise keycardai-mcp's starlette floor to 0.14.2
+- keycardai-mcp re-exports the starlette metadata handlers and its tests now
+pin the unmodified AS-proxy document, which keycardai-starlette 0.14.2 is
+the first release to ship. The sibling-floors job skips this floor under the
+floors-bootstrap label until that version is on PyPI.
+- Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
+- ---------
+- Co-authored-by: devin-ai-keycard <devin-ai@keycard.ai>
+Co-authored-by: Larry Osakwe <larry@keycard.ai>
+Co-authored-by: GitHub Action <action@github.com>
+Co-authored-by: Claude Fable 5.1 <noreply@anthropic.com>
+
 ## 0.14.1-keycardai-starlette (2026-09-15)
 
 ## 0.14.0-keycardai-starlette (2026-09-07)
