@@ -5,7 +5,6 @@ Implements RFC 9728 (OAuth Protected Resource Metadata) and RFC 8414
 """
 
 from collections.abc import Callable
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
 from pydantic import AnyHttpUrl, BaseModel, Field
@@ -157,17 +156,6 @@ def protected_resource_metadata(
     return wrapper
 
 
-def _append_resource_param(endpoint: str, resource: str) -> str:
-    """Append a ``resource`` query parameter to an endpoint URL.
-
-    Existing query parameters are preserved.
-    """
-    parts = urlsplit(endpoint)
-    query = parse_qsl(parts.query, keep_blank_values=True)
-    query.append(("resource", resource))
-    return urlunsplit(parts._replace(query=urlencode(query)))
-
-
 def authorization_server_metadata(
     issuer: str,
     enable_multi_zone: bool = False,
@@ -175,9 +163,9 @@ def authorization_server_metadata(
 ) -> Callable:
     """Create a Starlette handler that proxies OAuth Authorization Server Metadata (RFC 8414).
 
-    The upstream document's ``authorization_endpoint``, when present, gains a
-    ``resource`` query parameter set to this resource server's origin so the
-    authorization server can associate the request with this resource.
+    The upstream document is returned unmodified; clients following the MCP
+    2025-06-18 authorization spec send the RFC 8707 ``resource`` parameter
+    themselves.
 
     Args:
         issuer: Authorization server issuer URL to proxy metadata from.
@@ -212,15 +200,7 @@ def authorization_server_metadata(
                     f"{issuer_url}/.well-known/oauth-authorization-server"
                 )
                 resp.raise_for_status()
-                content = resp.json()
-                if isinstance(content, dict) and content.get(
-                    "authorization_endpoint"
-                ):
-                    content["authorization_endpoint"] = _append_resource_param(
-                        content["authorization_endpoint"],
-                        get_base_url(request),
-                    )
-                return JSONResponse(content=content, headers=CORS_HEADERS)
+                return JSONResponse(content=resp.json(), headers=CORS_HEADERS)
         except httpx.HTTPStatusError as e:
             return JSONResponse(
                 content={
