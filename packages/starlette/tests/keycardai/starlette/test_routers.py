@@ -192,30 +192,19 @@ class TestAuthorizationServerMetadata:
             response = client.get("/.well-known/oauth-authorization-server")
             assert response.status_code == 502
 
-    def test_authorization_endpoint_gains_resource_param(self, client, issuer):
+    def test_upstream_document_passed_through_unmodified(self, client, issuer):
         upstream = {
             "issuer": issuer,
-            "authorization_endpoint": f"{issuer}/oauth/authorize",
+            "authorization_endpoint": f"{issuer}/oauth/authorize?resource=stale&keep=1",
+            "token_endpoint": f"{issuer}/oauth/token",
         }
         with patch("httpx.Client") as mock_client_cls:
             _mock_upstream(mock_client_cls, upstream)
             data = client.get("/.well-known/oauth-authorization-server").json()
+            assert data == upstream
             assert (
                 data["authorization_endpoint"]
-                == f"{issuer}/oauth/authorize?resource=http%3A%2F%2Ftestserver"
-            )
-
-    def test_authorization_endpoint_preserves_existing_query(self, client, issuer):
-        upstream = {
-            "issuer": issuer,
-            "authorization_endpoint": f"{issuer}/oauth/authorize?audience=abc",
-        }
-        with patch("httpx.Client") as mock_client_cls:
-            _mock_upstream(mock_client_cls, upstream)
-            data = client.get("/.well-known/oauth-authorization-server").json()
-            assert (
-                data["authorization_endpoint"]
-                == f"{issuer}/oauth/authorize?audience=abc&resource=http%3A%2F%2Ftestserver"
+                == f"{issuer}/oauth/authorize?resource=stale&keep=1"
             )
 
     def test_no_authorization_endpoint_left_unchanged(self, client, issuer):

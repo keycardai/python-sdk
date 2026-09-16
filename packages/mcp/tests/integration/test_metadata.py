@@ -5,7 +5,6 @@ from the OAuth metadata endpoints.
 """
 
 from unittest.mock import Mock, patch
-from urllib.parse import quote
 
 import pytest
 from starlette.applications import Starlette
@@ -159,9 +158,7 @@ class TestAuthorizationServerMetadata:
         data = response.json()
 
         assert data["issuer"] == issuer
-        assert data["authorization_endpoint"] == (
-            f"{issuer}/oauth/authorize?resource={quote('http://testserver', safe='')}"
-        )
+        assert data["authorization_endpoint"] == f"{issuer}/oauth/authorize"
         assert data["token_endpoint"] == f"{issuer}/oauth/token"
 
     @patch("httpx.Client")
