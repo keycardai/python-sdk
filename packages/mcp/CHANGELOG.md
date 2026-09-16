@@ -1,3 +1,5 @@
+## 2.3.2-keycardai-mcp (2026-09-16)
+
 ## 2.3.1-keycardai-mcp (2026-09-15)
 
 ## 2.3.0-keycardai-mcp (2026-09-07)
