@@ -11,8 +11,10 @@ Auth wiring:
   ``KeycardAuthBackend(verifier, require_authentication=True)`` from
   keycardai-starlette inside ``AuthenticationMiddleware``.
 - ``KeycardServerCallContextBuilder``: ``ServerCallContextBuilder`` that
-  exposes the verified ``KeycardUser`` and bare ``access_token`` on
-  ``ServerCallContext.state``. Pass to ``create_jsonrpc_routes``.
+  exposes the verified ``KeycardUser`` on ``ServerCallContext.state``.
+  Pass to ``create_jsonrpc_routes``.
+- ``keycard_user``: typed accessor for that ``KeycardUser`` from the
+  executor's ``RequestContext`` (``None`` when unauthenticated).
 
 Agent card:
 - ``build_agent_card_from_config``: construct an ``a2a.types.AgentCard``
@@ -27,12 +29,14 @@ Outbound delegation:
 from .app import (
     KeycardServerCallContextBuilder,
     build_agent_card_from_config,
+    keycard_user,
 )
 from .delegation import DelegationClient, DelegationClientSync
 
 __all__ = [
     "KeycardServerCallContextBuilder",
     "build_agent_card_from_config",
+    "keycard_user",
     "DelegationClient",
     "DelegationClientSync",
 ]

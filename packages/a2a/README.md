@@ -6,7 +6,8 @@ Keycard auth primitives for [a2a-sdk](https://github.com/a2aproject/A2A) 1.x age
 
 Server-side wiring:
 
-- **`KeycardServerCallContextBuilder`**: a `ServerCallContextBuilder` subclass. Pass to `a2a.server.routes.create_jsonrpc_routes`. Propagates the verified bearer token onto `ServerCallContext.state["access_token"]` so executors can read it for delegated downstream calls.
+- **`KeycardServerCallContextBuilder`**: a `ServerCallContextBuilder` subclass. Pass to `a2a.server.routes.create_jsonrpc_routes`. Propagates the verified `KeycardUser` onto `ServerCallContext.state`.
+- **`keycard_user(context)`**: typed accessor executors call on their `RequestContext` to get that `KeycardUser` back (`None` when the request was unauthenticated), including the `access_token` for delegated downstream calls.
 - **`build_agent_card_from_config(config)`**: produces a 1.x protobuf `AgentCard`. Pass to `a2a.server.routes.create_agent_card_routes` and `a2a.server.request_handlers.DefaultRequestHandler`.
 
 For the auth backend itself, use `keycardai.starlette.KeycardAuthBackend(verifier, require_authentication=True)` on the JSONRPC mount. The kwarg flips the default mixed-route behavior to "every path on this mount needs auth," which matches the JSONRPC dispatcher's lack of a per-route gate.
@@ -108,7 +109,19 @@ your_app.routes.append(Mount(
 ))
 ```
 
-Inside your `AgentExecutor.execute(self, context, event_queue)`, read the bearer token via `context.call_context.state["access_token"]` and use it as the subject token in `keycardai-oauth`'s `TokenExchangeRequest` for downstream API calls.
+Inside your `AgentExecutor.execute(self, context, event_queue)`, read the verified caller with `keycard_user(context)` and use its `access_token` as the subject token in `keycardai-oauth`'s `TokenExchangeRequest` for downstream API calls:
+
+```python
+from keycardai.a2a import keycard_user
+
+async def execute(self, context, event_queue):
+    caller = keycard_user(context)
+    if caller is None:
+        raise PermissionError("unauthenticated")
+    subject_token = caller.access_token  # also caller.client_id, caller.scopes, caller.zone_id
+```
+
+The builder still writes the bare token under the legacy `state["access_token"]` key for executors written against keycardai-a2a 0.4.x.
 
 For a runnable greenfield example (no existing app), see `examples/keycard_protected_server/`.
 

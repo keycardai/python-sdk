@@ -40,6 +40,7 @@ from keycardai.a2a import (
     AgentServiceConfig,
     KeycardServerCallContextBuilder,
     build_agent_card_from_config,
+    keycard_user,
 )
 
 
@@ -48,14 +49,16 @@ class EchoExecutor(AgentExecutor):
 
     async def execute(self, context, event_queue: EventQueue) -> None:
         text = context.get_user_input()
+        caller = keycard_user(context)
         # In a real executor you would call your agent runtime here. For a
-        # delegated downstream call, read context.call_context.state["access_token"]
-        # and use it as the subject token in keycardai.oauth's TokenExchangeRequest.
+        # delegated downstream call, use caller.access_token as the subject
+        # token in keycardai.oauth's TokenExchangeRequest.
         from a2a.types import Message, MessageRole, Part
 
+        who = caller.client_id if caller is not None else "anonymous"
         message = Message(
             role=MessageRole.MESSAGE_ROLE_AGENT,
-            parts=[Part(text=f"echoed: {text}")],
+            parts=[Part(text=f"echoed for {who}: {text}")],
         )
         await event_queue.enqueue_event(message)
 
@@ -80,8 +83,8 @@ def build_app(config: AgentServiceConfig, executor: AgentExecutor) -> Starlette:
        ``DefaultRequestHandler`` (for executor wiring).
     4. ``KeycardServerCallContextBuilder()`` propagates the verified
        ``KeycardUser`` into ``ServerCallContext.state`` so the executor
-       can read ``context.call_context.state["access_token"]`` for
-       delegated token exchange.
+       can read it back with ``keycard_user(context)`` for delegated
+       token exchange.
     """
     auth_provider = AuthProvider(
         zone_url=config.auth_server_url,
