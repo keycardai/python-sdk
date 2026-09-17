@@ -2,6 +2,7 @@
 
 import asyncio
 import time
+import warnings
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -11,6 +12,7 @@ from keycardai.oauth.server._cache import JWKSKey
 from keycardai.oauth.server.exceptions import (
     JWKSDiscoveryError,
     JWKSUriValidationError,
+    MissingAudienceWarning,
     VerifierConfigError,
 )
 from keycardai.oauth.server.verifier import AccessToken, TokenVerifier
@@ -924,6 +926,37 @@ class TestTokenVerifierCacheKnobs:
             verifier = TokenVerifier(issuer="https://example.com", cache_ttl=42)
         assert verifier.key_ttl == 42
         assert verifier.cache_ttl == 42
+
+
+class TestTokenVerifierMissingAudienceWarning:
+    """Construction without an audience warns exactly once; with one, not at all."""
+
+    def test_no_audience_warns_once_naming_the_option(self):
+        with pytest.warns(MissingAudienceWarning, match="pass audience=") as record:
+            TokenVerifier(issuer="https://example.com")
+        assert len([w for w in record if w.category is MissingAudienceWarning]) == 1
+
+    def test_string_audience_does_not_warn(self):
+        with warnings.catch_warnings(record=True) as record:
+            warnings.simplefilter("always")
+            TokenVerifier(issuer="https://example.com", audience="https://api.example.com")
+        assert record == []
+
+    def test_dict_audience_does_not_warn(self):
+        with warnings.catch_warnings(record=True) as record:
+            warnings.simplefilter("always")
+            TokenVerifier(
+                issuer="https://example.com",
+                enable_multi_zone=True,
+                audience={"zone-a": "https://api.example.com"},
+            )
+        assert record == []
+
+    def test_warning_is_exported_from_the_server_package(self):
+        from keycardai.oauth.server import MissingAudienceWarning as exported
+
+        assert exported is MissingAudienceWarning
+        assert issubclass(exported, UserWarning)
 
 
 class TestTokenVerifierDiscoveryTtl:

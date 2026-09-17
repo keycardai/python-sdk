@@ -80,11 +80,16 @@ def my_protected_tool(data: str) -> str:
 auth_provider = AuthProvider(
     zone_id="your_zone_id_here",
     mcp_server_name="My Secure MCP Server",
+    audience="http://localhost:8000/mcp",
 )
 
 # Create authenticated app
 app = auth_provider.app(mcp)
 ```
+
+`audience` is this server's registered Resource identifier (the server URL plus
+the `/mcp` path MCP clients call); without it the verifier accepts tokens minted
+for any resource in the zone and warns at startup.
 
 ### Run with Authentication
 
@@ -175,20 +180,23 @@ from keycardai.mcp.server.auth import AuthProvider
 # Using zone_id (constructs zone URL automatically)
 auth_provider = AuthProvider(
     zone_id="your-zone-id",
-    mcp_server_name="My MCP Server"
+    mcp_server_name="My MCP Server",
+    audience="http://localhost:8000/mcp",
 )
 
 # Using explicit zone_url
 auth_provider = AuthProvider(
     zone_url="https://your-zone-id.keycard.cloud",
-    mcp_server_name="My MCP Server"
+    mcp_server_name="My MCP Server",
+    audience="http://localhost:8000/mcp",
 )
 
 # Using custom base_url with zone_id
 auth_provider = AuthProvider(
     zone_id="your-zone-id",
     base_url="https://custom.keycard.example.com",
-    mcp_server_name="My MCP Server"
+    mcp_server_name="My MCP Server",
+    audience="http://localhost:8000/mcp",
 )
 ```
 
@@ -214,7 +222,8 @@ from keycardai.mcp.server.auth import AuthProvider
 
 # Automatically discovers zone configuration from environment
 auth_provider = AuthProvider(
-    mcp_server_name="My MCP Server"
+    mcp_server_name="My MCP Server",
+    audience="http://localhost:8000/mcp",
 )
 ```
 
@@ -266,6 +275,7 @@ from keycardai.mcp.server.auth import AuthProvider, ClientSecret
 auth_provider = AuthProvider(
     zone_id="your-zone-id",
     mcp_server_name="My MCP Server",
+    audience="http://localhost:8000/mcp",
     application_credential=ClientSecret(("your_client_id", "your_client_secret"))
 )
 ```
@@ -277,6 +287,7 @@ from keycardai.mcp.server.auth import AuthProvider, WebIdentity
 auth_provider = AuthProvider(
     zone_id="your-zone-id",
     mcp_server_name="My MCP Server",
+    audience="http://localhost:8000/mcp",
     application_credential=WebIdentity(
         mcp_server_name="My MCP Server",
         storage_dir="./mcp_keys"  # Directory for key storage
@@ -291,6 +302,7 @@ from keycardai.mcp.server.auth import AuthProvider, EKSWorkloadIdentity
 auth_provider = AuthProvider(
     zone_id="your-zone-id",
     mcp_server_name="My MCP Server",
+    audience="http://localhost:8000/mcp",
     application_credential=EKSWorkloadIdentity()
 )
 ```
@@ -324,7 +336,8 @@ from keycardai.mcp.server.auth import AuthProvider
 # Credentials automatically discovered from environment variables
 auth_provider = AuthProvider(
     zone_id="your-zone-id",
-    mcp_server_name="My MCP Server"
+    mcp_server_name="My MCP Server",
+    audience="http://localhost:8000/mcp",
 )
 ```
 
@@ -366,6 +379,7 @@ import os
 auth_provider = AuthProvider(
     zone_id="your_zone_id",
     mcp_server_name="My MCP Server",
+    audience="http://localhost:8000/mcp",
     application_credential=ClientSecret((
         os.getenv("KEYCARD_CLIENT_ID"),
         os.getenv("KEYCARD_CLIENT_SECRET")
@@ -430,6 +444,7 @@ from keycardai.mcp.server.auth import AuthProvider, AccessContext
 auth = AuthProvider(
     zone_id="your_zone_id",
     mcp_server_name="lowlevel-mcp",
+    audience="http://localhost:8000/mcp",
     enable_multi_zone=True,
 )
 
@@ -511,6 +526,7 @@ from keycardai.mcp.server.auth import AuthProvider, AccessContext
 auth = AuthProvider(
     zone_id="your_zone_id",
     mcp_server_name="lowlevel-mcp",
+    audience="http://localhost:8000/mcp",
     enable_multi_zone=True,
 )
 

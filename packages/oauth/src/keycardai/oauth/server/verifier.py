@@ -30,6 +30,7 @@ from .exceptions import (
     CacheError,
     JWKSDiscoveryError,
     JWKSUriValidationError,
+    MissingAudienceWarning,
     OAuthServerError,
     VerifierConfigError,
 )
@@ -99,6 +100,14 @@ class TokenVerifier:
                 stacklevel=2,
             )
             key_ttl = cache_ttl
+        if audience is None:
+            warnings.warn(
+                "This TokenVerifier has no audience configured, so it accepts a "
+                "token minted for any resource in the zone; pass audience= with "
+                "this server's registered resource identifier.",
+                MissingAudienceWarning,
+                stacklevel=2,
+            )
         # A single issuer or an allowlist of trusted issuers. The verify surface
         # accepts a token whose `iss` is any member of the allowlist. `self.issuer`
         # is the primary issuer, used for multi-zone zone-scoped URL derivation.
