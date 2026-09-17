@@ -257,7 +257,10 @@ def protected_router(
         from keycardai.starlette import protected_router
         from keycardai.oauth.server import TokenVerifier
 
-        verifier = TokenVerifier(issuer="https://zone.keycard.cloud")
+        verifier = TokenVerifier(
+            issuer="https://zone.keycard.cloud",
+            audience="https://api.example.com",
+        )
         app = Starlette(routes=protected_router(
             issuer="https://zone.keycard.cloud",
             app=my_asgi_app,

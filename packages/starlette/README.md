@@ -47,7 +47,8 @@ async def get_data(request: Request, access: AccessContext):
 ```
 
 Leaving `audience` unset disables the audience check: the verifier accepts any
-token minted by the zone regardless of its `aud` claim.
+token minted by the zone regardless of its `aud` claim, and warns once at
+construction (`MissingAudienceWarning`) so the omission does not go unnoticed.
 
 ## Configuration from the environment
 

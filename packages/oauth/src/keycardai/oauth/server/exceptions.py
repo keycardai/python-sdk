@@ -268,6 +268,11 @@ class VerifierConfigError(OAuthServerError):
         super().__init__(message)
 
 
+class MissingAudienceWarning(UserWarning):
+    """A TokenVerifier was built without an audience, so it accepts a token
+    minted for any resource in the zone."""
+
+
 class CacheError(OAuthServerError):
     """JWKS cache operation failed."""
 
