@@ -1,3 +1,13 @@
+## 0.31.3-keycardai-oauth (2026-09-17)
+
+
+- fix(keycardai-oauth): warn once when a TokenVerifier is built without an audience (SDK-4) (#319)
+- TokenVerifier(audience=None) now emits one MissingAudienceWarning at
+construction naming the option to set. Behavior with an audience is
+unchanged; no signature change.
+- Co-authored-by: devin-ai-keycard <devin-ai@keycard.ai>
+Co-authored-by: Larry Osakwe <larry@keycard.ai>
+
 ## 0.31.2-keycardai-oauth (2026-09-15)
 
 ## 0.31.1-keycardai-oauth (2026-09-15)
