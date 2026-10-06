@@ -70,6 +70,16 @@ With no `credential` argument, `KeycardInterceptor` calls `keycardai.oauth.serve
 
 When the environment can build more than one credential and the type variable does not choose between them, the worker fails at startup with `GrantConfigurationError` instead of guessing. EKS IRSA injects `AWS_WEB_IDENTITY_TOKEN_FILE` into pods automatically, so a worker meant to use a client secret on EKS must set `KEYCARD_APPLICATION_CREDENTIAL_TYPE=client_secret`. Any `keycardai.oauth.server.ApplicationCredential` can also be passed explicitly, which skips discovery entirely.
 
+Discovery reads `os.environ`. If `KEYCARD_CLIENT_ID` and `KEYCARD_CLIENT_SECRET` live in a `.env` file that pydantic-settings or python-dotenv loads without exporting, they never reach `os.environ` and discovery fails. Either export them to the process environment or build the mapping yourself and pass the credential explicitly:
+
+```python
+from keycardai.oauth.server import discover_credential
+
+settings = Settings()  # a pydantic-settings model with keycard_client_id and keycard_client_secret
+env = {"KEYCARD_CLIENT_ID": settings.keycard_client_id, "KEYCARD_CLIENT_SECRET": settings.keycard_client_secret}
+interceptor = KeycardInterceptor("https://<zone-id>.keycard.cloud", credential=discover_credential(env=env))
+```
+
 ## Keycard setup
 
 In your Keycard zone, once:

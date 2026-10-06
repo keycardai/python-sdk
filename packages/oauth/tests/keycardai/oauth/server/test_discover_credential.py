@@ -232,3 +232,21 @@ def test_empty_environment_reason_is_absent():
     with pytest.raises(CredentialDiscoveryError) as exc_info:
         discover_credential({})
     assert exc_info.value.reason == CredentialDiscoveryError.ABSENT
+
+
+def test_absent_message_points_at_dotenv_files():
+    with pytest.raises(
+        CredentialDiscoveryError, match=r"discover_credential\(env="
+    ) as exc_info:
+        discover_credential({})
+    assert exc_info.value.reason == CredentialDiscoveryError.ABSENT
+    assert ".env" in str(exc_info.value)
+
+
+def test_incomplete_message_points_at_dotenv_files():
+    with pytest.raises(
+        CredentialDiscoveryError, match=r"discover_credential\(env="
+    ) as exc_info:
+        discover_credential({"KEYCARD_CLIENT_SECRET": "secret"})
+    assert exc_info.value.reason == CredentialDiscoveryError.INCOMPLETE
+    assert ".env" in str(exc_info.value)

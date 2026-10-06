@@ -23,7 +23,8 @@ from temporalio.worker import ExecuteActivityInput
 from keycardai import temporal as kt
 from keycardai.oauth import TokenExchangeRequest
 from keycardai.oauth.exceptions import ConfigError, OAuthProtocolError
-from keycardai.oauth.server import AccessContext, ClientSecret
+from keycardai.oauth.server import AccessContext, ClientSecret, discover_credential
+from keycardai.oauth.server.exceptions import CredentialDiscoveryError
 from keycardai.temporal import (
     GrantConfigurationError,
     KeycardInterceptor,
@@ -388,6 +389,19 @@ def test_no_credential_anywhere_fails_at_construction(monkeypatch):
     _clear_credential_env(monkeypatch)
     with pytest.raises(GrantConfigurationError, match="credential"):
         KeycardInterceptor("https://zone.test")
+
+
+def test_no_credential_anywhere_keeps_the_discovery_message(monkeypatch):
+    # The discovery error's message is wrapped as-is, so whatever hint
+    # keycardai-oauth adds (the .env one included) reaches worker authors
+    # without a temporal change, at any keycardai-oauth version.
+    _clear_credential_env(monkeypatch)
+    with pytest.raises(CredentialDiscoveryError) as discovery:
+        discover_credential()
+    with pytest.raises(GrantConfigurationError) as wrapped:
+        KeycardInterceptor("https://zone.test")
+    assert str(wrapped.value) == str(discovery.value)
+    assert isinstance(wrapped.value.__cause__, CredentialDiscoveryError)
 
 
 def test_unknown_credential_type_fails_at_construction(monkeypatch):
