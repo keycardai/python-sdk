@@ -40,6 +40,7 @@ from __future__ import annotations
 import contextvars
 import inspect
 import types
+import warnings
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, fields
 from typing import (
@@ -116,12 +117,12 @@ class Subject:
     """
 
 
-
 def _qualname(fn: Callable[..., object]) -> str:
     """Callable is not guaranteed a __qualname__ (partials, callable instances)."""
     if isinstance(fn, (types.FunctionType, types.MethodType, type)):
         return fn.__qualname__
     return repr(fn)
+
 
 _Extractor = Callable[[ExecuteActivityInput], Any]
 
@@ -184,8 +185,7 @@ def _marker_extractor(fn: Callable, sig: inspect.Signature) -> _Extractor | None
         return None
     if len(marked) > 1:
         raise GrantConfigurationError(
-            f"{_qualname(fn)}: expected at most one Subject-marked field, "
-            f"got {marked}."
+            f"{_qualname(fn)}: expected at most one Subject-marked field, got {marked}."
         )
     pname, fname = marked[0]
     return lambda input: getattr(_bind(fn, sig, input).arguments[pname], fname)
@@ -352,12 +352,35 @@ def access(resource: str | None = None) -> TokenResponse:
     return ctx.access(resource)
 
 
-def _worker_credential(
+def _resolve_application_credential_arg(
+    application_credential: ApplicationCredential | None,
     credential: ApplicationCredential | None,
-) -> ApplicationCredential:
-    """The explicit credential, or the one the environment describes."""
+) -> ApplicationCredential | None:
+    """Resolve ``application_credential`` from it or the deprecated ``credential``.
+
+    Emits a ``DeprecationWarning`` when ``credential`` is supplied. Raises
+    ``GrantConfigurationError`` if both are supplied.
+    """
     if credential is not None:
+        warnings.warn(
+            "`credential` is deprecated; use `application_credential` instead.",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+        if application_credential is not None:
+            raise GrantConfigurationError(
+                "Pass either `application_credential` or `credential`, not both."
+            )
         return credential
+    return application_credential
+
+
+def _worker_credential(
+    application_credential: ApplicationCredential | None,
+) -> ApplicationCredential:
+    """The explicit application credential, or the one the environment describes."""
+    if application_credential is not None:
+        return application_credential
     try:
         return discover_credential()
     except CredentialDiscoveryError as e:
@@ -372,7 +395,7 @@ class KeycardInterceptor(Interceptor):
     Args:
         zone_url: Keycard zone issuer URL (``https://<zone-id>.keycard.cloud``).
             Token endpoints are discovered from it.
-        credential: How this application authenticates to the zone:
+        application_credential: How this application authenticates to the zone:
             ``ClientSecret``, ``WebIdentity``, or ``WorkloadIdentity`` from
             ``keycardai.oauth.server``. When omitted,
             :func:`keycardai.oauth.server.discover_credential` builds it from
@@ -382,37 +405,49 @@ class KeycardInterceptor(Interceptor):
             ``KEYCARD_APPLICATION_CREDENTIAL_TYPE`` (``client_secret`` or
             ``workload_identity``) to choose when the environment can build
             more than one.
+        credential: Deprecated alias for ``application_credential``; emits
+            ``DeprecationWarning``.
         subject_token_provider: Resolves an identity reference to that user's
             current session token. Required for on-behalf-of activities
             (``subject_from=...`` or a ``Subject()`` marker); not used by
             app-as-itself or ``impersonate=True`` grants.
 
     Raises:
-        GrantConfigurationError: ``credential`` was omitted and the
-            environment describes no credential, an incomplete one, or an
+        GrantConfigurationError: ``application_credential`` was omitted and
+            the environment describes no credential, an incomplete one, or an
             ambiguous set that ``KEYCARD_APPLICATION_CREDENTIAL_TYPE`` does
-            not choose between.
+            not choose between; or both ``application_credential`` and
+            ``credential`` were given.
     """
 
     def __init__(
         self,
         zone_url: str,
-        credential: ApplicationCredential | None = None,
+        application_credential: ApplicationCredential | None = None,
         subject_token_provider: SubjectTokenProvider | None = None,
+        *,
+        credential: ApplicationCredential | None = None,
     ) -> None:
-        credential = _worker_credential(credential)
-        self._credential = credential
+        application_credential = _worker_credential(
+            _resolve_application_credential_arg(application_credential, credential)
+        )
+        self._application_credential = application_credential
         # One client for the worker's lifetime: endpoint discovery runs once
         # and is cached on the instance. Tokens are still minted per call;
         # Keycard's no-caching rule is about tokens, not clients.
-        self._client = AsyncClient(zone_url, auth=credential.get_http_client_auth())
+        self._client = AsyncClient(
+            zone_url, auth=application_credential.get_http_client_auth()
+        )
         self._subject_token_provider = subject_token_provider
 
     def intercept_activity(
         self, next: ActivityInboundInterceptor
     ) -> ActivityInboundInterceptor:
         return _KeycardActivityInboundInterceptor(
-            next, self._client, self._credential, self._subject_token_provider
+            next,
+            self._client,
+            self._application_credential,
+            self._subject_token_provider,
         )
 
 
@@ -421,12 +456,12 @@ class _KeycardActivityInboundInterceptor(ActivityInboundInterceptor):
         self,
         next: ActivityInboundInterceptor,
         client: AsyncClient,
-        credential: ApplicationCredential,
+        application_credential: ApplicationCredential,
         subject_token_provider: SubjectTokenProvider | None,
     ) -> None:
         super().__init__(next)
         self._client = client
-        self._credential = credential
+        self._application_credential = application_credential
         self._subject_token_provider = subject_token_provider
 
     async def _mint(self, grant: _Grant, input: ExecuteActivityInput) -> AccessContext:
@@ -437,11 +472,12 @@ class _KeycardActivityInboundInterceptor(ActivityInboundInterceptor):
             # so client credentials stay a direct call. Assertion credentials
             # (workload/web identity) authenticate per exchange request and
             # have no SDK bridge for this path yet.
-            if not isinstance(self._credential, ClientSecret):
+            if not isinstance(self._application_credential, ClientSecret):
                 raise GrantConfigurationError(
                     f"{_qualname(input.fn)} uses @grant without subject_from "
                     "(client credentials), which requires a ClientSecret "
-                    f"credential; the worker has {type(self._credential).__name__}."
+                    "application credential; the worker has "
+                    f"{type(self._application_credential).__name__}."
                 )
             # One resource at a time; the first failure stops the loop, so
             # the body never sees partial credentials.
@@ -459,11 +495,11 @@ class _KeycardActivityInboundInterceptor(ActivityInboundInterceptor):
             # credentials (workload/web identity) present NoneAuth there, so
             # the request would go out unauthenticated: fail with the real
             # reason instead of the zone's invalid_client.
-            if not isinstance(self._credential, ClientSecret):
+            if not isinstance(self._application_credential, ClientSecret):
                 raise GrantConfigurationError(
                     f"{_qualname(input.fn)} uses @grant(impersonate=True), "
-                    "which requires a ClientSecret credential; the worker "
-                    f"has {type(self._credential).__name__}."
+                    "which requires a ClientSecret application credential; "
+                    f"the worker has {type(self._application_credential).__name__}."
                 )
             # The extracted value is the user identifier itself; the zone
             # mints a substitute-user token. subject_token is unused on this
@@ -483,7 +519,7 @@ class _KeycardActivityInboundInterceptor(ActivityInboundInterceptor):
                 resources=list(grant.resources),
                 subject_token=subject_token,
                 access_context=ctx,
-                application_credential=self._credential,
+                application_credential=self._application_credential,
             )
             # The helper records failures on the context instead of raising.
             # Surface them here so the activity still fails before its body,

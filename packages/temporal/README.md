@@ -62,13 +62,13 @@ async def main(client):
 
 ### Credential discovery
 
-With no `credential` argument, `KeycardInterceptor` calls `keycardai.oauth.server.discover_credential()`, the SDK-wide environment convention:
+With no `application_credential` argument, `KeycardInterceptor` calls `keycardai.oauth.server.discover_credential()`, the SDK-wide environment convention:
 
 - `KEYCARD_CLIENT_ID` and `KEYCARD_CLIENT_SECRET` together build a `ClientSecret`.
 - A token file named by `KEYCARD_EKS_WORKLOAD_IDENTITY_TOKEN_FILE`, `AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE`, `AWS_WEB_IDENTITY_TOKEN_FILE`, or `AZURE_FEDERATED_TOKEN_FILE` builds a `WorkloadIdentity`.
 - `KEYCARD_APPLICATION_CREDENTIAL_TYPE` (`client_secret` or `workload_identity`; `eks_workload_identity` is a legacy alias) names the type to use, and wins over everything else in the environment.
 
-When the environment can build more than one credential and the type variable does not choose between them, the worker fails at startup with `GrantConfigurationError` instead of guessing. EKS IRSA injects `AWS_WEB_IDENTITY_TOKEN_FILE` into pods automatically, so a worker meant to use a client secret on EKS must set `KEYCARD_APPLICATION_CREDENTIAL_TYPE=client_secret`. Any `keycardai.oauth.server.ApplicationCredential` can also be passed explicitly, which skips discovery entirely.
+When the environment can build more than one credential and the type variable does not choose between them, the worker fails at startup with `GrantConfigurationError` instead of guessing. EKS IRSA injects `AWS_WEB_IDENTITY_TOKEN_FILE` into pods automatically, so a worker meant to use a client secret on EKS must set `KEYCARD_APPLICATION_CREDENTIAL_TYPE=client_secret`. Any `keycardai.oauth.server.ApplicationCredential` can also be passed explicitly as `application_credential`, which skips discovery entirely. The former name `credential` still works as a deprecated alias and emits `DeprecationWarning`; passing both raises `GrantConfigurationError`.
 
 ## Keycard setup
 
@@ -91,7 +91,7 @@ Minting is all-or-nothing: the body never runs with partial credentials. If any 
 
 The identity mode is per activity: one subject applies to every resource in the grant.
 
-- `@grant(resource, ...)`: the application acts as itself (client credentials). Requires a `ClientSecret` credential.
+- `@grant(resource, ...)`: the application acts as itself (client credentials). Requires a `ClientSecret` application credential.
 - `@grant(resource, ..., subject_from=...)`: the application acts on behalf of a user. The activity input carries an identity reference (a user id, never a token). The interceptor's `subject_token_provider`, an application-supplied session lookup, returns that user's current session token, and an RFC 8693 exchange turns it into a token for each resource.
 - `@grant(resource, ..., subject_from=..., impersonate=True)`: impersonation, for workflows that outlive the user's session. The located value is a stable user identifier (email or oid) sent directly to the zone, which mints a short-lived substitute-user token for each resource. No session lookup runs and no `subject_token_provider` is needed. This is a different trust model from delegation: the worker asserts who the user is, and zone policy is the control. It requires a confidential client, application consent set to implicit, each resource declared as a dependency of the application, a prior delegated grant established by the user for each resource, and zone policy that explicitly permits the application to impersonate (forbidden by default). Prefer live delegation whenever the user's session is still expected to exist.
 
