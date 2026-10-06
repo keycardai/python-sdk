@@ -730,6 +730,13 @@ class EKSWorkloadIdentity(WorkloadIdentity):
             ) from e
 
 
+_DOTENV_HINT = (
+    " If these values live in a .env file loaded by pydantic-settings or "
+    "python-dotenv, export them to the process environment or pass them with "
+    "discover_credential(env=...)."
+)
+
+
 # Values accepted in KEYCARD_APPLICATION_CREDENTIAL_TYPE by discover_credential.
 CREDENTIAL_TYPE_CLIENT_SECRET = "client_secret"
 CREDENTIAL_TYPE_WORKLOAD_IDENTITY = "workload_identity"
@@ -835,7 +842,8 @@ def discover_credential(
     else:
         if client_secret and not client_id:
             raise CredentialDiscoveryError(
-                "KEYCARD_CLIENT_SECRET is set without KEYCARD_CLIENT_ID",
+                "KEYCARD_CLIENT_SECRET is set without KEYCARD_CLIENT_ID."
+                + _DOTENV_HINT,
                 reason=CredentialDiscoveryError.INCOMPLETE,
                 resolvable=resolvable,
             )
@@ -847,7 +855,7 @@ def discover_credential(
                 f"{', '.join(FileTokenSource.default_env_var_names)} for a "
                 "workload identity credential, or "
                 f"{WEB_IDENTITY_KEY_STORAGE_DIR_ENV_VAR} for a web identity "
-                "credential.",
+                "credential." + _DOTENV_HINT,
                 reason=CredentialDiscoveryError.ABSENT,
             )
         if len(resolvable) > 1:

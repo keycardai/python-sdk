@@ -278,6 +278,20 @@ Endpoint resolution follows this priority (highest to lowest):
 2. **Discovered server metadata** - From RFC 8414 discovery (if `enable_metadata_discovery=True`)
 3. **Default endpoints** - Standard OAuth 2.0 paths (e.g., `/oauth2/token`)
 
+### Credential Discovery
+
+`keycardai.oauth.server.discover_credential()` builds an `ApplicationCredential` from the environment (`KEYCARD_CLIENT_ID` and `KEYCARD_CLIENT_SECRET` for a client secret, a workload identity token file, or `KEYCARD_WEB_IDENTITY_KEY_STORAGE_DIR` for a web identity). It reads `os.environ` by default, so values kept in a `.env` file that pydantic-settings or python-dotenv loads without exporting never reach it and discovery raises `CredentialDiscoveryError`. Export them to the process environment, or build the mapping from your settings object and pass it in:
+
+```python
+from keycardai.oauth.server import discover_credential
+
+settings = Settings()  # a pydantic-settings model holding the Keycard values
+env = {"KEYCARD_CLIENT_ID": settings.keycard_client_id, "KEYCARD_CLIENT_SECRET": settings.keycard_client_secret}
+credential = discover_credential(env=env)
+```
+
+Every integration (`keycardai-starlette`, `keycardai-mcp`, `keycardai-temporal`, ...) accepts the resulting credential explicitly in place of its own discovery call.
+
 ## Authentication Strategies
 
 The SDK provides four authentication strategies for different use cases.

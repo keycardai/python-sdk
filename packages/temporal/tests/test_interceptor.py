@@ -390,6 +390,14 @@ def test_no_credential_anywhere_fails_at_construction(monkeypatch):
         KeycardInterceptor("https://zone.test")
 
 
+def test_no_credential_anywhere_hints_at_dotenv_files(monkeypatch):
+    # The discovery error's message is wrapped as-is, so the .env hint from
+    # keycardai-oauth reaches worker authors without a temporal change.
+    _clear_credential_env(monkeypatch)
+    with pytest.raises(GrantConfigurationError, match=r"discover_credential\(env="):
+        KeycardInterceptor("https://zone.test")
+
+
 def test_unknown_credential_type_fails_at_construction(monkeypatch):
     _clear_credential_env(monkeypatch)
     monkeypatch.setenv("KEYCARD_APPLICATION_CREDENTIAL_TYPE", "bogus")
