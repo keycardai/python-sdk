@@ -23,12 +23,8 @@ from temporalio.worker import ExecuteActivityInput
 from keycardai import temporal as kt
 from keycardai.oauth import TokenExchangeRequest
 from keycardai.oauth.exceptions import ConfigError, OAuthProtocolError
-from keycardai.oauth.server import (
-    AccessContext,
-    ClientSecret,
-    CredentialDiscoveryError,
-    discover_credential,
-)
+from keycardai.oauth.server import AccessContext, ClientSecret, discover_credential
+from keycardai.oauth.server.exceptions import CredentialDiscoveryError
 from keycardai.temporal import (
     GrantConfigurationError,
     KeycardInterceptor,
