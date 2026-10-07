@@ -14,6 +14,7 @@ The dev server binary is downloaded by temporalio on first use and cached.
 from __future__ import annotations
 
 import base64
+import contextvars
 import json
 import re
 import uuid
@@ -24,6 +25,9 @@ from types import SimpleNamespace
 from typing import Annotated
 
 import pytest
+import temporalio.client
+import temporalio.converter
+import temporalio.worker
 from temporalio import activity, workflow
 from temporalio.client import Client
 from temporalio.testing import WorkflowEnvironment
@@ -31,7 +35,7 @@ from temporalio.worker import Worker
 
 from keycardai import temporal as kt
 from keycardai.oauth.server import ClientSecret
-from keycardai.temporal import KeycardInterceptor, Subject, access, grant
+from keycardai.temporal import Header, KeycardInterceptor, Subject, access, grant
 
 RESOURCE = "https://ledger.test"
 # JWT-shaped so the scan exercises the same pattern a real Keycard token has.
@@ -74,6 +78,16 @@ def audit_sync(order_id: str, approver_id: str) -> str:
     return f"audited {order_id} for {approver_id}"
 
 
+@grant(RESOURCE, subject_from=Header("user-id"))
+@activity.defn
+async def notify_by_header(order_id: str) -> str:
+    # No identity in the arguments: the propagation interceptor below set it
+    # in the activity's headers at workflow start.
+    token = access().access_token
+    assert token == TOKEN
+    return f"notified {order_id}"
+
+
 @workflow.defn
 class ApprovalWorkflow:
     @workflow.run
@@ -88,7 +102,67 @@ class ApprovalWorkflow:
             args=[order.order_id, order.approver_id],
             start_to_close_timeout=timedelta(seconds=10),
         )
-        return [f"{receipt.approved_by}:{receipt.token_length}", audit]
+        notified = await workflow.execute_activity(
+            notify_by_header,
+            order.order_id,
+            start_to_close_timeout=timedelta(seconds=10),
+        )
+        return [f"{receipt.approved_by}:{receipt.token_length}", audit, notified]
+
+
+# --- a minimal context-propagation interceptor, after Temporal's sample -------
+# https://github.com/temporalio/samples-python/tree/main/context_propagation
+
+USER_ID_HEADER = "user-id"
+current_user_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "current_user_id", default=None
+)
+
+
+def _set_header_from_context(input, payload_converter) -> None:
+    user_id = current_user_id.get()
+    if user_id is not None:
+        input.headers = {
+            **input.headers,
+            USER_ID_HEADER: payload_converter.to_payloads([user_id])[0],
+        }
+
+
+class UserIdPropagator(temporalio.client.Interceptor, temporalio.worker.Interceptor):
+    """Client start_workflow puts the caller's id in a header; the workflow
+    reads it back and copies it onto every activity it starts."""
+
+    def intercept_client(self, next):
+        return _ClientOutbound(next)
+
+    def workflow_interceptor_class(self, input):
+        return _WorkflowInbound
+
+
+class _ClientOutbound(temporalio.client.OutboundInterceptor):
+    async def start_workflow(self, input):
+        _set_header_from_context(
+            input, temporalio.converter.default().payload_converter
+        )
+        return await super().start_workflow(input)
+
+
+class _WorkflowInbound(temporalio.worker.WorkflowInboundInterceptor):
+    def init(self, outbound) -> None:
+        super().init(_WorkflowOutbound(outbound))
+
+    async def execute_workflow(self, input):
+        payload = input.headers.get(USER_ID_HEADER)
+        if payload is not None:
+            user_id = workflow.payload_converter().from_payloads([payload], [str])[0]
+            current_user_id.set(user_id)
+        return await super().execute_workflow(input)
+
+
+class _WorkflowOutbound(temporalio.worker.WorkflowOutboundInterceptor):
+    def start_activity(self, input):
+        _set_header_from_context(input, workflow.payload_converter())
+        return super().start_activity(input)
 
 
 class StubOAuthClient:
@@ -139,7 +213,8 @@ async def temporal_env():
 
 async def test_no_token_anywhere_in_history(temporal_env, monkeypatch):
     monkeypatch.setattr(kt, "AsyncClient", StubOAuthClient)
-    client: Client = temporal_env.client
+    propagator = UserIdPropagator()
+    client = Client(**{**temporal_env.client.config(), "interceptors": [propagator]})
     task_queue = f"keycard-hygiene-{uuid.uuid4()}"
     interceptor = KeycardInterceptor(
         "https://zone.test",
@@ -153,10 +228,13 @@ async def test_no_token_anywhere_in_history(temporal_env, monkeypatch):
             client,
             task_queue=task_queue,
             workflows=[ApprovalWorkflow],
-            activities=[post_ledger_entry, audit_sync],
+            activities=[post_ledger_entry, audit_sync, notify_by_header],
             activity_executor=executor,
-            interceptors=[interceptor],
+            interceptors=[propagator, interceptor],
         ):
+            # What a request handler does once: name the caller for this
+            # workflow start. The header, not the arguments, carries it.
+            current_user_id.set("alice")
             handle = await client.start_workflow(
                 ApprovalWorkflow.run,
                 order,
@@ -165,7 +243,11 @@ async def test_no_token_anywhere_in_history(temporal_env, monkeypatch):
             )
             result = await handle.result()
 
-    assert result == [f"alice:{len(TOKEN)}", "audited ord-42 for alice"]
+    assert result == [
+        f"alice:{len(TOKEN)}",
+        "audited ord-42 for alice",
+        "notified ord-42",
+    ]
 
     history = await handle.fetch_history()
     raw = history.to_json()
@@ -176,6 +258,18 @@ async def test_no_token_anywhere_in_history(temporal_env, monkeypatch):
     # reference the workflow legitimately carries is found.
     assert "alice" in joined
     assert "ord-42" in joined
+    # The header-located reference is in history too, under the header key:
+    # headers are recorded like arguments, which is why only a reference may
+    # travel there.
+    header_payloads = [
+        event.activity_task_scheduled_event_attributes.header.fields[USER_ID_HEADER]
+        for event in history.events
+        if event.HasField("activity_task_scheduled_event_attributes")
+        and USER_ID_HEADER
+        in event.activity_task_scheduled_event_attributes.header.fields
+    ]
+    assert len(header_payloads) == 3
+    assert all(p.data == b'"alice"' for p in header_payloads)
     # The proof: the token is nowhere in the recorded history, in any form.
     assert TOKEN not in raw
     assert TOKEN not in joined

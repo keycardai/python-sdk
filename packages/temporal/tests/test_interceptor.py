@@ -18,6 +18,7 @@ from typing import Annotated
 import pytest
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
+from temporalio.testing import ActivityEnvironment
 from temporalio.worker import ExecuteActivityInput
 
 from keycardai import temporal as kt
@@ -27,6 +28,7 @@ from keycardai.oauth.server import AccessContext, ClientSecret, discover_credent
 from keycardai.oauth.server.exceptions import CredentialDiscoveryError
 from keycardai.temporal import (
     GrantConfigurationError,
+    Header,
     KeycardInterceptor,
     Subject,
     _raise_on_mint_error,
@@ -667,6 +669,77 @@ async def test_arity_mismatch_fails_closed(oauth_calls):
     with pytest.raises(GrantConfigurationError, match="obo_activity"):
         await chain.execute_activity(call(obo_activity, "alice", "extra"))
     assert oauth_calls == []
+
+
+# --- header locator ---------------------------------------------------------
+
+
+def call_with_headers(fn, headers: dict, *args) -> ExecuteActivityInput:
+    """An activity input whose headers were encoded the way a propagation
+    interceptor encodes them: through the payload converter."""
+    converter = ActivityEnvironment().payload_converter
+    encoded = {k: converter.to_payloads([v])[0] for k, v in headers.items()}
+    return ExecuteActivityInput(fn=fn, args=args, executor=None, headers=encoded)
+
+
+async def run_in_activity(chain, input: ExecuteActivityInput):
+    """Header decoding uses the worker's payload converter, which temporalio
+    exposes only inside an activity context."""
+    return await ActivityEnvironment().run(chain.execute_activity, input)
+
+
+async def test_header_locator_supplies_the_reference_for_obo(oauth_calls):
+    @grant(RESOURCE, subject_from=Header("user-id"))
+    async def by_header(order_id: str) -> str:
+        return access().access_token
+
+    chain = inbound(subject_token_provider=session_lookup)
+    tok = await run_in_activity(
+        chain, call_with_headers(by_header, {"user-id": "alice"}, "ord-1")
+    )
+    assert tok == "obo-tok-1"
+    assert oauth_calls == [("exchange", "session-token-for-alice", RESOURCE)]
+
+
+async def test_header_locator_supplies_the_identifier_for_impersonation(oauth_calls):
+    @grant(RESOURCE, subject_from=Header("user-id"), impersonate=True)
+    async def by_header(order_id: str) -> str:
+        return access().access_token
+
+    async def never_called(ref: str) -> str:
+        raise AssertionError("impersonation must not consult the session store")
+
+    chain = inbound(subject_token_provider=never_called)
+    tok = await run_in_activity(
+        chain, call_with_headers(by_header, {"user-id": "alice@example.com"}, "ord-1")
+    )
+    assert tok == "imp-tok-1"
+    assert oauth_calls == [("impersonate", "alice@example.com", RESOURCE)]
+
+
+async def test_missing_header_fails_closed(oauth_calls):
+    @grant(RESOURCE, subject_from=Header("user-id"))
+    async def by_header(order_id: str) -> str:
+        return access().access_token
+
+    chain = inbound(subject_token_provider=session_lookup)
+    with pytest.raises(GrantConfigurationError, match="Header\\('user-id'\\)"):
+        await run_in_activity(
+            chain, call_with_headers(by_header, {"other": "alice"}, "ord-1")
+        )
+    assert oauth_calls == []
+
+
+def test_header_plus_subject_marker_fails_at_decoration():
+    with pytest.raises(GrantConfigurationError, match="pick one"):
+
+        @grant(RESOURCE, subject_from=Header("user-id"))
+        async def double(order: Order) -> None: ...
+
+
+def test_header_needs_a_non_empty_key():
+    with pytest.raises(GrantConfigurationError, match="non-empty"):
+        Header("")
 
 
 # --- impersonation ----------------------------------------------------------

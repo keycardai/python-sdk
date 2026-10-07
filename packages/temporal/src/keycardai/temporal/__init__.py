@@ -19,7 +19,10 @@ resource in the grant:
   - a ``Subject()`` marker on a dataclass field:
     ``approver_id: Annotated[str, Subject()]`` (validated at decoration time),
   - ``subject_from="order.approver_id"``: a parameter name or dotted path
-    into it (the top-level name is validated at decoration time), or
+    into it (the top-level name is validated at decoration time),
+  - ``subject_from=Header("user-id")``: an inbound activity header, set once
+    by the application's context-propagation interceptor and decoded with the
+    worker's payload converter (a missing header fails at execution time), or
   - ``subject_from=lambda order: order.approver_id``: a callable receiving
     the activity's arguments (escape hatch; fails only at execution time).
 
@@ -31,8 +34,9 @@ resource in the grant:
 
 The token lives only in one execution's context. Nothing here writes to
 activity headers, arguments, or return values, because workflow history is
-durable and replayable and must never contain credentials. Signals and
-activity arguments carry identity references; tokens are minted at the edge.
+durable and replayable and must never contain credentials. Signals, activity
+arguments, and headers carry identity references; tokens are minted at the
+edge.
 """
 
 from __future__ import annotations
@@ -52,7 +56,7 @@ from typing import (
     get_type_hints,
 )
 
-from temporalio import workflow
+from temporalio import activity, workflow
 from temporalio.exceptions import ApplicationError
 from temporalio.worker import (
     ActivityInboundInterceptor,
@@ -81,6 +85,7 @@ with workflow.unsafe.imports_passed_through():
 __all__ = [
     "AccessContext",
     "GrantConfigurationError",
+    "Header",
     "KeycardInterceptor",
     "ResourceAccessError",
     "Subject",
@@ -115,6 +120,28 @@ class Subject:
     marked field on an activity's dataclass argument, ``subject_from`` can
     be omitted entirely.
     """
+
+
+@dataclass(frozen=True)
+class Header:
+    """Locates the identity reference in an inbound activity header.
+
+    Usage: ``@grant(resource, subject_from=Header("user-id"))``. The header
+    is set once by the application's context-propagation interceptor (at
+    workflow start, then copied onto every activity) instead of threaded
+    through activity arguments. The interceptor reads ``key`` from the
+    execution's headers and decodes it with the worker's payload converter;
+    a header that is not there fails the execution with
+    :class:`GrantConfigurationError`, since the fix is wiring the propagation
+    interceptor. Headers land in workflow history like arguments, so put an
+    identity reference there, never a token.
+    """
+
+    key: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.key, str) or not self.key:
+            raise GrantConfigurationError("Header() needs a non-empty key.")
 
 
 def _qualname(fn: Callable[..., object]) -> str:
@@ -229,8 +256,22 @@ def _callable_extractor(fn: Callable, subject_from: Callable) -> _Extractor:
     return extract
 
 
+def _header_extractor(fn: Callable, header: Header) -> _Extractor:
+    def extract(input: ExecuteActivityInput) -> Any:
+        payload = input.headers.get(header.key)
+        if payload is None:
+            raise GrantConfigurationError(
+                f"@grant(subject_from=Header({header.key!r})) found no such "
+                f"header on the activity {_qualname(fn)}; is the propagation "
+                "interceptor that sets it installed on the client and worker?"
+            )
+        return activity.payload_converter().from_payloads([payload])[0]
+
+    return extract
+
+
 def _build_extractor(
-    fn: Callable, subject_from: str | Callable | None
+    fn: Callable, subject_from: str | Header | Callable | None
 ) -> _Extractor | None:
     """Resolve the identity-binding strategy for one activity.
 
@@ -244,7 +285,9 @@ def _build_extractor(
     # Build the explicit binding first: its validation (a bad parameter name)
     # needs no type hints, so it must fail at decoration time even when the
     # marker-conflict check below cannot resolve hints yet.
-    if callable(subject_from):
+    if isinstance(subject_from, Header):
+        extractor = _header_extractor(fn, subject_from)
+    elif callable(subject_from):
         extractor = _callable_extractor(fn, subject_from)
     else:
         extractor = _path_extractor(fn, sig, subject_from)
@@ -264,7 +307,7 @@ _ctx: contextvars.ContextVar[tuple[AccessContext, tuple[str, ...]]] = (
 
 def grant(
     *resources: str,
-    subject_from: str | Callable | None = None,
+    subject_from: str | Header | Callable | None = None,
     impersonate: bool = False,
 ) -> Callable:
     """Declare the resources an activity needs tokens for.
@@ -278,9 +321,11 @@ def grant(
     With no ``subject_from`` and no ``Subject()`` marker, the application
     acts as itself. Otherwise the located value is the identity reference of
     the user to act on behalf of: a ``Subject()``-marked dataclass field, a
-    parameter name or dotted path (``"order.approver_id"``), or a callable
-    over the activity's arguments. Bad names and duplicate markers fail at
-    decoration time. Apply outermost, above ``@activity.defn``.
+    parameter name or dotted path (``"order.approver_id"``), an inbound
+    activity header (``Header("user-id")``, decoded with the worker's payload
+    converter), or a callable over the activity's arguments. Bad names,
+    duplicate markers, and a marker together with ``subject_from`` fail at
+    decoration time; a missing header fails at execution time. Apply outermost, above ``@activity.defn``.
 
     With ``impersonate=True`` the located value is a stable user identifier
     (an email or oid, not a session reference): no session lookup runs and no
