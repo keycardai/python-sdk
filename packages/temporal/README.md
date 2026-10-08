@@ -62,13 +62,13 @@ async def main(client):
 
 ### Credential discovery
 
-With no `credential` argument, `KeycardInterceptor` calls `keycardai.oauth.server.discover_credential()`, the SDK-wide environment convention:
+With no `application_credential` argument, `KeycardInterceptor` calls `keycardai.oauth.server.discover_credential()`, the SDK-wide environment convention:
 
 - `KEYCARD_CLIENT_ID` and `KEYCARD_CLIENT_SECRET` together build a `ClientSecret`.
 - A token file named by `KEYCARD_EKS_WORKLOAD_IDENTITY_TOKEN_FILE`, `AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE`, `AWS_WEB_IDENTITY_TOKEN_FILE`, or `AZURE_FEDERATED_TOKEN_FILE` builds a `WorkloadIdentity`.
 - `KEYCARD_APPLICATION_CREDENTIAL_TYPE` (`client_secret` or `workload_identity`; `eks_workload_identity` is a legacy alias) names the type to use, and wins over everything else in the environment.
 
-When the environment can build more than one credential and the type variable does not choose between them, the worker fails at startup with `GrantConfigurationError` instead of guessing. EKS IRSA injects `AWS_WEB_IDENTITY_TOKEN_FILE` into pods automatically, so a worker meant to use a client secret on EKS must set `KEYCARD_APPLICATION_CREDENTIAL_TYPE=client_secret`. Any `keycardai.oauth.server.ApplicationCredential` can also be passed explicitly, which skips discovery entirely.
+When the environment can build more than one credential and the type variable does not choose between them, the worker fails at startup with `GrantConfigurationError` instead of guessing. EKS IRSA injects `AWS_WEB_IDENTITY_TOKEN_FILE` into pods automatically, so a worker meant to use a client secret on EKS must set `KEYCARD_APPLICATION_CREDENTIAL_TYPE=client_secret`. Any `keycardai.oauth.server.ApplicationCredential` can also be passed explicitly as `application_credential`, which skips discovery entirely. The former name `credential` still works as a deprecated alias and emits `DeprecationWarning`; passing both raises `GrantConfigurationError`.
 
 Discovery reads `os.environ`. If `KEYCARD_CLIENT_ID` and `KEYCARD_CLIENT_SECRET` live in a `.env` file that pydantic-settings or python-dotenv loads without exporting, they never reach `os.environ` and discovery fails. Either export them to the process environment or build the mapping yourself and pass the credential explicitly:
 
@@ -77,7 +77,7 @@ from keycardai.oauth.server import discover_credential
 
 settings = Settings()  # a pydantic-settings model with keycard_client_id and keycard_client_secret
 env = {"KEYCARD_CLIENT_ID": settings.keycard_client_id, "KEYCARD_CLIENT_SECRET": settings.keycard_client_secret}
-interceptor = KeycardInterceptor("https://<zone-id>.keycard.cloud", credential=discover_credential(env=env))
+interceptor = KeycardInterceptor("https://<zone-id>.keycard.cloud", application_credential=discover_credential(env=env))
 ```
 
 ## Keycard setup
@@ -101,7 +101,7 @@ Minting is all-or-nothing: the body never runs with partial credentials. If any 
 
 The identity mode is per activity: one subject applies to every resource in the grant.
 
-- `@grant(resource, ...)`: the application acts as itself (client credentials). Requires a `ClientSecret` credential.
+- `@grant(resource, ...)`: the application acts as itself (client credentials). Requires a `ClientSecret` application credential.
 - `@grant(resource, ..., subject_from=...)`: the application acts on behalf of a user. The activity input carries an identity reference (a user id, never a token). The interceptor's `subject_token_provider`, an application-supplied session lookup, returns that user's current session token, and an RFC 8693 exchange turns it into a token for each resource.
 - `@grant(resource, ..., subject_from=..., impersonate=True)`: impersonation, for workflows that outlive the user's session. The located value is a stable user identifier (email or oid) sent directly to the zone, which mints a short-lived substitute-user token for each resource. No session lookup runs and no `subject_token_provider` is needed. This is a different trust model from delegation: the worker asserts who the user is, and zone policy is the control. It requires a confidential client, application consent set to implicit, each resource declared as a dependency of the application, a prior delegated grant established by the user for each resource, and zone policy that explicitly permits the application to impersonate (forbidden by default). Prefer live delegation whenever the user's session is still expected to exist.
 
@@ -199,7 +199,7 @@ async def main() -> None:
     await worker.run()
 ```
 
-`KeycardOpenAIProvider(zone_url, resource, credential=None, *, refresh=timedelta(minutes=5), base_url=None, use_responses=None)` takes the zone URL and the identifier of the resource whose vault holds the OpenAI key. The credential is the same as the interceptor's: an explicit `ApplicationCredential`, or the one `discover_credential()` finds in the environment when omitted. It must be a `ClientSecret`, as for any client-credentials `@grant`; other credential types raise `GrantConfigurationError` at construction.
+`KeycardOpenAIProvider(zone_url, resource, application_credential=None, *, refresh=timedelta(minutes=5), base_url=None, use_responses=None)` takes the zone URL and the identifier of the resource whose vault holds the OpenAI key. The application credential is the same as the interceptor's: an explicit `ApplicationCredential`, or the one `discover_credential()` finds in the environment when omitted. It must be a `ClientSecret`, as for any client-credentials `@grant`; other credential types raise `GrantConfigurationError` at construction.
 
 Refresh: the key is minted with a client-credentials grant on the first model call, not at worker startup, and reused for `refresh` (or the grant's `expires_in`, whichever is shorter). The next model call after the window mints again, so a key rotated in Keycard reaches the worker within one refresh window, with no restart. Concurrent model calls on an expired cache share one mint. A permanent grant failure fails the model activity with the same non-retryable `KeycardAccessDenied` a `@grant` activity would raise; a transient one is left to the model activity's retry policy. The plugin requires an explicit `start_to_close_timeout` or `schedule_to_close_timeout` whenever a custom provider is set.
 

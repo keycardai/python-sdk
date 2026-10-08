@@ -135,10 +135,10 @@ async def session_lookup(ref: str) -> str:
     return f"session-token-for-{ref}"
 
 
-def inbound(subject_token_provider=None, credential=None):
+def inbound(subject_token_provider=None, application_credential=None):
     return KeycardInterceptor(
         "https://zone.test",
-        credential=credential or ClientSecret(("id", "secret")),
+        application_credential=application_credential or ClientSecret(("id", "secret")),
         subject_token_provider=subject_token_provider,
     ).intercept_activity(RecordingNext())
 
@@ -169,7 +169,7 @@ async def test_one_client_is_shared_across_activity_interceptors(oauth_calls):
     # Temporal calls intercept_activity once per activity execution; the
     # client must belong to the worker-level interceptor, not to each chain.
     interceptor = KeycardInterceptor(
-        "https://zone.test", credential=ClientSecret(("id", "secret"))
+        "https://zone.test", application_credential=ClientSecret(("id", "secret"))
     )
     first = interceptor.intercept_activity(RecordingNext())
     second = interceptor.intercept_activity(RecordingNext())
@@ -385,6 +385,20 @@ async def test_credential_discovered_from_env(oauth_calls, monkeypatch):
     assert tok == "cc-tok-1"
 
 
+def test_credential_alias_warns_and_rejects_both_names(monkeypatch):
+    _clear_credential_env(monkeypatch)
+    secret = ClientSecret(("id", "secret"))
+    with pytest.warns(DeprecationWarning, match="application_credential"):
+        interceptor = KeycardInterceptor("https://zone.test", credential=secret)
+    assert interceptor._application_credential is secret
+
+    with pytest.warns(DeprecationWarning):
+        with pytest.raises(GrantConfigurationError, match="not both"):
+            KeycardInterceptor(
+                "https://zone.test", application_credential=secret, credential=secret
+            )
+
+
 def test_no_credential_anywhere_fails_at_construction(monkeypatch):
     _clear_credential_env(monkeypatch)
     with pytest.raises(GrantConfigurationError, match="credential"):
@@ -422,7 +436,7 @@ def test_workload_identity_discovered_from_env(oauth_calls, monkeypatch, tmp_pat
     monkeypatch.setenv("KEYCARD_APPLICATION_CREDENTIAL_TYPE", "eks_workload_identity")
     monkeypatch.setenv("KEYCARD_EKS_WORKLOAD_IDENTITY_TOKEN_FILE", str(token_file))
     interceptor = KeycardInterceptor("https://zone.test")
-    assert isinstance(interceptor._credential, WorkloadIdentity)
+    assert isinstance(interceptor._application_credential, WorkloadIdentity)
 
 
 def test_ambiguous_credential_env_fails_at_construction(monkeypatch, tmp_path):
@@ -441,7 +455,7 @@ def test_ambiguous_credential_env_fails_at_construction(monkeypatch, tmp_path):
 
     monkeypatch.setenv("KEYCARD_APPLICATION_CREDENTIAL_TYPE", "client_secret")
     interceptor = KeycardInterceptor("https://zone.test")
-    assert isinstance(interceptor._credential, ClientSecret)
+    assert isinstance(interceptor._application_credential, ClientSecret)
 
 
 def test_credential_type_switch_wins_over_client_secret(monkeypatch, tmp_path):
@@ -458,11 +472,11 @@ def test_credential_type_switch_wins_over_client_secret(monkeypatch, tmp_path):
     monkeypatch.setenv("AWS_WEB_IDENTITY_TOKEN_FILE", str(token_file))
     monkeypatch.setenv("KEYCARD_APPLICATION_CREDENTIAL_TYPE", "workload_identity")
     interceptor = KeycardInterceptor("https://zone.test")
-    assert isinstance(interceptor._credential, WorkloadIdentity)
+    assert isinstance(interceptor._application_credential, WorkloadIdentity)
 
 
 async def test_client_credentials_grant_requires_client_secret(oauth_calls):
-    chain = inbound(credential=AssertionCredential())
+    chain = inbound(application_credential=AssertionCredential())
     with pytest.raises(GrantConfigurationError, match="ClientSecret"):
         await chain.execute_activity(call(granted_activity))
     assert oauth_calls == []
@@ -470,7 +484,8 @@ async def test_client_credentials_grant_requires_client_secret(oauth_calls):
 
 async def test_assertion_credential_prepares_the_exchange(oauth_calls):
     chain = inbound(
-        subject_token_provider=session_lookup, credential=AssertionCredential()
+        subject_token_provider=session_lookup,
+        application_credential=AssertionCredential(),
     )
     tok = await chain.execute_activity(call(obo_activity, "alice"))
     assert tok == "obo-tok-1"
@@ -704,7 +719,7 @@ async def test_impersonation_requires_client_secret(oauth_calls):
     async def absent_user(approver: str) -> None:
         raise AssertionError("body must not run")
 
-    chain = inbound(credential=AssertionCredential())
+    chain = inbound(application_credential=AssertionCredential())
     with pytest.raises(GrantConfigurationError, match="ClientSecret"):
         await chain.execute_activity(call(absent_user, "alice"))
     assert oauth_calls == []

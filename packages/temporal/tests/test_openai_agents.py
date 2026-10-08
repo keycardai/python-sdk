@@ -133,9 +133,21 @@ def test_non_client_secret_credential_raises_the_pointed_error(mints):
     with pytest.raises(GrantConfigurationError) as ei:
         KeycardOpenAIKey(ZONE, VAULT, AssertionCredential())
     msg = str(ei.value)
-    assert "requires a ClientSecret credential" in msg
+    assert "requires a ClientSecret application credential" in msg
     assert "AssertionCredential" in msg
     assert VAULT in msg
+
+
+def test_credential_alias_warns_and_rejects_both_names(mints):
+    with pytest.warns(DeprecationWarning, match="application_credential"):
+        k = KeycardOpenAIKey(ZONE, VAULT, credential=SECRET)
+    assert k.resource == VAULT
+
+    with pytest.warns(DeprecationWarning):
+        with pytest.raises(GrantConfigurationError, match="not both"):
+            KeycardOpenAIKey(
+                ZONE, VAULT, application_credential=SECRET, credential=SECRET
+            )
 
 
 def test_non_positive_refresh_is_rejected(mints):
@@ -301,6 +313,12 @@ def test_provider_with_a_non_client_secret_raises_before_touching_openai(
 ):
     with pytest.raises(GrantConfigurationError, match="ClientSecret"):
         KeycardOpenAIProvider(ZONE, VAULT, AssertionCredential())
+
+
+def test_provider_credential_alias_warns_at_the_caller(mints, fake_deps):
+    with pytest.warns(DeprecationWarning, match="application_credential") as record:
+        KeycardOpenAIProvider(ZONE, VAULT, credential=SECRET)
+    assert record[0].filename == __file__
 
 
 # --- packaging ----------------------------------------------------------------

@@ -143,7 +143,7 @@ async def test_no_token_anywhere_in_history(temporal_env, monkeypatch):
     task_queue = f"keycard-hygiene-{uuid.uuid4()}"
     interceptor = KeycardInterceptor(
         "https://zone.test",
-        credential=ClientSecret(("worker-id", "worker-secret")),
+        application_credential=ClientSecret(("worker-id", "worker-secret")),
         subject_token_provider=session_lookup,
     )
     order = Order(order_id="ord-42", approver_id="alice")
@@ -224,7 +224,7 @@ async def test_grant_configuration_error_fails_fast_when_listed_non_retryable(
     # subject_token_provider, so the on-behalf-of grant cannot be honored.
     interceptor = KeycardInterceptor(
         "https://zone.test",
-        credential=ClientSecret(("worker-id", "worker-secret")),
+        application_credential=ClientSecret(("worker-id", "worker-secret")),
     )
     order = Order(order_id="ord-43", approver_id="alice")
 
