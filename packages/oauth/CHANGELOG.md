@@ -1,3 +1,11 @@
+## 0.32.0-keycardai-oauth (2026-10-08)
+
+
+- feat(keycardai-oauth): impersonate() takes a per-call issuer for multi-zone clients (ECO-107) (#337)
+- Both impersonate() methods accept a keyword-only issuer and pass it to build_http_context the way exchange_token and client_credentials_grant do, so a multi-zone client can pick the zone for an impersonation.
+- Co-authored-by: devin-ai-keycard <devin-ai@keycard.ai>
+Co-authored-by: Larry Osakwe <larry@keycard.ai>
+
 ## 0.31.4-keycardai-oauth (2026-10-06)
 
 
