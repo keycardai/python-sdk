@@ -33,6 +33,7 @@ with workflow.unsafe.imports_passed_through():
 from keycardai.temporal import (
     GrantConfigurationError,
     _raise_for_grant_failure,
+    _resolve_application_credential_arg,
     _worker_credential,
 )
 
@@ -80,33 +81,39 @@ class KeycardOpenAIKey:
     Args:
         zone_url: Keycard zone issuer URL.
         resource: Identifier of the vaulted OpenAI key resource in the zone.
-        credential: How this application authenticates to the zone; when
-            omitted, discovered from the environment exactly as
+        application_credential: How this application authenticates to the
+            zone; when omitted, discovered from the environment exactly as
             :class:`keycardai.temporal.KeycardInterceptor` does. Must be a
             ``ClientSecret`` (the client-credentials path has no bridge for
             assertion credentials yet).
+        credential: Deprecated alias for ``application_credential``; emits
+            ``DeprecationWarning``.
         refresh: How long a minted key is reused before the next call mints
             again. Default five minutes.
 
     Raises:
-        GrantConfigurationError: the credential could not be discovered, or
-            is not a ``ClientSecret``.
+        GrantConfigurationError: the application credential could not be
+            discovered, or is not a ``ClientSecret``; or both
+            ``application_credential`` and ``credential`` were given.
     """
 
     def __init__(
         self,
         zone_url: str,
         resource: str,
-        credential: ApplicationCredential | None = None,
+        application_credential: ApplicationCredential | None = None,
         *,
+        credential: ApplicationCredential | None = None,
         refresh: timedelta = timedelta(minutes=5),
     ) -> None:
-        credential = _worker_credential(credential)
-        if not isinstance(credential, ClientSecret):
+        application_credential = _worker_credential(
+            _resolve_application_credential_arg(application_credential, credential)
+        )
+        if not isinstance(application_credential, ClientSecret):
             raise GrantConfigurationError(
                 f"{type(self).__name__} for {resource} mints with client "
-                "credentials, which requires a ClientSecret credential; the "
-                f"worker has {type(credential).__name__}."
+                "credentials, which requires a ClientSecret application "
+                f"credential; the worker has {type(application_credential).__name__}."
             )
         if refresh <= timedelta(0):
             raise GrantConfigurationError(
@@ -114,7 +121,9 @@ class KeycardOpenAIKey:
             )
         self.resource = resource
         self.refresh = refresh
-        self._client = AsyncClient(zone_url, auth=credential.get_http_client_auth())
+        self._client = AsyncClient(
+            zone_url, auth=application_credential.get_http_client_auth()
+        )
         self._key: str | None = None
         self._fresh_until = 0.0
         self._lock = asyncio.Lock()
@@ -168,7 +177,8 @@ class KeycardOpenAIProvider(_ProviderBase):
     custom provider is set; it only defaults the timeout for its own.
 
     Args:
-        zone_url, resource, credential, refresh: as :class:`KeycardOpenAIKey`.
+        zone_url, resource, application_credential, credential, refresh: as
+            :class:`KeycardOpenAIKey`.
         base_url: OpenAI-compatible base URL, when not api.openai.com.
         use_responses: Forwarded to ``OpenAIProvider`` (Responses API vs
             Chat Completions); ``None`` keeps the SDK default.
@@ -182,14 +192,21 @@ class KeycardOpenAIProvider(_ProviderBase):
         self,
         zone_url: str,
         resource: str,
-        credential: ApplicationCredential | None = None,
+        application_credential: ApplicationCredential | None = None,
         *,
+        credential: ApplicationCredential | None = None,
         refresh: timedelta = timedelta(minutes=5),
         base_url: str | None = None,
         use_responses: bool | None = None,
     ) -> None:
         OpenAIProvider, AsyncOpenAI = _openai_deps()
-        self.api_key = KeycardOpenAIKey(zone_url, resource, credential, refresh=refresh)
+        # Resolved here so a deprecation warning points at this caller.
+        application_credential = _resolve_application_credential_arg(
+            application_credential, credential
+        )
+        self.api_key = KeycardOpenAIKey(
+            zone_url, resource, application_credential, refresh=refresh
+        )
         self._openai = AsyncOpenAI(
             api_key=self.api_key, base_url=base_url, max_retries=0
         )
