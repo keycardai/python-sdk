@@ -111,7 +111,7 @@ The identity mode is per activity: one subject applies to every resource in the 
 from typing import Annotated
 from dataclasses import dataclass
 
-from keycardai.temporal import Subject, grant
+from keycardai.temporal import Header, Subject, grant
 
 
 @dataclass
@@ -129,11 +129,82 @@ async def approve(order_id: str, approver_id: str) -> None: ...
 @grant(LEDGER, subject_from="order.approver_id")     # ... or a dotted path into one
 async def approve(order: dict) -> None: ...
 
+@grant(LEDGER, subject_from=Header("user-id"))        # an inbound activity header (see below)
+async def approve(order_id: str) -> None: ...
+
 @grant(LEDGER, subject_from=lambda order: order["approver_id"])  # sync callable escape hatch
 async def approve(order: dict) -> None: ...
 ```
 
-Use one strategy per activity: a `Subject()` marker together with `subject_from` is rejected at decoration time.
+Use one strategy per activity: a `Subject()` marker together with `subject_from` (`Header(...)` included) is rejected at decoration time.
+
+### Identity reference in a header
+
+Temporal apps often set the calling user's id once, in headers, from a context-propagation interceptor at workflow start, instead of adding it to every activity's arguments. `Header("user-id")` reads that key from the activity's inbound headers and decodes it with the worker's payload converter; the decoded value is the identity reference and takes the same path as one located in the arguments. A header that is not there fails the execution with `GrantConfigurationError`, like a broken dotted path: the fix is wiring the propagation interceptor. Headers are recorded in workflow history like arguments, so a header carries an identity reference only, never a token.
+
+A minimal propagator, after [Temporal's context propagation sample](https://github.com/temporalio/samples-python/tree/main/context_propagation): the client puts the id in the workflow's headers, the workflow reads it back and copies it onto every activity it starts.
+
+```python
+import contextvars
+
+import temporalio.client
+import temporalio.converter
+import temporalio.worker
+from temporalio import workflow
+
+USER_ID_HEADER = "user-id"
+current_user_id: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "current_user_id", default=None
+)
+
+
+def set_header_from_context(input, payload_converter) -> None:
+    user_id = current_user_id.get()
+    if user_id is not None:
+        input.headers = {
+            **input.headers,
+            USER_ID_HEADER: payload_converter.to_payloads([user_id])[0],
+        }
+
+
+class UserIdPropagator(temporalio.client.Interceptor, temporalio.worker.Interceptor):
+    def intercept_client(self, next):
+        return ClientOutbound(next)
+
+    def workflow_interceptor_class(self, input):
+        return WorkflowInbound
+
+
+class ClientOutbound(temporalio.client.OutboundInterceptor):
+    async def start_workflow(self, input):
+        set_header_from_context(input, temporalio.converter.default().payload_converter)
+        return await super().start_workflow(input)
+
+
+class WorkflowInbound(temporalio.worker.WorkflowInboundInterceptor):
+    def init(self, outbound) -> None:
+        super().init(WorkflowOutbound(outbound))
+
+    async def execute_workflow(self, input):
+        payload = input.headers.get(USER_ID_HEADER)
+        if payload is not None:
+            current_user_id.set(workflow.payload_converter().from_payloads([payload], [str])[0])
+        return await super().execute_workflow(input)
+
+
+class WorkflowOutbound(temporalio.worker.WorkflowOutboundInterceptor):
+    def start_activity(self, input):
+        set_header_from_context(input, workflow.payload_converter())
+        return super().start_activity(input)
+```
+
+Install it on the client and the worker next to `KeycardInterceptor`, set `current_user_id` in the request handler before `start_workflow`, and every `@grant(..., subject_from=Header("user-id"))` activity in that workflow acts for that user:
+
+```python
+client = await Client.connect("localhost:7233", interceptors=[UserIdPropagator()])
+worker = Worker(client, task_queue=..., workflows=[...], activities=[...],
+                interceptors=[UserIdPropagator(), interceptor])
+```
 
 The worker supplies the session lookup:
 
