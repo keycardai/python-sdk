@@ -28,10 +28,11 @@ from temporalio import workflow
 
 with workflow.unsafe.imports_passed_through():
     from keycardai.oauth import AsyncClient
-    from keycardai.oauth.server import ApplicationCredential, ClientSecret
+    from keycardai.oauth.server import ApplicationCredential
 
 from keycardai.temporal import (
     GrantConfigurationError,
+    _client_auth_fields,
     _raise_for_grant_failure,
     _resolve_application_credential_arg,
     _worker_credential,
@@ -83,9 +84,10 @@ class KeycardOpenAIKey:
         resource: Identifier of the vaulted OpenAI key resource in the zone.
         application_credential: How this application authenticates to the
             zone; when omitted, discovered from the environment exactly as
-            :class:`keycardai.temporal.KeycardInterceptor` does. Must be a
-            ``ClientSecret`` (the client-credentials path has no bridge for
-            assertion credentials yet).
+            :class:`keycardai.temporal.KeycardInterceptor` does. Any
+            credential type works: a ``ClientSecret`` authenticates at the
+            HTTP layer, a ``WorkloadIdentity`` or ``WebIdentity`` sends its
+            jwt-bearer client assertion with the grant.
         credential: Deprecated alias for ``application_credential``; emits
             ``DeprecationWarning``.
         refresh: How long a minted key is reused before the next call mints
@@ -93,7 +95,7 @@ class KeycardOpenAIKey:
 
     Raises:
         GrantConfigurationError: the application credential could not be
-            discovered, or is not a ``ClientSecret``; or both
+            discovered, or both
             ``application_credential`` and ``credential`` were given.
     """
 
@@ -109,18 +111,13 @@ class KeycardOpenAIKey:
         application_credential = _worker_credential(
             _resolve_application_credential_arg(application_credential, credential)
         )
-        if not isinstance(application_credential, ClientSecret):
-            raise GrantConfigurationError(
-                f"{type(self).__name__} for {resource} mints with client "
-                "credentials, which requires a ClientSecret application "
-                f"credential; the worker has {type(application_credential).__name__}."
-            )
         if refresh <= timedelta(0):
             raise GrantConfigurationError(
                 f"{type(self).__name__}: refresh must be positive, got {refresh}."
             )
         self.resource = resource
         self.refresh = refresh
+        self._application_credential = application_credential
         self._client = AsyncClient(
             zone_url, auth=application_credential.get_http_client_auth()
         )
@@ -142,8 +139,11 @@ class KeycardOpenAIKey:
             if key is not None:
                 return key
             try:
+                auth = await _client_auth_fields(
+                    self._application_credential, self._client, self.resource
+                )
                 resp = await self._client.client_credentials_grant(
-                    resource=self.resource
+                    resource=self.resource, **auth
                 )
             except Exception as e:
                 _raise_for_grant_failure(self.resource, e)

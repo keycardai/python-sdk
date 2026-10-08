@@ -39,13 +39,16 @@ class StubOAuthClient:
     expires_in: int | None = None
     fail_with: Exception | None = None
     closed: int = 0
+    init_kwargs: list[dict] = []
+    client_auth: list[dict] = []
 
     def __init__(self, *args, **kwargs):
-        pass
+        type(self).init_kwargs.append(kwargs)
 
-    async def client_credentials_grant(self, resource: str):
+    async def client_credentials_grant(self, resource: str, **client_auth):
         if self.fail_with is not None:
             raise self.fail_with
+        type(self).client_auth.append(client_auth)
         self.mints.append(resource)
         return SimpleNamespace(
             access_token=f"sk-minted-{len(self.mints)}", expires_in=self.expires_in
@@ -66,6 +69,9 @@ class Clock:
 @pytest.fixture
 def mints(monkeypatch) -> list[str]:
     StubOAuthClient.mints = []
+    StubOAuthClient.init_kwargs = []
+    StubOAuthClient.client_auth = []
+    AssertionCredential.prepared = []
     StubOAuthClient.expires_in = None
     StubOAuthClient.fail_with = None
     StubOAuthClient.closed = 0
@@ -129,13 +135,25 @@ async def test_aclose_closes_the_keycard_client_and_forgets_the_key(mints):
 # --- credential handling, same contract as the interceptor --------------------
 
 
-def test_non_client_secret_credential_raises_the_pointed_error(mints):
-    with pytest.raises(GrantConfigurationError) as ei:
-        KeycardOpenAIKey(ZONE, VAULT, AssertionCredential())
-    msg = str(ei.value)
-    assert "requires a ClientSecret application credential" in msg
-    assert "AssertionCredential" in msg
-    assert VAULT in msg
+async def test_client_secret_mint_sends_no_assertion(mints):
+    assert await key()() == "sk-minted-1"
+    assert StubOAuthClient.client_auth == [{}]
+    assert StubOAuthClient.init_kwargs[-1]["auth"] is not None
+
+
+async def test_openai_key_assertion_credential_authenticates_the_mint(mints):
+    k = KeycardOpenAIKey(ZONE, VAULT, AssertionCredential())
+    assert await k() == "sk-minted-1"
+    assert mints == [VAULT]
+    assert StubOAuthClient.client_auth == [
+        {
+            "client_assertion": f"assertion-for-{VAULT}",
+            "client_assertion_type": "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+            "client_id": "app-123",
+        }
+    ]
+    assert AssertionCredential.prepared == [("client-credentials", VAULT)]
+    assert StubOAuthClient.init_kwargs[-1]["auth"] is None
 
 
 def test_credential_alias_warns_and_rejects_both_names(mints):
@@ -308,11 +326,10 @@ async def test_provider_aclose_releases_everything(mints, fake_deps):
     assert StubOAuthClient.closed == 1
 
 
-def test_provider_with_a_non_client_secret_raises_before_touching_openai(
-    mints, fake_deps
-):
-    with pytest.raises(GrantConfigurationError, match="ClientSecret"):
-        KeycardOpenAIProvider(ZONE, VAULT, AssertionCredential())
+def test_provider_accepts_an_assertion_credential(mints, fake_deps):
+    provider = KeycardOpenAIProvider(ZONE, VAULT, AssertionCredential())
+    assert provider is not None
+    assert StubOAuthClient.init_kwargs[-1]["auth"] is None
 
 
 def test_provider_credential_alias_warns_at_the_caller(mints, fake_deps):
