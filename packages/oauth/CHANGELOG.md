@@ -1,3 +1,17 @@
+## 0.31.4-keycardai-oauth (2026-10-06)
+
+
+- fix(keycardai-oauth): say how to reach credentials in a .env file when discovery finds none (ECO-389) (#331)
+- * fix(keycardai-oauth): say how to reach credentials in a .env file when discovery finds none (ECO-389)
+- Co-Authored-By: Larry Osakwe <larry@keycard.ai>
+- * test(keycardai-temporal): assert the wrapped discovery message at any keycardai-oauth floor
+- Co-Authored-By: Larry Osakwe <larry@keycard.ai>
+- * test(keycardai-temporal): import CredentialDiscoveryError from its module
+- Co-Authored-By: Larry Osakwe <larry@keycard.ai>
+- ---------
+- Co-authored-by: devin-ai-keycard <devin-ai@keycard.ai>
+Co-authored-by: Larry Osakwe <larry@keycard.ai>
+
 ## 0.31.3-keycardai-oauth (2026-09-17)
 
 
