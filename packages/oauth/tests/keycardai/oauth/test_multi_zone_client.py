@@ -178,6 +178,51 @@ class TestSyncClientMultiZone:
             )
         assert transport.requests == []
 
+    def test_impersonate_sends_basic_header_for_selected_issuer(self):
+        transport = FakeTransport()
+        client = make_client(transport)
+
+        response = client.impersonate(
+            user_identifier="user@example.com",
+            resource="https://api.example.com",
+            issuer=ZONE2,
+        )
+
+        assert response.access_token == "issued_token"
+        assert len(transport.requests) == 1
+        sent = transport.requests[0]
+        assert sent.headers["Authorization"] == _basic_header(
+            "client_id_2", "client_secret_2"
+        )
+        # The issuer selector is not a wire field.
+        assert b"issuer" not in sent.body
+
+    def test_impersonate_defaults_to_client_issuer(self):
+        transport = FakeTransport()
+        client = make_client(transport)
+
+        client.impersonate(
+            user_identifier="user@example.com",
+            resource="https://api.example.com",
+        )
+
+        sent = transport.requests[0]
+        assert sent.headers["Authorization"] == _basic_header(
+            "client_id_1", "client_secret_1"
+        )
+
+    def test_impersonate_unknown_issuer_fails_closed(self):
+        transport = FakeTransport()
+        client = make_client(transport)
+
+        with pytest.raises(KeyError, match="not configured"):
+            client.impersonate(
+                user_identifier="user@example.com",
+                resource="https://api.example.com",
+                issuer="https://unknown.keycard.cloud",
+            )
+        assert transport.requests == []
+
 
 class TestAsyncClientMultiZone:
     @pytest.mark.asyncio
@@ -219,6 +264,52 @@ class TestAsyncClientMultiZone:
         with pytest.raises(KeyError, match="not configured"):
             await client.exchange_token(
                 subject_token="subject",
+                issuer="https://unknown.keycard.cloud",
+            )
+        assert transport.requests == []
+
+    @pytest.mark.asyncio
+    async def test_impersonate_sends_basic_header_for_selected_issuer(self):
+        transport = FakeAsyncTransport()
+        client = make_async_client(transport)
+
+        response = await client.impersonate(
+            user_identifier="user@example.com",
+            resource="https://api.example.com",
+            issuer=ZONE2,
+        )
+
+        assert response.access_token == "issued_token"
+        sent = transport.requests[0]
+        assert sent.headers["Authorization"] == _basic_header(
+            "client_id_2", "client_secret_2"
+        )
+        assert b"issuer" not in sent.body
+
+    @pytest.mark.asyncio
+    async def test_impersonate_defaults_to_client_issuer(self):
+        transport = FakeAsyncTransport()
+        client = make_async_client(transport)
+
+        await client.impersonate(
+            user_identifier="user@example.com",
+            resource="https://api.example.com",
+        )
+
+        sent = transport.requests[0]
+        assert sent.headers["Authorization"] == _basic_header(
+            "client_id_1", "client_secret_1"
+        )
+
+    @pytest.mark.asyncio
+    async def test_impersonate_unknown_issuer_fails_closed(self):
+        transport = FakeAsyncTransport()
+        client = make_async_client(transport)
+
+        with pytest.raises(KeyError, match="not configured"):
+            await client.impersonate(
+                user_identifier="user@example.com",
+                resource="https://api.example.com",
                 issuer="https://unknown.keycard.cloud",
             )
         assert transport.requests == []

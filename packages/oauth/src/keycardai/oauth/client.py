@@ -1019,6 +1019,7 @@ class AsyncClient:
         resource: str,
         scope: str | None = None,
         timeout: float | None = None,
+        issuer: str | None = None,
     ) -> TokenResponse:
         """Impersonate a user to obtain a resource token.
 
@@ -1034,6 +1035,10 @@ class AsyncClient:
             resource: Target resource URI (e.g. "https://graph.microsoft.com").
             scope: Optional scope string for the requested token.
             timeout: Optional request timeout override.
+            issuer: Issuer URL selecting which credentials a zone-aware auth
+                strategy (e.g. MultiZoneBasicAuth) applies for this call.
+                Defaults to the client's issuer. Single-credential strategies
+                ignore it.
 
         Returns:
             TokenResponse with the resource access token.
@@ -1066,7 +1071,7 @@ class AsyncClient:
             endpoint=endpoints.token,
             transport=self.transport,
             auth=self.auth_strategy,
-            issuer=self.issuer,
+            issuer=issuer if issuer is not None else self.issuer,
             user_agent=self.config.user_agent,
             custom_headers=self.config.custom_headers,
             timeout=timeout or self.config.timeout,
@@ -1804,6 +1809,7 @@ class Client:
         resource: str,
         scope: str | None = None,
         timeout: float | None = None,
+        issuer: str | None = None,
     ) -> TokenResponse:
         """Impersonate a user to obtain a resource token.
 
@@ -1819,6 +1825,10 @@ class Client:
             resource: Target resource URI (e.g. "https://graph.microsoft.com").
             scope: Optional scope string for the requested token.
             timeout: Optional request timeout override.
+            issuer: Issuer URL selecting which credentials a zone-aware auth
+                strategy (e.g. MultiZoneBasicAuth) applies for this call.
+                Defaults to the client's issuer. Single-credential strategies
+                ignore it.
 
         Returns:
             TokenResponse with the resource access token.
@@ -1851,7 +1861,7 @@ class Client:
             endpoint=endpoints.token,
             transport=self.transport,
             auth=self.auth_strategy,
-            issuer=self.issuer,
+            issuer=issuer if issuer is not None else self.issuer,
             user_agent=self.config.user_agent,
             custom_headers=self.config.custom_headers,
             timeout=timeout or self.config.timeout,
