@@ -77,7 +77,7 @@ from keycardai.oauth.server import discover_credential
 
 settings = Settings()  # a pydantic-settings model with keycard_client_id and keycard_client_secret
 env = {"KEYCARD_CLIENT_ID": settings.keycard_client_id, "KEYCARD_CLIENT_SECRET": settings.keycard_client_secret}
-interceptor = KeycardInterceptor("https://<zone-id>.keycard.cloud", credential=discover_credential(env=env))
+interceptor = KeycardInterceptor("https://<zone-id>.keycard.cloud", application_credential=discover_credential(env=env))
 ```
 
 ## Keycard setup
@@ -199,7 +199,7 @@ async def main() -> None:
     await worker.run()
 ```
 
-`KeycardOpenAIProvider(zone_url, resource, credential=None, *, refresh=timedelta(minutes=5), base_url=None, use_responses=None)` takes the zone URL and the identifier of the resource whose vault holds the OpenAI key. The credential is the same as the interceptor's: an explicit `ApplicationCredential`, or the one `discover_credential()` finds in the environment when omitted. It must be a `ClientSecret`, as for any client-credentials `@grant`; other credential types raise `GrantConfigurationError` at construction.
+`KeycardOpenAIProvider(zone_url, resource, application_credential=None, *, refresh=timedelta(minutes=5), base_url=None, use_responses=None)` takes the zone URL and the identifier of the resource whose vault holds the OpenAI key. The application credential is the same as the interceptor's: an explicit `ApplicationCredential`, or the one `discover_credential()` finds in the environment when omitted. It must be a `ClientSecret`, as for any client-credentials `@grant`; other credential types raise `GrantConfigurationError` at construction.
 
 Refresh: the key is minted with a client-credentials grant on the first model call, not at worker startup, and reused for `refresh` (or the grant's `expires_in`, whichever is shorter). The next model call after the window mints again, so a key rotated in Keycard reaches the worker within one refresh window, with no restart. Concurrent model calls on an expired cache share one mint. A permanent grant failure fails the model activity with the same non-retryable `KeycardAccessDenied` a `@grant` activity would raise; a transient one is left to the model activity's retry policy. The plugin requires an explicit `start_to_close_timeout` or `schedule_to_close_timeout` whenever a custom provider is set.
 

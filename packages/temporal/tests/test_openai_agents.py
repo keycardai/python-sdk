@@ -145,7 +145,9 @@ def test_credential_alias_warns_and_rejects_both_names(mints):
 
     with pytest.warns(DeprecationWarning):
         with pytest.raises(GrantConfigurationError, match="not both"):
-            KeycardOpenAIKey(ZONE, VAULT, application_credential=SECRET, credential=SECRET)
+            KeycardOpenAIKey(
+                ZONE, VAULT, application_credential=SECRET, credential=SECRET
+            )
 
 
 def test_non_positive_refresh_is_rejected(mints):
