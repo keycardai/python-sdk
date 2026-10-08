@@ -514,22 +514,17 @@ class _KeycardActivityInboundInterceptor(ActivityInboundInterceptor):
         extractor = grant.resolve_extractor()
         if extractor is None:
             # App-as-itself. exchange_tokens_for_resources is exchange-only,
-            # so client credentials stay a direct call. Assertion credentials
-            # (workload/web identity) authenticate per exchange request and
-            # have no SDK bridge for this path yet.
-            if not isinstance(self._application_credential, ClientSecret):
-                raise GrantConfigurationError(
-                    f"{_qualname(input.fn)} uses @grant without subject_from "
-                    "(client credentials), which requires a ClientSecret "
-                    "application credential; the worker has "
-                    f"{type(self._application_credential).__name__}."
-                )
+            # so client credentials stay a direct call; an assertion credential
+            # authenticates through the fields _client_auth_fields lifts.
             # One resource at a time; the first failure stops the loop, so
             # the body never sees partial credentials.
             for resource in grant.resources:
                 try:
+                    auth = await _client_auth_fields(
+                        self._application_credential, self._client, resource
+                    )
                     resp = await self._client.client_credentials_grant(
-                        resource=resource
+                        resource=resource, **auth
                     )
                 except Exception as e:
                     _raise_for_grant_failure(resource, e)
@@ -591,6 +586,35 @@ class _KeycardActivityInboundInterceptor(ActivityInboundInterceptor):
             return await self.next.execute_activity(input)
         finally:
             _ctx.reset(token)
+
+
+async def _client_auth_fields(
+    credential: ApplicationCredential, client: AsyncClient, resource: str
+) -> dict[str, str]:
+    """Client-authentication fields the credential puts in a request body.
+
+    Assertion-based credentials (WorkloadIdentity, WebIdentity) carry no
+    HTTP-level auth; their proof rides in the request as a jwt-bearer client
+    assertion. The credential protocol only exposes request preparation for
+    token exchange, so this prepares one and lifts the auth fields for the
+    client-credentials call. ClientSecret authenticates at the HTTP layer and
+    contributes nothing here. The subject token is a placeholder: client
+    credentials has no subject, the request model requires a non-empty one,
+    and only the client-auth fields of the prepared request are read.
+    """
+    if isinstance(credential, ClientSecret):
+        return {}
+    prepared = await credential.prepare_token_exchange_request(
+        client=client, subject_token="client-credentials", resource=resource
+    )
+    fields: dict[str, str] = {}
+    if prepared.client_assertion:
+        fields["client_assertion"] = prepared.client_assertion
+        if prepared.client_assertion_type:
+            fields["client_assertion_type"] = prepared.client_assertion_type
+        if prepared.client_id:
+            fields["client_id"] = prepared.client_id
+    return fields
 
 
 def _raise_for_grant_failure(resource: str, e: Exception) -> NoReturn:

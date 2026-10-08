@@ -101,7 +101,7 @@ Minting is all-or-nothing: the body never runs with partial credentials. If any 
 
 The identity mode is per activity: one subject applies to every resource in the grant.
 
-- `@grant(resource, ...)`: the application acts as itself (client credentials). Requires a `ClientSecret` application credential.
+- `@grant(resource, ...)`: the application acts as itself (client credentials). Works with every application credential type: a `ClientSecret` authenticates at the HTTP layer, a `WorkloadIdentity` or `WebIdentity` sends its jwt-bearer client assertion with the grant.
 - `@grant(resource, ..., subject_from=...)`: the application acts on behalf of a user. The activity input carries an identity reference (a user id, never a token). The interceptor's `subject_token_provider`, an application-supplied session lookup, returns that user's current session token, and an RFC 8693 exchange turns it into a token for each resource.
 - `@grant(resource, ..., subject_from=..., impersonate=True)`: impersonation, for workflows that outlive the user's session. The located value is a stable user identifier (email or oid) sent directly to the zone, which mints a short-lived substitute-user token for each resource. No session lookup runs and no `subject_token_provider` is needed. This is a different trust model from delegation: the worker asserts who the user is, and zone policy is the control. It requires a confidential client, application consent set to implicit, each resource declared as a dependency of the application, a prior delegated grant established by the user for each resource, and zone policy that explicitly permits the application to impersonate (forbidden by default). Prefer live delegation whenever the user's session is still expected to exist.
 
@@ -270,7 +270,7 @@ async def main() -> None:
     await worker.run()
 ```
 
-`KeycardOpenAIProvider(zone_url, resource, application_credential=None, *, refresh=timedelta(minutes=5), base_url=None, use_responses=None)` takes the zone URL and the identifier of the resource whose vault holds the OpenAI key. The application credential is the same as the interceptor's: an explicit `ApplicationCredential`, or the one `discover_credential()` finds in the environment when omitted. It must be a `ClientSecret`, as for any client-credentials `@grant`; other credential types raise `GrantConfigurationError` at construction.
+`KeycardOpenAIProvider(zone_url, resource, application_credential=None, *, refresh=timedelta(minutes=5), base_url=None, use_responses=None)` takes the zone URL and the identifier of the resource whose vault holds the OpenAI key. The application credential is the same as the interceptor's: an explicit `ApplicationCredential`, or the one `discover_credential()` finds in the environment when omitted. Any credential type works, as for a client-credentials `@grant`.
 
 Refresh: the key is minted with a client-credentials grant on the first model call, not at worker startup, and reused for `refresh` (or the grant's `expires_in`, whichever is shorter). The next model call after the window mints again, so a key rotated in Keycard reaches the worker within one refresh window, with no restart. Concurrent model calls on an expired cache share one mint. A permanent grant failure fails the model activity with the same non-retryable `KeycardAccessDenied` a `@grant` activity would raise; a transient one is left to the model activity's retry policy. The plugin requires an explicit `start_to_close_timeout` or `schedule_to_close_timeout` whenever a custom provider is set.
 

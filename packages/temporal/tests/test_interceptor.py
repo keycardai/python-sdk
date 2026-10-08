@@ -70,14 +70,18 @@ class StubOAuthClient:
 
     calls: list = []
     instances: int = 0
+    init_kwargs: list[dict] = []
+    client_auth: list[dict] = []  # client-auth kwargs of each client-credentials call
     fail_with: Exception | None = None  # raised by every grant/exchange when set
 
     def __init__(self, *args, **kwargs):
         type(self).instances += 1
+        type(self).init_kwargs.append(kwargs)
 
-    async def client_credentials_grant(self, resource: str):
+    async def client_credentials_grant(self, resource: str, **client_auth):
         if self.fail_with is not None:
             raise self.fail_with
+        type(self).client_auth.append(client_auth)
         self.calls.append(("client_credentials", resource))
         return SimpleNamespace(access_token=f"cc-tok-{len(self.calls)}")
 
@@ -105,6 +109,7 @@ class AssertionCredential:
     identity attaches inside prepare_token_exchange_request."""
 
     prepared: list = []
+    client_id: str | None = "app-123"
 
     def get_http_client_auth(self):
         return None
@@ -120,12 +125,17 @@ class AssertionCredential:
             subject_token=subject_token,
             resource=resource,
             subject_token_type="urn:ietf:params:oauth:token-type:access_token",
+            client_assertion=f"assertion-for-{resource}",
+            client_assertion_type="urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+            client_id=self.client_id,
         )
 
 
 @pytest.fixture
 def oauth_calls(monkeypatch) -> list:
     StubOAuthClient.calls = []
+    StubOAuthClient.init_kwargs = []
+    StubOAuthClient.client_auth = []
     StubOAuthClient.instances = 0
     StubOAuthClient.fail_with = None
     AssertionCredential.prepared = []
@@ -477,11 +487,30 @@ def test_credential_type_switch_wins_over_client_secret(monkeypatch, tmp_path):
     assert isinstance(interceptor._application_credential, WorkloadIdentity)
 
 
-async def test_client_credentials_grant_requires_client_secret(oauth_calls):
+async def test_client_secret_client_credentials_grant_sends_no_assertion(oauth_calls):
+    chain = inbound()
+    await chain.execute_activity(call(granted_activity))
+    assert oauth_calls == [("client_credentials", RESOURCE)]
+    assert StubOAuthClient.client_auth == [{}]
+    assert AssertionCredential.prepared == []
+    assert StubOAuthClient.init_kwargs[-1]["auth"] is not None
+
+
+async def test_assertion_credential_authenticates_the_client_credentials_grant(
+    oauth_calls,
+):
     chain = inbound(application_credential=AssertionCredential())
-    with pytest.raises(GrantConfigurationError, match="ClientSecret"):
-        await chain.execute_activity(call(granted_activity))
-    assert oauth_calls == []
+    await chain.execute_activity(call(granted_activity))
+    assert oauth_calls == [("client_credentials", RESOURCE)]
+    assert StubOAuthClient.client_auth == [
+        {
+            "client_assertion": f"assertion-for-{RESOURCE}",
+            "client_assertion_type": "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+            "client_id": "app-123",
+        }
+    ]
+    assert AssertionCredential.prepared == [("client-credentials", RESOURCE)]
+    assert StubOAuthClient.init_kwargs[-1]["auth"] is None
 
 
 async def test_assertion_credential_prepares_the_exchange(oauth_calls):
