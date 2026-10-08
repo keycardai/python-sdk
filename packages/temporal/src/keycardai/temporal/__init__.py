@@ -51,6 +51,7 @@ from typing import (
     Annotated,
     Any,
     NoReturn,
+    TypedDict,
     get_args,
     get_origin,
     get_type_hints,
@@ -588,9 +589,15 @@ class _KeycardActivityInboundInterceptor(ActivityInboundInterceptor):
             _ctx.reset(token)
 
 
+class _ClientAuth(TypedDict, total=False):
+    client_assertion: str
+    client_assertion_type: str
+    client_id: str
+
+
 async def _client_auth_fields(
     credential: ApplicationCredential, client: AsyncClient, resource: str
-) -> dict[str, str]:
+) -> _ClientAuth:
     """Client-authentication fields the credential puts in a request body.
 
     Assertion-based credentials (WorkloadIdentity, WebIdentity) carry no
@@ -607,7 +614,7 @@ async def _client_auth_fields(
     prepared = await credential.prepare_token_exchange_request(
         client=client, subject_token="client-credentials", resource=resource
     )
-    fields: dict[str, str] = {}
+    fields: _ClientAuth = {}
     if prepared.client_assertion:
         fields["client_assertion"] = prepared.client_assertion
         if prepared.client_assertion_type:
