@@ -8,7 +8,7 @@ with PKCE support (RFC 7636).
 import json
 from urllib.parse import urlencode
 
-from ..exceptions import OAuthHttpError, OAuthProtocolError
+from ..exceptions import OAuthHttpError, OAuthProtocolError, RefreshGrantError
 from ..http._context import HTTPContext
 from ..http._wire import HttpRequest, HttpResponse
 from ..http.transport import AsyncHTTPTransport, HTTPTransport
@@ -130,16 +130,29 @@ def parse_authorization_code_http_response(res: HttpResponse) -> TokenResponse:
         OAuthProtocolError: If the response contains an OAuth error.
         OAuthHttpError: If the HTTP status indicates an error.
     """
+    return _parse_token_http_response(
+        res,
+        operation="POST /token (authorization_code)",
+        error_cls=OAuthProtocolError,
+    )
+
+
+def _parse_token_http_response(
+    res: HttpResponse,
+    *,
+    operation: str,
+    error_cls: type[OAuthProtocolError],
+) -> TokenResponse:
     if res.status >= 400:
         full_body = res.body.decode("utf-8", "ignore")
         try:
             data = json.loads(full_body)
             if isinstance(data, dict) and "error" in data:
-                raise OAuthProtocolError(
+                raise error_cls(
                     error=data["error"],
                     error_description=data.get("error_description"),
                     error_uri=data.get("error_uri"),
-                    operation="POST /token (authorization_code)",
+                    operation=operation,
                 )
         except (json.JSONDecodeError, ValueError):
             pass
@@ -147,7 +160,7 @@ def parse_authorization_code_http_response(res: HttpResponse) -> TokenResponse:
             status_code=res.status,
             response_body=full_body[:512],
             headers=dict(res.headers),
-            operation="POST /token (authorization_code)",
+            operation=operation,
         )
 
     try:
@@ -155,23 +168,23 @@ def parse_authorization_code_http_response(res: HttpResponse) -> TokenResponse:
     except Exception as e:
         raise OAuthProtocolError(
             error="invalid_response",
-            error_description="Invalid JSON in authorization code response",
-            operation="POST /token (authorization_code)",
+            error_description=f"Invalid JSON in {operation} response",
+            operation=operation,
         ) from e
 
     if isinstance(data, dict) and "error" in data:
-        raise OAuthProtocolError(
+        raise error_cls(
             error=data["error"],
             error_description=data.get("error_description"),
             error_uri=data.get("error_uri"),
-            operation="POST /token (authorization_code)",
+            operation=operation,
         )
 
     if not isinstance(data, dict) or "access_token" not in data:
         raise OAuthProtocolError(
             error="invalid_response",
-            error_description="Missing required 'access_token' in authorization code response",
-            operation="POST /token (authorization_code)",
+            error_description=f"Missing required 'access_token' in {operation} response",
+            operation=operation,
         )
 
     scope = data.get("scope")
@@ -266,3 +279,134 @@ async def exchange_authorization_code_async(
     )
     http_res = await context.transport.request_raw(http_req, timeout=context.timeout)
     return parse_authorization_code_http_response(http_res)
+
+
+# ---------------------------------------------------------------------------
+# Refresh-token grant
+# ---------------------------------------------------------------------------
+
+REFRESH_OPERATION = "POST /token (refresh_token)"
+
+
+def build_refresh_token_http_request(
+    *,
+    refresh_token: str,
+    client_id: str | None,
+    context: HTTPContext,
+    resources: list[str] | None = None,
+    scope: str | None = None,
+) -> HttpRequest:
+    """Build the HTTP request for a refresh-token grant (RFC 6749 Section 6).
+
+    Args:
+        refresh_token: The refresh token returned by the authorization server.
+        client_id: Client ID for the form body. Public clients send it; a
+            confidential client authenticates through ``context.auth`` and
+            passes None.
+        context: HTTP context with endpoint, transport, and auth.
+        resources: RFC 8707 resource indicators, one ``resource`` parameter
+            per entry.
+        scope: Space-separated scope string to narrow the refreshed token.
+
+    Returns:
+        HttpRequest ready to send.
+    """
+    payload: list[tuple[str, str]] = [
+        ("grant_type", "refresh_token"),
+        ("refresh_token", refresh_token),
+    ]
+    if client_id is not None:
+        payload.append(("client_id", client_id))
+    for resource in resources or []:
+        payload.append(("resource", resource))
+    if scope:
+        payload.append(("scope", scope))
+
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/x-www-form-urlencoded",
+    }
+    if context.auth:
+        headers.update(dict(context.auth.apply_headers(context.issuer)))
+
+    return HttpRequest(
+        method="POST",
+        url=context.endpoint,
+        headers=headers,
+        body=urlencode(payload).encode("utf-8"),
+    )
+
+
+def parse_refresh_token_http_response(res: HttpResponse) -> TokenResponse:
+    """Parse the token endpoint response to a refresh-token grant.
+
+    Raises:
+        RefreshGrantError: If the response carries an OAuth error.
+            ``invalid_grant`` is not retryable; the user must authorize again.
+        OAuthProtocolError: If the response body is malformed.
+        OAuthHttpError: If the HTTP status indicates an error with no OAuth
+            error body.
+    """
+    return _parse_token_http_response(
+        res, operation=REFRESH_OPERATION, error_cls=RefreshGrantError
+    )
+
+
+def refresh_token_grant(
+    *,
+    refresh_token: str,
+    client_id: str | None = None,
+    context: HTTPContext[HTTPTransport],
+    resources: list[str] | None = None,
+    scope: str | None = None,
+) -> TokenResponse:
+    """Redeem a refresh token for a new access token (sync).
+
+    A ``refresh_token`` on the returned TokenResponse means the server
+    rotated it; the caller stores it in place of the old one. The SDK keeps
+    no state.
+
+    Raises:
+        RefreshGrantError: If the token endpoint answers with an OAuth error.
+        OAuthHttpError: If the token endpoint returns an HTTP error.
+        OAuthProtocolError: If the response body is malformed.
+    """
+    http_req = build_refresh_token_http_request(
+        refresh_token=refresh_token,
+        client_id=client_id,
+        context=context,
+        resources=resources,
+        scope=scope,
+    )
+    http_res = context.transport.request_raw(http_req, timeout=context.timeout)
+    return parse_refresh_token_http_response(http_res)
+
+
+async def refresh_token_grant_async(
+    *,
+    refresh_token: str,
+    client_id: str | None = None,
+    context: HTTPContext[AsyncHTTPTransport],
+    resources: list[str] | None = None,
+    scope: str | None = None,
+) -> TokenResponse:
+    """Redeem a refresh token for a new access token (async).
+
+    A ``refresh_token`` on the returned TokenResponse means the server
+    rotated it; the caller stores it in place of the old one. The SDK keeps
+    no state.
+
+    Raises:
+        RefreshGrantError: If the token endpoint answers with an OAuth error.
+        OAuthHttpError: If the token endpoint returns an HTTP error.
+        OAuthProtocolError: If the response body is malformed.
+    """
+    http_req = build_refresh_token_http_request(
+        refresh_token=refresh_token,
+        client_id=client_id,
+        context=context,
+        resources=resources,
+        scope=scope,
+    )
+    http_res = await context.transport.request_raw(http_req, timeout=context.timeout)
+    return parse_refresh_token_http_response(http_res)

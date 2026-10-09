@@ -10,6 +10,7 @@ from keycardai.oauth.exceptions import (
     AuthorizationDeniedError,
     ConfigError,
     OAuthProtocolError,
+    RefreshGrantError,
     StateMismatchError,
 )
 from keycardai.oauth.http.auth import BasicAuth, NoneAuth
@@ -17,6 +18,7 @@ from keycardai.oauth.pkce import (
     AuthorizationRedirect,
     begin_authorization,
     complete_authorization,
+    refresh_authorization,
 )
 from keycardai.oauth.types.models import (
     AuthorizationServerMetadata,
@@ -378,6 +380,10 @@ async def test_begin_resolves_issuer_from_challenge(monkeypatch):
                 "redirect_uri": "https://app.example.com/callback",
             },
         ),
+        (
+            refresh_authorization,
+            {"refresh_token": "rt", "client_id": "my-app"},
+        ),
     ],
 )
 async def test_flow_requires_exactly_one_issuer_entry(function, kwargs):
@@ -525,6 +531,107 @@ async def test_metadata_cannot_be_combined_with_other_entry_modes(
         )
 
 
+@pytest.mark.asyncio
+async def test_refresh_public_client_sends_client_id_with_none_auth(monkeypatch):
+    captured = {}
+    token = TokenResponse(access_token="new", refresh_token="rt2")
+    monkeypatch.setattr(
+        "keycardai.oauth.pkce.web.AsyncClient",
+        _async_client_factory(captured=captured, exchange_response=token),
+    )
+
+    result = await refresh_authorization(
+        refresh_token="rt1",
+        client_id="my-app",
+        issuer="https://auth.example.com",
+        resources=["https://api.example.com", "https://files.example.com"],
+        scopes=["read", "write"],
+    )
+
+    assert result is token
+    assert result.refresh_token == "rt2"
+    assert isinstance(captured["auth"], NoneAuth)
+    assert captured["issuer"] == "https://auth.example.com"
+    assert captured["refresh_kwargs"] == {
+        "refresh_token": "rt1",
+        "client_id": "my-app",
+        "resources": ["https://api.example.com", "https://files.example.com"],
+        "scopes": ["read", "write"],
+    }
+
+
+@pytest.mark.asyncio
+async def test_refresh_confidential_client_uses_basic_and_no_body_client_id(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(
+        "keycardai.oauth.pkce.web.AsyncClient",
+        _async_client_factory(
+            captured=captured, exchange_response=TokenResponse(access_token="new")
+        ),
+    )
+
+    result = await refresh_authorization(
+        refresh_token="rt1",
+        client_id="my-app",
+        client_secret="secret",
+        issuer="https://auth.example.com",
+    )
+
+    assert result.refresh_token is None
+    assert isinstance(captured["auth"], BasicAuth)
+    assert captured["auth"].client_id == "my-app"
+    assert captured["refresh_kwargs"]["client_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_refresh_uses_metadata_without_discovery(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(
+        "keycardai.oauth.pkce.web.AsyncClient",
+        _async_client_factory(
+            captured=captured, exchange_response=TokenResponse(access_token="new")
+        ),
+    )
+    metadata = AuthorizationServerMetadata(
+        issuer="https://auth.example.com",
+        authorization_endpoint="https://auth.example.com/authorize",
+        token_endpoint="https://auth.example.com/token",
+    )
+
+    await refresh_authorization(refresh_token="rt1", client_id="my-app", metadata=metadata)
+
+    assert captured["endpoints"] == Endpoints(token="https://auth.example.com/token")
+    assert captured["config"].enable_metadata_discovery is False
+    captured["get_endpoints"].assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_refresh_rejects_metadata_without_token_endpoint():
+    metadata = AuthorizationServerMetadata(
+        issuer="https://auth.example.com",
+        authorization_endpoint="https://auth.example.com/authorize",
+    )
+    with pytest.raises(ValueError, match="token_endpoint"):
+        await refresh_authorization(refresh_token="rt1", client_id="my-app", metadata=metadata)
+
+
+@pytest.mark.asyncio
+async def test_refresh_surfaces_invalid_grant_as_non_retryable(monkeypatch):
+    monkeypatch.setattr(
+        "keycardai.oauth.pkce.web.AsyncClient",
+        _async_client_factory(
+            exchange=AsyncMock(
+                side_effect=RefreshGrantError(error="invalid_grant", operation="refresh")
+            )
+        ),
+    )
+    with pytest.raises(RefreshGrantError) as exc:
+        await refresh_authorization(
+            refresh_token="rt1", client_id="my-app", issuer="https://auth.example.com"
+        )
+    assert exc.value.retryable is False
+
+
 def _async_client_factory(
     *,
     captured: dict | None = None,
@@ -561,6 +668,17 @@ def _async_client_factory(
                 return await original_exchange(**kwargs)
 
             instance.exchange_authorization_code = capture_exchange
+        instance.refresh_token_grant = (
+            exchange if exchange is not None else AsyncMock(return_value=exchange_response)
+        )
+        if captured is not None:
+            original_refresh = instance.refresh_token_grant
+
+            async def capture_refresh(**kwargs):
+                captured["refresh_kwargs"] = kwargs
+                return await original_refresh(**kwargs)
+
+            instance.refresh_token_grant = capture_refresh
         instance.__aenter__ = AsyncMock(return_value=instance)
         instance.__aexit__ = AsyncMock(return_value=None)
         return instance

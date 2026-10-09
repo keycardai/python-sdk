@@ -300,6 +300,105 @@ async def complete_authorization(
 
 
 
+async def refresh_authorization(
+    *,
+    refresh_token: str,
+    client_id: str,
+    www_authenticate_header: str | None = None,
+    issuer: str | None = None,
+    metadata: AuthorizationServerMetadata | None = None,
+    client_secret: str | None = None,
+    resources: list[str] | None = None,
+    scopes: list[str] | None = None,
+    http_client: httpx.AsyncClient | None = None,
+) -> TokenResponse:
+    """Refresh a grant obtained through the web-app authorization-code flow.
+
+    Takes the same entry modes as :func:`complete_authorization`: exactly
+    one of ``issuer``, ``www_authenticate_header``, or ``metadata``. A public
+    client sends ``client_id`` in the body; a confidential client
+    authenticates with HTTP Basic and omits ``client_id`` from the body.
+
+    The SDK keeps no state. When the returned ``TokenResponse`` carries a
+    ``refresh_token`` the server rotated it, and the application must store
+    it in place of the old one.
+
+    Args:
+        refresh_token: The refresh token stored from the completed flow.
+        client_id: OAuth client ID.
+        www_authenticate_header: The ``WWW-Authenticate`` challenge from the
+            protected resource. Mutually exclusive with ``issuer``.
+        issuer: Authorization server issuer URL to use directly. Mutually
+            exclusive with ``www_authenticate_header``.
+        metadata: Optional pre-discovered authorization server metadata.
+        client_secret: Optional client secret for confidential clients.
+        resources: RFC 8707 resource indicators, one ``resource`` parameter
+            per entry.
+        scopes: Scopes to request, space-joined into ``scope``.
+        http_client: Optional ``httpx.AsyncClient`` used to fetch protected
+            resource metadata in challenge-driven mode.
+
+    Returns:
+        ``TokenResponse`` returned by the token endpoint.
+
+    Raises:
+        keycardai.oauth.ConfigError: If anything other than exactly one of
+            ``issuer``, ``www_authenticate_header``, or ``metadata`` is
+            provided.
+        ValueError: If the token endpoint is missing from the supplied
+            metadata or discovered server metadata.
+        keycardai.oauth.RefreshGrantError: If the token endpoint answers
+            with an OAuth error. ``invalid_grant`` is not retryable: the user
+            must authorize again.
+        keycardai.oauth.OAuthHttpError: If discovery or the token endpoint
+            returns an HTTP error.
+        keycardai.oauth.NetworkError: If the token endpoint is unreachable.
+    """
+    _validate_entry_mode(
+        issuer=issuer,
+        www_authenticate_header=www_authenticate_header,
+        metadata=metadata,
+    )
+    if metadata is not None:
+        if metadata.token_endpoint is None:
+            raise ValueError(
+                "Authorization server metadata is missing token_endpoint"
+            )
+        auth_server_url = metadata.issuer
+    else:
+        auth_server_url = await _resolve_issuer(
+            issuer=issuer,
+            www_authenticate_header=www_authenticate_header,
+            http_client=http_client,
+        )
+
+    auth_strategy = (
+        BasicAuth(client_id, client_secret) if client_secret else NoneAuth()
+    )
+    config = ClientConfig(
+        enable_metadata_discovery=metadata is None, auto_register_client=False
+    )
+
+    async with AsyncClient(
+        issuer=auth_server_url,
+        auth=auth_strategy,
+        config=config,
+        endpoints=Endpoints(token=metadata.token_endpoint) if metadata else None,
+    ) as oauth_client:
+        if metadata is None:
+            endpoints = await oauth_client.get_endpoints()
+            if not endpoints.token:
+                raise ValueError(
+                    "Authorization server metadata is missing token_endpoint"
+                )
+        return await oauth_client.refresh_token_grant(
+            refresh_token=refresh_token,
+            client_id=None if client_secret else client_id,
+            resources=resources,
+            scopes=scopes,
+        )
+
+
 async def _resolve_issuer(
     *,
     issuer: str | None,

@@ -5,16 +5,25 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 
-from keycardai.oauth.exceptions import OAuthHttpError, OAuthProtocolError
+from keycardai.oauth.exceptions import (
+    PERMANENT_ERROR_CODES,
+    OAuthHttpError,
+    OAuthProtocolError,
+    RefreshGrantError,
+)
 from keycardai.oauth.http._context import HTTPContext
 from keycardai.oauth.http._wire import HttpResponse
 from keycardai.oauth.http.auth import BasicAuth, NoneAuth
 from keycardai.oauth.operations._authorize import (
     build_authorization_code_http_request,
     build_authorize_url,
+    build_refresh_token_http_request,
     exchange_authorization_code,
     exchange_authorization_code_async,
     parse_authorization_code_http_response,
+    parse_refresh_token_http_response,
+    refresh_token_grant,
+    refresh_token_grant_async,
 )
 from keycardai.oauth.types.models import TokenResponse
 from keycardai.oauth.utils.pkce import PKCEChallenge
@@ -287,3 +296,172 @@ class TestExchangeAuthorizationCode:
         assert result.access_token == "async_at"
         assert result.expires_in == 7200
         mock_transport.request_raw.assert_called_once()
+
+
+class TestRefreshTokenGrant:
+    """Spec row 15: the refresh step of the authorization-code flow."""
+
+    def _ctx(self, transport, auth=None):
+        return HTTPContext(
+            endpoint="https://auth.example.com/token",
+            transport=transport,
+            auth=auth or NoneAuth(),
+            issuer="https://auth.example.com",
+            timeout=30.0,
+        )
+
+    def _transport(self, status=200, body=b'{"access_token":"new_at","token_type":"Bearer"}'):
+        transport = Mock()
+        transport.request_raw.return_value = HttpResponse(
+            status=status, headers={"Content-Type": "application/json"}, body=body
+        )
+        return transport
+
+    def test_public_client_sends_client_id_in_body_and_no_basic_header(self):
+        req = build_refresh_token_http_request(
+            refresh_token="rt",
+            client_id="pub-client",
+            context=self._ctx(Mock()),
+        )
+        assert req.body is not None
+        body = parse_qs(req.body.decode())
+        assert body["grant_type"] == ["refresh_token"]
+        assert body["refresh_token"] == ["rt"]
+        assert body["client_id"] == ["pub-client"]
+        assert "Authorization" not in req.headers
+        assert "resource" not in body
+        assert "scope" not in body
+
+    def test_confidential_client_uses_basic_and_omits_client_id(self):
+        req = build_refresh_token_http_request(
+            refresh_token="rt",
+            client_id=None,
+            context=self._ctx(Mock(), auth=BasicAuth("cid", "secret")),
+        )
+        assert req.body is not None
+        body = parse_qs(req.body.decode())
+        assert req.headers["Authorization"].startswith("Basic ")
+        assert "client_id" not in body
+
+    def test_one_resource_parameter_per_entry_and_scope_joined(self):
+        req = build_refresh_token_http_request(
+            refresh_token="rt",
+            client_id="pub-client",
+            context=self._ctx(Mock()),
+            resources=["https://a.example.com", "https://b.example.com"],
+            scope="read write",
+        )
+        assert req.body is not None
+        body = parse_qs(req.body.decode())
+        assert body["resource"] == ["https://a.example.com", "https://b.example.com"]
+        assert body["scope"] == ["read write"]
+
+    def test_rotated_refresh_token_is_returned(self):
+        res = HttpResponse(
+            status=200,
+            headers={},
+            body=b'{"access_token":"new_at","refresh_token":"rt2","token_type":"Bearer"}',
+        )
+        assert parse_refresh_token_http_response(res).refresh_token == "rt2"
+
+    def test_absent_refresh_token_is_none(self):
+        res = HttpResponse(
+            status=200, headers={}, body=b'{"access_token":"new_at","token_type":"Bearer"}'
+        )
+        assert parse_refresh_token_http_response(res).refresh_token is None
+
+    def test_invalid_grant_is_a_non_retryable_refresh_grant_error(self):
+        res = HttpResponse(
+            status=400,
+            headers={},
+            body=b'{"error":"invalid_grant","error_description":"expired"}',
+        )
+        with pytest.raises(RefreshGrantError) as exc:
+            parse_refresh_token_http_response(res)
+        assert exc.value.error == "invalid_grant"
+        assert exc.value.retryable is False
+        assert isinstance(exc.value, OAuthProtocolError)
+        assert "invalid_grant" not in PERMANENT_ERROR_CODES
+
+    def test_other_oauth_errors_follow_the_parent_classification(self):
+        res = HttpResponse(
+            status=400, headers={}, body=b'{"error":"temporarily_unavailable"}'
+        )
+        with pytest.raises(RefreshGrantError) as exc:
+            parse_refresh_token_http_response(res)
+        assert exc.value.retryable is True
+
+    def test_5xx_is_retryable(self):
+        res = HttpResponse(status=503, headers={}, body=b"down")
+        with pytest.raises(OAuthHttpError) as exc:
+            parse_refresh_token_http_response(res)
+        assert exc.value.retryable is True
+
+    def test_sync_grant(self):
+        transport = self._transport()
+        result = refresh_token_grant(
+            refresh_token="rt", client_id="pub-client", context=self._ctx(transport)
+        )
+        assert result.access_token == "new_at"
+        sent = transport.request_raw.call_args.args[0]
+        assert parse_qs(sent.body.decode())["grant_type"] == ["refresh_token"]
+
+    @pytest.mark.asyncio
+    async def test_async_grant(self):
+        transport = AsyncMock()
+        transport.request_raw.return_value = HttpResponse(
+            status=200, headers={}, body=b'{"access_token":"new_at","token_type":"Bearer"}'
+        )
+        result = await refresh_token_grant_async(
+            refresh_token="rt", client_id="pub-client", context=self._ctx(transport)
+        )
+        assert result.access_token == "new_at"
+
+
+class TestClientRefreshTokenGrant:
+    """The AsyncClient and Client methods join scopes and pass resources through."""
+
+    def test_sync_client_method(self):
+        from keycardai.oauth import Client, ClientConfig, Endpoints
+
+        transport = Mock()
+        transport.request_raw.return_value = HttpResponse(
+            status=200, headers={}, body=b'{"access_token":"new_at","token_type":"Bearer"}'
+        )
+        client = Client(
+            "https://auth.example.com",
+            auth=BasicAuth("cid", "secret"),
+            config=ClientConfig(enable_metadata_discovery=False, auto_register_client=False),
+            endpoints=Endpoints(token="https://auth.example.com/token"),
+            transport=transport,
+        )
+        result = client.refresh_token_grant(
+            refresh_token="rt", resources=["https://a.example.com"], scopes=["read", "write"]
+        )
+        assert result.access_token == "new_at"
+        sent = transport.request_raw.call_args.args[0]
+        body = parse_qs(sent.body.decode())
+        assert body["scope"] == ["read write"]
+        assert body["resource"] == ["https://a.example.com"]
+        assert "client_id" not in body
+        assert sent.headers["Authorization"].startswith("Basic ")
+
+    @pytest.mark.asyncio
+    async def test_async_client_method(self):
+        from keycardai.oauth import AsyncClient, ClientConfig, Endpoints
+
+        transport = AsyncMock()
+        transport.request_raw.return_value = HttpResponse(
+            status=200, headers={}, body=b'{"access_token":"new_at","token_type":"Bearer"}'
+        )
+        client = AsyncClient(
+            "https://auth.example.com",
+            auth=NoneAuth(),
+            config=ClientConfig(enable_metadata_discovery=False, auto_register_client=False),
+            endpoints=Endpoints(token="https://auth.example.com/token"),
+            transport=transport,
+        )
+        result = await client.refresh_token_grant(refresh_token="rt", client_id="pub-client")
+        assert result.access_token == "new_at"
+        body = parse_qs(transport.request_raw.call_args.args[0].body.decode())
+        assert body["client_id"] == ["pub-client"]
