@@ -1101,6 +1101,12 @@ def test_provider_needing_three_arguments_fails_at_construction():
     with pytest.raises(GrantConfigurationError, match="3 positional arguments"):
         inbound(subject_token_provider=provider)
 
+    async def with_varargs(ref: str, context, extra, *rest) -> str:
+        return ""
+
+    with pytest.raises(GrantConfigurationError, match="3 positional arguments"):
+        inbound(subject_token_provider=with_varargs)
+
 
 async def test_uninspectable_provider_gets_one_argument(oauth_calls, monkeypatch):
     seen: list[tuple] = []

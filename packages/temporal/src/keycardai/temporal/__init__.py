@@ -163,8 +163,6 @@ def _provider_takes_context(provider: SubjectTokenProvider | None) -> bool:
         p for p in params if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
     ]
     required = [p for p in positional if p.default is p.empty]
-    if any(p.kind is p.VAR_POSITIONAL for p in params):
-        return True
     if len(required) >= 3:
         raise GrantConfigurationError(
             f"subject_token_provider {_qualname(provider)} needs "
@@ -172,6 +170,8 @@ def _provider_takes_context(provider: SubjectTokenProvider | None) -> bool:
             "identity reference, or the identity reference and a "
             "SubjectTokenContext."
         )
+    if any(p.kind is p.VAR_POSITIONAL for p in params):
+        return True
     return len(required) == 2
 
 
