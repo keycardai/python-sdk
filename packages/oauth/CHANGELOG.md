@@ -1,3 +1,9 @@
+## 0.33.0-keycardai-oauth (2026-10-09)
+
+
+- feat(keycardai-oauth): refresh a grant from the authorization-code flow (SDK-15) (#344)
+- Adds the refresh step from authorization-code-pkce.md spec-version 4: refresh_token_grant / refresh_token_grant_async operations, a refresh_token_grant method on AsyncClient and Client, and refresh_authorization in pkce/web.py with complete_authorization's entry modes. A public client sends client_id in the body; a confidential client uses HTTP Basic and omits it. A rotated refresh_token comes back on the TokenResponse for the caller to store. An OAuth error response raises RefreshGrantError, whose retryable is False for invalid_grant and otherwise follows OAuthProtocolError.
+
 ## 0.32.0-keycardai-oauth (2026-10-08)
 
 
