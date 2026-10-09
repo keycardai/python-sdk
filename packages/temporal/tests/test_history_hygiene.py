@@ -30,6 +30,7 @@ import temporalio.converter
 import temporalio.worker
 from temporalio import activity, workflow
 from temporalio.client import Client
+from temporalio.common import RetryPolicy
 from temporalio.testing import WorkflowEnvironment
 from temporalio.worker import Worker
 
@@ -284,7 +285,6 @@ async def test_no_token_anywhere_in_history(temporal_env, monkeypatch):
 class MisconfiguredWorkflow:
     @workflow.run
     async def run(self, order: Order) -> str:
-        from temporalio.common import RetryPolicy
 
         receipt = await workflow.execute_activity(
             post_ledger_entry_obo,
@@ -354,3 +354,87 @@ async def test_grant_configuration_error_fails_fast_when_listed_non_retryable(
         if event.HasField("activity_task_started_event_attributes")
     )
     assert attempts == 1
+
+
+# --- spec row 59: the provider's context matches the running activity ---
+
+seen_context: list[tuple[kt.SubjectTokenContext, dict]] = []
+
+
+async def context_lookup(ref: str, context: kt.SubjectTokenContext) -> str:
+    # Called inside the activity execution, so activity.info() is the one the
+    # body will see; record both for the comparison below.
+    info = activity.info()
+    seen_context.append(
+        (
+            context,
+            {
+                "workflow_id": info.workflow_id,
+                "workflow_run_id": info.workflow_run_id,
+                "activity_type": info.activity_type,
+                "attempt": info.attempt,
+            },
+        )
+    )
+    return f"session-for-{ref}"
+
+
+class TwoResourceStub(StubOAuthClient):
+    async def exchange_token(self, request):
+        assert request.subject_token == "session-for-alice"
+        assert request.resource in (RESOURCE, SECOND_RESOURCE)
+        return SimpleNamespace(access_token=TOKEN)
+
+
+SECOND_RESOURCE = "https://second.test"
+
+
+@grant(RESOURCE, SECOND_RESOURCE, subject_from="approver_id")
+@activity.defn
+async def two_resource_obo(order_id: str, approver_id: str) -> str:
+    assert access(RESOURCE).access_token == TOKEN
+    assert access(SECOND_RESOURCE).access_token == TOKEN
+    return f"{order_id}:{approver_id}"
+
+
+@workflow.defn
+class ContextWorkflow:
+    @workflow.run
+    async def run(self, order_id: str) -> str:
+        return await workflow.execute_activity(
+            two_resource_obo,
+            args=[order_id, "alice"],
+            start_to_close_timeout=timedelta(seconds=10),
+            retry_policy=RetryPolicy(maximum_attempts=1),
+        )
+
+
+async def test_provider_context_matches_the_running_activity(temporal_env, monkeypatch):
+    monkeypatch.setattr(kt, "AsyncClient", TwoResourceStub)
+    seen_context.clear()
+    task_queue = f"keycard-context-{uuid.uuid4()}"
+    interceptor = KeycardInterceptor(
+        "https://zone.test",
+        application_credential=ClientSecret(("worker-id", "worker-secret")),
+        subject_token_provider=context_lookup,
+    )
+    workflow_id = f"context-{uuid.uuid4()}"
+    async with Worker(
+        temporal_env.client,
+        task_queue=task_queue,
+        workflows=[ContextWorkflow],
+        activities=[two_resource_obo],
+        interceptors=[interceptor],
+    ):
+        handle = await temporal_env.client.start_workflow(
+            ContextWorkflow.run, "ord-7", id=workflow_id, task_queue=task_queue
+        )
+        assert await handle.result() == "ord-7:alice"
+
+    assert len(seen_context) == 1
+    context, info = seen_context[0]
+    assert context.workflow_id == workflow_id == info["workflow_id"]
+    assert context.workflow_run_id == handle.result_run_id == info["workflow_run_id"]
+    assert context.activity_type == "two_resource_obo" == info["activity_type"]
+    assert context.attempt == 1 == info["attempt"]
+    assert context.resources == (RESOURCE, SECOND_RESOURCE)

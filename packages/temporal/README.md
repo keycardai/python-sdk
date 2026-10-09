@@ -206,17 +206,52 @@ worker = Worker(client, task_queue=..., workflows=[...], activities=[...],
                 interceptors=[UserIdPropagator(), interceptor])
 ```
 
-The worker supplies the session lookup:
+The worker supplies the session lookup. The provider is the only place a session token enters an activity: arguments and headers are written into workflow history, which is permanent and replayed verbatim, so a token there would outlive its revocation. One setup that works end to end: the web app and the worker run as one Keycard Application; at sign-in the app's authorization code exchange (requesting the Application's own Resource) returns a refresh token, which the app stores server-side keyed by user id, encrypted at rest, never sent to the browser. The provider turns that stored refresh token into a fresh access token:
 
 ```python
-async def session_token_for(approver_id: str) -> str:
-    return await sessions.current_token(approver_id)
+import httpx
+from temporalio.exceptions import ApplicationError
+
+from keycardai.oauth import AsyncClient
+from keycardai.temporal import KeycardInterceptor, SubjectTokenContext
+
+zone = AsyncClient("https://<zone-id>.keycard.cloud")
+
+
+async def session_token_for(user_id: str, context: SubjectTokenContext) -> str:
+    refresh_token = await session_store.refresh_token(user_id)  # your store
+    endpoints = await zone.get_endpoints()
+    async with httpx.AsyncClient() as http:
+        response = await http.post(
+            endpoints.token,
+            data={
+                "grant_type": "refresh_token",
+                "refresh_token": refresh_token,
+                "resource": "<application-resource>",
+            },
+            auth=("<client-id>", "<client-secret>"),
+        )
+    if response.status_code == 400 and response.json().get("error") == "invalid_grant":
+        # The user's session was revoked or has ended: let the workflow decide.
+        raise ApplicationError(
+            f"session for {user_id} is gone (workflow {context.workflow_id})",
+            type="SessionGone",
+            non_retryable=True,
+        )
+    response.raise_for_status()
+    body = response.json()
+    if body.get("refresh_token"):
+        await session_store.save_refresh_token(user_id, body["refresh_token"])
+    return body["access_token"]
+
 
 interceptor = KeycardInterceptor(
     "https://<zone-id>.keycard.cloud",
     subject_token_provider=session_token_for,
 )
 ```
+
+A provider that takes only the identity reference (`async def session_token_for(user_id: str) -> str`) works too; the interceptor reads the signature once at construction and passes a `SubjectTokenContext` (`workflow_id`, `workflow_run_id`, `activity_type`, `attempt`, and the grant's `resources`) only to a provider with a second required parameter. Any other exception from the provider is retried under the activity retry policy. The sign-in side and the store are described on the [Temporal docs page](https://docs.keycard.ai/sdk/temporal/).
 
 ## The OpenAI Agents plugin
 

@@ -52,6 +52,7 @@ from typing import (
     Any,
     NoReturn,
     TypedDict,
+    cast,
     get_args,
     get_origin,
     get_type_hints,
@@ -90,6 +91,7 @@ __all__ = [
     "KeycardInterceptor",
     "ResourceAccessError",
     "Subject",
+    "SubjectTokenContext",
     "access",
     "grant",
 ]
@@ -106,12 +108,71 @@ class GrantConfigurationError(RuntimeError):
 
 _GRANT_ATTR = "__keycard_grant__"
 
-SubjectTokenProvider = Callable[[str], Awaitable[str]]
+
+@dataclass(frozen=True)
+class SubjectTokenContext:
+    """The activity execution a ``subject_token_provider`` is resolving for.
+
+    Built per execution from ``temporalio.activity.info()`` and the grant, and
+    passed as the second argument to a provider that accepts one. Nothing in
+    it is construction state.
+    """
+
+    workflow_id: str | None
+    workflow_run_id: str | None
+    activity_type: str
+    attempt: int
+    resources: tuple[str, ...]
+    """The grant's resources, in declaration order."""
+
+
+SubjectTokenProvider = (
+    Callable[[str], Awaitable[str]]
+    | Callable[[str, SubjectTokenContext], Awaitable[str]]
+)
 """Returns the current session token for an identity reference.
 
 Application-supplied, typically a session-store lookup. Called at activity
-execution time so a token revoked mid-workflow is never replayed from state.
+execution time so a token revoked mid-workflow is never replayed from state;
+the provider is the only place a session token enters an activity, because
+arguments and headers are written into workflow history. A provider with two
+required positional parameters (or ``*args``) also receives a
+:class:`SubjectTokenContext`; any other provider receives the reference alone.
+The shape is picked once, at construction. Raise
+``ApplicationError(..., non_retryable=True)`` for a session that is gone, so
+the workflow decides what happens next; raise anything else for a transient
+lookup failure and the activity retry policy governs it.
 """
+
+
+def _provider_takes_context(provider: SubjectTokenProvider | None) -> bool:
+    """Decide the provider's call shape from its signature, once.
+
+    Two required positional parameters or ``*args`` means (reference, context).
+    One required parameter, an optional second one, or an uninspectable
+    callable means (reference,). Three or more required positional parameters
+    cannot be satisfied and fail construction.
+    """
+    if provider is None:
+        return False
+    try:
+        params = list(inspect.signature(provider).parameters.values())
+    except (TypeError, ValueError):
+        return False
+    positional = [
+        p for p in params if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD)
+    ]
+    required = [p for p in positional if p.default is p.empty]
+    if any(p.kind is p.VAR_POSITIONAL for p in params):
+        return True
+    if len(required) >= 3:
+        raise GrantConfigurationError(
+            f"subject_token_provider {_qualname(provider)} needs "
+            f"{len(required)} positional arguments; it is called with the "
+            "identity reference, or the identity reference and a "
+            "SubjectTokenContext."
+        )
+    return len(required) == 2
 
 
 class Subject:
@@ -456,14 +517,18 @@ class KeycardInterceptor(Interceptor):
         subject_token_provider: Resolves an identity reference to that user's
             current session token. Required for on-behalf-of activities
             (``subject_from=...`` or a ``Subject()`` marker); not used by
-            app-as-itself or ``impersonate=True`` grants.
+            app-as-itself or ``impersonate=True`` grants. Either
+            ``async (reference) -> token`` or
+            ``async (reference, SubjectTokenContext) -> token``; the shape is
+            read from the signature here, once.
 
     Raises:
         GrantConfigurationError: ``application_credential`` was omitted and
             the environment describes no credential, an incomplete one, or an
             ambiguous set that ``KEYCARD_APPLICATION_CREDENTIAL_TYPE`` does
-            not choose between; or both ``application_credential`` and
-            ``credential`` were given.
+            not choose between; both ``application_credential`` and
+            ``credential`` were given; or ``subject_token_provider`` needs
+            three or more positional arguments.
     """
 
     def __init__(
@@ -485,6 +550,7 @@ class KeycardInterceptor(Interceptor):
             zone_url, auth=application_credential.get_http_client_auth()
         )
         self._subject_token_provider = subject_token_provider
+        self._provider_takes_context = _provider_takes_context(subject_token_provider)
 
     def intercept_activity(
         self, next: ActivityInboundInterceptor
@@ -494,6 +560,7 @@ class KeycardInterceptor(Interceptor):
             self._client,
             self._application_credential,
             self._subject_token_provider,
+            self._provider_takes_context,
         )
 
 
@@ -504,11 +571,13 @@ class _KeycardActivityInboundInterceptor(ActivityInboundInterceptor):
         client: AsyncClient,
         application_credential: ApplicationCredential,
         subject_token_provider: SubjectTokenProvider | None,
+        provider_takes_context: bool,
     ) -> None:
         super().__init__(next)
         self._client = client
         self._application_credential = application_credential
         self._subject_token_provider = subject_token_provider
+        self._provider_takes_context = provider_takes_context
 
     async def _mint(self, grant: _Grant, input: ExecuteActivityInput) -> AccessContext:
         ctx = AccessContext()
@@ -554,7 +623,7 @@ class _KeycardActivityInboundInterceptor(ActivityInboundInterceptor):
             )
             _raise_on_mint_error(ctx, *grant.resources)
         else:
-            subject_token = await self._resolve_subject(extractor, input)
+            subject_token = await self._resolve_subject(extractor, input, grant)
             await exchange_tokens_for_resources(
                 client=self._client,
                 resources=list(grant.resources),
@@ -569,14 +638,32 @@ class _KeycardActivityInboundInterceptor(ActivityInboundInterceptor):
         return ctx
 
     async def _resolve_subject(
-        self, extractor: _Extractor, input: ExecuteActivityInput
+        self, extractor: _Extractor, input: ExecuteActivityInput, grant: _Grant
     ) -> str:
         if self._subject_token_provider is None:
             raise GrantConfigurationError(
                 f"{_qualname(input.fn)} uses an on-behalf-of @grant but "
                 "KeycardInterceptor has no subject_token_provider."
             )
-        return await self._subject_token_provider(extractor(input))
+        reference = extractor(input)
+        if not self._provider_takes_context:
+            one_arg = cast(
+                Callable[[str], Awaitable[str]], self._subject_token_provider
+            )
+            return await one_arg(reference)
+        info = activity.info()
+        context = SubjectTokenContext(
+            workflow_id=info.workflow_id,
+            workflow_run_id=info.workflow_run_id,
+            activity_type=info.activity_type,
+            attempt=info.attempt,
+            resources=tuple(grant.resources),
+        )
+        two_arg = cast(
+            Callable[[str, SubjectTokenContext], Awaitable[str]],
+            self._subject_token_provider,
+        )
+        return await two_arg(reference, context)
 
     async def execute_activity(self, input: ExecuteActivityInput) -> Any:
         declared = getattr(input.fn, _GRANT_ATTR, None)

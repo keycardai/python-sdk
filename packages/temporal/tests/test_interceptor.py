@@ -11,6 +11,7 @@ in ``test_history_hygiene.py``.
 
 from __future__ import annotations
 
+import inspect
 from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Annotated
@@ -1049,3 +1050,76 @@ def test_grant_returns_the_same_function_object():
     async def fn() -> None: ...
 
     assert grant(RESOURCE)(fn) is fn
+
+
+# --- subject_token_provider call shapes (spec rows 55 to 58) ---
+
+
+async def test_one_argument_provider_is_called_with_the_reference_only(oauth_calls):
+    seen: list[tuple] = []
+
+    async def provider(*args):
+        seen.append(args)
+        return "session-token-for-alice"
+
+    # *args is the two-argument shape; a one-argument def is the baseline.
+    async def one_arg(ref: str) -> str:
+        seen.append((ref,))
+        return "session-token-for-alice"
+
+    await inbound(subject_token_provider=one_arg).execute_activity(
+        call(obo_activity, "alice")
+    )
+    assert seen == [("alice",)]
+    seen.clear()
+    chain = inbound(subject_token_provider=provider)
+    await ActivityEnvironment().run(chain.execute_activity, call(obo_activity, "alice"))
+    assert len(seen) == 1 and seen[0][0] == "alice"
+    assert isinstance(seen[0][1], kt.SubjectTokenContext)
+    assert seen[0][1].resources == (RESOURCE,)
+
+
+async def test_provider_with_an_optional_second_parameter_gets_one_argument(
+    oauth_calls,
+):
+    seen: list[tuple] = []
+
+    async def provider(ref: str, context=None) -> str:
+        seen.append((ref, context))
+        return "session-token-for-alice"
+
+    await inbound(subject_token_provider=provider).execute_activity(
+        call(obo_activity, "alice")
+    )
+    assert seen == [("alice", None)]
+
+
+def test_provider_needing_three_arguments_fails_at_construction():
+    async def provider(ref: str, context, extra) -> str:
+        return ""
+
+    with pytest.raises(GrantConfigurationError, match="3 positional arguments"):
+        inbound(subject_token_provider=provider)
+
+
+async def test_uninspectable_provider_gets_one_argument(oauth_calls, monkeypatch):
+    seen: list[tuple] = []
+
+    class Opaque:
+        async def __call__(self, *args):
+            seen.append(args)
+            return "session-token-for-alice"
+
+    provider = Opaque()
+    real = inspect.signature
+
+    def fail_for_opaque(obj, *a, **k):
+        if obj is provider:
+            raise ValueError("no signature")
+        return real(obj, *a, **k)
+
+    monkeypatch.setattr(kt.inspect, "signature", fail_for_opaque)
+    await inbound(subject_token_provider=provider).execute_activity(
+        call(obo_activity, "alice")
+    )
+    assert seen == [("alice",)]
