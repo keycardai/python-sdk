@@ -144,7 +144,8 @@ filterwarnings = [
 name = "cz_customize"
 version = "2.3.2"
 tag_format = "${version}-keycardai-mcp"
-ignored_tag_formats = ["${version}-*"]
+# Ignores sibling packages' tags only; it must not match this package's own tag, because commitizen applies ignored formats before tag_format.
+ignored_tag_formats = ["${version}-keycardai-(?!mcp$).*"]
 update_changelog_on_bump = true
 bump_message = "bump: keycardai-mcp $current_version → $new_version"
 # The package is past 1.0.0: breaking changes must cut majors. Leaving this

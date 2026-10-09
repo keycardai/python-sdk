@@ -116,7 +116,8 @@ addopts = "-ra -q"
 name = "cz_customize"
 version = "0.14.2"
 tag_format = "${version}-keycardai-starlette"
-ignored_tag_formats = ["${version}-*"]
+# Ignores sibling packages' tags only; it must not match this package's own tag, because commitizen applies ignored formats before tag_format.
+ignored_tag_formats = ["${version}-keycardai-(?!starlette$).*"]
 update_changelog_on_bump = true
 bump_message = "bump: keycardai-starlette $current_version → $new_version"
 major_version_zero = true

@@ -101,7 +101,8 @@ explicit = true
 name = "cz_customize"
 version = "0.3.0"
 tag_format = "${version}-keycardai"
-ignored_tag_formats = ["${version}-*"]
+# Ignores the packages' tags only; this root tag has no suffix, and commitizen applies ignored formats before tag_format.
+ignored_tag_formats = ["${version}-keycardai-.*"]
 update_changelog_on_bump = true
 bump_message = "bump: keycardai $current_version → $new_version"
 major_version_zero = true
