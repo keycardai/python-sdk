@@ -149,6 +149,40 @@ cached_metadata = AuthorizationServerMetadata(
 #             -> metadata=cached_metadata
 ```
 
+### Refreshing a Grant
+
+A token response from the web-app flow may carry a `refresh_token`. Redeem it
+with `refresh_authorization`, which takes the same entry modes and client
+authentication as `complete_authorization`. The SDK keeps no state: when the
+response carries a new `refresh_token`, the server rotated it and the
+application must store it in place of the old one. `RefreshGrantError` with
+`error == "invalid_grant"` is not retryable; the user must authorize again.
+
+```python
+from keycardai.oauth import RefreshGrantError
+from keycardai.oauth.pkce import refresh_authorization
+
+async def refresh_session(session):
+    try:
+        token = await refresh_authorization(
+            refresh_token=session["refresh_token"],
+            client_id="my-web-app",
+            client_secret="...",  # omit for a public client
+            issuer="https://oauth.example.com",
+            resources=["https://api.example.com"],
+        )
+    except RefreshGrantError as e:
+        if not e.retryable:
+            raise  # Send the user through begin_authorization again.
+        raise
+    if token.refresh_token:
+        session["refresh_token"] = token.refresh_token
+    return token.access_token
+```
+
+The same grant is available on `AsyncClient` and `Client` as
+`refresh_token_grant(refresh_token=..., client_id=..., resources=..., scopes=...)`.
+
 ## Features
 
 - **Token Exchange (RFC 8693)** - Exchange tokens for different audiences, scopes, or token types

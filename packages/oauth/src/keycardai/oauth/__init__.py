@@ -46,6 +46,7 @@ from .exceptions import (
     OAuthError,
     OAuthHttpError,
     OAuthProtocolError,
+    RefreshGrantError,
     StateMismatchError,
     TokenExchangeError,
 )
@@ -83,6 +84,7 @@ __all__ = [
     "OAuthError",  # Base exception for all OAuth errors
     "OAuthHttpError",
     "OAuthProtocolError",
+    "RefreshGrantError",
     "NetworkError",
     "ConfigError",
     "AuthenticationError",

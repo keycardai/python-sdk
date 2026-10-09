@@ -310,6 +310,32 @@ class TokenExchangeError(OAuthProtocolError):
         super().__init__(error, error_description, error_uri, operation)
 
 
+class RefreshGrantError(OAuthProtocolError):
+    """OAuth error response to a refresh-token grant (RFC 6749 Section 6).
+
+    ``retryable`` is False for ``invalid_grant``: the refresh token is
+    expired, revoked, or unknown, and the user must authorize again. Every
+    other code follows OAuthProtocolError's classification. The shared
+    PERMANENT_ERROR_CODES set is unchanged, since ``invalid_grant`` is
+    permanent only on the refresh path.
+    """
+
+    def __init__(
+        self,
+        error: str,
+        error_description: str | None = None,
+        error_uri: str | None = None,
+        operation: str = "",
+    ):
+        super().__init__(error, error_description, error_uri, operation)
+
+    @property
+    def retryable(self) -> bool:
+        if self.error == "invalid_grant":
+            return False
+        return super().retryable
+
+
 class JWKSError(OAuthError):
     """Base class for JWKS key-resolution failures (fetch and key lookup).
 

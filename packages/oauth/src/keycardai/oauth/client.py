@@ -20,6 +20,8 @@ from .http.transport import AsyncHTTPTransport, HTTPTransport
 from .operations._authorize import (
     exchange_authorization_code as _exchange_authorization_code,
     exchange_authorization_code_async as _exchange_authorization_code_async,
+    refresh_token_grant as _refresh_token_grant,
+    refresh_token_grant_async as _refresh_token_grant_async,
 )
 from .operations._client_credentials import (
     client_credentials_grant,
@@ -1012,6 +1014,61 @@ class AsyncClient:
             resource=resource,
         )
 
+    async def refresh_token_grant(
+        self,
+        *,
+        refresh_token: str,
+        client_id: str | None = None,
+        resources: list[str] | None = None,
+        scopes: list[str] | None = None,
+        timeout: float | None = None,
+    ) -> TokenResponse:
+        """Redeem a refresh token for a new access token (RFC 6749 Section 6).
+
+        A public client sends ``client_id`` in the body with no auth header;
+        a confidential client authenticates through the client's auth
+        strategy and passes no ``client_id``.
+
+        Args:
+            refresh_token: The refresh token from an earlier token response.
+            client_id: Client ID for the form body. Required for public
+                clients, omitted for confidential clients.
+            resources: RFC 8707 resource indicators, sent as one ``resource``
+                parameter per entry.
+            scopes: Scopes to request, space-joined into ``scope``.
+            timeout: Optional request timeout override.
+
+        Returns:
+            TokenResponse. When it carries a ``refresh_token`` the server
+            rotated it, and the caller must store it in place of the old
+            one; the SDK keeps no state.
+
+        Raises:
+            RefreshGrantError: If the token endpoint answers with an OAuth
+                error. ``invalid_grant`` is not retryable: the user must
+                authorize again.
+            OAuthHttpError: If the token endpoint returns an HTTP error.
+        """
+        endpoints = await self._get_current_endpoints()
+
+        ctx = build_http_context(
+            endpoint=endpoints.token,
+            transport=self.transport,
+            auth=self.auth_strategy,
+            issuer=self.issuer,
+            user_agent=self.config.user_agent,
+            custom_headers=self.config.custom_headers,
+            timeout=timeout or self.config.timeout,
+        )
+
+        return await _refresh_token_grant_async(
+            refresh_token=refresh_token,
+            client_id=client_id,
+            context=ctx,
+            resources=resources,
+            scope=" ".join(scopes) if scopes else None,
+        )
+
     async def impersonate(
         self,
         *,
@@ -1800,6 +1857,61 @@ class Client:
             client_id=client_id,
             context=ctx,
             resource=resource,
+        )
+
+    def refresh_token_grant(
+        self,
+        *,
+        refresh_token: str,
+        client_id: str | None = None,
+        resources: list[str] | None = None,
+        scopes: list[str] | None = None,
+        timeout: float | None = None,
+    ) -> TokenResponse:
+        """Redeem a refresh token for a new access token (RFC 6749 Section 6).
+
+        A public client sends ``client_id`` in the body with no auth header;
+        a confidential client authenticates through the client's auth
+        strategy and passes no ``client_id``.
+
+        Args:
+            refresh_token: The refresh token from an earlier token response.
+            client_id: Client ID for the form body. Required for public
+                clients, omitted for confidential clients.
+            resources: RFC 8707 resource indicators, sent as one ``resource``
+                parameter per entry.
+            scopes: Scopes to request, space-joined into ``scope``.
+            timeout: Optional request timeout override.
+
+        Returns:
+            TokenResponse. When it carries a ``refresh_token`` the server
+            rotated it, and the caller must store it in place of the old
+            one; the SDK keeps no state.
+
+        Raises:
+            RefreshGrantError: If the token endpoint answers with an OAuth
+                error. ``invalid_grant`` is not retryable: the user must
+                authorize again.
+            OAuthHttpError: If the token endpoint returns an HTTP error.
+        """
+        endpoints = self._get_current_endpoints()
+
+        ctx = build_http_context(
+            endpoint=endpoints.token,
+            transport=self.transport,
+            auth=self.auth_strategy,
+            issuer=self.issuer,
+            user_agent=self.config.user_agent,
+            custom_headers=self.config.custom_headers,
+            timeout=timeout or self.config.timeout,
+        )
+
+        return _refresh_token_grant(
+            refresh_token=refresh_token,
+            client_id=client_id,
+            context=ctx,
+            resources=resources,
+            scope=" ".join(scopes) if scopes else None,
         )
 
     def impersonate(
