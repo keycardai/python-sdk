@@ -6,12 +6,23 @@ import unittest
 
 import upstream_compat as uc
 
-FASTMCP = uc.Entry("fastmcp", "fastmcp", "project.dependencies")
-MCP = uc.Entry("mcp", "mcp", "project.dependencies")
+FASTMCP = uc.Entry(package="fastmcp", upstream="fastmcp", field="project.dependencies")
+MCP = uc.Entry(package="mcp", upstream="mcp", field="project.dependencies")
 AGENTS = uc.Entry(
-    "temporal", "openai-agents", "project.optional-dependencies.openai-agents"
+    package="temporal",
+    upstream="openai-agents",
+    field="project.optional-dependencies.openai-agents",
 )
-TEMPORALIO = uc.Entry("temporal", "temporalio", "project.dependencies")
+LC = uc.Entry(
+    package="langchain",
+    upstreams=["langchain", "langgraph"],
+    field="project.dependencies",
+)
+LC_SET = {"langchain": "1.4.5", "langgraph": "1.2.15"}
+LC_DECLARED = {"langchain": ">=1.2.11", "langgraph": ">=1.1.5"}
+TEMPORALIO = uc.Entry(
+    package="temporal", upstream="temporalio", field="project.dependencies"
+)
 
 PYPROJECT = """[project]
 name = "keycardai-temporal"
@@ -52,10 +63,24 @@ class SpecifierTests(unittest.TestCase):
         self.assertEqual(uc.widened_range(">=2.0.0,<3.0", "3.1.0"), ">=3.1.0,<4.0")
         self.assertTrue(uc.is_new_major(">=2.0.0,<3.0", "3.1.0"))
         self.assertIn(
-            "breaking", uc.pr_body(MCP, "3.1.0", ">=2.0.0,<3.0", ">=3.1.0,<4.0", "")
+            "breaking",
+            uc.pr_body(
+                MCP,
+                {"mcp": "3.1.0"},
+                {"mcp": ">=2.0.0,<3.0"},
+                {"mcp": ">=3.1.0,<4.0"},
+                "",
+            ),
         )
         self.assertNotIn(
-            "breaking", uc.pr_body(MCP, "1.9.3", ">=1.2.0,<1.9.0", ">=1.2.0,<2.0", "")
+            "breaking",
+            uc.pr_body(
+                MCP,
+                {"mcp": "1.9.3"},
+                {"mcp": ">=1.2.0,<1.9.0"},
+                {"mcp": ">=1.2.0,<2.0"},
+                "",
+            ),
         )
 
     def test_zero_x_treats_each_minor_as_breaking(self) -> None:
@@ -92,11 +117,15 @@ class SpecifierTests(unittest.TestCase):
         self.assertEqual(uc.decide(False, False), "issue")
 
     def test_issue_body_says_whether_users_are_affected(self) -> None:
-        inside = uc.issue_body(FASTMCP, "4.1.0", ">=3.1.0", True, "E   boom", "")
+        inside = uc.issue_body(
+            FASTMCP, {"fastmcp": "4.1.0"}, {"fastmcp": ">=3.1.0"}, True, "E   boom", ""
+        )
         self.assertIn(
             "users installing keycardai-fastmcp today already get this", inside
         )
-        outside = uc.issue_body(MCP, "3.1.0", ">=2.0.0,<3.0", False, "E   boom", "")
+        outside = uc.issue_body(
+            MCP, {"mcp": "3.1.0"}, {"mcp": ">=2.0.0,<3.0"}, False, "E   boom", ""
+        )
         self.assertIn("users are not affected until the specifier widens", outside)
 
 
@@ -125,13 +154,15 @@ class PyprojectTests(unittest.TestCase):
 class DedupeTests(unittest.TestCase):
     def test_names(self) -> None:
         self.assertEqual(
-            uc.branch_name(AGENTS, "0.23.1"), "upstream/temporal-openai-agents-0.23.1"
+            uc.branch_name(AGENTS, {"openai-agents": "0.23.1"}),
+            "upstream/temporal-openai-agents-0.23.1",
         )
         self.assertEqual(
-            uc.pr_title(MCP, "3.1.0"), "fix(keycardai-mcp): support mcp 3.1.0"
+            uc.pr_title(MCP, {"mcp": "3.1.0"}), "fix(keycardai-mcp): support mcp 3.1.0"
         )
         self.assertEqual(
-            uc.issue_title(FASTMCP, "4.1.0"), "fastmcp 4.1.0 breaks keycardai-fastmcp"
+            uc.issue_title(FASTMCP, {"fastmcp": "4.1.0"}),
+            "fastmcp 4.1.0 breaks keycardai-fastmcp",
         )
         self.assertEqual(AGENTS.key, "temporal:openai-agents")
 
@@ -177,16 +208,21 @@ class DedupeTests(unittest.TestCase):
 
     def test_failed_differently(self) -> None:
         body = uc.issue_body(
-            FASTMCP, "4.1.0", ">=3.1.0", True, "E   ImportError: x", ""
+            FASTMCP,
+            {"fastmcp": "4.1.0"},
+            {"fastmcp": ">=3.1.0"},
+            True,
+            "E   ImportError: x",
+            "",
         )
         self.assertFalse(uc.failed_differently(body, "E   ImportError: x"))
         self.assertTrue(uc.failed_differently(body, "E   TypeError: y"))
 
     def test_already_tested(self) -> None:
         state = {"fastmcp:fastmcp": {"version": "4.1.0", "run": "r"}}
-        self.assertTrue(uc.already_tested(state, FASTMCP, "4.1.0"))
-        self.assertFalse(uc.already_tested(state, FASTMCP, "4.1.1"))
-        self.assertFalse(uc.already_tested(state, MCP, "4.1.0"))
+        self.assertTrue(uc.already_tested(state, FASTMCP, {"fastmcp": "4.1.0"}))
+        self.assertFalse(uc.already_tested(state, FASTMCP, {"fastmcp": "4.1.1"}))
+        self.assertFalse(uc.already_tested(state, MCP, {"mcp": "4.1.0"}))
 
 
 class StateWriteTests(unittest.TestCase):
@@ -238,6 +274,69 @@ class StateWriteTests(unittest.TestCase):
                 sleep=lambda s: None,
             )
         self.assertIn("state write failed after 3 attempts", str(ctx.exception))
+
+
+class SetTests(unittest.TestCase):
+    def test_set_keys_records_and_single_entries_unchanged(self) -> None:
+        self.assertEqual(LC.key, "langchain:langchain+langgraph")
+        self.assertEqual(LC.members, ["langchain", "langgraph"])
+        self.assertEqual(
+            uc.state_record(LC, LC_SET, "r"), {"versions": LC_SET, "run": "r"}
+        )
+        self.assertEqual(FASTMCP.key, "fastmcp:fastmcp")
+        self.assertFalse(FASTMCP.is_set)
+        self.assertEqual(
+            uc.state_record(FASTMCP, {"fastmcp": "4.1.0"}, "r"),
+            {"version": "4.1.0", "run": "r"},
+        )
+        self.assertEqual(
+            uc.pin_specs(FASTMCP, {"fastmcp": "4.1.0"}), ["fastmcp==4.1.0"]
+        )
+
+    def test_set_titles_name_every_member(self) -> None:
+        self.assertEqual(
+            uc.issue_title(LC, LC_SET),
+            "langchain 1.4.5 + langgraph 1.2.15 break keycardai-langchain",
+        )
+        self.assertEqual(
+            uc.pr_title(LC, LC_SET),
+            "fix(keycardai-langchain): support langchain 1.4.5, langgraph 1.2.15",
+        )
+        self.assertEqual(
+            uc.branch_name(LC, LC_SET),
+            "upstream/langchain-langchain-1.4.5-langgraph-1.2.15",
+        )
+
+    def test_set_is_inside_only_when_every_member_is(self) -> None:
+        self.assertTrue(uc.all_inside(LC_DECLARED, LC_SET))
+        self.assertFalse(
+            uc.all_inside({**LC_DECLARED, "langgraph": ">=1.1.5,<1.2"}, LC_SET)
+        )
+        self.assertTrue(uc.all_inside({"fastmcp": ">=3.1.0"}, {"fastmcp": "4.1.0"}))
+
+    def test_set_resolution_reads_back_what_the_resolver_installed(self) -> None:
+        wanted = {"langchain": "latest", "langgraph": "latest"}
+        self.assertEqual(uc.pin_specs(LC, wanted), ["langchain", "langgraph"])
+        self.assertEqual(
+            uc.pin_specs(LC, {"langchain": "1.3.0", "langgraph": "latest"}),
+            ["langchain==1.3.0", "langgraph"],
+        )
+        installed = {"langchain": "1.4.5", "langgraph": "1.2.8"}
+        resolved = uc.resolve_set(LC, wanted, installed, LC_SET)
+        self.assertEqual(resolved, installed)
+        self.assertEqual(uc.parse_requested(LC, "latest"), wanted)
+        self.assertEqual(
+            uc.parse_requested(LC, "langchain==1.3.0, langgraph==1.1.5"),
+            {"langchain": "1.3.0", "langgraph": "1.1.5"},
+        )
+        self.assertEqual(uc.parse_requested(FASTMCP, "3.1.0"), {"fastmcp": "3.1.0"})
+        with self.assertRaises(SystemExit):
+            uc.parse_requested(LC, "fastmcp==1.0")
+
+    def test_set_is_skipped_only_when_the_exact_set_passed(self) -> None:
+        state = {LC.key: {"versions": LC_SET, "run": ""}}
+        self.assertTrue(uc.already_tested(state, LC, LC_SET))
+        self.assertFalse(uc.already_tested(state, LC, {**LC_SET, "langgraph": "1.2.8"}))
 
 
 if __name__ == "__main__":
