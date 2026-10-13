@@ -3,6 +3,13 @@
     "run": "https://github.com/keycardai/python-sdk/actions/runs/38474121479",
     "version": "4.1.0"
   },
+  "langchain:langchain+langgraph": {
+    "run": "https://github.com/keycardai/python-sdk/actions/runs/38478362795",
+    "versions": {
+      "langchain": "1.4.5",
+      "langgraph": "1.2.15"
+    }
+  },
   "mcp:mcp": {
     "run": "https://github.com/keycardai/python-sdk/actions/runs/38474121479",
     "version": "2.3.0"
