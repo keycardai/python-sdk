@@ -1,0 +1,28 @@
+{
+  "entries": [
+    {
+      "package": "fastmcp",
+      "upstream": "fastmcp",
+      "field": "project.dependencies",
+      "companions": []
+    },
+    {
+      "package": "mcp",
+      "upstream": "mcp",
+      "field": "project.dependencies",
+      "companions": []
+    },
+    {
+      "package": "temporal",
+      "upstream": "temporalio",
+      "field": "project.dependencies",
+      "companions": []
+    },
+    {
+      "package": "temporal",
+      "upstream": "openai-agents",
+      "field": "project.optional-dependencies.openai-agents",
+      "companions": []
+    }
+  ]
+}
