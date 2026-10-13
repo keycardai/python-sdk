@@ -104,6 +104,20 @@ class RenderPreviewTests(unittest.TestCase):
             "No other package releases.",
         )
 
+    def test_commit_trailers_are_not_entries(self) -> None:
+        stdout = (
+            "bump: keycardai-oauth 0.31.0 \u2192 0.31.1\n"
+            "increment detected: PATCH\n"
+            "\n"
+            "## 0.31.1-keycardai-oauth (2026-10-13)\n"
+            "\n"
+            "- fix(keycardai-oauth): a real entry\n"
+            "- Co-Authored-By: Someone <someone@example.com>\n"
+            "- Signed-off-by: Someone <someone@example.com>\n"
+        )
+        release = parse_bump_dry_run("keycardai-oauth", 0, stdout, "")
+        self.assertEqual(release.entries, ["- fix(keycardai-oauth): a real entry"])
+
     def test_no_release_package_is_one_quiet_line_never_stderr(self) -> None:
         preview = Preview(releases=[], skipped=["keycardai-a2a", "keycardai-oauth"])
         text = render_preview(preview)
