@@ -130,6 +130,13 @@ def pick_entry(entries: list[Entry], wanted: str) -> Entry:
     raise SystemExit(f"ENTRY {wanted!r} is not in {CONFIG_PATH}")
 
 
+def matrix_entries(entries: list[Entry], wanted: str) -> list[str]:
+    """The ``<package>:<upstream>`` keys the workflow fans out over for the ``entry`` input."""
+    if wanted == "all":
+        return [e.key for e in entries]
+    return [pick_entry(entries, wanted).key]
+
+
 # --- specifiers --------------------------------------------------------------
 
 
@@ -674,9 +681,11 @@ def record_state(
 
 def main() -> None:
     repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    entry = pick_entry(
-        load_config(os.path.join(repo_root, CONFIG_PATH)), os.environ["ENTRY"]
-    )
+    entries = load_config(os.path.join(repo_root, CONFIG_PATH))
+    if sys.argv[1:] == ["--matrix"]:
+        print(json.dumps(matrix_entries(entries, os.environ.get("ENTRY", "all"))))
+        return
+    entry = pick_entry(entries, os.environ["ENTRY"])
     dry_run = os.environ.get("DRY_RUN") == "true"
     run_url = os.environ.get("RUN_URL", "")
     state_branch = os.environ.get("STATE_BRANCH") or DEFAULT_STATE_BRANCH
