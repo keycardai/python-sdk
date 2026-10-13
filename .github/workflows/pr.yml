@@ -268,55 +268,11 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v4
 
-      - name: Install just
-        run: |
-          mkdir -p "$HOME/.local/bin"
-          curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh \
-            | bash -s -- --tag 1.50.0 --to "$HOME/.local/bin"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-
       - name: Install dependencies
         run: uv sync --all-extras
 
-      - name: Generate release preview
-        id: release-preview
-        run: |
-          # Get version preview information using the Python script
-          version_preview=$(uv run python scripts/version_preview.py --format github-summary)
-          
-          echo "preview<<EOF" >> $GITHUB_OUTPUT
-          echo "$version_preview" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-          
-          # Check if there are any changes by looking for version information
-          changes=$(uv run python scripts/version_preview.py --format json)
-          if [ "$changes" = "[]" ] || [ -z "$changes" ]; then
-            echo "has_changes=false" >> $GITHUB_OUTPUT
-          else
-            echo "has_changes=true" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Display release preview
-        if: steps.release-preview.outputs.has_changes == 'true'
-        run: |
-          # Use cat with here document to safely handle special characters
-          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
-          ${{ steps.release-preview.outputs.preview }}
-          
-          ### 📝 Changelog Preview
-          
-          ```
-          EOF
-          just preview-changelog >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-
-      - name: No release preview
-        if: steps.release-preview.outputs.has_changes == 'false'
-        run: |
-          # Use cat with here document to safely handle special characters
-          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
-          ${{ steps.release-preview.outputs.preview }}
-          EOF
+      - name: Release preview in the job summary
+        run: uv run python scripts/release_preview.py >> "$GITHUB_STEP_SUMMARY"
 
       - name: Comment on PR with release preview
         if: github.event_name == 'pull_request'
