@@ -31,16 +31,18 @@ jobs:
       matrix: ${{ steps.pick.outputs.matrix }}
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v4
+
       - id: pick
         env:
           ENTRY: ${{ inputs.entry || 'all' }}
         run: |
-          matrix=$(python3 -c '
-          import json, os
-          entries = [f"{e[\"package\"]}:{e[\"upstream\"]}" for e in json.load(open(".github/upstream-compat.json"))["entries"]]
-          pick = os.environ["ENTRY"]
-          print(json.dumps(entries if pick == "all" else [pick]))
-          ')
+          matrix=$(uv run --frozen python scripts/upstream_compat.py --matrix)
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
 
   check:

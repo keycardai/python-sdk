@@ -135,6 +135,25 @@ class DedupeTests(unittest.TestCase):
         )
         self.assertEqual(AGENTS.key, "temporal:openai-agents")
 
+    def test_matrix_entries_for_the_entry_input(self) -> None:
+        entries = [FASTMCP, MCP, TEMPORALIO, AGENTS]
+        self.assertEqual(
+            uc.matrix_entries(entries, "all"),
+            [
+                "fastmcp:fastmcp",
+                "mcp:mcp",
+                "temporal:temporalio",
+                "temporal:openai-agents",
+            ],
+        )
+        self.assertEqual(
+            uc.matrix_entries(entries, "temporal:openai-agents"),
+            ["temporal:openai-agents"],
+        )
+        self.assertEqual(uc.matrix_entries(entries, "fastmcp"), ["fastmcp:fastmcp"])
+        with self.assertRaises(SystemExit):
+            uc.matrix_entries(entries, "temporal")
+
     def test_pick_entry_by_key_or_unique_package(self) -> None:
         entries = [FASTMCP, MCP, TEMPORALIO, AGENTS]
         self.assertIs(uc.pick_entry(entries, "fastmcp"), FASTMCP)
