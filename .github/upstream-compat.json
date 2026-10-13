@@ -23,6 +23,12 @@
       "upstream": "openai-agents",
       "field": "project.optional-dependencies.openai-agents",
       "companions": []
+    },
+    {
+      "package": "langchain",
+      "upstreams": ["langchain", "langgraph"],
+      "field": "project.dependencies",
+      "companions": []
     }
   ]
 }
