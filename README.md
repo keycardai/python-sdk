@@ -452,7 +452,8 @@ app = auth_provider.app(mcp, middleware=middleware)
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+MIT — see [LICENSE](./LICENSE). The Keycard name and logo are trademarks;
+[TRADEMARKS.md](./TRADEMARKS.md) states how they may be used.
 
 ## Support
 
