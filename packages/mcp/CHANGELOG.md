@@ -1,3 +1,9 @@
+## 2.3.3-keycardai-mcp (2026-10-15)
+
+
+- fix(keycardai-mcp): refresh expired tokens instead of forcing a new sign-in (ECO-453)
+- The MCP client now refreshes a stored token before it expires and tries one refresh on a 401 before starting a new sign-in. A refused refresh (invalid_grant, or insufficient_authorization when the user no longer resolves) clears the tokens and falls back to sign-in; other refresh errors surface without prompting. Requires keycardai-oauth 0.33.0 or later.
+
 ## 2.3.2-keycardai-mcp (2026-09-16)
 
 ## 2.3.1-keycardai-mcp (2026-09-15)
