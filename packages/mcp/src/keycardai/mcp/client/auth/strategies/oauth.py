@@ -1,11 +1,18 @@
 """Authentication strategies for MCP client connections."""
 
+import asyncio
+import dataclasses
+import time
 from collections.abc import Callable
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any, Protocol
 
 from httpx import AsyncClient, Response
 from httpx2 import Response as Httpx2Response
+
+from keycardai.oauth import RefreshGrantError
+from keycardai.oauth.pkce import refresh_authorization
+from keycardai.oauth.types.models import AuthorizationServerMetadata
 
 from ...logging_config import get_logger
 from ...storage import NamespacedStorage
@@ -16,12 +23,18 @@ from ..oauth import (
     OAuthTokenExchangeService,
     default_client_factory,
 )
+from ..oauth.exchange import stamp_tokens
 from ..storage_facades import OAuthStorage
 
 if TYPE_CHECKING:
     from ..coordinators.base import AuthCoordinator
 
 logger = get_logger(__name__)
+
+# A stored token this close to its expiry is refreshed before it is sent.
+REFRESH_SKEW_SECONDS = 60.0
+
+_METADATA_FIELDS = {field.name for field in dataclasses.fields(AuthorizationServerMetadata)}
 
 
 class AuthStrategy(Protocol):
@@ -208,14 +221,120 @@ class OAuthStrategy:
             storage=self.oauth_storage,
             client_factory=client_factory
         )
+        self._client_factory = client_factory
+        # Created on first use so it binds the event loop the requests run on.
+        self._refresh_lock: asyncio.Lock | None = None
 
     def get_strategy_namespace(self) -> str:
         """Return namespace for this strategy."""
         return "oauth"
 
+    @staticmethod
+    def _near_expiry(tokens: dict[str, Any], now: float | None = None) -> bool:
+        """True when the stored token is at or within the skew of its expiry.
+
+        Tokens saved before ``expires_at`` was recorded have an unknown expiry
+        and are sent as they are; the 401 path covers them.
+        """
+        expires_at = tokens.get("expires_at")
+        if not isinstance(expires_at, (int, float)) or isinstance(expires_at, bool):
+            return False
+        return (time.time() if now is None else now) >= float(expires_at) - REFRESH_SKEW_SECONDS
+
+    def _lock(self) -> asyncio.Lock:
+        if self._refresh_lock is None:
+            self._refresh_lock = asyncio.Lock()
+        return self._refresh_lock
+
+    async def _refresh_tokens(
+        self,
+        seen: dict[str, Any],
+        *,
+        resource_url: str | None = None,
+        auth_server_metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
+        """Refresh the stored grant once, as the client that obtained it.
+
+        Serialized per strategy so two requests never send the same refresh
+        token. After taking the lock the stored tokens are read again: if
+        another request already rotated them, those are returned without a
+        second refresh. Returns the tokens now in the store, or None when the
+        zone refused the refresh token (``invalid_grant``, or
+        ``insufficient_authorization`` when its user no longer resolves), in which case the
+        stored tokens are deleted and the caller starts a sign-in. Any other
+        error propagates.
+        """
+        async with self._lock():
+            current = await self.oauth_storage.get_tokens()
+            if not current or not current.get("refresh_token"):
+                return current
+            if current.get("access_token") != seen.get("access_token"):
+                return current
+
+            registration = await self.oauth_storage.get_client_registration()
+            if not registration or not registration.get("client_id"):
+                raise ValueError("No client registration stored for the refresh")
+            metadata = auth_server_metadata or await self.oauth_storage.get_auth_server_metadata()
+            issuer = current.get("issuer") or (metadata or {}).get("issuer")
+            resource = resource_url or current.get("resource")
+            refresh_kwargs: dict[str, Any] = {}
+            if metadata and metadata.get("token_endpoint"):
+                refresh_kwargs["metadata"] = AuthorizationServerMetadata(
+                    **{key: value for key, value in metadata.items() if key in _METADATA_FIELDS}
+                )
+            elif issuer:
+                refresh_kwargs["issuer"] = issuer
+            else:
+                raise ValueError("No authorization server metadata or issuer stored for the refresh")
+            if registration.get("client_secret"):
+                refresh_kwargs["client_secret"] = registration["client_secret"]
+            if resource:
+                refresh_kwargs["resources"] = [resource]
+
+            try:
+                async with self._client_factory() as http_client:
+                    response = await refresh_authorization(
+                        refresh_token=current["refresh_token"],
+                        client_id=registration["client_id"],
+                        http_client=http_client,
+                        **refresh_kwargs,
+                    )
+            except RefreshGrantError as error:
+                # insufficient_authorization is the zone's answer when the
+                # refresh token's user no longer resolves, refused the same
+                # way as invalid_grant (eve.md grant lifecycle).
+                if error.error in ("invalid_grant", "insufficient_authorization"):
+                    logger.info(
+                        f"[{self.server_name}] Refresh token refused ({error.error}); "
+                        "clearing stored tokens"
+                    )
+                    await self.oauth_storage.delete_tokens()
+                    return None
+                raise
+
+            rotated: dict[str, Any] = {
+                **current,
+                "access_token": response.access_token,
+                "token_type": str(getattr(response.token_type, "value", response.token_type)),
+            }
+            rotated.pop("expires_at", None)
+            rotated.pop("expires_in", None)
+            if response.expires_in is not None:
+                rotated["expires_in"] = response.expires_in
+            if response.refresh_token:
+                rotated["refresh_token"] = response.refresh_token
+            if response.scope is not None:
+                rotated["scope"] = " ".join(response.scope)
+            rotated = stamp_tokens(rotated, resource=resource, issuer=issuer)
+            await self.oauth_storage.save_tokens(rotated)
+            logger.info(f"[{self.server_name}] Access token refreshed")
+            return rotated
+
     async def get_auth_metadata(self) -> dict[str, Any]:
-        """Get OAuth access token if available."""
+        """Get OAuth access token if available, refreshing one that is about to expire."""
         tokens = await self.oauth_storage.get_tokens()
+        if tokens and tokens.get("refresh_token") and self._near_expiry(tokens):
+            tokens = await self._refresh_tokens(tokens)
         if tokens and "access_token" in tokens:
             return {
                 "headers": {
@@ -250,6 +369,16 @@ class OAuthStrategy:
             or challenge.status_code != 401
         ):
             return False
+
+        # A stored refresh token gets one try before the user is sent back
+        # through the browser. A refused one (invalid_grant) clears the
+        # tokens and falls through to the flow; any other refresh error is
+        # raised, and no sign-in is started for it.
+        tokens = await self.oauth_storage.get_tokens()
+        if tokens and tokens.get("refresh_token"):
+            refreshed = await self._refresh_tokens(tokens, resource_url=resource_url)
+            if refreshed and refreshed.get("access_token") != tokens.get("access_token"):
+                return True
 
         try:
             # Step 1: Discover resource and authorization server metadata
