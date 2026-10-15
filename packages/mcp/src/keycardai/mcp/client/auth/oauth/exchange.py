@@ -1,5 +1,6 @@
 """OAuth token exchange service."""
 
+import time
 from collections.abc import Callable
 from typing import Any
 
@@ -10,6 +11,32 @@ from ..storage_facades import OAuthStorage
 from ._client import default_client_factory
 
 logger = get_logger(__name__)
+
+
+def stamp_tokens(
+    tokens: dict[str, Any],
+    *,
+    resource: str | None,
+    issuer: str | None,
+    now: float | None = None,
+) -> dict[str, Any]:
+    """Return the token response with the fields a later refresh needs.
+
+    ``expires_at`` is an absolute Unix time computed from ``expires_in`` at
+    receipt, since the raw response only says how long the token lives.
+    ``resource`` and ``issuer`` record the RFC 8707 indicator and the
+    authorization server the flow used, so a refresh runs with the same ones.
+    A response without ``expires_in`` gets no ``expires_at``.
+    """
+    stamped = dict(tokens)
+    expires_in = tokens.get("expires_in")
+    if isinstance(expires_in, (int, float)) and not isinstance(expires_in, bool):
+        stamped["expires_at"] = (time.time() if now is None else now) + float(expires_in)
+    if resource:
+        stamped["resource"] = resource
+    if issuer:
+        stamped["issuer"] = issuer
+    return stamped
 
 
 class OAuthTokenExchangeService:
@@ -98,6 +125,11 @@ class OAuthTokenExchangeService:
             pkce_data=pkce_data
         )
 
+        tokens = stamp_tokens(
+            tokens,
+            resource=pkce_data.get("resource_url"),
+            issuer=auth_server_metadata.get("issuer"),
+        )
         await self.storage.save_tokens(tokens)
         logger.info("OAuth tokens exchanged and stored successfully")
 
