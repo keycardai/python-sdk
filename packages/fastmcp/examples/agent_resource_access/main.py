@@ -49,7 +49,18 @@ def _claims(token: str) -> dict | None:
         claims = json.loads(payload)
     except ValueError:
         return None
-    return {k: claims.get(k) for k in ("iss", "sub", "aud", "scope", "exp")}
+    return {
+        k: claims.get(k)
+        for k in (
+            "iss",
+            "sub",
+            "aud",
+            "scope",
+            "exp",
+            "keycard_declared_app_id",
+            "keycard_app_id",
+        )
+    }
 
 
 @mcp.tool()
