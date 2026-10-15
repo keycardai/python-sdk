@@ -11,7 +11,7 @@
     }
   },
   "mcp:mcp": {
-    "run": "https://github.com/keycardai/python-sdk/actions/runs/38525605597",
+    "run": "https://github.com/keycardai/python-sdk/actions/runs/38695893197",
     "version": "2.3.0"
   },
   "temporal:openai-agents": {
