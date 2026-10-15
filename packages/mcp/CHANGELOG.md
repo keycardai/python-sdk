@@ -1,3 +1,9 @@
+## 2.3.4-keycardai-mcp (2026-10-15)
+
+
+- fix(keycardai-mcp): require httpx2 2.12.0 and aiohttp 3.14.3, and cryptography 50.0.0 in keycardai-oauth
+- Raises the published floors past the open advisories: keycardai-mcp requires httpx2>=2.12.0 and aiohttp>=3.14.3, keycardai-oauth requires cryptography>=50.0.0, and every lock resolves patched versions. keycardai-oauth is released by a separate patch bump. Supersedes #321-#330.
+
 ## 2.3.3-keycardai-mcp (2026-10-15)
 
 
