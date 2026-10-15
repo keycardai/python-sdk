@@ -1,3 +1,5 @@
+## 0.33.1-keycardai-oauth (2026-10-15)
+
 ## 0.33.0-keycardai-oauth (2026-10-09)
 
 
