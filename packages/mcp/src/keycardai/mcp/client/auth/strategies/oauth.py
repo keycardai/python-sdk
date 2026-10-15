@@ -259,7 +259,8 @@ class OAuthStrategy:
         token. After taking the lock the stored tokens are read again: if
         another request already rotated them, those are returned without a
         second refresh. Returns the tokens now in the store, or None when the
-        zone refused the refresh token (``invalid_grant``), in which case the
+        zone refused the refresh token (``invalid_grant``, or
+        ``insufficient_authorization`` when its user no longer resolves), in which case the
         stored tokens are deleted and the caller starts a sign-in. Any other
         error propagates.
         """
@@ -299,7 +300,10 @@ class OAuthStrategy:
                         **refresh_kwargs,
                     )
             except RefreshGrantError as error:
-                if error.error == "invalid_grant":
+                # insufficient_authorization is the zone's answer when the
+                # refresh token's user no longer resolves, refused the same
+                # way as invalid_grant (eve.md grant lifecycle).
+                if error.error in ("invalid_grant", "insufficient_authorization"):
                     logger.info(
                         f"[{self.server_name}] Refresh token refused ({error.error}); "
                         "clearing stored tokens"

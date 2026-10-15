@@ -158,10 +158,13 @@ async def test_401_refreshes_once_and_reports_handled(monkeypatch: pytest.Monkey
 
 
 @pytest.mark.asyncio
-async def test_invalid_grant_clears_tokens_and_starts_the_flow(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("code", ["invalid_grant", "insufficient_authorization"])
+async def test_refused_refresh_clears_tokens_and_starts_the_flow(
+    monkeypatch: pytest.MonkeyPatch, code: str
+) -> None:
     strategy, coordinator = make_strategy()
     await seed(strategy, expiring())
-    patch_refresh(monkeypatch, FakeRefresh(RefreshGrantError("invalid_grant", "expired")))
+    patch_refresh(monkeypatch, FakeRefresh(RefreshGrantError(code, "refused")))
     started: list[str] = []
 
     async def discover_resource(response: Response) -> dict[str, Any]:
