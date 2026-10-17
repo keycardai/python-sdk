@@ -4,10 +4,10 @@
     "version": "4.1.0"
   },
   "langchain:langchain+langgraph": {
-    "run": "https://github.com/keycardai/python-sdk/actions/runs/38864503158",
+    "run": "https://github.com/keycardai/python-sdk/actions/runs/39011703496",
     "versions": {
       "langchain": "1.4.6",
-      "langgraph": "1.2.15"
+      "langgraph": "1.2.16"
     }
   },
   "mcp:mcp": {
