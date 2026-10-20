@@ -1,3 +1,11 @@
+## 0.33.2-keycardai-oauth (2026-10-20)
+
+
+- fix(keycardai-oauth): impersonate() accepts a client assertion (ECO-455) (#366)
+- Both impersonate() methods take keyword-only client_assertion and client_assertion_type and pass them into the TokenExchangeRequest the way exchange_token() does, so an application whose credential is a workload identity can authenticate the substitute-user exchange in the request body. Omitting them leaves the wire request unchanged.
+- Co-authored-by: devin-ai-keycard <devin-ai@keycard.ai>
+Co-authored-by: Larry Osakwe <larry@keycard.ai>
+
 ## 0.33.1-keycardai-oauth (2026-10-15)
 
 ## 0.33.0-keycardai-oauth (2026-10-09)
