@@ -1077,6 +1077,8 @@ class AsyncClient:
         scope: str | None = None,
         timeout: float | None = None,
         issuer: str | None = None,
+        client_assertion: str | None = None,
+        client_assertion_type: str | None = None,
     ) -> TokenResponse:
         """Impersonate a user to obtain a resource token.
 
@@ -1096,6 +1098,13 @@ class AsyncClient:
                 strategy (e.g. MultiZoneBasicAuth) applies for this call.
                 Defaults to the client's issuer. Single-credential strategies
                 ignore it.
+            client_assertion: JWT client assertion authenticating the calling
+                application in the request body, for credentials that carry no
+                client secret (for example a workload identity token). Sent as
+                the ``client_assertion`` form parameter, exactly as
+                ``exchange_token()`` sends it.
+            client_assertion_type: The assertion type URN, normally
+                ``urn:ietf:params:oauth:client-assertion-type:jwt-bearer``.
 
         Returns:
             TokenResponse with the resource access token.
@@ -1114,12 +1123,23 @@ class AsyncClient:
                     resource="https://graph.microsoft.com",
                 )
                 print(response.access_token)
+
+            With a workload identity instead of a client secret, authenticate
+            in the request body:
+                response = await client.impersonate(
+                    user_identifier="user@example.com",
+                    resource="https://graph.microsoft.com",
+                    client_assertion=workload_identity_token,
+                    client_assertion_type="urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+                )
         """
         request = TokenExchangeRequest(
             subject_token=build_substitute_user_token(user_identifier),
             subject_token_type=TokenType.SUBSTITUTE_USER,
             resource=resource,
             scope=scope,
+            client_assertion=client_assertion,
+            client_assertion_type=client_assertion_type,
         )
 
         endpoints = await self._get_current_endpoints()
@@ -1922,6 +1942,8 @@ class Client:
         scope: str | None = None,
         timeout: float | None = None,
         issuer: str | None = None,
+        client_assertion: str | None = None,
+        client_assertion_type: str | None = None,
     ) -> TokenResponse:
         """Impersonate a user to obtain a resource token.
 
@@ -1941,6 +1963,13 @@ class Client:
                 strategy (e.g. MultiZoneBasicAuth) applies for this call.
                 Defaults to the client's issuer. Single-credential strategies
                 ignore it.
+            client_assertion: JWT client assertion authenticating the calling
+                application in the request body, for credentials that carry no
+                client secret (for example a workload identity token). Sent as
+                the ``client_assertion`` form parameter, exactly as
+                ``exchange_token()`` sends it.
+            client_assertion_type: The assertion type URN, normally
+                ``urn:ietf:params:oauth:client-assertion-type:jwt-bearer``.
 
         Returns:
             TokenResponse with the resource access token.
@@ -1959,12 +1988,23 @@ class Client:
                     resource="https://graph.microsoft.com",
                 )
                 print(response.access_token)
+
+            With a workload identity instead of a client secret, authenticate
+            in the request body:
+                response = client.impersonate(
+                    user_identifier="user@example.com",
+                    resource="https://graph.microsoft.com",
+                    client_assertion=workload_identity_token,
+                    client_assertion_type="urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+                )
         """
         request = TokenExchangeRequest(
             subject_token=build_substitute_user_token(user_identifier),
             subject_token_type=TokenType.SUBSTITUTE_USER,
             resource=resource,
             scope=scope,
+            client_assertion=client_assertion,
+            client_assertion_type=client_assertion_type,
         )
 
         endpoints = self._get_current_endpoints()
