@@ -1,3 +1,9 @@
+## 2.3.5-keycardai-mcp (2026-10-22)
+
+
+- fix(keycardai-mcp): require mcp 2.2.0 and refresh vulnerable lockfile entries (#369)
+- Raises the published floors for GHSA-84m7-p3x7-pcfv (keycardai-mcp: mcp>=2.2.0,<3.0) and GHSA-fvww-7h3r-vfhp (keycardai-langchain serve and test extras: langgraph-sdk>=0.4.4). Moves PyJWT, anyio and certifi to patched versions in every uv.lock. keycardai-langchain releases through a separate patch bump. Supersedes #356 to #365 and #368.
+
 ## 2.3.4-keycardai-mcp (2026-10-15)
 
 
