@@ -36,7 +36,7 @@ classifiers = [
 # the bearer challenge needs an exception class that keeps response headers,
 # which is why the module (and both imports) sit behind an extra.
 serve = [
-    "langgraph-sdk>=0.4.2",
+    "langgraph-sdk>=0.4.4",
     "starlette>=0.40.0",
 ]
 test = [
@@ -45,7 +45,7 @@ test = [
     # The serve extra's own dependencies, repeated rather than referenced as
     # keycardai-langchain[serve] so a test install never reaches the index for
     # this package.
-    "langgraph-sdk>=0.4.2",
+    "langgraph-sdk>=0.4.4",
     "starlette>=0.40.0",
     # The auth suite dispatches through the server's own handler resolution and
     # user normalization rather than a local reimplementation. Test-only, and
