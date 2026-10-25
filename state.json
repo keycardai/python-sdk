@@ -19,7 +19,7 @@
     "version": "0.24.0"
   },
   "temporal:temporalio": {
-    "run": "https://github.com/keycardai/python-sdk/actions/runs/40072208022",
+    "run": "https://github.com/keycardai/python-sdk/actions/runs/40170955653",
     "version": "1.34.0"
   }
 }
