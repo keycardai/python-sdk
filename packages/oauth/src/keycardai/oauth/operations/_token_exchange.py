@@ -75,6 +75,7 @@ def parse_token_exchange_http_response(res: HttpResponse) -> TokenResponse:
                     error=data["error"],
                     error_description=data.get("error_description"),
                     error_uri=data.get("error_uri"),
+                    reason=data.get("reason"),
                     operation="POST /token (exchange)",
                 )
         except (json.JSONDecodeError, ValueError):
@@ -100,6 +101,7 @@ def parse_token_exchange_http_response(res: HttpResponse) -> TokenResponse:
             error=data["error"],
             error_description=data.get("error_description"),
             error_uri=data.get("error_uri"),
+            reason=data.get("reason"),
             operation="POST /token (exchange)"
         )
 
