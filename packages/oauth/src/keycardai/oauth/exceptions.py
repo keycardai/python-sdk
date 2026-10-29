@@ -313,8 +313,9 @@ class TokenExchangeError(OAuthProtocolError):
         error_description: str | None = None,
         error_uri: str | None = None,
         operation: str = "",
+        reason: str | None = None,
     ):
-        super().__init__(error, error_description, error_uri, operation)
+        super().__init__(error, error_description, error_uri, operation, reason)
 
 
 class RefreshGrantError(OAuthProtocolError):
@@ -333,8 +334,9 @@ class RefreshGrantError(OAuthProtocolError):
         error_description: str | None = None,
         error_uri: str | None = None,
         operation: str = "",
+        reason: str | None = None,
     ):
-        super().__init__(error, error_description, error_uri, operation)
+        super().__init__(error, error_description, error_uri, operation, reason)
 
     @property
     def retryable(self) -> bool:

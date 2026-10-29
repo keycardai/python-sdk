@@ -213,6 +213,16 @@ class TestParseAuthorizationCodeHttpResponse:
             parse_authorization_code_http_response(res)
         assert exc_info.value.error_description == "Code expired"
 
+    def test_oauth_error_reason(self):
+        res = HttpResponse(
+            status=400,
+            headers={"Content-Type": "application/json"},
+            body=b'{"error":"access_denied","reason":"policy_denied"}',
+        )
+        with pytest.raises(OAuthProtocolError) as exc_info:
+            parse_authorization_code_http_response(res)
+        assert exc_info.value.reason == "policy_denied"
+
     def test_http_error_non_json(self):
         res = HttpResponse(
             status=500,
@@ -382,6 +392,16 @@ class TestRefreshTokenGrant:
         assert exc.value.retryable is False
         assert isinstance(exc.value, OAuthProtocolError)
         assert "invalid_grant" not in PERMANENT_ERROR_CODES
+
+    def test_refresh_grant_error_keeps_the_reason(self):
+        res = HttpResponse(
+            status=400,
+            headers={},
+            body=b'{"error":"access_denied","reason":"dependency_missing"}',
+        )
+        with pytest.raises(RefreshGrantError) as exc:
+            parse_refresh_token_http_response(res)
+        assert exc.value.reason == "dependency_missing"
 
     def test_other_oauth_errors_follow_the_parent_classification(self):
         res = HttpResponse(
