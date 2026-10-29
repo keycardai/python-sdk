@@ -103,6 +103,10 @@ class OAuthProtocolError(OAuthError):
     The ``retriable`` attribute is a legacy constructor flag, always False
     here; prefer the ``retryable`` property, which classifies by the OAuth
     error code.
+
+    ``reason`` is Keycard's machine-readable cause, when the server sends one
+    (e.g. ``dependency_missing`` or ``policy_denied`` for ``access_denied``).
+    Branch on it rather than on ``error_description`` text.
     """
 
     error: str
@@ -110,6 +114,7 @@ class OAuthProtocolError(OAuthError):
     error_uri: str | None = None
     operation: str = ""
     retriable: bool = False  # Protocol errors are never retriable
+    reason: str | None = None
 
     def __init__(
         self,
@@ -117,11 +122,13 @@ class OAuthProtocolError(OAuthError):
         error_description: str | None = None,
         error_uri: str | None = None,
         operation: str = "",
+        reason: str | None = None,
     ):
         self.error = error
         self.error_description = error_description
         self.error_uri = error_uri
         self.operation = operation
+        self.reason = reason
         self.retriable = False
 
         message = f"OAuth error: {error}"
@@ -306,8 +313,9 @@ class TokenExchangeError(OAuthProtocolError):
         error_description: str | None = None,
         error_uri: str | None = None,
         operation: str = "",
+        reason: str | None = None,
     ):
-        super().__init__(error, error_description, error_uri, operation)
+        super().__init__(error, error_description, error_uri, operation, reason)
 
 
 class RefreshGrantError(OAuthProtocolError):
@@ -326,8 +334,9 @@ class RefreshGrantError(OAuthProtocolError):
         error_description: str | None = None,
         error_uri: str | None = None,
         operation: str = "",
+        reason: str | None = None,
     ):
-        super().__init__(error, error_description, error_uri, operation)
+        super().__init__(error, error_description, error_uri, operation, reason)
 
     @property
     def retryable(self) -> bool:

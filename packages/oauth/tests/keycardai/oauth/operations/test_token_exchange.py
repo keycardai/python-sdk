@@ -106,6 +106,37 @@ class TestTokenExchangeOperations:
         assert exc_info.value.error == "invalid_request"
         assert exc_info.value.error_description == "Invalid subject_token"
 
+    @pytest.mark.parametrize("reason", ["dependency_missing", "policy_denied"])
+    def test_parse_token_exchange_http_response_http_error_reason(self, reason):
+        """The error body's machine-readable reason reaches the exception."""
+        http_response = HttpResponse(
+            status=400,
+            headers={"Content-Type": "application/json"},
+            body=(
+                '{"error": "access_denied", "error_description": "Access denied by policy.", '
+                f'"reason": "{reason}"}}'
+            ).encode(),
+        )
+
+        with pytest.raises(OAuthProtocolError) as exc_info:
+            parse_token_exchange_http_response(http_response)
+
+        assert exc_info.value.error == "access_denied"
+        assert exc_info.value.reason == reason
+
+    def test_parse_token_exchange_http_response_http_error_without_reason(self):
+        """A server that sends no reason leaves it None."""
+        http_response = HttpResponse(
+            status=400,
+            headers={"Content-Type": "application/json"},
+            body=b'{"error": "access_denied"}',
+        )
+
+        with pytest.raises(OAuthProtocolError) as exc_info:
+            parse_token_exchange_http_response(http_response)
+
+        assert exc_info.value.reason is None
+
     def test_parse_token_exchange_http_response_http_error_non_json(self):
         """Test parsing HTTP error response with non-JSON body."""
         http_response = HttpResponse(

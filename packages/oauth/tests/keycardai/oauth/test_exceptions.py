@@ -83,6 +83,7 @@ class TestOAuthProtocolError:
         assert error.error_description is None
         assert error.error_uri is None
         assert error.operation == "POST /token"
+        assert error.reason is None
 
     def test_create_with_all_fields(self):
         """Test creating OAuthProtocolError with all fields."""
@@ -90,13 +91,15 @@ class TestOAuthProtocolError:
             error="invalid_grant",
             error_description="The provided authorization grant is invalid",
             error_uri="https://example.com/error/invalid_grant",
-            operation="POST /token"
+            operation="POST /token",
+            reason="policy_denied",
         )
 
         assert error.error == "invalid_grant"
         assert error.error_description == "The provided authorization grant is invalid"
         assert error.error_uri == "https://example.com/error/invalid_grant"
         assert error.operation == "POST /token"
+        assert error.reason == "policy_denied"
 
 
 class TestNetworkError:
