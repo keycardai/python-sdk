@@ -523,6 +523,56 @@ If the server's metadata has no `userinfo_endpoint`, `userinfo()` raises
 `ConfigError` without making a request. An expired or revoked token raises
 `InvalidTokenError`.
 
+### Resource Tokens from the Local Keycard Agent
+
+An application running beside the Keycard CLI can get an access token for a
+third-party resource without holding a client secret. `keycard run` sets
+`KEYCARD_SOCKET` on the process it starts; `AgentTokenSource` asks the CLI over
+that socket, and the CLI mints the token once a human approves the request.
+
+```python
+import httpx
+from keycardai.oauth import AgentTokenSource, ResourceAuth, is_declined
+
+source = AgentTokenSource(workload="my-agent")
+
+token = await source.resource_token("https://api.example.com", "read")
+
+# Or attach a token to every request an httpx.AsyncClient sends:
+auth = ResourceAuth(source, "https://api.example.com", "read")
+async with httpx.AsyncClient(auth=auth) as client:
+    response = await client.get("https://api.example.com/items")
+```
+
+The first request for a resource and scope set blocks until someone answers
+the approval prompt, so no timeout is applied. Tokens are cached per source
+until 30 seconds before they expire, and a credential with no expiry (a static
+API key) is cached for the life of the source.
+
+Options, all keyword-only:
+
+| Option | Purpose |
+|--------|---------|
+| `socket` | Socket path; defaults to `KEYCARD_SOCKET` |
+| `workload` | Name shown in the approval prompt; self-declared, never an authorization input |
+| `app_id` | Public identifier of the Keycard application making the request. The CLI resolves it to the application's name and shows both in the prompt, marked self-asserted |
+| `org`, `zone` | Required when reaching the multi-zone `keycard agent` daemon directly; `keycard run` ignores them |
+
+A refusal raises `AgentError`, whose `code` is the CLI's Connect error code.
+Branch on the predicates rather than the message:
+
+| Predicate | Code | What to do |
+|-----------|------|------------|
+| `is_declined` | `permission_denied` | Don't retry unchanged: declined, prompt expired or failed, or the authorization server refused |
+| `is_rate_limited` | `resource_exhausted` | Back off |
+| `is_prompter_unavailable` | `failed_precondition` | No prompt on this host; use another credential |
+| `is_authorization_required` | `unauthenticated` | Sign in, or run `keycard auth resource <uri>`; the message names the remedy |
+| `is_application_not_found` | `not_found` | The declared `app_id` names no application in the zone |
+| `is_unavailable` | `unavailable` | Transient; retry with backoff |
+
+`TokenResponse.scope` echoes the requested scopes: the CLI returns only a token
+and an expiry, so read the token's own `scope` claim when the grant matters.
+
 ## Error Handling
 
 The SDK provides a structured exception hierarchy with retry guidance.
@@ -536,7 +586,8 @@ OAuthError (base)
 │   └── TokenExchangeError  # RFC 8693 specific errors
 ├── NetworkError            # Connection/transport failures
 ├── ConfigError             # Client misconfiguration
-└── AuthenticationError     # Authentication failures
+├── AuthenticationError     # Authentication failures
+└── AgentError              # Refusals from the local Keycard agent
 ```
 
 ### Retryable vs Non-Retryable Errors
@@ -553,6 +604,8 @@ operation unchanged could succeed.
 | `NetworkError` | Yes | Always: transport faults are transient, permanent failures surface as protocol or HTTP errors |
 | `ConfigError` | No | Invalid configuration (requires code fix) |
 | `AuthenticationError` | No | Invalid credentials |
+| `AgentError` | Yes | Code `resource_exhausted` or `unavailable` |
+| `AgentError` | No | Any other code |
 
 If you use the older `retriable` attribute: it is a legacy constructor flag,
 while `retryable` is the classification derived from the failure (the OAuth
@@ -656,6 +709,7 @@ Working examples are available in the `examples/` directory:
 
 - **[discover_server_metadata](examples/discover_server_metadata/)** - RFC 8414 server metadata discovery
 - **[dynamic_client_registration](examples/dynamic_client_registration/)** - RFC 7591 client registration
+- **[agent_token_source](examples/agent_token_source/)** - Resource tokens from the local Keycard agent
 
 Run examples:
 

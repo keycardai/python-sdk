@@ -11,6 +11,8 @@ import sys
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+import pytest
+
 EXAMPLES_DIR = Path(__file__).parent.parent / "examples"
 
 # Patch target: where AuthProvider.__init__ looks up DefaultClientFactory
@@ -78,4 +80,20 @@ def test_delegated_access_example_loads():
     assert hasattr(mod, "get_github_user")
     assert hasattr(mod, "list_github_repos")
     assert hasattr(mod, "main")
+    assert callable(mod.main)
+
+
+def test_agent_resource_access_example_loads():
+    """The agent_resource_access example imports without reaching the agent socket."""
+    # sibling-floors runs this file against the lowest keycardai-oauth that
+    # keycardai-fastmcp declares, which predates AgentTokenSource.
+    oauth = pytest.importorskip("keycardai.oauth")
+    if not hasattr(oauth, "AgentTokenSource"):
+        pytest.skip("keycardai-oauth predates AgentTokenSource")
+
+    mod = _load_example("agent_resource_access")
+    assert hasattr(mod, "mcp")
+    assert hasattr(mod, "source")
+    assert hasattr(mod, "describe_resource_token")
+    assert hasattr(mod, "call_resource")
     assert callable(mod.main)

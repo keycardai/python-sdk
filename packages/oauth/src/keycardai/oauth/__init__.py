@@ -31,6 +31,20 @@ Example:
         )
 """
 
+from .agent import (
+    AGENT_SOCKET_ENV,
+    AgentCode,
+    AgentError,
+    AgentTokenSource,
+    ResourceAuth,
+    ResourceTokenSource,
+    is_application_not_found,
+    is_authorization_required,
+    is_declined,
+    is_prompter_unavailable,
+    is_rate_limited,
+    is_unavailable,
+)
 from .client import AsyncClient, Client
 from .exceptions import (
     PERMANENT_ERROR_CODES,
@@ -125,6 +139,19 @@ __all__ = [
     "BearerAuth",
     "NoneAuth",
     "MultiZoneBasicAuth",
+    # === Local Keycard Agent ===
+    "AGENT_SOCKET_ENV",
+    "AgentCode",
+    "AgentError",
+    "AgentTokenSource",
+    "ResourceAuth",
+    "ResourceTokenSource",
+    "is_application_not_found",
+    "is_authorization_required",
+    "is_declined",
+    "is_prompter_unavailable",
+    "is_rate_limited",
+    "is_unavailable",
     # === Utility Functions ===
     "extract_bearer_token",
     "validate_bearer_format",
