@@ -105,7 +105,7 @@ class OAuthProtocolError(OAuthError):
     error code.
 
     ``reason`` is Keycard's machine-readable cause, when the server sends one
-    (e.g. ``dependency_missing`` or ``policy_denied`` for ``access_denied``).
+    (e.g. ``no_policy_matched`` or ``policy_denied`` for ``access_denied``).
     Branch on it rather than on ``error_description`` text.
     """
 

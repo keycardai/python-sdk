@@ -106,7 +106,7 @@ class TestTokenExchangeOperations:
         assert exc_info.value.error == "invalid_request"
         assert exc_info.value.error_description == "Invalid subject_token"
 
-    @pytest.mark.parametrize("reason", ["dependency_missing", "policy_denied"])
+    @pytest.mark.parametrize("reason", ["no_policy_matched", "policy_denied"])
     def test_parse_token_exchange_http_response_http_error_reason(self, reason):
         """The error body's machine-readable reason reaches the exception."""
         http_response = HttpResponse(

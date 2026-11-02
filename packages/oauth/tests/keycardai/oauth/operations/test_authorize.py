@@ -397,11 +397,11 @@ class TestRefreshTokenGrant:
         res = HttpResponse(
             status=400,
             headers={},
-            body=b'{"error":"access_denied","reason":"dependency_missing"}',
+            body=b'{"error":"access_denied","reason":"no_policy_matched"}',
         )
         with pytest.raises(RefreshGrantError) as exc:
             parse_refresh_token_http_response(res)
-        assert exc.value.reason == "dependency_missing"
+        assert exc.value.reason == "no_policy_matched"
 
     def test_other_oauth_errors_follow_the_parent_classification(self):
         res = HttpResponse(
