@@ -596,3 +596,60 @@ def test_get_access_context_outside_any_seam_reports_missing_capability():
 def test_capability_is_an_abstract_capability():
     assert isinstance(grant_with(StubExchangeClient()), AbstractCapability)
     assert ApprovalRequired is not None
+
+
+class StubAssertionCredential:
+    """ApplicationCredential whose proof rides in the request body, the shape
+    WorkloadIdentity and WebIdentity use."""
+
+    def __init__(self, client_id: str | None = "agent") -> None:
+        self.client_id = client_id
+
+    def get_http_client_auth(self):  # noqa: ANN201
+        from keycardai.oauth import NoneAuth
+
+        return NoneAuth()
+
+    def set_client_config(self, config, auth_info):  # noqa: ANN001, ANN201
+        return config
+
+    async def prepare_token_exchange_request(
+        self, client, subject_token: str, resource: str, auth_info=None
+    ):  # noqa: ANN001, ANN201
+        return TokenExchangeRequest(
+            subject_token=subject_token,
+            resource=resource,
+            subject_token_type="urn:ietf:params:oauth:token-type:access_token",
+            client_assertion="stub-assertion",
+            client_assertion_type="urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+            client_id=self.client_id,
+        )
+
+
+# Row 15
+async def test_assertion_credential_reaches_the_exchange():
+    stub = StubExchangeClient()
+    grant = grant_with(stub, application_credential=StubAssertionCredential())
+    out = (await make_agent(grant).run("go", deps=Access.on_behalf_of("tok"))).output
+    assert out == f"obo-tok-for-{RESOURCE}"
+    assert stub.exchange_calls[0].client_assertion == "stub-assertion"
+
+
+# Row 16
+async def test_assertion_credential_reaches_the_client_credentials_grant():
+    stub = StubExchangeClient()
+    grant = grant_with(stub, application_credential=StubAssertionCredential())
+    await make_agent(grant).run("go", deps=Access.as_self())
+    call = stub.self_calls[0]
+    assert call["client_assertion"] == "stub-assertion"
+    assert call["client_assertion_type"].endswith("jwt-bearer")
+
+
+# Row 45, without HandleDeferredToolCalls: the framework's own error, nothing added.
+async def test_pause_without_deferred_tool_requests_in_output_type_is_the_frameworks_error():
+    from pydantic_ai.exceptions import UserError
+
+    agent = make_agent(grant_with(StubExchangeClient(), sign_in_url="https://zone/sign-in"))
+    with pytest.raises(UserError, match="DeferredToolRequests"):
+        await agent.run("go", deps=None)
+    assert TOOL_BODY_RUNS == []
