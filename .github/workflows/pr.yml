@@ -127,12 +127,12 @@ jobs:
           uv pip list
           cd packages/langchain && pytest tests/ -v
 
-      - name: Customer pins (langchain 1.3.13, langgraph 1.2.11)
+      - name: Customer pins (langchain 1.3.13, langgraph 1.2.14)
         if: matrix.leg == 'customer-pins'
         run: |
           uv venv .venv-leg --python "${{ matrix.python-version }}"
           source .venv-leg/bin/activate
-          uv pip install "./packages/langchain[test]" "langchain==1.3.13" "langgraph==1.2.11"
+          uv pip install "./packages/langchain[test]" "langchain==1.3.13" "langgraph==1.2.14"
           uv pip list
           cd packages/langchain && pytest tests/ -v
 
