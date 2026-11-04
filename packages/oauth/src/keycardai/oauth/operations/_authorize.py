@@ -152,6 +152,7 @@ def _parse_token_http_response(
                     error=data["error"],
                     error_description=data.get("error_description"),
                     error_uri=data.get("error_uri"),
+                    reason=data.get("reason"),
                     operation=operation,
                 )
         except (json.JSONDecodeError, ValueError):
@@ -177,6 +178,7 @@ def _parse_token_http_response(
             error=data["error"],
             error_description=data.get("error_description"),
             error_uri=data.get("error_uri"),
+            reason=data.get("reason"),
             operation=operation,
         )
 

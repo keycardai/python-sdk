@@ -139,6 +139,19 @@ class TestClientCredentialsOperations:
         assert exc_info.value.error == "invalid_scope"
         assert exc_info.value.error_description == "Unknown scope"
 
+    def test_parse_client_credentials_http_response_oauth_error_reason(self):
+        """The error body's machine-readable reason reaches the exception."""
+        http_response = HttpResponse(
+            status=400,
+            headers={"Content-Type": "application/json"},
+            body=b'{"error": "access_denied", "reason": "policy_denied"}',
+        )
+
+        with pytest.raises(OAuthProtocolError) as exc_info:
+            parse_client_credentials_http_response(http_response)
+
+        assert exc_info.value.reason == "policy_denied"
+
     def test_parse_client_credentials_http_response_http_error_non_json(self):
         """Test parsing HTTP error response with non-JSON body."""
         http_response = HttpResponse(
