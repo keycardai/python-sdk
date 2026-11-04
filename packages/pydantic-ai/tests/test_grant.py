@@ -36,7 +36,9 @@ from keycardai.pydantic_ai import (
     KeycardGrant,
     KeycardIdentity,
     get_access_context,
+    resume_results,
 )
+from keycardai.pydantic_ai.grant import PAUSE_MARKER, RESUME_MARKER
 
 RESOURCE = "https://api.example.test"
 OTHER = "https://other.example.test"
@@ -403,6 +405,109 @@ async def test_defer_on_auth_false_fails_the_call_with_the_url_instead_of_pausin
     result = await agent.run("go", deps=None)
     assert isinstance(result.output, str) and "https://zone/sign-in" in result.output
     assert TOOL_BODY_RUNS == []
+
+
+# Approval-gated tools (SDK-85): the framework asks for its approval before
+# KeycardGrant runs, so the re-run arrives already approved.
+def gated_agent(stub: StubExchangeClient):
+    grant = grant_with(stub, authorization_url="https://zone/consent")
+    agent = Agent(
+        call_tools_once(("send", {})),
+        output_type=[str, DeferredToolRequests],
+        capabilities=[grant],
+    )
+
+    @agent.tool_plain(requires_approval=True)
+    async def send() -> str:
+        """Send, once the user approves."""
+        TOOL_BODY_RUNS.append("send")
+        return describe(get_access_context(), RESOURCE)
+
+    return agent
+
+
+async def test_approval_gated_tool_gets_one_consent_pause_through_resume_results():
+    stub = StubExchangeClient()
+    stub.granted = False
+    agent = gated_agent(stub)
+    deps = Access.on_behalf_of("tok")
+
+    approval = await agent.run("go", deps=deps)
+    assert isinstance(approval.output, DeferredToolRequests)
+    assert "type" not in approval.output.metadata.get("call-0", {})
+    assert stub.exchange_calls == []
+
+    consent = await agent.run(
+        message_history=approval.all_messages(),
+        deps=deps,
+        deferred_tool_results=resume_results(approval.output, approve_all=True),
+    )
+    assert isinstance(consent.output, DeferredToolRequests)
+    payload = consent.output.metadata["call-0"]
+    assert payload["type"] == "authorization_required"
+    assert payload[PAUSE_MARKER] is True
+    assert TOOL_BODY_RUNS == []
+
+    stub.granted = True
+    done = await agent.run(
+        message_history=consent.all_messages(),
+        deps=deps,
+        deferred_tool_results=resume_results(consent.output, approve_all=True),
+    )
+    assert done.output == f"obo-tok-for-{RESOURCE}"
+    assert TOOL_BODY_RUNS == ["send"]
+
+
+async def test_approval_gated_tool_without_resume_results_fails_instead_of_pausing():
+    stub = StubExchangeClient()
+    stub.granted = False
+    agent = gated_agent(stub)
+    deps = Access.on_behalf_of("tok")
+    approval = await agent.run("go", deps=deps)
+    result = await agent.run(
+        message_history=approval.all_messages(),
+        deps=deps,
+        deferred_tool_results=approval.output.build_results(approve_all=True),
+    )
+    assert isinstance(result.output, str)
+    assert "https://zone/consent" in result.output
+    assert TOOL_BODY_RUNS == []
+
+
+async def test_own_pause_resumed_through_resume_results_never_pauses_twice():
+    stub = StubExchangeClient()
+    stub.granted = False
+    agent = consent_agent(stub)
+    deps = Access.on_behalf_of("tok")
+    paused = await agent.run("go", deps=deps)
+    assert paused.output.metadata["call-0"][PAUSE_MARKER] is True
+    result = await agent.run(
+        message_history=paused.all_messages(),
+        deps=deps,
+        deferred_tool_results=resume_results(paused.output, approve_all=True),
+    )
+    assert isinstance(result.output, str)
+    assert "https://zone/consent" in result.output
+    assert TOOL_BODY_RUNS == []
+
+
+def test_resume_results_hands_metadata_back_and_merges_the_hosts():
+    from pydantic_ai import ToolApproved
+
+    requests = DeferredToolRequests(
+        approvals=[ToolCallPart(tool_name="t", args={}, tool_call_id="a")],
+        metadata={"a": {"type": "authorization_required"}},
+    )
+    results = resume_results(
+        requests, approve_all=True, metadata={"a": {"host": 1}, "b": {"other": 2}}
+    )
+    assert results.metadata["a"] == {
+        "type": "authorization_required",
+        "host": 1,
+        RESUME_MARKER: True,
+    }
+    assert results.metadata["b"] == {"other": 2}
+    assert isinstance(results.approvals["a"], ToolApproved)
 
 
 # Row 44

@@ -77,5 +77,16 @@ is a stub. Rows in `tests/test_grant.py` unless noted.
 |---|---|---|
 | 1 Keycard-protected MCP server through `MCPToolset(auth=keycard.mcp_auth(...))` | deferred | [SDK-65](https://linear.app/keycardlabs/issue/SDK-65) |
 | 2 live-zone smoke for the exchange paths | out of this repo | the two examples under `examples/` are run by hand against a sandbox zone before each release |
-| 3 version matrix across the floor and the pinned version | partial | the pinned version is this package's `uv.lock` and runs on every PR; the `pydantic-ai-slim` 2.60 floor passed by hand (41 tests) but has no CI leg. The `sibling floors (pydantic-ai)` leg pins only `keycardai-*` siblings |
+| 3 version matrix across the floor and the pinned version | partial | the pinned version is this package's `uv.lock` and runs on every PR; the `pydantic-ai-slim` 2.60 floor passed by hand but has no CI leg. The `sibling floors (pydantic-ai)` leg pins only `keycardai-*` siblings |
 | 4 end-to-end eval run | deferred | follows the templates eval harness once a Pydantic AI template exists |
+
+## Beyond the spec
+
+These rows cover behavior the spec doesn't describe yet; the spec reconcile (SDK-61) adds them.
+
+| Behavior | Status | Where |
+|---|---|---|
+| approval-gated tool (`requires_approval=True`) gets one consent pause when the host resumes through `resume_results()` | covered | `test_approval_gated_tool_gets_one_consent_pause_through_resume_results` |
+| the same tool resumed with plain `build_results()` ends in `ToolFailed`, no pause | covered | `test_approval_gated_tool_without_resume_results_fails_instead_of_pausing` |
+| KeycardGrant's own pause resumed through `resume_results()` never pauses twice | covered | `test_own_pause_resumed_through_resume_results_never_pauses_twice` |
+| `resume_results()` hands pause metadata back and merges the host's | covered | `test_resume_results_hands_metadata_back_and_merges_the_hosts` |

@@ -108,10 +108,11 @@ token = access.access(CALENDAR).access_token  # raises ResourceAccessError only 
 With `sign_in_url` and `authorization_url` set, a human flow pauses the run
 through the framework's deferred tool approval instead of recording an error.
 Add `DeferredToolRequests` to the agent's `output_type` and resume with
-`DeferredToolResults`:
+`resume_results()`:
 
 ```python
-from pydantic_ai import Agent, DeferredToolRequests, DeferredToolResults
+from pydantic_ai import Agent, DeferredToolRequests
+from keycardai.pydantic_ai import resume_results
 
 keycard = KeycardGrant(
     zone_url=..., resources=[CALENDAR], client_id=..., client_secret=...,
@@ -129,7 +130,7 @@ while isinstance(result.output, DeferredToolRequests):
     result = agent.run_sync(
         message_history=result.all_messages(),
         deps=identity,                                       # deps are not in the history
-        deferred_tool_results=result.output.build_results(approve_all=True),
+        deferred_tool_results=resume_results(result.output, approve_all=True),
     )
 ```
 
@@ -143,6 +144,16 @@ host renders both. The tool body never runs before the pause resolves. An
 approved resume re-acquires once; if the grant is still missing the call ends
 with a terminal `ToolFailed` carrying the same URL, never a second pause.
 `ToolDenied` on resume skips the tool entirely. As-itself never pauses.
+
+`resume_results()` takes the same arguments as `DeferredToolRequests.build_results()`
+and also hands each call's pause metadata back on resume. That matters for a
+tool that also requires approval (`requires_approval=True`): the framework asks
+for that approval before `KeycardGrant` runs, and the handed-back metadata is
+how `KeycardGrant` tells that approval from its own. With `resume_results()`,
+such a tool pauses once for consent after the user approves it. With plain
+`build_results()`, it can't tell, so a missing grant ends the call in
+`ToolFailed` with the consent link instead. A call never pauses twice for
+Keycard either way.
 
 Expiry is detected locally (a decode-only check of the JWT's `exp`; the zone
 stays the authority), so an expired session routes to sign-in rather than to
@@ -232,13 +243,8 @@ durable container and deps are serialized into its history, so a token would be
 replayed and a subject token persisted. Run such agents without the durability
 capability for now.
 
-Tools that also require approval (`requires_approval=True`, or any tool the
-framework defers for approval) lose the consent pause. The framework asks for
-that approval before `KeycardGrant` runs, and once it's given the re-run looks
-the same as a resume after a Keycard pause. So if the grant is still missing,
-the call ends with `ToolFailed` carrying the consent link instead of pausing for
-consent. Grant access before approving such a call, or have the host handle the
-`ToolFailed` text.
+Tools that also require approval get their consent pause only when the host
+resumes through `resume_results()` (see "Pausing for sign-in and consent").
 
 MCP toolsets need a per-run auth function (`MCPToolset(auth=...)`). That seam
 comes in a follow-up release. Until then, exclude MCP tools from acquisition

@@ -9,7 +9,7 @@ framework's own deferred-tool approval.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable, Iterator
+from collections.abc import AsyncIterator, Callable, Iterator, Mapping
 from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
 from typing import Any
@@ -23,7 +23,7 @@ from keycardai.oauth.server import (
 )
 from keycardai.oauth.server.access_context import AccessContext
 from keycardai.oauth.server.credentials import ApplicationCredential
-from pydantic_ai import RunContext
+from pydantic_ai import DeferredToolRequests, DeferredToolResults, RunContext
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.exceptions import ApprovalRequired, ToolFailed
 from pydantic_ai.messages import ToolCallPart
@@ -34,6 +34,12 @@ MISSING_IDENTITY_MESSAGE = (
     "deps=Access.on_behalf_of(...), Access.impersonate(...), or Access.as_self(), "
     "or carry a KeycardIdentity on deps.keycard_identity."
 )
+
+PAUSE_MARKER = "keycard_pause"
+"""Set on KeycardGrant's own pause payloads, so a resume can be matched to it."""
+
+RESUME_MARKER = "keycard_resume"
+"""Set by resume_results() on every approved call it builds."""
 
 _current_access: ContextVar[AccessContext | None] = ContextVar(
     "keycard_pydantic_ai_access_context", default=None
@@ -55,6 +61,58 @@ def get_access_context() -> AccessContext:
             "deps, or wrap the call in keycard.grant()."
         )
     return access
+
+
+def resume_results(
+    requests: DeferredToolRequests,
+    *,
+    approvals: Mapping[str, Any] | None = None,
+    calls: dict[str, Any] | None = None,
+    metadata: dict[str, dict[str, Any]] | None = None,
+    approve_all: bool = False,
+) -> DeferredToolResults:
+    """Build the results that resume a paused run, handing each call's pause
+    metadata back to it.
+
+    Use this in place of `requests.build_results(...)`; the arguments are the
+    same. Handing the metadata back lets KeycardGrant tell its own sign-in or
+    consent pause apart from an approval the framework asked for
+    (`requires_approval=True`), so an approval-gated tool still gets one
+    consent pause. With plain `build_results`, such a tool ends in `ToolFailed`
+    carrying the consent link instead. `metadata` entries you pass are merged
+    over the echoed ones.
+    """
+    extra = metadata or {}
+    echoed: dict[str, dict[str, Any]] = {
+        call_id: dict(values) for call_id, values in extra.items()
+    }
+    for part in requests.approvals:
+        call_id = part.tool_call_id
+        echoed[call_id] = {
+            **requests.metadata.get(call_id, {}),
+            **extra.get(call_id, {}),
+            RESUME_MARKER: True,
+        }
+    return requests.build_results(
+        approvals=approvals, calls=calls, metadata=echoed, approve_all=approve_all
+    )
+
+
+def _may_pause(ctx: RunContext[Any]) -> bool:
+    """Whether this call can still pause for sign-in or consent.
+
+    A first run can. An approved re-run can only when it answers someone
+    else's approval, such as the framework's `requires_approval` gate, which
+    is knowable only when the host resumed through resume_results(): then
+    every approved call carries RESUME_MARKER, and KeycardGrant's own pause
+    also carries PAUSE_MARKER. A resume of KeycardGrant's own pause never
+    pauses again, and a host that doesn't hand metadata back gets no second
+    pause either, so a call can't loop.
+    """
+    if not ctx.tool_call_approved:
+        return True
+    metadata = ctx.tool_call_metadata or {}
+    return bool(metadata.get(RESUME_MARKER)) and not metadata.get(PAUSE_MARKER)
 
 
 def default_identity_from(ctx: RunContext[Any]) -> KeycardIdentity | None:
@@ -169,8 +227,8 @@ class KeycardGrant(AbstractCapability[Any]):
         access = await self._engine.build_access(identity, resources)
         payload = self._engine.pending_pause(identity, access)
         if payload is not None:
-            if self._defer_on_auth and not ctx.tool_call_approved:
-                raise ApprovalRequired(metadata=payload)
+            if self._defer_on_auth and _may_pause(ctx):
+                raise ApprovalRequired(metadata={**payload, PAUSE_MARKER: True})
             fields = self._engine.fallback_fields(payload, tool_def.name)
             raise ToolFailed(self._engine.fallback_text(fields))
         token = _current_access.set(access)

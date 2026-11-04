@@ -22,6 +22,7 @@ from keycardai.pydantic_ai import (
     KeycardGrant,
     KeycardIdentity,
     get_access_context,
+    resume_results,
 )
 
 CALENDAR = os.environ.get(
@@ -97,7 +98,9 @@ def main() -> None:
             print(f"\n[{payload['type']}] {payload['message']}")
             print(payload.get("sign_in_url") or payload.get("authorization_url"))
         input("\nPress Enter after completing it to resume... ")
-        results = result.output.build_results(approve_all=True)
+        # resume_results hands each pause's metadata back, so a tool that also
+        # needs the framework's approval still gets its consent pause.
+        results = resume_results(result.output, approve_all=True)
         # Deps are not part of the message history: a resume re-supplies identity.
         result = agent.run_sync(
             message_history=result.all_messages(),

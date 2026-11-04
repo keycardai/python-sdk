@@ -21,7 +21,7 @@ from keycardai.oauth.server import Access, KeycardIdentity
 from keycardai.oauth.server.access_context import AccessContext
 from keycardai.oauth.server.exceptions import ResourceAccessError
 
-from .grant import KeycardGrant, get_access_context
+from .grant import KeycardGrant, get_access_context, resume_results
 
 __all__ = [
     "Access",
@@ -30,4 +30,5 @@ __all__ = [
     "KeycardIdentity",
     "ResourceAccessError",
     "get_access_context",
+    "resume_results",
 ]
