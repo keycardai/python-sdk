@@ -25,6 +25,13 @@ Infrastructure:
 """
 
 from .access_context import AccessContext
+from .agent_grant import (
+    Access,
+    AgentGrantEngine,
+    KeycardIdentity,
+    ToolResources,
+    subject_token_expired,
+)
 from .credentials import (
     ApplicationCredential,
     ClientSecret,
@@ -44,6 +51,11 @@ from .verifier import AccessToken, TokenVerifier
 __all__ = [
     # === Core ===
     "AccessContext",
+    "Access",
+    "AgentGrantEngine",
+    "KeycardIdentity",
+    "ToolResources",
+    "subject_token_expired",
     "AccessToken",
     "TokenVerifier",
     "MissingAudienceWarning",
