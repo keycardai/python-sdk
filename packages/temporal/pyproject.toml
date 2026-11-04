@@ -114,7 +114,7 @@ asyncio_mode = "auto"
 
 [tool.commitizen]
 name = "cz_customize"
-version = "0.8.0"
+version = "0.8.1"
 tag_format = "${version}-keycardai-temporal"
 # Ignores sibling packages' tags only; it must not match this package's own tag, because commitizen applies ignored formats before tag_format.
 ignored_tag_formats = ["${version}-keycardai-(?!temporal$).*"]

@@ -1,3 +1,15 @@
+## 0.35.0-keycardai-oauth (2026-11-04)
+
+
+- feat(keycardai-oauth): add a shared agent grant engine (#385)
+- Moves the framework-free agent grant logic (identity factories, as-itself grant, expiry routing, pause payloads, per-loop client cache) into keycardai.oauth.server.agent_grant so keycardai-langchain and keycardai-pydantic-ai share one engine. Adds missing_identity_message, per-call request_scopes, and Mapping or callable tool_resources for the second integration. SDK-40.
+
+## 0.34.2-keycardai-oauth (2026-11-04)
+
+
+- fix(keycardai-oauth): preserve authorization endpoint query parameters (#372)
+- Keeps an authorization endpoint's existing query (RFC 6749 §3.1) instead of appending a second '?'. Contributed by @Kayvan-Zahiri. Duplicate-parameter handling follows in SDK-81.
+
 ## 0.34.1-keycardai-oauth (2026-11-04)
 
 
