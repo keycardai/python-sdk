@@ -12,7 +12,7 @@ dependencies = [
     "pydantic-settings>=2.7.1",
     "httpx>=0.27.2",
     "keycardai-oauth>=0.29.0",
-    "fastmcp>=3.1.0",
+    "fastmcp>=3.4.10",
 ]
 keywords = ["fastmcp", "mcp", "model-context-protocol", "oauth", "token-exchange", "authentication", "keycard"]
 classifiers = [
