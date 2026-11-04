@@ -62,6 +62,7 @@ fix-all:
 typecheck:
     uv sync --all-packages --all-extras
     cd packages/fastmcp && uv sync --extra test
+    cd packages/pydantic-ai && uv sync --extra test
     uv run --frozen ty check packages/oauth/src packages/starlette/src packages/mcp/src packages/a2a/src packages/langchain/src packages/temporal/src
     uv run --frozen ty check --project packages/fastmcp --python packages/fastmcp/.venv packages/fastmcp/src
     uv run --frozen ty check --project packages/pydantic-ai --python packages/pydantic-ai/.venv packages/pydantic-ai/src
