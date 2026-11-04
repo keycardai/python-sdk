@@ -119,7 +119,7 @@ dev = [
 
 [tool.commitizen]
 name = "cz_customize"
-version = "0.34.2"
+version = "0.35.0"
 tag_format = "${version}-keycardai-oauth"
 # Ignores sibling packages' tags only; it must not match this package's own tag, because commitizen applies ignored formats before tag_format.
 ignored_tag_formats = ["${version}-keycardai-(?!oauth$).*"]

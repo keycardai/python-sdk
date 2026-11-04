@@ -1,3 +1,9 @@
+## 0.35.0-keycardai-oauth (2026-11-04)
+
+
+- feat(keycardai-oauth): add a shared agent grant engine (#385)
+- Moves the framework-free agent grant logic (identity factories, as-itself grant, expiry routing, pause payloads, per-loop client cache) into keycardai.oauth.server.agent_grant so keycardai-langchain and keycardai-pydantic-ai share one engine. Adds missing_identity_message, per-call request_scopes, and Mapping or callable tool_resources for the second integration. SDK-40.
+
 ## 0.34.2-keycardai-oauth (2026-11-04)
 
 
