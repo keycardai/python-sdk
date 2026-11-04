@@ -63,7 +63,7 @@ members = [
 # packages/fastmcp carries its own resolution. It sits on fastmcp 3.x, which
 # pins mcp<2.0, while packages/mcp is on mcp>=2.0. One workspace lock cannot
 # hold both majors. See ECO-198.
-exclude = ["packages/*/examples/*", "packages/fastmcp"]
+exclude = ["packages/*/examples/*", "packages/fastmcp", "packages/pydantic-ai"]
 
 [tool.uv.sources]
 # Workspace sources will be defined here as packages are added
@@ -75,9 +75,11 @@ keycardai-temporal = { workspace = true }
 
 [tool.keycardai.release]
 # packages/fastmcp is excluded from the uv workspace (it holds mcp<2.0; see
-# tool.uv.workspace.exclude and ECO-198) but still ships from this repo, so
-# the release tooling has to keep seeing it.
-standalone-members = ["packages/fastmcp"]
+# tool.uv.workspace.exclude and ECO-198) and so is packages/pydantic-ai
+# (pydantic-ai-slim requires Python 3.11, which would narrow the whole
+# workspace lock). Both still ship from this repo, so the release tooling has
+# to keep seeing them.
+standalone-members = ["packages/fastmcp", "packages/pydantic-ai"]
 
 [build-system]
 requires = ["hatchling", "uv-dynamic-versioning"]

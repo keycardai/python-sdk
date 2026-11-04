@@ -217,7 +217,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        package: [a2a, fastmcp, langchain, mcp, starlette, temporal]
+        package: [a2a, fastmcp, langchain, mcp, pydantic-ai, starlette, temporal]
 
     env:
       PACKAGE: ${{ matrix.package }}

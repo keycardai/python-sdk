@@ -8,6 +8,7 @@ dev-setup:
 build:
     uv sync --all-packages
     cd packages/fastmcp && uv sync --extra test
+    cd packages/pydantic-ai && uv sync --extra test
 
 # Run tests for all packages
 test: build
@@ -18,6 +19,7 @@ test: build
     just test-package a2a
     just test-package langchain
     just test-package temporal
+    just test-package pydantic-ai
 
 # Run tests for a specific package
 test-package PACKAGE:
@@ -42,6 +44,7 @@ test-coverage: build
     cd packages/a2a && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=55
     cd packages/langchain && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=85
     cd packages/temporal && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=85
+    cd packages/pydantic-ai && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=85
 
 check:
     uv run ruff check
@@ -61,6 +64,7 @@ typecheck:
     cd packages/fastmcp && uv sync --extra test
     uv run --frozen ty check packages/oauth/src packages/starlette/src packages/mcp/src packages/a2a/src packages/langchain/src packages/temporal/src
     uv run --frozen ty check --project packages/fastmcp --python packages/fastmcp/.venv packages/fastmcp/src
+    uv run --frozen ty check --project packages/pydantic-ai --python packages/pydantic-ai/.venv packages/pydantic-ai/src
 
 # Validate commit messages for PR
 validate-commits BASE_BRANCH="origin/main":
