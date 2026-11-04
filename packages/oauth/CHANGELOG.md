@@ -1,3 +1,9 @@
+## 0.34.1-keycardai-oauth (2026-11-04)
+
+
+- fix(keycardai-oauth): ship LICENSE inside the published wheels (#384)
+- Adds a LICENSE copy and license-files metadata to every package so wheels and sdists carry it. Scoped to keycardai-oauth so it releases; the other six packages get forced patch bumps.
+
 ## 0.34.0-keycardai-oauth (2026-11-04)
 
 
