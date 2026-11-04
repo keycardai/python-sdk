@@ -1,3 +1,18 @@
+## 0.34.0-keycardai-oauth (2026-11-04)
+
+
+- feat(keycardai-oauth): keep the OAuth error reason on OAuthProtocolError (#383)
+- * feat(keycardai-oauth): keep the OAuth error reason on OAuthProtocolError
+- Keycard's token endpoint adds a machine-readable reason to OAuth error
+bodies (e.g. dependency_missing, policy_denied). Token exchange and
+client credentials parsing now pass it through as OAuthProtocolError.reason.
+- Refs CX-1495
+- * fix(keycardai-oauth): keep the error reason on authorization-code and refresh grants
+- Refs CX-1495
+- * docs(keycardai-oauth): no_policy_matched is the implicit-deny reason (CX-1495)
+- ---------
+- Co-authored-by: devin-ai-keycard <devin-ai@keycard.ai>
+
 ## 0.33.2-keycardai-oauth (2026-10-20)
 
 
