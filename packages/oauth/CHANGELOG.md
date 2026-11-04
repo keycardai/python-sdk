@@ -1,3 +1,9 @@
+## 0.34.2-keycardai-oauth (2026-11-04)
+
+
+- fix(keycardai-oauth): preserve authorization endpoint query parameters (#372)
+- Keeps an authorization endpoint's existing query (RFC 6749 §3.1) instead of appending a second '?'. Contributed by @Kayvan-Zahiri. Duplicate-parameter handling follows in SDK-81.
+
 ## 0.34.1-keycardai-oauth (2026-11-04)
 
 
