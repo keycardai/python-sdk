@@ -1,3 +1,9 @@
+## 0.7.3-keycardai-fastmcp (2026-11-04)
+
+
+- fix(keycardai-fastmcp): raise vulnerable dependency floors and refresh the locks (#391)
+- Raises published floors for the advisories Socket flagged in #373-#381 (fastmcp>=3.4.10; langgraph>=1.2.14, langgraph-sdk>=0.4.6, langgraph-api>=0.15.0, langgraph-runtime-inmem>=0.35.0 in keycardai-langchain; black>=26.10.1 in the dev extra) and refreshes both locks for urllib3, multidict and opentelemetry-api. The customer-pins CI leg moves to langgraph 1.2.14. A forced patch bump of keycardai-langchain follows. SDK-82.
+
 ## 0.7.2-keycardai-fastmcp (2026-11-04)
 
 ## 0.7.1-keycardai-fastmcp (2026-09-15)
