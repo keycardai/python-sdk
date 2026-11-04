@@ -4,7 +4,8 @@ dynamic = ["version"]
 description = "Starlette/FastAPI middleware and route builders for protecting HTTP APIs with Keycard OAuth"
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "Keycard", email = "support@keycard.ai" }]
 dependencies = [
     "keycardai-oauth>=0.29.0",
