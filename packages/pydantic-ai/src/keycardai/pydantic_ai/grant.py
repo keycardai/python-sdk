@@ -9,7 +9,6 @@ framework's own deferred-tool approval.
 
 from __future__ import annotations
 
-import sys
 from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
@@ -75,10 +74,14 @@ def _durability_capability(ctx: RunContext[Any]) -> object | None:
     false inside a Temporal activity or DBOS step, which is where sibling
     seams run, so a flag-only check would let a token into history.
     """
-    base_module = sys.modules.get("pydantic_ai.durable_exec._base")
-    if base_module is None or ctx.agent is None:
+    if ctx.agent is None:
         return None
-    return base_module.BaseDurabilityCapability.from_agent(ctx.agent)
+    try:
+        from pydantic_ai.durable_exec import BaseDurabilityCapability
+    except ImportError:
+        # Every durability capability subclasses this type, so none can exist.
+        return None
+    return BaseDurabilityCapability.from_agent(ctx.agent)
 
 
 class KeycardGrant(AbstractCapability[Any]):

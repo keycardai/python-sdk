@@ -225,16 +225,26 @@ The package's own test strategy, row by row, lives in [TESTING.md](TESTING.md).
 
 ## Limitations
 
-- **Durable execution is not supported yet.** Under `TemporalDurability`,
-  `DBOSDurability` or any other durability capability, `KeycardGrant` raises a
-  configuration error before acquiring anything: capability hooks run inside the
-  durable container and deps are serialized into its history, so a token would
-  be replayed and a subject token persisted. Run such agents without the
-  capability, or use `keycardai-temporal` for Temporal workflows.
-- **MCP toolsets** need a per-run auth function (`MCPToolset(auth=...)`). That
-  seam is coming in a follow-up release; until then, MCP tools can be excluded
-  from acquisition with a `tool_resources` callable returning `[]`.
-- Single zone per capability.
+Durable execution isn't supported yet. Under `TemporalDurability`,
+`DBOSDurability` or any other durability capability, `KeycardGrant` raises a
+configuration error before acquiring anything: capability hooks run inside the
+durable container and deps are serialized into its history, so a token would be
+replayed and a subject token persisted. Run such agents without the durability
+capability for now.
+
+Tools that also require approval (`requires_approval=True`, or any tool the
+framework defers for approval) lose the consent pause. The framework asks for
+that approval before `KeycardGrant` runs, and once it's given the re-run looks
+the same as a resume after a Keycard pause. So if the grant is still missing,
+the call ends with `ToolFailed` carrying the consent link instead of pausing for
+consent. Grant access before approving such a call, or have the host handle the
+`ToolFailed` text.
+
+MCP toolsets need a per-run auth function (`MCPToolset(auth=...)`). That seam
+comes in a follow-up release. Until then, exclude MCP tools from acquisition
+with a `tool_resources` callable that returns `[]` for them.
+
+One zone per capability.
 
 ## Examples
 

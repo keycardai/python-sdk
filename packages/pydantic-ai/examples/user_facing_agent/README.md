@@ -28,9 +28,10 @@ export KEYCARD_CLIENT_ID="your-agent-client-id"
 export KEYCARD_CLIENT_SECRET="your-agent-client-secret"
 export KEYCARD_SUBJECT_TOKEN="<the caller's Keycard access token>"
 export ANTHROPIC_API_KEY="sk-ant-..."
-# Optional: where the pause payloads point the user.
-export SIGN_IN_URL="https://your-app.example/signin"
-export AUTHORIZATION_URL="https://your-app.example/authorize"
+# Optional. Consent links default to the zone URL; set a sign-in URL to also
+# pause (rather than record an error) when the token is missing or expired.
+# export KEYCARD_AUTHORIZATION_URL="https://your-app.example/authorize"
+# export KEYCARD_SIGN_IN_URL="https://your-app.example/signin"
 
 uv run main.py "what's on my calendar today?"
 ```
@@ -38,7 +39,9 @@ uv run main.py "what's on my calendar today?"
 To see the pause, run once before granting the agent calendar access in the
 zone: the CLI prints the `authorization_required` payload and its URL, waits
 for Enter, then resumes and the tool reads the token. An expired or missing
-subject token prints a `sign_in_required` payload instead.
+subject token prints a `sign_in_required` payload instead when
+`KEYCARD_SIGN_IN_URL` is set. The token is fixed for the whole run here, so
+after an expiry, get a fresh one and start again rather than resuming.
 
 ## What to look at
 

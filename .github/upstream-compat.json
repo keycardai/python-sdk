@@ -26,10 +26,7 @@
     },
     {
       "package": "langchain",
-      "upstreams": [
-        "langchain",
-        "langgraph"
-      ],
+      "upstreams": ["langchain", "langgraph"],
       "field": "project.dependencies",
       "companions": []
     },

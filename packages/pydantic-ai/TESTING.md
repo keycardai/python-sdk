@@ -77,5 +77,5 @@ is a stub. Rows in `tests/test_grant.py` unless noted.
 |---|---|---|
 | 1 Keycard-protected MCP server through `MCPToolset(auth=keycard.mcp_auth(...))` | deferred | [SDK-65](https://linear.app/keycardlabs/issue/SDK-65) |
 | 2 live-zone smoke for the exchange paths | out of this repo | the two examples under `examples/` are run by hand against a sandbox zone before each release |
-| 3 version matrix across the floor and the pinned version | covered | `sibling floors (pydantic-ai)` leg in `.github/workflows/pr.yml`; the pinned version is this package's `uv.lock` |
+| 3 version matrix across the floor and the pinned version | partial | the pinned version is this package's `uv.lock` and runs on every PR; the `pydantic-ai-slim` 2.60 floor passed by hand (41 tests) but has no CI leg. The `sibling floors (pydantic-ai)` leg pins only `keycardai-*` siblings |
 | 4 end-to-end eval run | deferred | follows the templates eval harness once a Pydantic AI template exists |

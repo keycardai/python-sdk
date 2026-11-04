@@ -519,7 +519,7 @@ def test_client_id_and_secret_are_client_secret_shorthand():
 
     stub = StubExchangeClient()
     grant = grant_with(stub, client_id="agent", client_secret="s3cret")
-    assert isinstance(grant.engine._credential, ClientSecret)
+    assert isinstance(grant.engine.credential, ClientSecret)
     with grant.grant(Access.on_behalf_of("caller-token")) as access:
         assert (
             access.access(RESOURCE).access_token == f"obo-caller-token-for-{RESOURCE}"
@@ -577,14 +577,26 @@ def test_access_factories():
 
 
 # Row 17
-async def test_two_runs_on_one_loop_share_one_client():
+async def test_two_runs_on_one_loop_share_one_client(monkeypatch):
+    built: list[StubExchangeClient] = []
+
+    def build_client(**kwargs: Any) -> StubExchangeClient:
+        built.append(StubExchangeClient())
+        return built[-1]
+
+    monkeypatch.setattr("keycardai.oauth.server.agent_grant.AsyncClient", build_client)
     grant = KeycardGrant(
         zone_url="https://zone.example.test",
         resources=[RESOURCE],
         client_id="a",
         client_secret="b",
     )
-    assert grant.engine.client() is grant.engine.client()
+    agent = make_agent(grant)
+    for _ in range(2):
+        result = await agent.run("go", deps=Access.on_behalf_of("caller-token"))
+        assert result.output == f"obo-caller-token-for-{RESOURCE}"
+    assert len(built) == 1
+    assert len(built[0].exchange_calls) == 2
 
 
 # Row 31

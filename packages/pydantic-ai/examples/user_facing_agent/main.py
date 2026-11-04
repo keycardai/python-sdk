@@ -33,10 +33,14 @@ keycard = KeycardGrant(
     resources=[CALENDAR],
     client_id=os.environ["KEYCARD_CLIENT_ID"],
     client_secret=os.environ["KEYCARD_CLIENT_SECRET"],
-    sign_in_url=os.environ.get("SIGN_IN_URL", "https://your-app.example/signin"),
+    # A missing grant pauses the run instead of failing; the loop below prints
+    # the link and resumes after consent. Defaults to the zone, as in the
+    # LangChain example.
     authorization_url=os.environ.get(
-        "AUTHORIZATION_URL", "https://your-app.example/authorize"
+        "KEYCARD_AUTHORIZATION_URL", os.environ["KEYCARD_ZONE_URL"]
     ),
+    # Set this to pause for sign-in too (no identity, or an expired token).
+    sign_in_url=os.environ.get("KEYCARD_SIGN_IN_URL"),
 )
 
 agent = Agent(
