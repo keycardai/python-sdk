@@ -15,7 +15,7 @@ import base64
 import json
 import threading
 import time
-from collections.abc import Callable, Coroutine
+from collections.abc import Callable, Coroutine, Mapping
 from dataclasses import dataclass
 from typing import Any, TypedDict
 from weakref import WeakKeyDictionary
@@ -27,7 +27,20 @@ from .access_context import AccessContext
 from .credentials import ApplicationCredential, ClientSecret
 from .token_exchange import error_retryable, exchange_tokens_for_resources
 
-ToolResources = dict[str, list[str]] | Callable[[str], list[str] | None]
+RequestScopes = str | list[str] | dict[str, str | list[str]]
+"""Outbound scopes: one string or list for every resource, or a map per resource."""
+
+DEFAULT_MISSING_IDENTITY_MESSAGE = (
+    "No Keycard identity on the runtime context. Invoke the agent with "
+    "context=Access.on_behalf_of(...), Access.impersonate(...), or Access.as_self()."
+)
+"""The missing-identity message when no sign-in URL is configured.
+
+Names LangChain's call shape (`context=`); an integration whose framework
+passes identity differently sets its own through `missing_identity_message`.
+"""
+
+ToolResources = Mapping[str, list[str]] | Callable[[str], list[str] | None]
 """Per-tool resource override: a map of tool name to resources, or a callable
 asked for each tool name that returns the resources or None for the default."""
 
@@ -143,6 +156,10 @@ class AgentGrantEngine:
             expired subject token.
         fallback_identity: Identity used when the integration resolves none.
             A callable is resolved per call through `resolve_fallback()`.
+        missing_identity_message: The context error message for a run with no
+            identity when no `sign_in_url` is configured. It tells the
+            developer how to supply one, so each integration names its own
+            framework's call shape. Defaults to LangChain's.
         client: Injectable AsyncClient (tests). When set, zone_url is unused
             and the client is reused as-is.
     """
@@ -156,12 +173,13 @@ class AgentGrantEngine:
         client_id: str | None = None,
         client_secret: str | None = None,
         tool_resources: ToolResources | None = None,
-        request_scopes: str | list[str] | dict[str, str | list[str]] | None = None,
+        request_scopes: RequestScopes | None = None,
         authorization_url: str | Callable[[list[str]], str] | None = None,
         sign_in_url: str | None = None,
         fallback_identity: KeycardIdentity
         | Callable[[], KeycardIdentity | None]
         | None = None,
+        missing_identity_message: str = DEFAULT_MISSING_IDENTITY_MESSAGE,
         client: AsyncClient | None = None,
     ) -> None:
         if client is None and not zone_url:
@@ -183,6 +201,7 @@ class AgentGrantEngine:
         self._authorization_url = authorization_url
         self._sign_in_url = sign_in_url
         self._fallback_identity = fallback_identity
+        self._missing_identity_message = missing_identity_message
         self._injected_client = client
         self._loop_clients: WeakKeyDictionary[
             asyncio.AbstractEventLoop, AsyncClient
@@ -220,8 +239,8 @@ class AgentGrantEngine:
     def resources_for(self, tool_name: str) -> list[str]:
         """The resources to grant for a tool: its override, else the default."""
         override = self._tool_resources
-        if isinstance(override, dict):
-            return override.get(tool_name, self._resources)
+        if isinstance(override, Mapping):
+            return list(override.get(tool_name, self._resources))
         selected = override(tool_name)
         return self._resources if selected is None else list(selected)
 
@@ -304,8 +323,10 @@ class AgentGrantEngine:
 
     # Acquisition
 
-    def _scope_for(self, resource: str) -> str | None:
-        scopes = self._request_scopes
+    def _scope_for(
+        self, resource: str, request_scopes: RequestScopes | None = None
+    ) -> str | None:
+        scopes = self._request_scopes if request_scopes is None else request_scopes
         if scopes is None:
             return None
         value = scopes.get(resource) if isinstance(scopes, dict) else scopes
@@ -344,18 +365,23 @@ class AgentGrantEngine:
         return fields
 
     async def grant_as_self(
-        self, resources: list[str], access: AccessContext
+        self,
+        resources: list[str],
+        access: AccessContext,
+        *,
+        request_scopes: RequestScopes | None = None,
     ) -> AccessContext:
         """Client-credentials acquisition: the agent's own authority, no subject.
 
         Not routed through exchange_tokens_for_resources(), which only models
-        subject-token flows.
+        subject-token flows. `request_scopes` overrides the engine's for this
+        call.
         """
         client = self.client()
         for resource in resources:
             try:
                 kwargs: dict[str, Any] = {"resource": resource}
-                scope = self._scope_for(resource)
+                scope = self._scope_for(resource, request_scopes)
                 if scope:
                     kwargs["scope"] = scope
                 kwargs.update(await self._client_auth_fields(client, resource))
@@ -376,15 +402,22 @@ class AgentGrantEngine:
         return access
 
     async def build_access(
-        self, identity: KeycardIdentity | None, resources: list[str]
+        self,
+        identity: KeycardIdentity | None,
+        resources: list[str],
+        *,
+        request_scopes: RequestScopes | None = None,
     ) -> AccessContext:
         """Acquire for `resources` under `identity`; never raises for a grant.
 
         No identity records `missing_identity`, an expired JWT subject token
         records `subject_token_expired` without an exchange, `as_self` routes
         to the client-credentials grant, and the user-bearing patterns route
-        to the shared token-exchange orchestration.
+        to the shared token-exchange orchestration. `request_scopes` overrides
+        the engine's scopes for this call, for a seam that sets its own (such
+        as a per-resource MCP auth).
         """
+        scopes = self._request_scopes if request_scopes is None else request_scopes
         access = AccessContext()
 
         if identity is None:
@@ -393,10 +426,7 @@ class AgentGrantEngine:
                     "message": (
                         "No Keycard identity for this run. Sign in to continue."
                         if self._sign_in_url
-                        else "No Keycard identity on the runtime context. Invoke the "
-                        "agent with context=Access.on_behalf_of(...), "
-                        "Access.impersonate(...), or "
-                        "Access.as_self()."
+                        else self._missing_identity_message
                     ),
                     "code": "missing_identity",
                 }
@@ -416,7 +446,7 @@ class AgentGrantEngine:
             return access
 
         if identity.as_self:
-            return await self.grant_as_self(resources, access)
+            return await self.grant_as_self(resources, access, request_scopes=scopes)
 
         return await exchange_tokens_for_resources(
             client=self.client(),
@@ -425,7 +455,7 @@ class AgentGrantEngine:
             access_context=access,
             application_credential=self._credential,
             user_identifier=identity.user_identifier,
-            request_scopes=self._request_scopes,
+            request_scopes=scopes,
         )
 
     # Pause payloads

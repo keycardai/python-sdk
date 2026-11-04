@@ -12,12 +12,14 @@ import base64
 import json
 import threading
 import time
+from types import MappingProxyType
 
 import pytest
 
 from keycardai.oauth import NoneAuth, TokenResponse
 from keycardai.oauth.exceptions import NetworkError, OAuthProtocolError
 from keycardai.oauth.server import (
+    DEFAULT_MISSING_IDENTITY_MESSAGE,
     Access,
     AccessContext,
     AgentGrantEngine,
@@ -112,8 +114,14 @@ def engine(stub: StubExchangeClient, **kwargs) -> AgentGrantEngine:
     return AgentGrantEngine(client=stub, **kwargs)  # type: ignore[arg-type]
 
 
-def build(eng: AgentGrantEngine, identity: KeycardIdentity | None, resources=None):
-    return asyncio.run(eng.build_access(identity, resources or [RESOURCE]))
+def build(
+    eng: AgentGrantEngine,
+    identity: KeycardIdentity | None,
+    resources: list[str] | None = None,
+    **kwargs,
+):
+    selected = [RESOURCE] if resources is None else resources
+    return asyncio.run(eng.build_access(identity, selected, **kwargs))
 
 
 # Pattern routing
@@ -157,6 +165,17 @@ def test_as_self_request_scopes_reach_the_grant() -> None:
     assert stub.self_calls == [{"resource": RESOURCE, "scope": "read"}]
 
 
+def test_per_call_request_scopes_override_the_engine_scopes() -> None:
+    stub = StubExchangeClient()
+    eng = engine(stub, request_scopes="engine-scope")
+    build(eng, Access.on_behalf_of("caller-token"), request_scopes=["mcp", "read"])
+    build(eng, Access.as_self(), request_scopes={RESOURCE: "mcp"})
+    assert stub.exchange_calls[0].scope == "mcp read"
+    assert stub.self_calls == [{"resource": RESOURCE, "scope": "mcp"}]
+    build(eng, Access.as_self())
+    assert stub.self_calls[-1] == {"resource": RESOURCE, "scope": "engine-scope"}
+
+
 # Missing identity, expiry, partial success
 
 
@@ -164,9 +183,25 @@ def test_missing_identity_is_recorded_not_raised() -> None:
     stub = StubExchangeClient()
     access = build(engine(stub), None)
     error = access.get_error()
-    assert error is not None and error["code"] == "missing_identity"
-    assert "Access.on_behalf_of" in error["message"]
+    assert error == {
+        "message": DEFAULT_MISSING_IDENTITY_MESSAGE,
+        "code": "missing_identity",
+    }
     assert not stub.exchange_calls and not stub.self_calls
+
+
+def test_default_missing_identity_message_is_langchains_text() -> None:
+    assert DEFAULT_MISSING_IDENTITY_MESSAGE == (
+        "No Keycard identity on the runtime context. Invoke the agent with "
+        "context=Access.on_behalf_of(...), Access.impersonate(...), or "
+        "Access.as_self()."
+    )
+
+
+def test_missing_identity_message_is_set_per_integration() -> None:
+    hint = "No Keycard identity in deps. Pass deps=Access.on_behalf_of(...)."
+    access = build(engine(StubExchangeClient(), missing_identity_message=hint), None)
+    assert access.get_error()["message"] == hint  # type: ignore[index]
 
 
 def test_missing_identity_message_points_at_sign_in_when_configured() -> None:
@@ -293,6 +328,29 @@ def test_tool_resources_map_overrides_per_tool() -> None:
     assert eng.resources_for("calendar") == [RESOURCE]
 
 
+def test_tool_resources_accepts_a_read_only_mapping() -> None:
+    eng = engine(
+        StubExchangeClient(), tool_resources=MappingProxyType({"crm": [OTHER]})
+    )
+    assert eng.resources_for("crm") == [OTHER]
+    assert eng.resources_for("calendar") == [RESOURCE]
+
+
+def test_empty_resource_list_acquires_nothing_and_never_pauses() -> None:
+    stub = StubExchangeClient()
+    eng = engine(
+        stub,
+        tool_resources=lambda name: [] if name.startswith("crm_") else None,
+        authorization_url="https://a",
+        sign_in_url="https://s",
+    )
+    identity = Access.on_behalf_of("caller-token")
+    access = build(eng, identity, eng.resources_for("crm_search"))
+    assert not stub.exchange_calls
+    assert not access.has_error() and not access.get_failed_resources()
+    assert eng.pending_pause(identity, access) is None
+
+
 def test_tool_resources_callable_falls_back_on_none() -> None:
     eng = engine(
         StubExchangeClient(),
@@ -346,6 +404,20 @@ def test_factories_reject_empty_input(value: str) -> None:
 
 
 # Pause payloads
+
+
+def test_sign_in_payload_for_missing_identity() -> None:
+    eng = engine(StubExchangeClient(), sign_in_url="https://s/in")
+    access = build(eng, None)
+    assert eng.pending_pause(None, access) == {
+        "type": "sign_in_required",
+        "sign_in_url": "https://s/in",
+        "reason": "missing_identity",
+        "message": (
+            "Sign in with Keycard to continue. Open the link, sign in, "
+            "then resume the run."
+        ),
+    }
 
 
 def test_sign_in_payload_carries_the_reason() -> None:
@@ -412,6 +484,39 @@ def test_fallback_fields_and_text_relay_the_url_verbatim() -> None:
     assert "sign in" in AgentGrantEngine.fallback_text(sign_in)
 
 
+def test_fallback_text_is_pinned() -> None:
+    """Integrations relay this text to the model; it must not drift."""
+    consent = AgentGrantEngine.fallback_text(
+        {
+            "kind": "authorization_required",
+            "reason": "consent_required",
+            "url": "https://a/consent?x=1",
+            "tool": "list_events",
+        }
+    )
+    assert consent == (
+        "authorization_required: the tool list_events cannot run yet "
+        "(reason: consent_required).\n"
+        "https://a/consent?x=1\n"
+        "Tell the user to open the URL above to grant this access. Copy it into "
+        "your reply exactly as written, character for character: do not shorten "
+        "it, rewrite it, wrap it in other text, or describe it in words. Then ask "
+        "the user to tell you once they are done, and call list_events again."
+    )
+    sign_in = AgentGrantEngine.fallback_text(
+        {
+            "kind": "sign_in_required",
+            "reason": "subject_token_expired",
+            "url": "https://s",
+            "tool": "t",
+        }
+    )
+    assert sign_in.startswith(
+        "sign_in_required: the tool t cannot run yet (reason: subject_token_expired).\n"
+        "https://s\nTell the user to open the URL above to sign in. "
+    )
+
+
 # Client lifecycle
 
 
@@ -426,7 +531,6 @@ def test_sync_path_runs_on_one_persistent_loop() -> None:
     eng.run_sync(record())
     eng.run_sync(record())
     assert loops[0] is loops[1]
-    assert loops[0] is not asyncio.new_event_loop()
     assert any(t.name == "keycard-agent-grant" for t in threading.enumerate())
 
 

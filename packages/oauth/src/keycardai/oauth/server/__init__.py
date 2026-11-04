@@ -26,9 +26,11 @@ Infrastructure:
 
 from .access_context import AccessContext
 from .agent_grant import (
+    DEFAULT_MISSING_IDENTITY_MESSAGE,
     Access,
     AgentGrantEngine,
     KeycardIdentity,
+    RequestScopes,
     ToolResources,
     subject_token_expired,
 )
@@ -54,6 +56,8 @@ __all__ = [
     "Access",
     "AgentGrantEngine",
     "KeycardIdentity",
+    "DEFAULT_MISSING_IDENTITY_MESSAGE",
+    "RequestScopes",
     "ToolResources",
     "subject_token_expired",
     "AccessToken",
