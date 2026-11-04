@@ -6,7 +6,7 @@ with PKCE support (RFC 7636).
 """
 
 import json
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit, urlunsplit
 
 from ..exceptions import OAuthHttpError, OAuthProtocolError, RefreshGrantError
 from ..http._context import HTTPContext
@@ -58,12 +58,17 @@ def build_authorize_url(
     if state:
         params["state"] = state
 
-    return f"{authorize_endpoint}?{urlencode(params, doseq=True)}"
+    endpoint = urlsplit(authorize_endpoint)
+    query = urlencode(params, doseq=True)
+    if endpoint.query:
+        query = f"{endpoint.query}&{query}"
+    return urlunsplit(endpoint._replace(query=query))
 
 
 # ---------------------------------------------------------------------------
 # Authorization code exchange
 # ---------------------------------------------------------------------------
+
 
 def build_authorization_code_http_request(
     *,
