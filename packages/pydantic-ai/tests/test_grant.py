@@ -649,7 +649,43 @@ async def test_assertion_credential_reaches_the_client_credentials_grant():
 async def test_pause_without_deferred_tool_requests_in_output_type_is_the_frameworks_error():
     from pydantic_ai.exceptions import UserError
 
-    agent = make_agent(grant_with(StubExchangeClient(), sign_in_url="https://zone/sign-in"))
+    agent = make_agent(
+        grant_with(StubExchangeClient(), sign_in_url="https://zone/sign-in")
+    )
     with pytest.raises(UserError, match="DeferredToolRequests"):
         await agent.run("go", deps=None)
     assert TOOL_BODY_RUNS == []
+
+
+# Row 45, with HandleDeferredToolCalls: the pause is resolved inside the run,
+# and the approved re-run re-acquires.
+async def test_handle_deferred_tool_calls_resolves_the_pause_in_run():
+    from pydantic_ai.capabilities import HandleDeferredToolCalls
+
+    stub = StubExchangeClient()
+    stub.granted = False
+    seen: list[dict[str, Any]] = []
+
+    async def approve(
+        ctx: RunContext[Any], requests: DeferredToolRequests
+    ) -> DeferredToolResults:
+        seen.append(requests.metadata["call-0"])
+        stub.granted = True
+        return requests.build_results(approve_all=True)
+
+    grant = grant_with(stub, authorization_url="https://zone/consent")
+    agent = Agent(
+        call_tools_once(("read_token", {"resource": RESOURCE})),
+        capabilities=[grant, HandleDeferredToolCalls(handler=approve)],
+    )
+
+    @agent.tool_plain
+    async def read_token(resource: str) -> str:
+        """Read."""
+        TOOL_BODY_RUNS.append(resource)
+        return describe(get_access_context(), resource)
+
+    result = await agent.run("go", deps=Access.on_behalf_of("tok"))
+    assert result.output == f"obo-tok-for-{RESOURCE}"
+    assert seen[0]["type"] == "authorization_required"
+    assert TOOL_BODY_RUNS == [RESOURCE] and len(stub.exchange_calls) == 2
