@@ -39,17 +39,17 @@ classifiers = [
 # The `crewai` and `pydantic-ai` convenience extras are gone. crewai still pins
 # mcp<2.0, so `pip install keycardai-mcp[crewai]` cannot resolve against this
 # package's mcp>=2.0; bring your own framework install on a keycardai-mcp
-# release that predates mcp 2.0, restored when it accepts mcp 2.0 (ECO-198).
-# The pydantic-ai adapter (integrations/pydantic_agents.py) is deprecated in
-# favor of the keycardai-pydantic-ai package and is not getting its extra back.
-# openai-agents, crewai and fastmcp pin mcp<2.0 and cannot install next to
-# mcp>=2.0. Leaving them in lets the resolver backtrack to ancient releases,
-# which Socket blocks. Their suites are guarded by pytest.importorskip and
-# report as SKIPPED, so the gap is visible in test output rather than silent:
+# release that predates mcp 2.0. The pydantic-ai adapter
+# (integrations/pydantic_agents.py) is deprecated in favor of the
+# keycardai-pydantic-ai package and is not getting its extra back.
+# openai-agents (0.24 allows mcp<3) and fastmcp (4.x runs on mcp 2) no longer
+# block mcp 2.0, but they stay out of the test extra until ECO-198 restores
+# their suites. Those suites are guarded by pytest.importorskip and report as
+# SKIPPED, so the gap is visible in test output rather than silent:
 #   - tests/.../test_crewai_agents.py       skips without crewai
 #   - tests/.../test_pydantic_agents.py     skips without pydantic_ai
 #   - tests/integration/interactive/*       skips without openai-agents/fastmcp
-# They come back when those projects accept mcp 2.0 (ECO-198).
+# crewai comes back when it accepts mcp 2.0; the others with ECO-198.
 test = [
     "pytest>=8.4.1",
     "pytest-asyncio>=1.1.0",
