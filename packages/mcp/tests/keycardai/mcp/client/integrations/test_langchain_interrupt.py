@@ -3,8 +3,8 @@
 The point of the mode is that an agent combining keycardai-langchain's
 KeycardGrantMiddleware (brokered REST tools) with this adapter (MCP tools)
 raises one `authorization_required` payload, not two shapes. So these tests
-compare against the middleware's own `_interrupt_payload` where it is
-installed, and exercise the interrupt through a real LangGraph run rather than
+compare against the shared agent grant engine the middleware builds its
+payload with, and exercise the interrupt through a real LangGraph run rather than
 a stubbed `interrupt`.
 """
 
@@ -104,17 +104,21 @@ def pending_client() -> FakeClient:
 
 
 def test_payload_shape_matches_the_middleware(pending_client: FakeClient) -> None:
-    """Same keys, same `type`, same message as KeycardGrantMiddleware emits."""
-    middleware_module = pytest.importorskip("keycardai.langchain.middleware")
+    """Same keys, same `type`, same message as KeycardGrantMiddleware emits.
+
+    The middleware builds its payload with the shared agent grant engine in
+    keycardai-oauth, so the engine is the reference.
+    """
+    from keycardai.oauth.server import AgentGrantEngine
 
     access = MagicMock()
     access.get_resource_error.return_value = {"code": "access_denied"}
-    middleware = middleware_module.KeycardGrantMiddleware(
-        zone_url="https://zone.example",
+    engine = AgentGrantEngine(
+        client=MagicMock(),
         resources=["https://api.example"],
         authorization_url=AUTH_URL,
     )
-    reference = middleware._interrupt_payload(["https://api.example"], access)
+    reference = engine.authorization_payload(["https://api.example"], access)
 
     payload = build_authorization_interrupt_payload(
         [{"server": "linear", "authorization_url": AUTH_URL}]
