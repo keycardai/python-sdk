@@ -65,17 +65,17 @@ is a stub. Rows in `tests/test_grant.py` unless noted.
 | 43 `defer_on_auth=False` | covered | `test_defer_on_auth_false_fails_the_call_with_the_url_instead_of_pausing` |
 | 44 as-itself denial never pauses | covered | `test_as_self_denial_never_pauses` |
 | 45 `output_type` without `DeferredToolRequests`, with and without `HandleDeferredToolCalls` | covered | `test_pause_without_deferred_tool_requests_in_output_type_is_the_frameworks_error`, `test_handle_deferred_tool_calls_resolves_the_pause_in_run` |
-| 46 durability capability | covered for the capability hook | `test_durability_capability_raises_before_acquiring`; the `mcp_auth` half lands with [SDK-65](https://linear.app/keycardlabs/issue/SDK-65) |
-| 47 `mcp_auth` acquires once per run | deferred | [SDK-65](https://linear.app/keycardlabs/issue/SDK-65) (the MCP auth seam is a follow-up) |
-| 48 `mcp_auth` refreshes within the expiry skew | deferred | [SDK-65](https://linear.app/keycardlabs/issue/SDK-65) |
-| 49 `tool_resources` callable returning `[]` | covered | `test_tool_resources_callable_returning_empty_acquires_nothing` |
+| 46 durability capability: the capability hook, and `mcp_auth` where `in_durable_context` is false | covered | `test_durability_capability_raises_before_acquiring`, `tests/test_mcp_auth.py::test_durability_capability_fails_mcp_auth_before_acquiring` |
+| 47 `mcp_auth` acquires once per run | covered | `tests/test_mcp_auth.py::test_two_tool_calls_in_one_run_acquire_once` |
+| 48 `mcp_auth` refreshes within the expiry skew | covered | `tests/test_mcp_auth.py::test_reacquires_within_the_skew_and_never_sends_the_expired_token` |
+| 49 `tool_resources` callable returning `[]` | covered | `test_tool_resources_callable_returning_empty_acquires_nothing`, `tests/test_mcp_auth.py::test_tool_resources_callable_keeps_the_capability_from_acquiring_for_mcp_tools` |
 | 50 multi-zone credential selection | deferred | [ECO-286](https://linear.app/keycardlabs/issue/ECO-286) (single-zone, as keycardai-langchain) |
 
 ## Integration
 
 | Row | Status | Where |
 |---|---|---|
-| 1 Keycard-protected MCP server through `MCPToolset(auth=keycard.mcp_auth(...))` | deferred | [SDK-65](https://linear.app/keycardlabs/issue/SDK-65) |
+| 1 Keycard-protected MCP server through `MCPToolset(auth=keycard.mcp_auth(...))` | covered hermetically | `tests/test_mcp_auth.py` runs an in-process FastMCP server over HTTP with a stub zone; a second run opens its own session as its own user (`test_concurrent_runs_send_their_own_tokens`). The live-zone half is integration row 2. |
 | 2 live-zone smoke for the exchange paths | out of this repo | the two examples under `examples/` are run by hand against a sandbox zone before each release |
 | 3 version matrix across the floor and the pinned version | partial | the pinned version is this package's `uv.lock` and runs on every PR; the `pydantic-ai-slim` 2.60 floor passed by hand but has no CI leg. The `sibling floors (pydantic-ai)` leg pins only `keycardai-*` siblings |
 | 4 end-to-end eval run | deferred | follows the templates eval harness once a Pydantic AI template exists |
@@ -90,3 +90,8 @@ These rows cover behavior the spec doesn't describe yet; the spec reconcile (SDK
 | the same tool resumed with plain `build_results()` ends in `ToolFailed`, no pause | covered | `test_approval_gated_tool_without_resume_results_fails_instead_of_pausing` |
 | KeycardGrant's own pause resumed through `resume_results()` never pauses twice | covered | `test_own_pause_resumed_through_resume_results_never_pauses_twice` |
 | `resume_results()` hands pause metadata back and merges the host's | covered | `test_resume_results_hands_metadata_back_and_merges_the_hosts` |
+| `mcp_auth`: no identity or an expired subject token fails the connection with that reason, never pauses | covered | `tests/test_mcp_auth.py::test_missing_or_expired_identity_fails_the_connection` |
+| `mcp_auth`: a missing grant fails the connection with the resource and the zone's code, no token in the message | covered | `tests/test_mcp_auth.py::test_missing_grant_fails_the_connection_with_the_resource_and_code` |
+| `mcp_auth`: two concurrent runs on one toolset each send their own user's token | covered | `tests/test_mcp_auth.py::test_concurrent_runs_send_their_own_tokens` |
+| `mcp_auth`: concurrent first requests in one session share one acquisition | covered | `tests/test_mcp_auth.py::test_concurrent_first_requests_share_one_acquisition` |
+| `mcp_auth`: `request_scopes` defaults to the capability's entry for the resource, the per-call argument overrides | covered | `tests/test_mcp_auth.py::test_request_scopes_default_and_override` |

@@ -9,12 +9,16 @@ framework's own deferred-tool approval.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable, Iterator, Mapping
+import asyncio
+import time
+from collections.abc import AsyncGenerator, AsyncIterator, Callable, Iterator, Mapping
 from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
 from typing import Any
 
-from keycardai.oauth import AsyncClient
+import httpx2
+
+from keycardai.oauth import AsyncClient, TokenResponse
 from keycardai.oauth.server import (
     AgentGrantEngine,
     KeycardIdentity,
@@ -142,6 +146,104 @@ def _durability_capability(ctx: RunContext[Any]) -> object | None:
     return BaseDurabilityCapability.from_agent(ctx.agent)
 
 
+DEFAULT_EXPIRY_SKEW_SECONDS = 60.0
+
+
+class MCPAuthError(RuntimeError):
+    """An MCP session could not be authenticated for its run.
+
+    Raised from the session's first request, so the connection fails instead
+    of pausing: the session opens before any tool call, so there is nothing to
+    defer. `code` is the recorded reason (`missing_identity`,
+    `subject_token_expired`, or the zone's error code for the resource) and
+    `resource` the MCP server's resource identifier. Never carries a token.
+    """
+
+    def __init__(self, message: str, *, code: str, resource: str) -> None:
+        super().__init__(message)
+        self.code = code
+        self.resource = resource
+
+
+class _KeycardBearerAuth(httpx2.Auth):
+    """httpx2 auth for one run's MCP session: a Keycard token for one resource,
+    acquired on the first request and replaced within the skew of its expiry."""
+
+    requires_request_body = False
+    requires_response_body = False
+
+    def __init__(
+        self,
+        engine: AgentGrantEngine,
+        identity: KeycardIdentity | None,
+        resource: str,
+        *,
+        request_scopes: str | list[str] | None,
+        expiry_skew_seconds: float,
+    ) -> None:
+        self._engine = engine
+        self._identity = identity
+        self._resource = resource
+        self._request_scopes = request_scopes
+        self._skew = expiry_skew_seconds
+        self._token: str | None = None
+        self._expires_at: float | None = None
+        self._lock: asyncio.Lock | None = None
+
+    def _fresh(self) -> bool:
+        if self._token is None:
+            return False
+        if self._expires_at is None:
+            return True
+        return time.monotonic() < self._expires_at - self._skew
+
+    async def _acquire(self) -> str:
+        access = await self._engine.build_access(
+            self._identity, [self._resource], request_scopes=self._request_scopes
+        )
+        if access.has_error():
+            error = access.get_error() or {}
+            raise MCPAuthError(
+                f"MCP session for {self._resource} not authenticated: {error.get('message')}",
+                code=str(error.get("code", "error")),
+                resource=self._resource,
+            )
+        if access.has_resource_error(self._resource):
+            error = access.get_resource_error(self._resource) or {}
+            raise MCPAuthError(
+                f"No grant for MCP resource {self._resource}: {error.get('message')}",
+                code=str(error.get("code", "error")),
+                resource=self._resource,
+            )
+        response: TokenResponse = access.access(self._resource)
+        self._token = response.access_token
+        self._expires_at = (
+            None
+            if response.expires_in is None
+            else time.monotonic() + response.expires_in
+        )
+        return self._token
+
+    async def token(self) -> str:
+        if self._lock is None:
+            self._lock = asyncio.Lock()
+        async with self._lock:
+            if self._fresh() and self._token is not None:
+                return self._token
+            return await self._acquire()
+
+    async def async_auth_flow(
+        self, request: httpx2.Request
+    ) -> AsyncGenerator[httpx2.Request, httpx2.Response]:
+        request.headers["Authorization"] = f"Bearer {await self.token()}"
+        yield request
+
+    def sync_auth_flow(self, request: httpx2.Request) -> Any:
+        raise RuntimeError(
+            "Keycard MCP auth is async only; the MCP toolset uses an async client."
+        )
+
+
 class KeycardGrant(AbstractCapability[Any]):
     """Acquire a credential for every tool call, under the run's identity.
 
@@ -236,6 +338,41 @@ class KeycardGrant(AbstractCapability[Any]):
             return await handler(args)
         finally:
             _current_access.reset(token)
+
+    def mcp_auth(
+        self,
+        resource: str,
+        *,
+        request_scopes: str | list[str] | None = None,
+        expiry_skew_seconds: float = DEFAULT_EXPIRY_SKEW_SECONDS,
+    ) -> Callable[[RunContext[Any]], Any]:
+        """The per-run auth function for `MCPToolset(url, auth=...)`.
+
+        The framework calls it once per run when it prepares the toolset, so
+        the returned auth belongs to one run and one MCP session. It resolves
+        identity from the run context as tool calls do, acquires a token for
+        `resource` on the session's first request, sends it as a bearer, and
+        re-acquires within `expiry_skew_seconds` of expiry. `request_scopes`
+        defaults to the capability's entry for `resource`. No identity, an
+        expired subject token, or a missing grant fails the connection with
+        `MCPAuthError`; nothing pauses, since the session opens before any
+        tool call. Tools served by the toolset should resolve to `[]` through
+        `tool_resources` so the capability does not acquire for them too.
+        """
+        if not resource or not resource.strip():
+            raise ValueError("mcp_auth requires a resource")
+
+        async def auth(ctx: RunContext[Any]) -> httpx2.Auth:
+            self._check_durable(ctx)
+            return _KeycardBearerAuth(
+                self._engine,
+                self.resolve_identity(ctx),
+                resource,
+                request_scopes=request_scopes,
+                expiry_skew_seconds=expiry_skew_seconds,
+            )
+
+        return auth
 
     @contextmanager
     def grant(
