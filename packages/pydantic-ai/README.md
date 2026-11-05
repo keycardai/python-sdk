@@ -270,6 +270,28 @@ and `models.ALLOW_MODEL_REQUESTS = False`.
 
 The package's own test strategy, row by row, lives in [TESTING.md](TESTING.md).
 
+## Serving the agent
+
+Most deployments serve the agent over HTTP to a chat UI, with every request
+acting for whoever called. keycardai-starlette verifies the zone bearer and
+exposes it as `request.user.access_token`; Pydantic AI's UI adapters take the
+run's `deps` per request. Joining the two is one route:
+
+```python
+@app.post("/chat")
+@requires("authenticated")
+async def chat(request: Request) -> Response:
+    user: KeycardUser = request.user
+    return await AGUIAdapter.dispatch_request(
+        request, agent=agent, deps=Access.on_behalf_of(user.access_token)
+    )
+```
+
+The caller's verified token is the run's identity and nothing else carries one.
+[`examples/served_agent`](examples/served_agent) is the full app, with the
+consent pause and resume over AG-UI and a hermetic test; its README says why
+AG-UI rather than the Vercel AI adapter.
+
 ## Limitations
 
 Durable execution isn't supported yet. Under `TemporalDurability`,
@@ -281,6 +303,8 @@ capability for now.
 
 Tools that also require approval get their consent pause only when the host
 resumes through `resume_results()` (see "Pausing for sign-in and consent").
+The AG-UI and Vercel AI adapters resume with plain approvals and no metadata,
+so such tools get no consent pause through either adapter (Linear SDK-85).
 
 Gateway MCP proxies cannot accept exchange-minted tokens yet (Linear ID-565):
 point `mcp_auth` at the MCP server's own resource, not at a gateway in front
@@ -292,3 +316,4 @@ One zone per capability.
 
 - [`examples/user_facing_agent`](examples/user_facing_agent): on-behalf-of with the pause and resume loop.
 - [`examples/background_agent`](examples/background_agent): a scheduled as-itself digest.
+- [`examples/served_agent`](examples/served_agent): FastAPI plus AG-UI, each request acting for its verified caller.
