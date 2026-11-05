@@ -6,13 +6,13 @@ KeycardGrant are real."""
 from __future__ import annotations
 
 import json
-import os
 import sys
 from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from pydantic_ai.messages import ModelMessage
@@ -30,9 +30,22 @@ from keycardai.oauth.types.models import TokenExchangeRequest
 from keycardai.starlette import AuthProvider
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-os.environ["SERVED_AGENT_ECHO_TOKEN"] = "1"
 
+import main  # noqa: E402
 from main import CALENDAR, build_agent, build_app  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def fake_calendar(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stands in for the Calendar API. It answers with one event titled
+    `token <bearer>`, so a test can see which delegated token the tool sent
+    without the example itself ever exposing a token."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        bearer = request.headers.get("Authorization", "").removeprefix("Bearer ")
+        return httpx.Response(200, json={"items": [{"summary": f"token {bearer}"}]})
+
+    monkeypatch.setattr(main, "_http", httpx.Client(transport=httpx.MockTransport(handler)))
 
 ZONE = "https://zone.example.test"
 AGENT_RESOURCE = "https://agent.example.test"
@@ -199,7 +212,7 @@ def test_tool_sees_a_token_exchanged_for_the_callers_subject_token(
 ) -> None:
     evs = events(chat(client, "user-alice", run_input()))
     assert finished(evs)["outcome"]["type"] == "success"
-    assert text(evs) == f"token obo-user-alice-for-{CALENDAR}"
+    assert text(evs) == f"- token obo-user-alice-for-{CALENDAR}"
     assert [c.subject_token for c in zone.exchange_calls] == ["user-alice"]
     assert zone.exchange_calls[0].resource == CALENDAR
 
@@ -209,8 +222,8 @@ def test_two_callers_exchange_their_own_tokens(
 ) -> None:
     alice = text(events(chat(client, "user-alice", run_input())))
     bob = text(events(chat(client, "user-bob", run_input())))
-    assert alice == f"token obo-user-alice-for-{CALENDAR}"
-    assert bob == f"token obo-user-bob-for-{CALENDAR}"
+    assert alice == f"- token obo-user-alice-for-{CALENDAR}"
+    assert bob == f"- token obo-user-bob-for-{CALENDAR}"
     assert sorted(c.subject_token for c in zone.exchange_calls) == [
         "user-alice",
         "user-bob",
@@ -244,7 +257,7 @@ def test_consent_pause_reaches_the_client_and_the_resume_runs_the_tool(
         chat(client, "user-alice", run_input(resume=resume, with_tool_call=True))
     )
     assert finished(evs)["outcome"]["type"] == "success"
-    assert text(evs) == f"token obo-user-alice-for-{CALENDAR}"
+    assert text(evs) == f"- token obo-user-alice-for-{CALENDAR}"
     assert [c.subject_token for c in zone.exchange_calls] == [
         "user-alice",
         "user-alice",

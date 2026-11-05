@@ -74,8 +74,6 @@ def build_agent(
         if access.has_resource_error(CALENDAR):
             return f"Calendar access not granted: {access.get_resource_error(CALENDAR)}"
         token = access.access(CALENDAR).access_token
-        if os.environ.get("SERVED_AGENT_ECHO_TOKEN"):
-            return f"token {token}"
         response = _http.get(
             f"{CALENDAR}/calendars/primary/events",
             params={"singleEvents": "true", "orderBy": "startTime", "maxResults": 10},
