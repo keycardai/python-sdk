@@ -1,6 +1,9 @@
 """
 Pydantic AI agents adapter for KeycardAI MCP client.
 
+Deprecated: use the `keycardai-pydantic-ai` package (`keycardai.pydantic_ai`)
+instead. This module is removed in the next major release of keycardai-mcp.
+
 Provides a clean API for integrating MCP tools with Pydantic AI agents:
 - Automatic auth detection and handling
 - System prompt generation with auth context
@@ -10,6 +13,7 @@ Provides a clean API for integrating MCP tools with Pydantic AI agents:
 
 import json
 import logging
+import warnings
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -25,9 +29,24 @@ from .auth_tools import AuthToolHandler, DefaultAuthToolHandler
 logger = logging.getLogger(__name__)
 
 
+DEPRECATION_MESSAGE = (
+    "keycardai.mcp.client.integrations.pydantic_agents is deprecated and will be "
+    "removed in the next major release of keycardai-mcp. Use the keycardai-pydantic-ai "
+    "package (keycardai.pydantic_ai.KeycardGrant) instead."
+)
+
+
+def warn_deprecated(stacklevel: int = 3) -> None:
+    """Emit the module's DeprecationWarning, attributed to the caller's caller."""
+    warnings.warn(DEPRECATION_MESSAGE, DeprecationWarning, stacklevel=stacklevel)
+
+
 class PydanticAIClient:
     """
     Pydantic AI agents adapter for MCP client.
+
+    Deprecated: use `keycardai-pydantic-ai` instead. Removed in the next major
+    release of keycardai-mcp.
 
     Wraps MCP client to provide:
     - get_system_prompt(): Instructions with auth awareness
@@ -51,7 +70,7 @@ class PydanticAIClient:
         auth_prompt: str | None = None,
     ):
         """
-        Initialize adapter.
+        Initialize adapter. Deprecated: emits a DeprecationWarning.
 
         Args:
             mcp_client: KeycardAI MCP client
@@ -62,6 +81,7 @@ class PydanticAIClient:
             auth_hook_closure: Optional async function called when auth is needed
             auth_prompt: Optional custom authentication prompt to include in system message
         """
+        warn_deprecated()
         self._mcp_client = mcp_client
         self._auth_tool_handler = auth_tool_handler or DefaultAuthToolHandler()
         self._pending_challenges: list[AuthChallenge] = []
@@ -206,7 +226,9 @@ The following services require user authorization: {", ".join(pending_services)}
             mcp_tool.description or f"Tool {tool_name} from {server_name}"
         )
 
-        input_schema = mcp_tool.input_schema if hasattr(mcp_tool, "input_schema") else {}
+        input_schema = (
+            mcp_tool.input_schema if hasattr(mcp_tool, "input_schema") else {}
+        )
 
         # Create Pydantic model for the input schema
         if input_schema and isinstance(input_schema, dict):
@@ -385,6 +407,9 @@ def create_client(
     """
     Get Pydantic AI agents adapter for MCP client.
 
+    Deprecated: use `keycardai-pydantic-ai` instead. Removed in the next major
+    release of keycardai-mcp. Emits a DeprecationWarning.
+
     Use as context manager for automatic lifecycle management.
 
     Args:
@@ -445,4 +470,5 @@ def create_client(
         ...     )
         ...     result = await agent.run("Hi", deps=Deps(user_id="123"))
     """
+    warn_deprecated()
     return PydanticAIClient(mcp_client, auth_tool_handler, auth_hook_closure)
