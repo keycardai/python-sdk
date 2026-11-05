@@ -1,0 +1,27 @@
+[project]
+name = "served-agent-example"
+version = "0.1.0"
+description = "A Pydantic AI agent served over HTTP, acting on behalf of each verified caller"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "keycardai-pydantic-ai",
+    "keycardai-starlette",
+    "pydantic-ai-slim[ag-ui,anthropic]>=2.60,<3",
+    "fastapi>=0.115,<1",
+    "uvicorn>=0.30,<1",
+    "httpx>=0.27.0,<1.0.0",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+]
+
+[tool.uv.sources]
+keycardai-pydantic-ai = { path = "../../", editable = true }
+keycardai-starlette = { path = "../../../starlette", editable = true }
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
