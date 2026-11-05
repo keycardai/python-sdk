@@ -9,7 +9,7 @@ license-files = ["LICENSE"]
 authors = [{ name = "Keycard", email = "support@keycard.ai" }]
 dependencies = [
     "httpx>=0.27.2",
-    "keycardai-oauth>=0.30.0",
+    "keycardai-oauth>=0.35.1",
     "langchain>=1.2.11",
     "langgraph>=1.2.14",
 ]
