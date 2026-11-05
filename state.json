@@ -15,7 +15,7 @@
     "version": "2.3.0"
   },
   "temporal:openai-agents": {
-    "run": "https://github.com/keycardai/python-sdk/actions/runs/41787586921",
+    "run": "https://github.com/keycardai/python-sdk/actions/runs/41982612401",
     "version": "0.24.0"
   },
   "temporal:temporalio": {
