@@ -11,6 +11,7 @@ on:
       - '*-keycardai-a2a'
       - '*-keycardai-langchain'
       - '*-keycardai-temporal'
+      - '*-keycardai-pydantic-ai'
 
 jobs:
   detect-package:
