@@ -1,3 +1,9 @@
+## 0.35.1-keycardai-oauth (2026-11-05)
+
+
+- fix(keycardai-oauth): raise the joserfc floor and refresh the locks (#412)
+- Raises keycardai-oauth's joserfc floor to >=1.7.6 (GHSA-9pg5-8c7x-5hfx, GHSA-jpxq-7h8p-2q76) and refreshes all seven lockfiles; Authlib 1.9.5 in the fastmcp lock clears eight transitive advisories. Supersedes #401 to #410. SDK-86.
+
 ## 0.35.0-keycardai-oauth (2026-11-04)
 
 
