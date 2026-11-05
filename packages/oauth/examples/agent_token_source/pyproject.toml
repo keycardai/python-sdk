@@ -1,0 +1,13 @@
+[project]
+name = "agent-token-source"
+version = "0.1.0"
+description = "Resource tokens from the local Keycard agent"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "keycardai-oauth",
+    "httpx>=0.28.1",
+]
+
+[tool.uv.sources]
+keycardai-oauth = { path = "../../", editable = true }
