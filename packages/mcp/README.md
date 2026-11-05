@@ -117,7 +117,7 @@ The Keycard MCP SDK also includes **MCP Client** for connecting to MCP servers w
 - ✅ **OAuth 2.0 Support**: Automatic OAuth flow handling for protected MCP servers
 - ✅ **Graceful Connection Handling**: Non-throwing connection behavior with comprehensive status tracking
 - ✅ **Multi-Server Support**: Connect to multiple servers with independent status tracking
-- ✅ **AI Agent Integrations**: Pre-built integrations with LangChain and OpenAI Agents SDK
+- ✅ **AI Agent Integrations**: Pre-built integrations with LangChain and OpenAI Agents SDK. The Pydantic AI adapter (`integrations.pydantic_agents`) is deprecated: use the `keycardai-pydantic-ai` package instead.
 
 ### Quick Start
 
