@@ -1,3 +1,9 @@
+## 2.3.7-keycardai-mcp (2026-11-05)
+
+
+- fix(keycardai-mcp): deprecate PydanticAIClient in favor of keycardai-pydantic-ai (#415)
+- PydanticAIClient and create_client in keycardai.mcp.client.integrations.pydantic_agents now emit a DeprecationWarning pointing to keycardai-pydantic-ai; importing the integrations package does not warn. Docstrings and the README say the same, and the pyproject comment now says which frameworks still pin mcp<2.0 (only crewai). Removal follows in keycardai-mcp's next major (SDK-72). SDK-66.
+
 ## 2.3.6-keycardai-mcp (2026-11-04)
 
 ## 2.3.5-keycardai-mcp (2026-10-22)

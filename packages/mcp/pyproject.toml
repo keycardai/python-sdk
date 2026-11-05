@@ -141,7 +141,7 @@ filterwarnings = [
 
 [tool.commitizen]
 name = "cz_customize"
-version = "2.3.6"
+version = "2.3.7"
 tag_format = "${version}-keycardai-mcp"
 # Ignores sibling packages' tags only; it must not match this package's own tag, because commitizen applies ignored formats before tag_format.
 ignored_tag_formats = ["${version}-keycardai-(?!mcp$).*"]
