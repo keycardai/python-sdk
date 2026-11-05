@@ -109,7 +109,11 @@ def test_payload_shape_matches_the_middleware(pending_client: FakeClient) -> Non
     The middleware builds its payload with the shared agent grant engine in
     keycardai-oauth, so the engine is the reference.
     """
-    from keycardai.oauth.server import AgentGrantEngine
+    agent_grant = pytest.importorskip(
+        "keycardai.oauth.server.agent_grant",
+        reason="keycardai-oauth predates the shared agent grant engine (0.35.0)",
+    )
+    AgentGrantEngine = agent_grant.AgentGrantEngine
 
     access = MagicMock()
     access.get_resource_error.return_value = {"code": "access_denied"}
