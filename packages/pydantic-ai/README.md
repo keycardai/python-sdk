@@ -207,6 +207,42 @@ KeycardGrant(
 exchange and the as-itself grant; it is distinct from any scope enforced on the
 caller's inbound token.
 
+## MCP toolsets
+
+An MCP server is authenticated per run, not per tool call: the session opens
+before any tool runs. `mcp_auth(resource)` returns the per-run auth function
+`MCPToolset` accepts. The framework calls it once per run, the returned auth
+acquires a token for `resource` on the session's first request, sends it as a
+bearer, and replaces it within `expiry_skew_seconds` (default 60) of expiry.
+Each run opens its own session as its own user.
+
+```python
+from pydantic_ai.mcp import MCPToolset
+
+CRM = "https://crm.example.com/mcp"
+
+keycard = KeycardGrant(
+    zone_url=..., client_id=..., client_secret=...,
+    resources=[CALENDAR],
+    tool_resources=lambda name: [] if name.startswith("crm_") else None,
+)
+crm = MCPToolset(CRM, auth=keycard.mcp_auth(CRM)).prefixed("crm")
+agent = Agent(model, deps_type=KeycardIdentity, toolsets=[crm], capabilities=[keycard])
+```
+
+The `tool_resources` callable matters: the capability cannot tell an MCP tool
+from a function tool, so without it every `crm_*` call would also acquire (and
+could pause for) the default `resources`. Returning `[]` for the toolset's
+prefix acquires nothing for those tools; the session's bearer is the only
+credential they use. Install the extra for the framework's MCP support:
+`pip install "keycardai-pydantic-ai[mcp]"`.
+
+A run with no identity, an expired subject token, or no grant for `resource`
+fails the connection with `MCPAuthError` (carrying `code` and `resource`,
+never a token) instead of pausing: there is no tool call to defer yet. Sign
+the user in, or grant access, before the run. `request_scopes` on `mcp_auth`
+overrides the capability's entry for that resource.
+
 ## Authenticating without a static secret
 
 `client_id` / `client_secret` is shorthand for a `ClientSecret` credential.
@@ -246,9 +282,9 @@ capability for now.
 Tools that also require approval get their consent pause only when the host
 resumes through `resume_results()` (see "Pausing for sign-in and consent").
 
-MCP toolsets need a per-run auth function (`MCPToolset(auth=...)`). That seam
-comes in a follow-up release. Until then, exclude MCP tools from acquisition
-with a `tool_resources` callable that returns `[]` for them.
+Gateway MCP proxies cannot accept exchange-minted tokens yet (Linear ID-565):
+point `mcp_auth` at the MCP server's own resource, not at a gateway in front
+of it.
 
 One zone per capability.
 
