@@ -1,3 +1,11 @@
+## 0.7.4-keycardai-fastmcp (2026-11-06)
+
+
+- fix(keycardai-fastmcp): require a fastmcp with a JWKS refetch cooldown (#424)
+- fastmcp 4.1.0 is the first release whose JWTVerifier shares JWKS refreshes across key lookups and refetches at most every jwks_refresh_interval (PrefectHQ/fastmcp #5456); 4.0.11 and earlier refetch on every unknown kid. Raise the floor from 3.4.10. SDK-93.
+- Co-authored-by: devin-ai-keycard <devin-ai@keycard.ai>
+Co-authored-by: Larry Osakwe <larry@keycard.ai>
+
 ## 0.7.3-keycardai-fastmcp (2026-11-04)
 
 
