@@ -283,8 +283,9 @@ class TestJwksDiscoveryConcurrency:
         with patch(
             "keycardai.oauth.server.verifier.get_header",
             return_value={"alg": "RS256", "kid": "abc"},
-        ), patch(
-            "keycardai.oauth.server.verifier.get_jwks_key",
+        ), patch.object(
+            TokenVerifier,
+            "_key_from_jwks",
             new=Mock(side_effect=lambda *a, **k: asyncio.sleep(0, result="pem")),
         ):
             tasks = [
@@ -311,8 +312,9 @@ class TestJwksDiscoveryConcurrency:
         with patch(
             "keycardai.oauth.server.verifier.get_header",
             return_value={"alg": "RS256", "kid": "abc"},
-        ), patch(
-            "keycardai.oauth.server.verifier.get_jwks_key",
+        ), patch.object(
+            TokenVerifier,
+            "_key_from_jwks",
             new=Mock(side_effect=lambda *a, **k: asyncio.sleep(0, result="pem")),
         ):
             cancelled = asyncio.create_task(verifier._get_verification_key("t1"))
@@ -339,8 +341,9 @@ class TestJwksDiscoveryConcurrency:
         with patch(
             "keycardai.oauth.server.verifier.get_header",
             return_value={"alg": "RS256", "kid": "abc"},
-        ), patch(
-            "keycardai.oauth.server.verifier.get_jwks_key",
+        ), patch.object(
+            TokenVerifier,
+            "_key_from_jwks",
             new=Mock(side_effect=lambda *a, **k: asyncio.sleep(0, result="pem")),
         ):
             with pytest.raises(JWKSDiscoveryError):
