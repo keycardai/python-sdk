@@ -194,6 +194,24 @@ class DedupeTests(unittest.TestCase):
         with self.assertRaises(SystemExit):
             uc.pick_entry(entries, "langchain")
 
+    def test_existing_unlabeled_issue_with_the_same_title_is_found(self) -> None:
+        # A token without the Issues permission creates the issue and GitHub
+        # drops the label silently; the lookup must not depend on it.
+        items = [
+            {
+                "number": 285,
+                "title": "fastmcp 4.1.0 breaks keycardai-fastmcp",
+                "labels": [],
+            }
+        ]
+        self.assertEqual(
+            uc.find_by_title(items, "fastmcp 4.1.0 breaks keycardai-fastmcp"), 285
+        )
+        self.assertTrue(uc.missing_label(items[0], uc.ISSUE_LABEL))
+        self.assertFalse(
+            uc.missing_label({"labels": [{"name": uc.ISSUE_LABEL}]}, uc.ISSUE_LABEL)
+        )
+
     def test_exact_title_match_only(self) -> None:
         items = [
             {"number": 7, "title": "fastmcp 4.1.0 breaks keycardai-fastmcp"},
