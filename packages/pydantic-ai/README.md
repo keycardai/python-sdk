@@ -306,10 +306,6 @@ resumes through `resume_results()` (see "Pausing for sign-in and consent").
 The AG-UI and Vercel AI adapters resume with plain approvals and no metadata,
 so such tools get no consent pause through either adapter (Linear SDK-85).
 
-Gateway MCP proxies cannot accept exchange-minted tokens yet (Linear ID-565):
-point `mcp_auth` at the MCP server's own resource, not at a gateway in front
-of it.
-
 One zone per capability.
 
 ## Examples
