@@ -123,9 +123,7 @@ def _split_jwt_token(jwt_token: str) -> tuple[str, str, str]:
             "Invalid JWT token format - expected 3 parts separated by dots"
         )
     if len([part for part in parts if len(part) > 0]) != 3:
-        raise ValueError(
-            "Invalid JWT token format - parts cannot be empty"
-        )
+        raise ValueError("Invalid JWT token format - parts cannot be empty")
     return parts[0], parts[1], parts[2]
 
 
@@ -346,9 +344,7 @@ class JWTAccessToken(BaseModel):
         return claims
 
     def validate_audience(
-        self,
-        expected_audience: str | dict[str, str] | None,
-        zone_id: str | None = None
+        self, expected_audience: str | dict[str, str] | None, zone_id: str | None = None
     ) -> bool:
         """Validate the token's audience claim against expected values.
 
@@ -542,6 +538,52 @@ async def get_verification_key(token: str, jwks_uri: str) -> str:
         raise ValueError(f"Failed to extract key ID from token: {e}") from e
 
 
+async def fetch_jwks(
+    jwks_uri: str, timeout: float | None = None
+) -> list[dict[str, Any]]:
+    """Fetch a JWKS document and return its ``keys`` list.
+
+    Raises:
+        JWKSFetchError: If the endpoint cannot be reached, returns non-2xx, or
+            the body is not a JSON object with a ``keys`` list.
+    """
+    try:
+        config = ClientConfig()
+        transport = HttpxAsyncTransport(config=config)
+        request = HttpRequest(method="GET", url=jwks_uri, headers={}, body=b"")
+        response = await transport.request_raw(request, timeout=timeout)
+        if response.status != 200:
+            raise JWKSFetchError(f"JWKS endpoint returned status {response.status}")
+        jwks_data = json.loads(response.body.decode("utf-8"))
+        keys = jwks_data.get("keys", []) if isinstance(jwks_data, dict) else None
+        if not isinstance(keys, list):
+            raise JWKSFetchError("JWKS document has no keys list")
+        return keys
+    except JWKSError:
+        raise
+    except Exception as e:
+        raise JWKSFetchError(f"Failed to fetch JWKS: {e}") from e
+
+
+def select_jwks_key(keys: list[dict[str, Any]], kid: str | None) -> str:
+    """Select the key for ``kid`` from a JWKS ``keys`` list, as PEM.
+
+    Raises:
+        JWKSKeyNotFoundError: If no key matches, or no ``kid`` was given and the
+            set does not hold exactly one key.
+    """
+    if not keys:
+        raise JWKSKeyNotFoundError("No keys found in JWKS")
+    if kid:
+        for key_data in keys:
+            if key_data.get("kid") == kid:
+                return _jwk_to_pem(import_key(key_data))
+        raise JWKSKeyNotFoundError(f"Key ID '{kid}' not found")
+    if len(keys) == 1:
+        return _jwk_to_pem(import_key(keys[0]))
+    raise JWKSKeyNotFoundError("Multiple keys in JWKS but no key ID (kid) in token")
+
+
 async def get_jwks_key(
     kid: str | None, jwks_uri: str, timeout: float | None = None
 ) -> str:
@@ -561,37 +603,9 @@ async def get_jwks_key(
         JWKSKeyNotFoundError: If the requested key is not present in the JWKS.
     """
 
+    keys = await fetch_jwks(jwks_uri, timeout=timeout)
     try:
-        # Use the existing transport infrastructure
-        config = ClientConfig()
-        transport = HttpxAsyncTransport(config=config)
-
-        request = HttpRequest(method="GET", url=jwks_uri, headers={}, body=b"")
-
-        response = await transport.request_raw(request, timeout=timeout)
-
-        if response.status != 200:
-            raise JWKSFetchError(f"JWKS endpoint returned status {response.status}")
-
-        jwks_data = json.loads(response.body.decode("utf-8"))
-
-        keys = jwks_data.get("keys", [])
-        if not keys:
-            raise JWKSKeyNotFoundError("No keys found in JWKS")
-
-        if kid:
-            for key_data in keys:
-                if key_data.get("kid") == kid:
-                    return _jwk_to_pem(import_key(key_data))
-            raise JWKSKeyNotFoundError(f"Key ID '{kid}' not found")
-        else:
-            if len(keys) == 1:
-                return _jwk_to_pem(import_key(keys[0]))
-            elif len(keys) > 1:
-                raise JWKSKeyNotFoundError("Multiple keys in JWKS but no key ID (kid) in token")
-            else:
-                raise JWKSKeyNotFoundError("No keys found in JWKS")
-
+        return select_jwks_key(keys, kid)
     except JWKSError:
         raise
     except Exception as e:

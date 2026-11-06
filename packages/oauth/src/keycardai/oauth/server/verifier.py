@@ -9,19 +9,21 @@ import asyncio
 import threading
 import time
 import warnings
+from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 from pydantic import AnyHttpUrl, BaseModel
 
 from keycardai.oauth._metadata_cache import MetadataCache
-from keycardai.oauth.exceptions import InvalidTokenError
+from keycardai.oauth.exceptions import InvalidTokenError, JWKSKeyNotFoundError
 from keycardai.oauth.types.models import ClientConfig
 from keycardai.oauth.utils.jwt import (
+    fetch_jwks,
     get_claims,
     get_header,
-    get_jwks_key,
     parse_jwt_access_token,
+    select_jwks_key,
 )
 
 from ._cache import JWKSCache, JWKSKey
@@ -70,6 +72,13 @@ class AccessToken(BaseModel):
     keycard_app_id: str | None = None
 
 
+@dataclass
+class _JwksSet:
+    keys: list[dict[str, Any]]
+    fetched_at: float
+    expires_at: float
+
+
 class TokenVerifier:
     """Token verifier for Keycard zone-issued tokens."""
 
@@ -87,6 +96,7 @@ class TokenVerifier:
         discovery_ttl: int = 3600,
         negative_ttl: float = 60.0,
         fetch_timeout: float = 10.0,
+        jwks_refetch_cooldown: float = 30.0,
         cache_ttl: int | None = None,
     ):
         if not issuer:
@@ -124,13 +134,18 @@ class TokenVerifier:
         self.discovery_ttl = discovery_ttl
         self.negative_ttl = negative_ttl
         self.fetch_timeout = fetch_timeout
+        self.jwks_refetch_cooldown = jwks_refetch_cooldown
 
         self._jwks_cache = JWKSCache(ttl=key_ttl, max_size=256)
+        # The last key set fetched per jwks_uri, kept for key_ttl. A kid is
+        # looked up here before any fetch, and a kid the set lacks triggers a
+        # refetch at most once per jwks_refetch_cooldown: the checks before the
+        # key lookup read the unsigned token, so a forged token can name any kid.
+        self._jwks_sets: dict[str, _JwksSet] = {}
+        self._jwks_set_inflight: dict[str, asyncio.Future] = {}
         # Discovered jwks_uri per zone: success for discovery_ttl, a deterministic
         # failure for at most negative_ttl, a transient failure not at all.
-        self._discovered_jwks_uris: dict[
-            str, MetadataCache[str, OAuthServerError]
-        ] = {}
+        self._discovered_jwks_uris: dict[str, MetadataCache[str, OAuthServerError]] = {}
         # Discovery runs synchronously (off the event loop via to_thread); the
         # lock lets concurrent cold-cache callers share one request.
         self._discovery_lock = threading.Lock()
@@ -225,9 +240,7 @@ class TokenVerifier:
         ):
             port_part = f":{base_url_obj.port}"
 
-        zone_url = (
-            f"{base_url_obj.scheme}://{zone_id}.{base_url_obj.host}{port_part}"
-        )
+        zone_url = f"{base_url_obj.scheme}://{zone_id}.{base_url_obj.host}{port_part}"
         return zone_url
 
     def _get_kid_and_algorithm(self, token: str) -> tuple[str, str]:
@@ -310,9 +323,7 @@ class TokenVerifier:
             if zone_id:
                 jwks_uri = self._get_zone_jwks_uri(jwks_uri, zone_id)
 
-        verification_key = await get_jwks_key(
-            kid, jwks_uri, timeout=self.fetch_timeout
-        )
+        verification_key = await self._key_from_jwks(kid, jwks_uri)
 
         cache_key = f"{issuer}::{kid}" if issuer else kid
         self._jwks_cache.set_key(cache_key, verification_key, algorithm)
@@ -321,9 +332,52 @@ class TokenVerifier:
             raise CacheError("Failed to cache verification key")
         return cached_key
 
+    async def _key_from_jwks(self, kid: str, jwks_uri: str) -> str:
+        """Select ``kid`` from the cached key set, fetching only when allowed."""
+        now = time.monotonic()
+        cached = self._jwks_sets.get(jwks_uri)
+        if cached is not None and now >= cached.expires_at:
+            self._jwks_sets.pop(jwks_uri, None)
+            cached = None
+        if cached is not None:
+            try:
+                return select_jwks_key(cached.keys, kid)
+            except JWKSKeyNotFoundError:
+                if now - cached.fetched_at < self.jwks_refetch_cooldown:
+                    raise
+        keys = await asyncio.shield(self._fetch_jwks_shared(jwks_uri))
+        return select_jwks_key(keys, kid)
+
+    def _fetch_jwks_shared(self, jwks_uri: str) -> asyncio.Future:
+        """One in-flight JWKS fetch per jwks_uri, whatever kid each caller wants."""
+        future = self._jwks_set_inflight.get(jwks_uri)
+        if future is None:
+            future = asyncio.ensure_future(self._fetch_and_store_jwks(jwks_uri))
+            self._jwks_set_inflight[jwks_uri] = future
+            future.add_done_callback(
+                lambda f, uri=jwks_uri: self._on_jwks_fetched(uri, f)
+            )
+        return future
+
+    def _on_jwks_fetched(self, jwks_uri: str, future: asyncio.Future) -> None:
+        if self._jwks_set_inflight.get(jwks_uri) is future:
+            self._jwks_set_inflight.pop(jwks_uri, None)
+        if not future.cancelled():
+            future.exception()
+
+    async def _fetch_and_store_jwks(self, jwks_uri: str) -> list[dict[str, Any]]:
+        keys = await fetch_jwks(jwks_uri, timeout=self.fetch_timeout)
+        now = time.monotonic()
+        self._jwks_sets[jwks_uri] = _JwksSet(
+            keys=keys, fetched_at=now, expires_at=now + self.key_ttl
+        )
+        return keys
+
     def clear_cache(self) -> None:
-        """Clear the JWKS key cache."""
+        """Clear the JWKS key cache and the cached key sets."""
         self._jwks_cache.clear()
+        self._jwks_sets.clear()
+        self._jwks_set_inflight.clear()
 
     def get_cache_stats(self) -> dict[str, Any]:
         """Get cache statistics for debugging."""

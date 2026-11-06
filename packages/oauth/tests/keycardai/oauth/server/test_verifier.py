@@ -1005,7 +1005,7 @@ class TestTokenVerifierInflightDedup:
 
         call_count = 0
 
-        async def slow_get_jwks_key(kid, jwks_uri, timeout=None):
+        async def slow_key_from_jwks(self, kid, jwks_uri):
             nonlocal call_count
             call_count += 1
             await asyncio.sleep(0.05)
@@ -1014,10 +1014,7 @@ class TestTokenVerifierInflightDedup:
         with patch(
             "keycardai.oauth.server.verifier.get_header",
             return_value={"alg": "RS256", "kid": "abc"},
-        ), patch(
-            "keycardai.oauth.server.verifier.get_jwks_key",
-            side_effect=slow_get_jwks_key,
-        ):
+        ), patch.object(TokenVerifier, "_key_from_jwks", slow_key_from_jwks):
             results = await asyncio.gather(
                 verifier._get_verification_key("t1"),
                 verifier._get_verification_key("t2"),
@@ -1059,11 +1056,129 @@ class TestZoneJwksUri:
         )
         seen: dict[str, str] = {}
 
-        async def fake_get_jwks_key(kid, jwks_uri, timeout=None):
+        async def fake_key_from_jwks(self, kid, jwks_uri):
             seen["jwks_uri"] = jwks_uri
             return "pem"
 
-        with patch("keycardai.oauth.server.verifier.get_jwks_key", side_effect=fake_get_jwks_key):
+        with patch.object(TokenVerifier, "_key_from_jwks", fake_key_from_jwks):
             await verifier._resolve_and_cache_key("kid1", "RS256", zone_id="zone123")
 
         assert seen["jwks_uri"] == "https://zone123.keycard.cloud/.well-known/jwks.json"
+
+
+class TestJwksRefetchCooldown:
+    """Rows 14 to 19 of the JWKS caching spec: the per-jwks_uri key set and
+    the unknown-kid refetch cooldown (SDK-93, typescript-sdk #309)."""
+
+    JWKS_URI = "https://example.com/.well-known/jwks.json"
+
+    @staticmethod
+    def _jwk(kid: str) -> dict:
+        from joserfc.jwk import RSAKey
+
+        key = RSAKey.generate_key(2048)
+        data = key.as_dict(private=False)
+        data["kid"] = kid
+        return data
+
+    def _verifier(self, **kwargs) -> TokenVerifier:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            return TokenVerifier(
+                issuer="https://example.com", jwks_uri=self.JWKS_URI, **kwargs
+            )
+
+    def _fetch(self, keys_by_call):
+        calls = []
+
+        async def fetch_jwks(jwks_uri, timeout=None):
+            calls.append(jwks_uri)
+            keys = keys_by_call[min(len(calls) - 1, len(keys_by_call) - 1)]
+            return keys
+
+        return fetch_jwks, calls
+
+    @pytest.mark.asyncio
+    async def test_forged_kids_within_cooldown_cause_one_fetch(self):
+        from keycardai.oauth.exceptions import JWKSKeyNotFoundError
+
+        verifier = self._verifier()
+        fetch_jwks, calls = self._fetch([[self._jwk("k1")]])
+        with patch("keycardai.oauth.server.verifier.fetch_jwks", side_effect=fetch_jwks):
+            await verifier._key_from_jwks("k1", self.JWKS_URI)
+            for i in range(5):
+                with pytest.raises(JWKSKeyNotFoundError):
+                    await verifier._key_from_jwks(f"forged-{i}", self.JWKS_URI)
+        assert len(calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_kid_in_cached_set_needs_no_fetch(self):
+        verifier = self._verifier()
+        fetch_jwks, calls = self._fetch([[self._jwk("k1"), self._jwk("k2")]])
+        with patch("keycardai.oauth.server.verifier.fetch_jwks", side_effect=fetch_jwks):
+            await verifier._key_from_jwks("k1", self.JWKS_URI)
+            await verifier._key_from_jwks("k2", self.JWKS_URI)
+        assert len(calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_concurrent_misses_for_different_kids_share_one_fetch(self):
+        verifier = self._verifier()
+        keys = [self._jwk("a"), self._jwk("b"), self._jwk("c")]
+        calls = []
+
+        async def slow_fetch(jwks_uri, timeout=None):
+            calls.append(jwks_uri)
+            await asyncio.sleep(0.05)
+            return keys
+
+        with patch("keycardai.oauth.server.verifier.fetch_jwks", side_effect=slow_fetch):
+            await asyncio.gather(
+                verifier._key_from_jwks("a", self.JWKS_URI),
+                verifier._key_from_jwks("b", self.JWKS_URI),
+                verifier._key_from_jwks("c", self.JWKS_URI),
+            )
+        assert len(calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_rotated_in_kid_is_found_after_the_cooldown(self):
+        from keycardai.oauth.exceptions import JWKSKeyNotFoundError
+
+        verifier = self._verifier(jwks_refetch_cooldown=0.1)
+        fetch_jwks, calls = self._fetch(
+            [[self._jwk("k1")], [self._jwk("k1"), self._jwk("rotated")]]
+        )
+        with patch("keycardai.oauth.server.verifier.fetch_jwks", side_effect=fetch_jwks):
+            await verifier._key_from_jwks("k1", self.JWKS_URI)
+            with pytest.raises(JWKSKeyNotFoundError):
+                await verifier._key_from_jwks("rotated", self.JWKS_URI)
+            verifier._jwks_sets[self.JWKS_URI].fetched_at -= 0.2
+            await verifier._key_from_jwks("rotated", self.JWKS_URI)
+        assert len(calls) == 2
+
+    @pytest.mark.asyncio
+    async def test_cooldown_zero_refetches_on_every_miss(self):
+        from keycardai.oauth.exceptions import JWKSKeyNotFoundError
+
+        verifier = self._verifier(jwks_refetch_cooldown=0)
+        fetch_jwks, calls = self._fetch([[self._jwk("k1")]])
+        with patch("keycardai.oauth.server.verifier.fetch_jwks", side_effect=fetch_jwks):
+            await verifier._key_from_jwks("k1", self.JWKS_URI)
+            for i in range(3):
+                with pytest.raises(JWKSKeyNotFoundError):
+                    await verifier._key_from_jwks(f"forged-{i}", self.JWKS_URI)
+        assert len(calls) == 4
+
+    @pytest.mark.asyncio
+    async def test_clear_cache_drops_the_key_set(self):
+        verifier = self._verifier()
+        fetch_jwks, calls = self._fetch(
+            [[self._jwk("k1")], [self._jwk("rotated")]]
+        )
+        with patch("keycardai.oauth.server.verifier.fetch_jwks", side_effect=fetch_jwks):
+            await verifier._key_from_jwks("k1", self.JWKS_URI)
+            verifier.clear_cache()
+            await verifier._key_from_jwks("rotated", self.JWKS_URI)
+        assert len(calls) == 2
+
+    def test_default_cooldown_is_thirty_seconds(self):
+        assert self._verifier().jwks_refetch_cooldown == 30.0
