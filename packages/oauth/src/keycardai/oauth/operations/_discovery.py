@@ -135,6 +135,7 @@ def parse_discovery_http_response(
         jwks_uri=data.get("jwks_uri"),
         userinfo_endpoint=data.get("userinfo_endpoint"),
         end_session_endpoint=data.get("end_session_endpoint"),
+        device_authorization_endpoint=data.get("device_authorization_endpoint"),
 
         response_types_supported=normalize_array_field("response_types_supported"),
         response_modes_supported=normalize_array_field("response_modes_supported"),

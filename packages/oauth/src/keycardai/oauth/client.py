@@ -3,15 +3,27 @@
 import asyncio
 import threading
 import warnings
-from typing import Any, overload
+from typing import TYPE_CHECKING, Any, overload
 
 from ._metadata_cache import MetadataCache
+from .client_auth import (
+    ClientAuthentication,
+    ClientAuthenticator,
+    require_client_authenticator,
+)
+from .clock import Clock, SystemClock
 from .exceptions import (
     AuthorizationServerDiscoveryError,
     ConfigError,
+    DeviceAuthorizationError,
+    DevicePollError,
+    NetworkError,
+    OAuthHttpError,
+    OAuthProtocolError,
 )
 from .http._context import build_http_context
 from .http._transports import HttpxAsyncTransport, HttpxTransport
+from .http._wire import HttpResponse
 from .http.auth import (
     AuthStrategy,
     NoneAuth,
@@ -26,6 +38,14 @@ from .operations._authorize import (
 from .operations._client_credentials import (
     client_credentials_grant,
     client_credentials_grant_async,
+)
+from .operations._device_authorization import (
+    DEVICE_TOKEN_OPERATION,
+    SLOW_DOWN_INCREMENT,
+    build_device_authorization_http_request,
+    build_device_token_http_request,
+    parse_device_authorization_http_response,
+    parse_device_token_http_response,
 )
 from .operations._discovery import (
     discover_server_metadata,
@@ -50,6 +70,7 @@ from .types.models import (
     ClientCredentialsRequest,
     ClientRegistrationRequest,
     ClientRegistrationResponse,
+    DeviceAuthorization,
     Endpoints,
     ResolvedEndpoints,
     ServerMetadataRequest,
@@ -66,6 +87,38 @@ from .types.oauth import (
     TokenType,
 )
 from .utils.jwt import build_substitute_user_token
+
+if TYPE_CHECKING:
+    from .server.credentials import ApplicationCredential
+
+
+class _PublicClient:
+    """Client authentication for a public client: ``client_id`` in the body."""
+
+    def __init__(self, client_id: str):
+        self.client_id = client_id
+
+    async def client_authentication(
+        self, *, issuer: str, endpoint: str
+    ) -> ClientAuthentication:
+        return ClientAuthentication(form_fields={"client_id": self.client_id})
+
+
+def _device_client_authenticator(
+    credential: object | None, client_id: str | None
+) -> ClientAuthenticator:
+    """Return the client authentication for one device authorization flow.
+
+    Raises:
+        ConfigError: Not exactly one of ``credential`` and ``client_id`` is
+            set, or the credential does not provide client authentication.
+    """
+    if (credential is None) == (client_id is None):
+        raise ConfigError("Pass exactly one of `credential` and `client_id`.")
+    if credential is not None:
+        return require_client_authenticator(credential)
+    assert client_id is not None
+    return _PublicClient(client_id)
 
 
 def _resolve_issuer_arg(issuer: str | None, base_url: str | None) -> str:
@@ -296,6 +349,7 @@ class AsyncClient:
         endpoints: Endpoints | None = None,
         transport: AsyncHTTPTransport | None = None,
         config: ClientConfig | None = None,
+        clock: Clock | None = None,
     ):
         """Initialize asynchronous OAuth 2.0 client.
 
@@ -306,9 +360,13 @@ class AsyncClient:
             endpoints: Endpoint overrides for multi-server deployments
             transport: Custom asynchronous HTTP transport
             config: Client configuration with timeouts, retries, etc.
+            clock: Gives the current time and waits. The device
+                authorization grant reads ``expires_at`` from it and waits
+                between polls through it. Defaults to SystemClock.
         """
         self.issuer = _resolve_issuer_arg(issuer, base_url)
         self.config = config or ClientConfig()
+        self.clock: Clock = clock or SystemClock()
 
         self.auth_strategy = auth or NoneAuth()
 
@@ -1019,20 +1077,26 @@ class AsyncClient:
         *,
         refresh_token: str,
         client_id: str | None = None,
+        credential: "ClientAuthenticator | ApplicationCredential | None" = None,
         resources: list[str] | None = None,
         scopes: list[str] | None = None,
         timeout: float | None = None,
     ) -> TokenResponse:
         """Redeem a refresh token for a new access token (RFC 6749 Section 6).
 
-        A public client sends ``client_id`` in the body with no auth header;
-        a confidential client authenticates through the client's auth
-        strategy and passes no ``client_id``.
+        A public client sends ``client_id`` in the body with no auth header.
+        A confidential client authenticates through the client's auth
+        strategy and passes no ``client_id``. With ``credential``, the
+        request has the credential's client authentication and the client's
+        auth strategy is not used.
 
         Args:
             refresh_token: The refresh token from an earlier token response.
             client_id: Client ID for the form body. Required for public
                 clients, omitted for confidential clients.
+            credential: A credential that provides client authentication
+                (ClientSecret, WebIdentity, WorkloadIdentity). Cannot be
+                combined with ``client_id``.
             resources: RFC 8707 resource indicators, sent as one ``resource``
                 parameter per entry.
             scopes: Scopes to request, space-joined into ``scope``.
@@ -1044,17 +1108,33 @@ class AsyncClient:
             one; the SDK keeps no state.
 
         Raises:
+            ConfigError: ``credential`` is combined with ``client_id``, or
+                does not provide client authentication. No request is sent.
             RefreshGrantError: If the token endpoint answers with an OAuth
                 error. ``invalid_grant`` is not retryable: the user must
                 authorize again.
             OAuthHttpError: If the token endpoint returns an HTTP error.
         """
+        authenticator: ClientAuthenticator | None = None
+        if credential is not None:
+            if client_id is not None:
+                raise ConfigError("Pass either `credential` or `client_id`, not both.")
+            authenticator = require_client_authenticator(credential)
+
         endpoints = await self._get_current_endpoints()
+
+        client_auth: ClientAuthentication | None = None
+        auth = self.auth_strategy
+        if authenticator is not None:
+            client_auth = await authenticator.client_authentication(
+                issuer=self.issuer, endpoint=endpoints.token
+            )
+            auth = NoneAuth()
 
         ctx = build_http_context(
             endpoint=endpoints.token,
             transport=self.transport,
-            auth=self.auth_strategy,
+            auth=auth,
             issuer=self.issuer,
             user_agent=self.config.user_agent,
             custom_headers=self.config.custom_headers,
@@ -1067,7 +1147,261 @@ class AsyncClient:
             context=ctx,
             resources=resources,
             scope=" ".join(scopes) if scopes else None,
+            client_auth=client_auth,
         )
+
+    async def _resolve_device_endpoints(
+        self, metadata: AuthorizationServerMetadata | None
+    ) -> tuple[str, str | None, str | None]:
+        """Return the issuer, device authorization endpoint, and token endpoint.
+
+        Pre-discovered ``metadata`` is used as is, with no discovery request.
+        """
+        if metadata is not None:
+            return (
+                metadata.issuer,
+                metadata.device_authorization_endpoint,
+                metadata.token_endpoint,
+            )
+        await self._ensure_initialized()
+        discovered = await self._resolve_metadata()
+        endpoints = resolve_endpoints(self.issuer, self._endpoint_overrides, discovered)
+        device = discovered.device_authorization_endpoint if discovered else None
+        return self.issuer, device, endpoints.token
+
+    async def _send_device_poll(
+        self,
+        authenticator: ClientAuthenticator,
+        issuer: str,
+        token_endpoint: str,
+        device_code: str,
+        timeout: float | None,
+    ) -> HttpResponse:
+        client_auth = await authenticator.client_authentication(
+            issuer=issuer, endpoint=token_endpoint
+        )
+        request = build_device_token_http_request(
+            endpoint=token_endpoint, device_code=device_code, client_auth=client_auth
+        )
+        return await self.transport.request_raw(
+            request, timeout=timeout or self.config.timeout
+        )
+
+    async def request_device_authorization(
+        self,
+        *,
+        credential: "ClientAuthenticator | ApplicationCredential | None" = None,
+        client_id: str | None = None,
+        scopes: list[str] | None = None,
+        resources: list[str] | None = None,
+        metadata: AuthorizationServerMetadata | None = None,
+        timeout: float | None = None,
+    ) -> DeviceAuthorization:
+        """Ask the zone for a device code and a user code (RFC 8628 Section 3.1).
+
+        Set exactly one of ``credential`` and ``client_id``, and use the same
+        one for every poll of this flow. The client's auth strategy is not
+        used.
+
+        The SDK does not deliver the user code. Show the person
+        ``verification_uri_complete`` when it is set, and
+        ``verification_uri`` otherwise, together with ``user_code``.
+
+        Args:
+            credential: A credential that provides client authentication.
+                Each request gets a new assertion whose ``aud`` is the
+                endpoint it goes to.
+            client_id: A public client's ID, sent in the body with no other
+                authentication.
+            scopes: Scopes to request, space-joined into ``scope``.
+            resources: RFC 8707 resource indicators, one ``resource``
+                parameter per entry.
+            metadata: Pre-discovered authorization server metadata. No
+                discovery request is made.
+            timeout: Request timeout. Defaults to the client's timeout.
+
+        Returns:
+            DeviceAuthorization, with ``expires_at`` read from the client's
+            clock.
+
+        Raises:
+            ConfigError: Not exactly one of ``credential`` and ``client_id``
+                is set, the credential does not provide client
+                authentication, or the metadata has no
+                ``device_authorization_endpoint``. No request is sent.
+            DeviceAuthorizationError: An OAuth error response, or a response
+                missing a required field (``invalid_response``).
+            OAuthHttpError: A non-2xx response without an OAuth error body.
+            NetworkError: The request failed or timed out.
+        """
+        authenticator = _device_client_authenticator(credential, client_id)
+        issuer, endpoint, _ = await self._resolve_device_endpoints(metadata)
+        if not endpoint:
+            raise ConfigError(
+                f"Authorization server {issuer} does not advertise a "
+                "device_authorization_endpoint"
+            )
+        client_auth = await authenticator.client_authentication(
+            issuer=issuer, endpoint=endpoint
+        )
+        request = build_device_authorization_http_request(
+            endpoint=endpoint,
+            client_auth=client_auth,
+            scopes=scopes,
+            resources=resources,
+        )
+        response = await self.transport.request_raw(
+            request, timeout=timeout or self.config.timeout
+        )
+        return parse_device_authorization_http_response(
+            response, received_at=self.clock.now()
+        )
+
+    async def poll_device_token(
+        self,
+        authorization: DeviceAuthorization,
+        *,
+        credential: "ClientAuthenticator | ApplicationCredential | None" = None,
+        client_id: str | None = None,
+        metadata: AuthorizationServerMetadata | None = None,
+        timeout: float | None = None,
+    ) -> TokenResponse:
+        """Poll the token endpoint once with ``authorization.device_code``.
+
+        Authenticate the same way as the device authorization request.
+
+        Args:
+            authorization: The device authorization response. Only
+                ``device_code`` is read.
+            credential: As for request_device_authorization.
+            client_id: As for request_device_authorization.
+            metadata: Pre-discovered authorization server metadata.
+            timeout: Request timeout. Defaults to the client's timeout.
+
+        Returns:
+            The token, with ``refresh_token`` and ``id_token`` as received.
+
+        Raises:
+            ConfigError: As for request_device_authorization, or the
+                metadata has no ``token_endpoint``. No request is sent.
+            DeviceAuthorizationError: An OAuth error response, including
+                ``authorization_pending`` and ``slow_down``.
+            OAuthHttpError: A non-2xx response without an OAuth error body.
+            NetworkError: The request failed or timed out.
+        """
+        authenticator = _device_client_authenticator(credential, client_id)
+        issuer, _, token_endpoint = await self._resolve_device_endpoints(metadata)
+        if not token_endpoint:
+            raise ConfigError(
+                f"Authorization server {issuer} does not advertise a token_endpoint"
+            )
+        response = await self._send_device_poll(
+            authenticator, issuer, token_endpoint, authorization.device_code, timeout
+        )
+        return parse_device_token_http_response(response)
+
+    async def wait_for_device_token(
+        self,
+        authorization: DeviceAuthorization,
+        *,
+        credential: "ClientAuthenticator | ApplicationCredential | None" = None,
+        client_id: str | None = None,
+        interval: int | None = None,
+        metadata: AuthorizationServerMetadata | None = None,
+        timeout: float | None = None,
+    ) -> TokenResponse:
+        """Poll until the person approves or denies (RFC 8628 Section 3.5).
+
+        Waits the interval before each poll, including the first. On
+        ``authorization_pending`` it polls again. On ``slow_down`` it adds 5
+        seconds to the interval for this and every later poll. Any other
+        OAuth error stops the loop. A network error, a 5xx, or a 429 stops
+        the loop with DevicePollError. The loop never repeats a failed poll.
+
+        Waits go through the client's clock. Cancelling the task ends the
+        wait or the request in progress, and no further request is sent.
+        ``timeout`` bounds each request, not the wait or the whole loop.
+
+        When the device authorization request named more than one resource,
+        the token is not for any one of them, even if ``raw["resource"]``
+        names one. NEVER store it as the token for a single resource. To get
+        a token for one resource, refresh with that resource.
+
+        Args:
+            authorization: The device authorization response, or one built
+                from persisted fields.
+            credential: As for request_device_authorization.
+            client_id: As for request_device_authorization.
+            interval: Seconds to wait before the first poll, and the
+                starting interval. Defaults to ``authorization.interval``.
+                To resume after DevicePollError, pass its ``interval``.
+            metadata: Pre-discovered authorization server metadata.
+            timeout: Timeout for each request. Defaults to the client's
+                timeout.
+
+        Returns:
+            The token, with ``refresh_token`` and ``id_token`` as received.
+
+        Raises:
+            ConfigError: As for poll_device_token, or ``interval`` is below
+                ``authorization.interval``. No request is sent.
+            DeviceAuthorizationError: A terminal OAuth error such as
+                ``access_denied``, ``invalid_grant``, or ``expired_token``.
+                ``expired_token`` is also raised, without sending a poll,
+                when the next poll would start after ``expires_at``.
+            DevicePollError: A poll failed with a network error, a 5xx, or a
+                429. Its ``interval`` is the interval to resume with.
+            OAuthHttpError: A 4xx other than 429 without an OAuth error body.
+            asyncio.CancelledError: The task was cancelled.
+        """
+        authenticator = _device_client_authenticator(credential, client_id)
+        if interval is None:
+            interval = authorization.interval
+        elif interval < authorization.interval:
+            raise ConfigError(
+                f"interval {interval} is below the device authorization "
+                f"interval {authorization.interval}"
+            )
+        issuer, _, token_endpoint = await self._resolve_device_endpoints(metadata)
+        if not token_endpoint:
+            raise ConfigError(
+                f"Authorization server {issuer} does not advertise a token_endpoint"
+            )
+
+        while True:
+            remaining = (authorization.expires_at - self.clock.now()).total_seconds()
+            if interval > remaining:
+                raise DeviceAuthorizationError(
+                    error="expired_token",
+                    error_description="The device code expires before the next poll",
+                    operation=DEVICE_TOKEN_OPERATION,
+                )
+            await self.clock.sleep(interval)
+
+            try:
+                response = await self._send_device_poll(
+                    authenticator,
+                    issuer,
+                    token_endpoint,
+                    authorization.device_code,
+                    timeout,
+                )
+            except NetworkError as e:
+                raise DevicePollError(interval, e) from e
+
+            try:
+                return parse_device_token_http_response(response)
+            except (OAuthHttpError, OAuthProtocolError) as e:
+                if response.status == 429 or response.status >= 500:
+                    raise DevicePollError(interval, e) from e
+                if not isinstance(e, DeviceAuthorizationError):
+                    raise
+                if e.error == "authorization_pending":
+                    continue
+                if e.error == "slow_down":
+                    interval += SLOW_DOWN_INCREMENT
+                    continue
+                raise
 
     async def impersonate(
         self,

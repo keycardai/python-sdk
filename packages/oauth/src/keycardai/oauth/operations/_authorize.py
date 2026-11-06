@@ -8,6 +8,7 @@ with PKCE support (RFC 7636).
 import json
 from urllib.parse import urlencode, urlsplit, urlunsplit
 
+from ..client_auth import ClientAuthentication
 from ..exceptions import OAuthHttpError, OAuthProtocolError, RefreshGrantError
 from ..http._context import HTTPContext
 from ..http._wire import HttpRequest, HttpResponse
@@ -302,18 +303,21 @@ def build_refresh_token_http_request(
     context: HTTPContext,
     resources: list[str] | None = None,
     scope: str | None = None,
+    client_auth: ClientAuthentication | None = None,
 ) -> HttpRequest:
     """Build the HTTP request for a refresh-token grant (RFC 6749 Section 6).
 
     Args:
         refresh_token: The refresh token returned by the authorization server.
         client_id: Client ID for the form body. Public clients send it; a
-            confidential client authenticates through ``context.auth`` and
-            passes None.
+            confidential client authenticates through ``context.auth`` or
+            ``client_auth`` and passes None.
         context: HTTP context with endpoint, transport, and auth.
         resources: RFC 8707 resource indicators, one ``resource`` parameter
             per entry.
         scope: Space-separated scope string to narrow the refreshed token.
+        client_auth: A credential's client authentication. Its headers and
+            form fields are added to the request.
 
     Returns:
         HttpRequest ready to send.
@@ -335,6 +339,9 @@ def build_refresh_token_http_request(
     }
     if context.auth:
         headers.update(dict(context.auth.apply_headers(context.issuer)))
+    if client_auth is not None:
+        headers.update(client_auth.headers)
+        payload.extend(client_auth.form_fields.items())
 
     return HttpRequest(
         method="POST",
@@ -396,6 +403,7 @@ async def refresh_token_grant_async(
     context: HTTPContext[AsyncHTTPTransport],
     resources: list[str] | None = None,
     scope: str | None = None,
+    client_auth: ClientAuthentication | None = None,
 ) -> TokenResponse:
     """Redeem a refresh token for a new access token (async).
 
@@ -414,6 +422,7 @@ async def refresh_token_grant_async(
         context=context,
         resources=resources,
         scope=scope,
+        client_auth=client_auth,
     )
     http_res = await context.transport.request_raw(http_req, timeout=context.timeout)
     return parse_refresh_token_http_response(http_res)

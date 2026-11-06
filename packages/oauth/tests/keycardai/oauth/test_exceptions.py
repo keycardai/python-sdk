@@ -8,10 +8,13 @@ from keycardai.oauth.exceptions import (
     AuthenticationError,
     AuthorizationDeniedError,
     ConfigError,
+    DeviceAuthorizationError,
+    DevicePollError,
     NetworkError,
     OAuthError,
     OAuthHttpError,
     OAuthProtocolError,
+    RefreshGrantError,
     TokenExchangeError,
 )
 
@@ -238,9 +241,69 @@ class TestRetryable:
     def test_permanent_code_set(self):
         assert PERMANENT_ERROR_CODES == {
             "access_denied",
+            "expired_token",
             "insufficient_authorization",
             "invalid_client",
         }
+
+    # The protocol-error domain: every code the token, device, and exchange
+    # endpoints define, plus the SDK's invalid_response. A consumer that
+    # only has a serialized code classifies it by membership in
+    # PERMANENT_ERROR_CODES, so membership and the typed classification must
+    # agree on every one.
+    PROTOCOL_ERROR_CODES = [
+        "access_denied",
+        "authorization_pending",
+        "expired_token",
+        "insufficient_authorization",
+        "invalid_client",
+        "invalid_grant",
+        "invalid_request",
+        "invalid_response",
+        "invalid_scope",
+        "invalid_target",
+        "server_error",
+        "slow_down",
+        "temporarily_unavailable",
+        "unauthorized_client",
+        "unsupported_grant_type",
+    ]
+
+    @pytest.mark.parametrize("code", PROTOCOL_ERROR_CODES)
+    @pytest.mark.parametrize(
+        "error_cls", [OAuthProtocolError, TokenExchangeError, AuthorizationDeniedError]
+    )
+    def test_permanent_set_agrees_with_typed_classification(self, error_cls, code):
+        error = error_cls(error=code, operation="POST /token")
+        assert error.retryable is (code not in PERMANENT_ERROR_CODES)
+
+    @pytest.mark.parametrize("code", PROTOCOL_ERROR_CODES)
+    @pytest.mark.parametrize("error_cls", [DeviceAuthorizationError, RefreshGrantError])
+    def test_grant_errors_add_only_invalid_grant(self, error_cls, code):
+        error = error_cls(error=code, operation="POST /token")
+        expected = code != "invalid_grant" and code not in PERMANENT_ERROR_CODES
+        assert error.retryable is expected
+
+    @pytest.mark.parametrize(
+        ("cause", "retryable"),
+        [
+            pytest.param(
+                NetworkError(cause=httpx.ConnectError("refused"), retriable=False),
+                True,
+                id="network",
+            ),
+            pytest.param(OAuthHttpError(status_code=503), True, id="5xx"),
+            pytest.param(OAuthHttpError(status_code=429), True, id="429"),
+            pytest.param(
+                OAuthProtocolError(error="access_denied"), False, id="permanent-code"
+            ),
+        ],
+    )
+    def test_device_poll_error_follows_its_cause(self, cause, retryable):
+        error = DevicePollError(15, cause)
+        assert error.interval == 15
+        assert error.cause is cause
+        assert error.retryable is retryable
 
     @pytest.mark.parametrize(
         "code", ["invalid_response", "server_error", "temporarily_unavailable"]

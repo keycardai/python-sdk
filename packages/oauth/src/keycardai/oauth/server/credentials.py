@@ -29,9 +29,11 @@ from keycardai.oauth import (
     AuthStrategy,
     BasicAuth,
     ClientConfig,
+    ConfigError,
     MultiZoneBasicAuth,
     NoneAuth,
 )
+from keycardai.oauth.client_auth import ClientAuthentication
 from keycardai.oauth.types.models import JsonWebKeySet, TokenExchangeRequest
 from keycardai.oauth.types.oauth import GrantType, TokenEndpointAuthMethod
 
@@ -64,6 +66,10 @@ class ApplicationCredential(Protocol):
     Application credential providers are responsible for preparing token exchange
     requests with the appropriate authentication parameters based on the workload's
     credential type (none, private key JWT, cloud workload identity, etc.).
+
+    Client authentication is a separate, optional capability:
+    keycardai.oauth.client_auth.ClientAuthenticator. ClientSecret,
+    WebIdentity, and WorkloadIdentity implement it.
     """
 
     def get_http_client_auth(self) -> AuthStrategy:
@@ -152,6 +158,16 @@ class ClientSecret:
             subject_token_type="urn:ietf:params:oauth:token-type:access_token",
         )
 
+    async def client_authentication(
+        self, *, issuer: str, endpoint: str
+    ) -> ClientAuthentication:
+        """Return the Basic header for ``issuer``. No form fields.
+
+        A multi-zone credential selects the zone by ``issuer`` and raises
+        KeyError for an unconfigured zone.
+        """
+        return ClientAuthentication(headers=dict(self.auth.apply_headers(issuer)))
+
 
 class WebIdentity:
     """Private key JWT client assertion provider.
@@ -163,8 +179,15 @@ class WebIdentity:
     Example:
         provider = WebIdentity(
             server_name="My Server",
-            storage_dir="./server_keys"
+            storage_dir="./server_keys",
+            client_id="registered-client-id",
         )
+
+    Args:
+        client_id: The registered OAuth client ID, signed as the assertion's
+            ``iss`` and ``sub``. Required for client authentication. Token
+            exchange uses the auth context's ``resource_client_id`` when
+            present, and this value otherwise.
     """
 
     _DEFAULT_STORAGE_DIR = "./server_keys"
@@ -179,8 +202,10 @@ class WebIdentity:
         audience_config: str | dict[str, str] | None = None,
         # Backward-compatible alias
         mcp_server_name: str | None = None,
+        client_id: str | None = None,
     ):
         server_name = server_name or mcp_server_name
+        self.client_id = client_id
 
         if storage is not None:
             self._storage = storage
@@ -237,7 +262,7 @@ class WebIdentity:
             raise ValueError(
                 "auth_info with 'resource_server_url' is required for WebIdentity"
             )
-        config.client_id = auth_info["resource_client_id"]
+        config.client_id = auth_info.get("resource_client_id") or self.client_id
         config.auto_register_client = False
         config.client_jwks_url = self.identity_manager.get_client_jwks_url(
             resource_server_url
@@ -266,15 +291,18 @@ class WebIdentity:
         resource: str,
         auth_info: Mapping[str, str | None] | None = None,
     ) -> TokenExchangeRequest:
-        resource_client_id = auth_info.get("resource_client_id") if auth_info else None
-        if resource_client_id is None:
+        client_id = (auth_info.get("resource_client_id") if auth_info else None) or (
+            self.client_id
+        )
+        if client_id is None:
             raise ValueError(
-                "auth_info with 'resource_client_id' is required for WebIdentity"
+                "WebIdentity needs auth_info with 'resource_client_id' or the "
+                "client_id option"
             )
 
         audience = await _get_token_exchange_audience(client)
         client_assertion = self.identity_manager.create_client_assertion(
-            issuer=resource_client_id,
+            issuer=client_id,
             audience=audience,
         )
 
@@ -284,6 +312,31 @@ class WebIdentity:
             subject_token_type="urn:ietf:params:oauth:token-type:access_token",
             client_assertion_type=GrantType.JWT_BEARER_CLIENT_ASSERTION,
             client_assertion=client_assertion,
+        )
+
+    async def client_authentication(
+        self, *, issuer: str, endpoint: str
+    ) -> ClientAuthentication:
+        """Return a newly signed client assertion for ``endpoint``.
+
+        The assertion's ``iss`` and ``sub`` are the ``client_id`` option and
+        its ``aud`` is ``endpoint``. ``audience_config`` does not apply. A
+        Keycard zone rejects any other ``aud`` with ``invalid_client``.
+
+        Raises:
+            ConfigError: The ``client_id`` option is not set. No assertion
+                is signed.
+        """
+        if not self.client_id:
+            raise ConfigError("WebIdentity client authentication requires client_id")
+        assertion = self.identity_manager.create_client_assertion(
+            issuer=self.client_id, audience=endpoint
+        )
+        return ClientAuthentication(
+            form_fields={
+                "client_assertion": assertion,
+                "client_assertion_type": GrantType.JWT_BEARER_CLIENT_ASSERTION.value,
+            }
         )
 
 
@@ -596,6 +649,22 @@ class WorkloadIdentity:
             client_assertion=assertion,
             client_id=self.client_id,
         )
+
+    async def client_authentication(
+        self, *, issuer: str, endpoint: str
+    ) -> ClientAuthentication:
+        """Return the source's current token as the client assertion.
+
+        The form fields are ``client_assertion``, ``client_assertion_type``,
+        and ``client_id`` when configured. No headers.
+        """
+        form_fields = {
+            "client_assertion": await self._fetch_identity_token(),
+            "client_assertion_type": GrantType.JWT_BEARER_CLIENT_ASSERTION.value,
+        }
+        if self.client_id:
+            form_fields["client_id"] = self.client_id
+        return ClientAuthentication(form_fields=form_fields)
 
 
 class EKSWorkloadIdentity(WorkloadIdentity):

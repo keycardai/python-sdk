@@ -8,6 +8,7 @@ Supported OAuth 2.0 Standards:
 - RFC 7591: OAuth 2.0 Dynamic Client Registration
 - RFC 6750: OAuth 2.0 Bearer Token Usage
 - RFC 8414: OAuth 2.0 Authorization Server Metadata
+- RFC 8628: OAuth 2.0 Device Authorization Grant
 - OpenID Connect Core 1.0 Section 5.3: UserInfo
 
 Example:
@@ -32,12 +33,16 @@ Example:
 """
 
 from .client import AsyncClient, Client
+from .client_auth import ClientAuthentication, ClientAuthenticator
+from .clock import Clock, SystemClock
 from .exceptions import (
     PERMANENT_ERROR_CODES,
     AuthenticationError,
     AuthorizationDeniedError,
     AuthorizationServerDiscoveryError,
     ConfigError,
+    DeviceAuthorizationError,
+    DevicePollError,
     InvalidTokenError,
     JWKSError,
     JWKSFetchError,
@@ -59,6 +64,7 @@ from .types.models import (
     ClientCredentialsRequest,
     ClientRegistrationRequest,
     ClientRegistrationResponse,
+    DeviceAuthorization,
     Endpoints,
     TokenExchangeRequest,
     TokenResponse,
@@ -85,6 +91,8 @@ __all__ = [
     "OAuthHttpError",
     "OAuthProtocolError",
     "RefreshGrantError",
+    "DeviceAuthorizationError",
+    "DevicePollError",
     "NetworkError",
     "ConfigError",
     "AuthenticationError",
@@ -99,6 +107,7 @@ __all__ = [
     "PERMANENT_ERROR_CODES",
     # === Data Models ===
     "TokenResponse",
+    "DeviceAuthorization",
     "ClientRegistrationResponse",
     "PKCE",
     "Endpoints",
@@ -119,6 +128,11 @@ __all__ = [
     "TokenTypeHint",
     "PKCECodeChallengeMethod",
     "WellKnownEndpoint",
+    # === Client Authentication and Clock ===
+    "ClientAuthentication",
+    "ClientAuthenticator",
+    "Clock",
+    "SystemClock",
     # === HTTP Auth Strategies ===
     "AuthStrategy",
     "BasicAuth",
