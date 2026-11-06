@@ -1,3 +1,11 @@
+## 0.35.2-keycardai-oauth (2026-11-06)
+
+
+- fix(keycardai-oauth): throttle JWKS refetches for unknown key ids (#423)
+- TokenVerifier keeps the last key set per jwks_uri for key_ttl, looks a kid up there before fetching, refetches for a missing kid at most once per jwks_refetch_cooldown (default 30 seconds, 0 restores a fetch per miss), shares one in-flight fetch per jwks_uri across concurrent misses, and drops the set in clear_cache. The checks before the key lookup read the unsigned token, so a forged token could name any kid and cost a fetch each. Follows typescript-sdk #309. SDK-93.
+- Co-authored-by: devin-ai-keycard <devin-ai@keycard.ai>
+Co-authored-by: Larry Osakwe <larry@keycard.ai>
+
 ## 0.35.1-keycardai-oauth (2026-11-05)
 
 
