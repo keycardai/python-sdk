@@ -1171,15 +1171,11 @@ class AsyncClient:
 
     async def _send_device_poll(
         self,
-        authenticator: ClientAuthenticator,
-        issuer: str,
         token_endpoint: str,
         device_code: str,
+        client_auth: ClientAuthentication,
         timeout: float | None,
     ) -> HttpResponse:
-        client_auth = await authenticator.client_authentication(
-            issuer=issuer, endpoint=token_endpoint
-        )
         request = build_device_token_http_request(
             endpoint=token_endpoint, device_code=device_code, client_auth=client_auth
         )
@@ -1295,8 +1291,11 @@ class AsyncClient:
             raise ConfigError(
                 f"Authorization server {issuer} does not advertise a token_endpoint"
             )
+        client_auth = await authenticator.client_authentication(
+            issuer=issuer, endpoint=token_endpoint
+        )
         response = await self._send_device_poll(
-            authenticator, issuer, token_endpoint, authorization.device_code, timeout
+            token_endpoint, authorization.device_code, client_auth, timeout
         )
         return parse_device_token_http_response(response)
 
@@ -1320,7 +1319,8 @@ class AsyncClient:
 
         Waits go through the client's clock. Cancelling the task ends the
         wait or the request in progress, and no further request is sent.
-        ``timeout`` bounds each request, not the wait or the whole loop.
+        ``timeout`` bounds each request, not the wait or the whole loop. A
+        caller deadline around the whole loop does not replace it.
 
         When the device authorization request named more than one resource,
         the token is not for any one of them, even if ``raw["resource"]``
@@ -1350,8 +1350,11 @@ class AsyncClient:
                 ``expired_token`` is also raised, without sending a poll,
                 when the next poll would start after ``expires_at``.
             DevicePollError: A poll failed with a network error, a 5xx, or a
-                429. Its ``interval`` is the interval to resume with.
+                429, including a 5xx or 429 with an OAuth error body. Its
+                ``interval`` is the interval to resume with.
             OAuthHttpError: A 4xx other than 429 without an OAuth error body.
+            Exception: The credential's client authentication failed. The
+                error propagates as is, without ``interval``.
             asyncio.CancelledError: The task was cancelled.
         """
         authenticator = _device_client_authenticator(credential, client_id)
@@ -1378,13 +1381,14 @@ class AsyncClient:
                 )
             await self.clock.sleep(interval)
 
+            # A credential failure is not a transport failure. It propagates
+            # as is, without interval.
+            client_auth = await authenticator.client_authentication(
+                issuer=issuer, endpoint=token_endpoint
+            )
             try:
                 response = await self._send_device_poll(
-                    authenticator,
-                    issuer,
-                    token_endpoint,
-                    authorization.device_code,
-                    timeout,
+                    token_endpoint, authorization.device_code, client_auth, timeout
                 )
             except NetworkError as e:
                 raise DevicePollError(interval, e) from e

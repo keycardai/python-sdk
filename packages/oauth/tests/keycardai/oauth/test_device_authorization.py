@@ -31,6 +31,7 @@ from keycardai.oauth import (
 )
 from keycardai.oauth.http._wire import HttpRequest, HttpResponse
 from keycardai.oauth.server.credentials import WebIdentity
+from keycardai.oauth.server.exceptions import WorkloadIdentityRuntimeError
 
 ISSUER = "https://zone.example.com"
 DEVICE_ENDPOINT = "https://zone.example.com/oauth/device_authorization"
@@ -492,7 +493,7 @@ NETWORK_FAILURE = NetworkError(
             respond(503, {"error": "temporarily_unavailable"}),
             DeviceAuthorizationError,
             None,
-            id="5xx-with-oauth-body",
+            id="row-26-5xx-with-oauth-body",
         ),
         pytest.param(respond(429, b"slow"), OAuthHttpError, 429, id="row-17-429"),
     ],
@@ -678,3 +679,137 @@ async def test_row_24_multi_resource_token_is_not_associated_with_a_resource():
     assert "resource" not in {f.name for f in dataclasses.fields(TokenResponse)}
     assert "resources" not in DeviceAuthorization.model_fields
     assert token.raw == body
+
+
+@pytest.mark.parametrize(
+    "interval",
+    [
+        pytest.param(0, id="row-25-zero"),
+        pytest.param(-1, id="row-25-negative"),
+        pytest.param("5", id="row-25-string"),
+        pytest.param(1.5, id="fraction"),
+        pytest.param(True, id="boolean"),
+    ],
+)
+async def test_row_25_interval_that_is_not_a_positive_integer(interval):
+    transport = FakeTransport(device_response(interval=interval))
+
+    with pytest.raises(DeviceAuthorizationError) as exc:
+        await make_client(transport).request_device_authorization(
+            client_id="public-app", metadata=METADATA
+        )
+
+    assert exc.value.error == "invalid_response"
+    assert exc.value.error_description == (
+        "Device authorization response has an invalid interval"
+    )
+
+
+@pytest.mark.parametrize(
+    ("status", "code"),
+    [
+        pytest.param(503, "temporarily_unavailable", id="row-26-503"),
+        pytest.param(429, "slow_down", id="429-with-oauth-body"),
+    ],
+)
+async def test_row_26_status_wins_over_an_oauth_error_body(status, code):
+    transport = FakeTransport(respond(400, SLOW_DOWN), respond(status, {"error": code}))
+    clock = FakeClock()
+
+    with pytest.raises(DevicePollError) as exc:
+        await make_client(transport, clock).wait_for_device_token(
+            authorization(), client_id="public-app", metadata=METADATA
+        )
+
+    assert len(transport.requests) == 2
+    assert exc.value.retryable is True
+    assert exc.value.interval == 10
+    assert isinstance(exc.value.__cause__, DeviceAuthorizationError)
+    assert exc.value.__cause__.error == code
+
+
+class FailingCredential(FakeCredential):
+    """Authenticates the first poll, then raises ``error`` on the next one."""
+
+    def __init__(self, error: Exception):
+        super().__init__()
+        self.error = error
+
+    async def client_authentication(
+        self, *, issuer: str, endpoint: str
+    ) -> ClientAuthentication:
+        if self.calls:
+            raise self.error
+        return await super().client_authentication(issuer=issuer, endpoint=endpoint)
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        pytest.param(
+            WorkloadIdentityRuntimeError("token source failed", source="custom"),
+            id="row-27-source-error",
+        ),
+        pytest.param(ConfigError("no zone"), id="row-27-config-error"),
+        pytest.param(
+            NetworkError(cause=httpx.ConnectError("refused"), retriable=False),
+            id="row-27-network-error-from-the-credential",
+        ),
+    ],
+)
+async def test_row_27_credential_failure_returns_as_is(error):
+    transport = FakeTransport(respond(400, PENDING))
+    credential = FailingCredential(error)
+
+    with pytest.raises(type(error)) as exc:
+        await make_client(transport).wait_for_device_token(
+            authorization(), credential=credential, metadata=METADATA
+        )
+
+    assert exc.value is error
+    assert not hasattr(exc.value, "interval")
+    assert len(transport.requests) == 1
+
+
+@pytest.mark.parametrize(
+    "deadline",
+    [pytest.param(2.0, id="row-28-short-deadline"), pytest.param(30.0, id="row-28-long-deadline")],
+)
+async def test_row_28_request_timeout_holds_under_a_longer_caller_deadline(deadline):
+    # A local server that accepts each connection and never answers. The
+    # client's real httpx transport has a 0.2 second request timeout.
+    writers: list[asyncio.StreamWriter] = []
+
+    async def never_respond(reader, writer):
+        writers.append(writer)
+        await reader.read(65536)
+
+    server = await asyncio.start_server(never_respond, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    token_endpoint = f"http://127.0.0.1:{port}/oauth/token"
+    metadata = AuthorizationServerMetadata(issuer=ISSUER, token_endpoint=token_endpoint)
+    client = AsyncClient(
+        ISSUER,
+        clock=FakeClock(),
+        config=ClientConfig(
+            enable_metadata_discovery=False, auto_register_client=False, timeout=0.2
+        ),
+    )
+
+    try:
+        with pytest.raises(DevicePollError) as exc:
+            async with asyncio.timeout(deadline):
+                await client.wait_for_device_token(
+                    authorization(), client_id="public-app", metadata=metadata
+                )
+    finally:
+        await client.aclose()
+        for writer in writers:
+            writer.close()
+        server.close()
+        await server.wait_closed()
+
+    assert exc.value.interval == 5
+    assert exc.value.retryable is True
+    assert isinstance(exc.value.__cause__, NetworkError)
+    assert isinstance(exc.value.__cause__.cause, httpx.TimeoutException)
