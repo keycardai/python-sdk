@@ -555,6 +555,7 @@ async def test_refresh_public_client_sends_client_id_with_none_auth(monkeypatch)
     assert captured["refresh_kwargs"] == {
         "refresh_token": "rt1",
         "client_id": "my-app",
+        "credential": None,
         "resources": ["https://api.example.com", "https://files.example.com"],
         "scopes": ["read", "write"],
     }

@@ -13,12 +13,14 @@ References:
 from dataclasses import dataclass
 
 # OAuth error codes where a retry cannot help: the authorization server said
-# no on policy grounds, the caller lacks the delegated authorization it asked
-# for, or the client credentials themselves are wrong. Every other exchange
-# failure (transport faults, rate limits, 5xx, malformed responses) is treated
-# as retryable.
+# no on policy grounds, the device code expired or was already used, the
+# caller lacks the delegated authorization it asked for, or the client
+# credentials themselves are wrong. Every other failure (transport faults,
+# rate limits, 5xx, malformed responses) is retryable. This set is public:
+# a consumer that only has a serialized error code classifies it by
+# membership here.
 PERMANENT_ERROR_CODES: frozenset[str] = frozenset(
-    {"access_denied", "insufficient_authorization", "invalid_client"}
+    {"access_denied", "expired_token", "insufficient_authorization", "invalid_client"}
 )
 
 
@@ -145,6 +147,7 @@ class OAuthProtocolError(OAuthError):
         retry can change the outcome:
 
         - ``access_denied``: zone policy denied the request.
+        - ``expired_token``: the device code expired or was already used.
         - ``insufficient_authorization``: the caller lacks the delegated
           authorization the exchange requires.
         - ``invalid_client``: client authentication failed.
@@ -323,9 +326,9 @@ class RefreshGrantError(OAuthProtocolError):
 
     ``retryable`` is False for ``invalid_grant``: the refresh token is
     expired, revoked, or unknown, and the user must authorize again. Every
-    other code follows OAuthProtocolError's classification. The shared
-    PERMANENT_ERROR_CODES set is unchanged, since ``invalid_grant`` is
-    permanent only on the refresh path.
+    other code follows OAuthProtocolError's classification.
+    ``invalid_grant`` is not in PERMANENT_ERROR_CODES, because it is
+    permanent only on the refresh and device grants.
     """
 
     def __init__(
@@ -343,6 +346,61 @@ class RefreshGrantError(OAuthProtocolError):
         if self.error == "invalid_grant":
             return False
         return super().retryable
+
+
+class DeviceAuthorizationError(OAuthProtocolError):
+    """OAuth error response in the device authorization grant (RFC 8628).
+
+    Raised for an error from the device authorization endpoint or from a
+    device token poll, including ``authorization_pending`` and
+    ``slow_down``. Also raised with ``expired_token`` when the device code
+    expires before the next poll.
+
+    ``retryable`` is False for ``invalid_grant``: only a new device
+    authorization request recovers. Every other code follows
+    OAuthProtocolError's classification.
+    """
+
+    def __init__(
+        self,
+        error: str,
+        error_description: str | None = None,
+        error_uri: str | None = None,
+        operation: str = "",
+        reason: str | None = None,
+    ):
+        super().__init__(error, error_description, error_uri, operation, reason)
+
+    @property
+    def retryable(self) -> bool:
+        if self.error == "invalid_grant":
+            return False
+        return super().retryable
+
+
+class DevicePollError(OAuthError):
+    """A device token poll failed with a network error, a 5xx, or a 429.
+
+    ``interval`` is the wait in seconds the polling loop would have used
+    before its next poll, including every ``slow_down`` increase. To resume,
+    call ``wait_for_device_token`` again with the same DeviceAuthorization
+    and this ``interval``, until its ``expires_at``. After a timeout, wait
+    longer than ``interval`` before resuming (RFC 8628 Section 3.5).
+
+    The original failure is ``__cause__`` (and ``cause``). ``retryable``
+    follows it.
+    """
+
+    def __init__(self, interval: int, cause: OAuthError):
+        super().__init__(
+            f"Device token poll failed (next interval {interval}s): {cause}", cause
+        )
+        self.interval = interval
+
+    @property
+    def retryable(self) -> bool:
+        cause = self.cause
+        return cause.retryable if isinstance(cause, OAuthError) else True
 
 
 class JWKSError(OAuthError):
