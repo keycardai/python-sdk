@@ -26,6 +26,10 @@ upstream) pairs from .github/upstream-compat.json and, for one entry at a time:
      the tail of the failing output, whether the version is inside the
      specifier (inside means users installing today already get the break),
      and the run link. A later run that fails differently comments on it.
+     The existing issue is found by exact title among open issues, not by
+     label: a token without the Issues permission creates the issue and
+     GitHub drops the label silently, so a label-only lookup files the same
+     failure every day (typescript-sdk #285 to #306).
 
 Specifier rules:
 * A floor-only specifier (``>=3.1.0``) covers every later release, so it never
@@ -269,6 +273,10 @@ def state_record(entry: Entry, versions: dict[str, str], run_url: str) -> dict:
     if entry.is_set:
         return {"versions": versions, "run": run_url}
     return {"version": versions[entry.upstream], "run": run_url}
+
+
+def missing_label(issue: dict, label: str) -> bool:
+    return label not in {lbl.get("name") for lbl in issue.get("labels", [])}
 
 
 def find_by_title(items: list[dict], title: str) -> int | None:
@@ -663,20 +671,18 @@ def open_or_update_issue(
         [
             "issue",
             "list",
-            "--label",
-            ISSUE_LABEL,
             "--state",
             "open",
             "--search",
             f'"{title}" in:title',
             "--json",
-            "number,title,body",
+            "number,title,body,labels",
         ],
         repo_root,
     )
     existing = find_by_title(issues, title)
     if existing is None:
-        run(
+        url = run(
             [
                 "gh",
                 "issue",
@@ -689,8 +695,18 @@ def open_or_update_issue(
                 ISSUE_LABEL,
             ],
             repo_root,
+            capture_output=True,
+        ).stdout.strip()
+        number = url.rstrip("/").rsplit("/", 1)[-1]
+        created = gh_json(
+            ["issue", "view", number, "--json", "number,title,labels"], repo_root
         )
-        print("created issue")
+        print(f"created issue #{number}")
+        if missing_label(created if isinstance(created, dict) else {}, ISSUE_LABEL):
+            print(
+                f"::warning::issue #{number} was created without the {ISSUE_LABEL} "
+                "label; the token lacks the Issues permission (GitHub drops labels silently)"
+            )
         return
     issue = next(i for i in issues if i["number"] == existing)
     if failed_differently(issue.get("body", ""), out):
