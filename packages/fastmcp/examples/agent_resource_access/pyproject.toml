@@ -1,0 +1,17 @@
+[project]
+name = "agent-resource-access"
+version = "0.1.0"
+description = "A FastMCP server that reaches a resource with a token from the local Keycard agent"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "keycardai-oauth",
+    "fastmcp>=3.1.0",
+    "httpx>=0.28.1",
+]
+
+[tool.uv.sources]
+keycardai-oauth = { path = "../../../oauth", editable = true }
+
+[project.scripts]
+agent-resource-access = "main:main"
