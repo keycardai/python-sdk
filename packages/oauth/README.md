@@ -345,7 +345,9 @@ with Client("https://oauth.example.com", auth=NoneAuth()) as client:
 
 ### BasicAuth (RFC 7617)
 
-HTTP Basic authentication using client credentials:
+HTTP Basic authentication using client credentials. Pass the client ID and
+secret as registered. `BasicAuth` percent-encodes each one before it builds
+the header (RFC 6749 Section 2.3.1), with a space as `%20`:
 
 ```python
 from keycardai.oauth import Client, BasicAuth

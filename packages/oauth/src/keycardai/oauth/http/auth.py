@@ -11,6 +11,7 @@ fails closed when the issuer is missing or not configured.
 
 import base64
 from typing import Protocol
+from urllib.parse import quote
 
 
 def _normalize_issuer(issuer: str) -> str:
@@ -55,6 +56,11 @@ class BasicAuth:
     """HTTP Basic authentication strategy.
 
     Implements RFC 7617 HTTP Basic authentication using client credentials.
+    RFC 6749 Section 2.3.1 requires the client ID and secret to be encoded
+    before they are joined. ASCII letters, digits, and ``-._~`` stay as they
+    are. A space becomes ``%20``, which form decoders and
+    ``decodeURIComponent`` both read as a space. Every other byte of the
+    UTF-8 encoding becomes ``%HH``.
     """
 
     def __init__(self, client_id: str, client_secret: str):
@@ -74,7 +80,9 @@ class BasicAuth:
 
     def apply_headers(self, issuer: str | None = None) -> dict[str, str]:
         """Apply HTTP Basic authentication header. The issuer selector is ignored."""
-        credentials = f"{self.client_id}:{self.client_secret}"
+        client_id = quote(self.client_id, safe="")
+        client_secret = quote(self.client_secret, safe="")
+        credentials = f"{client_id}:{client_secret}"
         encoded_credentials = base64.b64encode(credentials.encode()).decode()
         return {"Authorization": f"Basic {encoded_credentials}"}
 
