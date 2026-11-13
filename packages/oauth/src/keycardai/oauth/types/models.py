@@ -12,7 +12,7 @@ OAuth 2.0 operations, providing comprehensive support for:
 from dataclasses import astuple, dataclass, field
 from typing import Any
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, AwareDatetime, BaseModel, ConfigDict, Field
 
 from .oauth import (
     GrantType,
@@ -101,6 +101,35 @@ class TokenResponse:
     # Vendor extensions and debugging
     raw: dict[str, Any] | None = None
     headers: dict[str, str] | None = None
+
+
+# =============================================================================
+# Device Authorization Grant (RFC 8628)
+# =============================================================================
+
+class DeviceAuthorization(BaseModel):
+    """Device authorization response (RFC 8628 Section 3.2).
+
+    A plain value. The caller may persist it, for example with
+    ``model_dump_json()``, and poll from another process that authenticates
+    as the same client.
+
+    Show the person ``verification_uri_complete`` when it is set, and
+    ``verification_uri`` otherwise. Always show ``user_code`` too, so the
+    person can compare it with the confirmation page. NEVER show
+    ``device_code``.
+    """
+
+    device_code: str
+    user_code: str
+    verification_uri: str
+    verification_uri_complete: str | None = None
+    expires_in: int
+    interval: int = 5
+    """Minimum wait in seconds between polls. 5 when the response omits it."""
+    expires_at: AwareDatetime
+    """The time the response was received plus ``expires_in``, read from the
+    client's clock."""
 
 
 # =============================================================================
@@ -289,6 +318,9 @@ class AuthorizationServerMetadata:
 
     # OpenID Connect RP-Initiated Logout 1.0 Section 2.1
     end_session_endpoint: str | None = None
+
+    # RFC 8628 Section 4: Device Authorization Grant
+    device_authorization_endpoint: str | None = None
 
     # Supported capabilities
     response_types_supported: list[str] | None = None
