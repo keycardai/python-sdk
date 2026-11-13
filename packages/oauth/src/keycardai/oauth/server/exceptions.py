@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from keycardai.oauth.exceptions import classify_discovery_failure
+from keycardai.oauth.exceptions import ConfigError, classify_discovery_failure
 
 
 class OAuthServerError(Exception):
@@ -672,6 +672,16 @@ class ClientSecretConfigurationError(OAuthServerError):
         }
 
         super().__init__(message, details=details)
+
+
+class WebIdentityConfigurationError(ConfigError, ValueError):
+    """WebIdentity has no client ID to sign as the assertion's ``iss``.
+
+    Raised when neither the auth context's ``resource_client_id`` nor the
+    ``client_id`` option is set, or when client authentication has no
+    endpoint to sign as ``aud``. It is also a ValueError, so
+    ``except ValueError`` catches it.
+    """
 
 
 class CredentialDiscoveryError(OAuthServerError):

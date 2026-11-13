@@ -32,6 +32,7 @@ Example:
 """
 
 from .client import AsyncClient, Client
+from .client_auth import ClientAuthentication, ClientAuthenticator
 from .exceptions import (
     PERMANENT_ERROR_CODES,
     AuthenticationError,
@@ -119,6 +120,9 @@ __all__ = [
     "TokenTypeHint",
     "PKCECodeChallengeMethod",
     "WellKnownEndpoint",
+    # === Client Authentication ===
+    "ClientAuthentication",
+    "ClientAuthenticator",
     # === HTTP Auth Strategies ===
     "AuthStrategy",
     "BasicAuth",
