@@ -15,6 +15,7 @@ from .clock import Clock, SystemClock
 from .exceptions import (
     AuthorizationServerDiscoveryError,
     ConfigError,
+    MissingTokenEndpointError,
 )
 from .http._context import build_http_context
 from .http._transports import (
@@ -402,7 +403,9 @@ class AsyncClient:
         """Deprecated alias for :attr:`issuer`. Use ``issuer`` instead."""
         return self.issuer
 
-    async def _resolve_metadata(self) -> AuthorizationServerMetadata | None:
+    async def _resolve_metadata(
+        self, *, refresh: bool = False
+    ) -> AuthorizationServerMetadata | None:
         """Return discovered metadata, or None when discovery is disabled.
 
         Success is cached for ``discovery_ttl``; a deterministic failure is
@@ -410,16 +413,21 @@ class AsyncClient:
         nothing. Concurrent cold-cache callers share one in-flight discovery
         task that no single caller's cancellation can cancel.
 
+        ``refresh`` discovers even when the cache is fresh. A transient
+        failure leaves the cached metadata in place.
+
         Raises:
-            AuthorizationServerDiscoveryError: discovery failed or the metadata
-                omits ``token_endpoint``. Never falls back to a guessed endpoint.
+            AuthorizationServerDiscoveryError: discovery failed. Never falls
+                back to a guessed endpoint.
+            MissingTokenEndpointError: the metadata omits ``token_endpoint``.
         """
         if not self.config.enable_metadata_discovery:
             return None
 
-        cached = self._metadata_cache.lookup()
-        if cached is not None:
-            return cached
+        if not refresh:
+            cached = self._metadata_cache.lookup()
+            if cached is not None:
+                return cached
 
         task = self._discovery_task
         if task is None:
@@ -453,12 +461,7 @@ class AsyncClient:
     ) -> AuthorizationServerMetadata:
         overrides_token = self._endpoint_overrides and self._endpoint_overrides.token
         if not metadata.token_endpoint and not overrides_token:
-            raise self._store_discovery_failure(
-                AuthorizationServerDiscoveryError(
-                    self.issuer,
-                    f"Authorization server {self.issuer} does not advertise a token_endpoint",
-                )
-            )
+            raise self._store_discovery_failure(MissingTokenEndpointError(self.issuer))
         self._metadata_cache.store_success(metadata)
         self._discovered_metadata = metadata
         self._discovered_endpoints = resolve_endpoints(
@@ -1179,7 +1182,9 @@ class AsyncClient:
         Otherwise the endpoint comes from discovered metadata. When that
         metadata fails the endpoint check, the client discovers again once
         the metadata is older than ``negative_ttl``, so a failed check is
-        remembered for at most ``negative_ttl``.
+        remembered for at most ``negative_ttl``. If that discovery fails
+        with a transient error, the cached metadata stays for the client's
+        other operations.
 
         Raises:
             ConfigError: The endpoint is missing or is not an http or https
@@ -1200,8 +1205,7 @@ class AsyncClient:
             age = self._metadata_cache.success_age()
             if age is None or age < self.config.negative_ttl:
                 raise
-        self._metadata_cache.invalidate()
-        discovered = await self._resolve_metadata()
+        discovered = await self._resolve_metadata(refresh=True)
         url = self._device_grant_endpoint(discovered, name)
         return self.issuer, check_endpoint(self.issuer, name, url)
 
@@ -1563,8 +1567,9 @@ class Client:
         single discovery request serves all of them.
 
         Raises:
-            AuthorizationServerDiscoveryError: discovery failed or the metadata
-                omits ``token_endpoint``. Never falls back to a guessed endpoint.
+            AuthorizationServerDiscoveryError: discovery failed. Never falls
+                back to a guessed endpoint.
+            MissingTokenEndpointError: the metadata omits ``token_endpoint``.
         """
         if not self.config.enable_metadata_discovery:
             return None
@@ -1595,12 +1600,7 @@ class Client:
     ) -> AuthorizationServerMetadata:
         overrides_token = self._endpoint_overrides and self._endpoint_overrides.token
         if not metadata.token_endpoint and not overrides_token:
-            raise self._store_discovery_failure(
-                AuthorizationServerDiscoveryError(
-                    self.issuer,
-                    f"Authorization server {self.issuer} does not advertise a token_endpoint",
-                )
-            )
+            raise self._store_discovery_failure(MissingTokenEndpointError(self.issuer))
         self._metadata_cache.store_success(metadata)
         self._discovered_metadata = metadata
         self._discovered_endpoints = resolve_endpoints(

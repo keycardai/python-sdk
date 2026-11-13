@@ -27,6 +27,7 @@ from keycardai.oauth import (
     DeviceAuthorization,
     DeviceAuthorizationError,
     Endpoints,
+    MissingTokenEndpointError,
     OAuthHttpError,
     TokenResponse,
 )
@@ -415,22 +416,79 @@ async def test_row_4_failed_endpoint_check_is_remembered_for_negative_ttl(monkey
     ]
 
 
+async def fail_device_check_then_rediscover(monkeypatch, rediscovery, *later):
+    """Fail the device endpoint check on discovered metadata, then fail the
+    discovery that follows once negative_ttl (60 seconds) has passed.
+
+    Returns the client, its transport, and the rediscovery error.
+    """
+    now = [1000.0]
+    monkeypatch.setattr("keycardai.oauth._metadata_cache._now", lambda: now[0])
+    transport = FakeTransport(DISCOVERED_WITHOUT_DEVICE, rediscovery, *later)
+    client = AsyncClient(ISSUER, transport=transport, clock=FakeClock())
+
+    with pytest.raises(ConfigError, match="does not advertise a device_authorization_endpoint"):
+        await client.request_device_authorization(client_id="public-app")
+    now[0] = 1060.0
+    with pytest.raises(AuthorizationServerDiscoveryError) as exc:
+        await client.request_device_authorization(client_id="public-app")
+
+    assert [(r.method, r.url) for r in transport.requests] == [
+        ("GET", DISCOVERY_URL),
+        ("GET", DISCOVERY_URL),
+    ]
+    return client, transport, exc.value
+
+
+async def test_transient_rediscovery_failure_keeps_cached_metadata(monkeypatch):
+    """Base spec: a transient failure is not recorded. The metadata cached
+    before it still serves the token endpoint, with no new discovery."""
+    client, transport, error = await fail_device_check_then_rediscover(
+        monkeypatch, respond(503, {}), respond(200, TOKEN_BODY)
+    )
+
+    token = await client.poll_device_token(authorization(), client_id="public-app")
+
+    assert error.retryable is True
+    assert token.access_token == "at"
+    assert [(r.method, r.url) for r in transport.requests][2:] == [("POST", TOKEN_ENDPOINT)]
+
+
+async def test_deterministic_rediscovery_failure_replaces_cached_metadata(monkeypatch):
+    """Base spec: a deterministic failure is remembered for negative_ttl. It
+    replaces the cached metadata, so the next operation raises it without a
+    request."""
+    client, transport, error = await fail_device_check_then_rediscover(
+        monkeypatch, respond(404, {})
+    )
+
+    with pytest.raises(AuthorizationServerDiscoveryError) as exc:
+        await client.poll_device_token(authorization(), client_id="public-app")
+
+    assert error.retryable is False
+    assert exc.value is error
+    assert len(transport.requests) == 2
+
+
 @pytest.mark.parametrize("operation", OPERATIONS)
-async def test_discovered_metadata_without_token_endpoint(operation):
-    """Discovery on AsyncClient requires token_endpoint for every operation."""
+async def test_row_30_discovered_metadata_without_token_endpoint(operation):
+    """Discovery on AsyncClient requires token_endpoint for every operation.
+    The error is a ConfigError, as row 30 requires, and a discovery failure."""
     transport = FakeTransport(
         respond(200, {"issuer": ISSUER, "device_authorization_endpoint": DEVICE_ENDPOINT})
     )
     client = AsyncClient(ISSUER, transport=transport, clock=FakeClock())
 
     with pytest.raises(
-        AuthorizationServerDiscoveryError,
+        MissingTokenEndpointError,
         match=exactly(f"Authorization server {ISSUER} does not advertise a token_endpoint"),
     ) as exc:
         await operation(client, None, client_id="public-app")
 
+    assert isinstance(exc.value, ConfigError)
+    assert isinstance(exc.value, AuthorizationServerDiscoveryError)
     assert exc.value.retryable is False
-    assert [r.method for r in transport.requests] == ["GET"]
+    assert [(r.method, r.url) for r in transport.requests] == [("GET", DISCOVERY_URL)]
 
 
 async def test_discovered_endpoints_are_used():

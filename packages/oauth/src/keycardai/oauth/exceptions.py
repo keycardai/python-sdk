@@ -287,8 +287,22 @@ class ConfigError(OAuthError):
     These are never retriable as they require code changes.
     """
 
-    def __init__(self, message: str):
-        super().__init__(message)
+    def __init__(self, message: str, cause: Exception | None = None):
+        super().__init__(message, cause)
+
+
+class MissingTokenEndpointError(AuthorizationServerDiscoveryError, ConfigError):
+    """Discovered metadata does not advertise ``token_endpoint``.
+
+    It is a discovery failure and a configuration error, so both
+    ``except AuthorizationServerDiscoveryError`` and ``except ConfigError``
+    catch it. Not retryable.
+    """
+
+    def __init__(self, issuer: str):
+        super().__init__(
+            issuer, f"Authorization server {issuer} does not advertise a token_endpoint"
+        )
 
 
 class AuthenticationError(OAuthError):
