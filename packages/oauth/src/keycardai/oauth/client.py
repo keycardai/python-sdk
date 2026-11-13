@@ -3,9 +3,14 @@
 import asyncio
 import threading
 import warnings
-from typing import Any, overload
+from typing import TYPE_CHECKING, Any, overload
 
 from ._metadata_cache import MetadataCache
+from .client_auth import (
+    ClientAuthentication,
+    ClientAuthenticator,
+    require_client_authenticator,
+)
 from .exceptions import (
     AuthorizationServerDiscoveryError,
     ConfigError,
@@ -66,6 +71,9 @@ from .types.oauth import (
     TokenType,
 )
 from .utils.jwt import build_substitute_user_token
+
+if TYPE_CHECKING:
+    from .server.credentials import ApplicationCredential
 
 
 def _resolve_issuer_arg(issuer: str | None, base_url: str | None) -> str:
@@ -1019,42 +1027,67 @@ class AsyncClient:
         *,
         refresh_token: str,
         client_id: str | None = None,
+        credential: "ClientAuthenticator | ApplicationCredential | None" = None,
         resources: list[str] | None = None,
         scopes: list[str] | None = None,
         timeout: float | None = None,
     ) -> TokenResponse:
         """Redeem a refresh token for a new access token (RFC 6749 Section 6).
 
-        A public client sends ``client_id`` in the body with no auth header;
-        a confidential client authenticates through the client's auth
-        strategy and passes no ``client_id``.
+        A public client sends ``client_id`` in the body with no auth header.
+        A confidential client authenticates through the client's auth
+        strategy and passes no ``client_id``. With ``credential``, the
+        request has the credential's client authentication and the client's
+        auth strategy is not used.
 
         Args:
             refresh_token: The refresh token from an earlier token response.
             client_id: Client ID for the form body. Required for public
                 clients, omitted for confidential clients.
+            credential: A credential that provides client authentication
+                (ClientSecret, WebIdentity, WorkloadIdentity). Cannot be
+                combined with ``client_id``.
             resources: RFC 8707 resource indicators, sent as one ``resource``
                 parameter per entry.
             scopes: Scopes to request, space-joined into ``scope``.
             timeout: Optional request timeout override.
 
         Returns:
-            TokenResponse. When it carries a ``refresh_token`` the server
+            TokenResponse. When it has a ``refresh_token`` the server
             rotated it, and the caller must store it in place of the old
             one; the SDK keeps no state.
 
         Raises:
+            ConfigError: ``credential`` is combined with ``client_id``, or
+                does not provide client authentication. No request is sent.
             RefreshGrantError: If the token endpoint answers with an OAuth
                 error. ``invalid_grant`` is not retryable: the user must
                 authorize again.
             OAuthHttpError: If the token endpoint returns an HTTP error.
+            Exception: The credential's client authentication failed. Its
+                error propagates as is. A multi-zone ClientSecret raises
+                KeyError for an unknown zone.
         """
+        authenticator: ClientAuthenticator | None = None
+        if credential is not None:
+            if client_id is not None:
+                raise ConfigError("Pass either `credential` or `client_id`, not both.")
+            authenticator = require_client_authenticator(credential)
+
         endpoints = await self._get_current_endpoints()
+
+        client_auth: ClientAuthentication | None = None
+        auth = self.auth_strategy
+        if authenticator is not None:
+            client_auth = await authenticator.client_authentication(
+                issuer=self.issuer, endpoint=endpoints.token
+            )
+            auth = NoneAuth()
 
         ctx = build_http_context(
             endpoint=endpoints.token,
             transport=self.transport,
-            auth=self.auth_strategy,
+            auth=auth,
             issuer=self.issuer,
             user_agent=self.config.user_agent,
             custom_headers=self.config.custom_headers,
@@ -1067,6 +1100,7 @@ class AsyncClient:
             context=ctx,
             resources=resources,
             scope=" ".join(scopes) if scopes else None,
+            client_auth=client_auth,
         )
 
     async def impersonate(
