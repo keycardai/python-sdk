@@ -207,8 +207,15 @@ async with AsyncClient("https://zone.keycard.cloud") as client:
         resources=["https://api.example.com"],
     )
     print(auth.verification_uri_complete or auth.verification_uri, auth.user_code)
-    token = await client.poll_device_token(auth, credential=credential)
+    token = await client.wait_for_device_token(auth, credential=credential)
 ```
+
+`wait_for_device_token` waits `interval` before each poll and adds 5 seconds
+on `slow_down`. It stops with `DeviceAuthorizationError` on `access_denied`,
+`expired_token`, or any other OAuth error, and raises `expired_token` without
+polling when the code expires before the next poll. A network error, a 429, or
+a 5xx stops it with `DevicePollError`. To resume, call it again with
+`interval=error.interval`. Cancelling the task stops the loop.
 
 `poll_device_token` polls once. Until the person answers, it raises
 `DeviceAuthorizationError` with `authorization_pending` or `slow_down`.
@@ -220,7 +227,7 @@ Pass `client_id=` in place of `credential=` for a public client. Use the same
 client authentication for every request in one flow. `WebIdentity` needs its
 `client_id` option for this grant. `DeviceAuthorization` is a pydantic model,
 so it can be persisted and polled from another process. The client's `clock`
-sets `expires_at`.
+sets `expires_at` and runs the waits between polls.
 
 When the device authorization request names more than one resource, the token
 is not for any one of them. To get a token for one resource, refresh with that
@@ -598,6 +605,7 @@ operation unchanged could succeed.
 | `RefreshGrantError` | No | `invalid_grant`, or a code in `PERMANENT_ERROR_CODES` |
 | `DeviceAuthorizationError` | Yes | HTTP 429 or 5xx, whatever the code |
 | `DeviceAuthorizationError` | No | Not 429 or 5xx, and the code is `invalid_grant` or in `PERMANENT_ERROR_CODES` |
+| `DevicePollError` | Yes | Always: a network error, a 429, or a 5xx stopped device polling |
 | `OAuthProtocolError` / `TokenExchangeError` | Yes | Any other OAuth error code |
 | `NetworkError` | Yes | Always: transport faults are transient, permanent failures surface as protocol or HTTP errors |
 | `ConfigError` | No | Invalid configuration (requires code fix) |
