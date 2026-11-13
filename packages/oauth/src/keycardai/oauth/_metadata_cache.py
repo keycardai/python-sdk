@@ -69,12 +69,6 @@ class MetadataCache(Generic[T, E]):
             return None
         return _now() - self._stored_at
 
-    def invalidate(self) -> None:
-        """Empty the slot. The next lookup misses."""
-        self._value = None
-        self._error = None
-        self._expires_at = 0.0
-
     def store_failure(self, error: E, *, retryable: bool) -> E:
         """Remember ``error`` when it is deterministic; return it for raising."""
         if retryable or self.negative_ttl <= 0:

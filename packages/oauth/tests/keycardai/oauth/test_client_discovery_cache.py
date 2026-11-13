@@ -17,6 +17,8 @@ import pytest
 from keycardai.oauth import AsyncClient, Client, ClientConfig
 from keycardai.oauth.exceptions import (
     AuthorizationServerDiscoveryError,
+    ConfigError,
+    MissingTokenEndpointError,
     NetworkError,
     OAuthHttpError,
     OAuthProtocolError,
@@ -48,6 +50,17 @@ def _not_found() -> OAuthHttpError:
 
 def _server_error() -> OAuthHttpError:
     return OAuthHttpError(503, operation="GET metadata")
+
+
+def assert_missing_token_endpoint(error: MissingTokenEndpointError) -> None:
+    """Spec device grant row 30 calls this a configuration error. It is also a
+    discovery failure, the type every other discovery failure has."""
+    assert isinstance(error, ConfigError)
+    assert isinstance(error, AuthorizationServerDiscoveryError)
+    assert str(error) == f"Authorization server {ISSUER} does not advertise a token_endpoint"
+    assert error.issuer == ISSUER
+    assert error.cause is None
+    assert error.retryable is False
 
 
 def _config(**overrides) -> ClientConfig:
@@ -146,10 +159,9 @@ class TestSyncClientDiscoveryCache:
             [METADATA_WITHOUT_TOKEN_ENDPOINT, METADATA], negative_ttl=60
         )
         for _ in range(2):
-            with pytest.raises(AuthorizationServerDiscoveryError) as exc_info:
+            with pytest.raises(MissingTokenEndpointError) as exc_info:
                 client._get_current_endpoints()
-            assert exc_info.value.retryable is False
-            assert "token_endpoint" in str(exc_info.value)
+            assert_missing_token_endpoint(exc_info.value)
         assert discover.call_count == 1
 
         clock.advance(61)
@@ -264,9 +276,9 @@ class TestAsyncClientDiscoveryCache:
             [METADATA_WITHOUT_TOKEN_ENDPOINT, METADATA], negative_ttl=60
         )
         for _ in range(2):
-            with pytest.raises(AuthorizationServerDiscoveryError) as exc_info:
+            with pytest.raises(MissingTokenEndpointError) as exc_info:
                 await client._get_current_endpoints()
-            assert exc_info.value.retryable is False
+            assert_missing_token_endpoint(exc_info.value)
         assert discover.call_count == 1
 
         clock.advance(61)
