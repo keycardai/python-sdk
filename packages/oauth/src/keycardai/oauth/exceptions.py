@@ -13,12 +13,13 @@ References:
 from dataclasses import dataclass
 
 # OAuth error codes where a retry cannot help: the authorization server said
-# no on policy grounds, the caller lacks the delegated authorization it asked
-# for, or the client credentials themselves are wrong. Every other exchange
-# failure (transport faults, rate limits, 5xx, malformed responses) is treated
-# as retryable.
+# no on policy grounds, the device code expired or was already used, the
+# caller lacks the delegated authorization it asked for, or the client
+# credentials themselves are wrong. Every other OAuth error code is
+# retryable. The set is public: classify a serialized error code by
+# membership in it.
 PERMANENT_ERROR_CODES: frozenset[str] = frozenset(
-    {"access_denied", "insufficient_authorization", "invalid_client"}
+    {"access_denied", "expired_token", "insufficient_authorization", "invalid_client"}
 )
 
 
@@ -145,6 +146,7 @@ class OAuthProtocolError(OAuthError):
         retry can change the outcome:
 
         - ``access_denied``: zone policy denied the request.
+        - ``expired_token``: the device code expired or was already used.
         - ``insufficient_authorization``: the caller lacks the delegated
           authorization the exchange requires.
         - ``invalid_client``: client authentication failed.
@@ -285,8 +287,22 @@ class ConfigError(OAuthError):
     These are never retriable as they require code changes.
     """
 
-    def __init__(self, message: str):
-        super().__init__(message)
+    def __init__(self, message: str, cause: Exception | None = None):
+        super().__init__(message, cause)
+
+
+class MissingTokenEndpointError(AuthorizationServerDiscoveryError, ConfigError):
+    """Discovered metadata does not advertise ``token_endpoint``.
+
+    It is a discovery failure and a configuration error, so both
+    ``except AuthorizationServerDiscoveryError`` and ``except ConfigError``
+    catch it. Not retryable.
+    """
+
+    def __init__(self, issuer: str):
+        super().__init__(
+            issuer, f"Authorization server {issuer} does not advertise a token_endpoint"
+        )
 
 
 class AuthenticationError(OAuthError):
@@ -323,9 +339,9 @@ class RefreshGrantError(OAuthProtocolError):
 
     ``retryable`` is False for ``invalid_grant``: the refresh token is
     expired, revoked, or unknown, and the user must authorize again. Every
-    other code follows OAuthProtocolError's classification. The shared
-    PERMANENT_ERROR_CODES set is unchanged, since ``invalid_grant`` is
-    permanent only on the refresh path.
+    other code follows OAuthProtocolError's classification.
+    ``invalid_grant`` is not in PERMANENT_ERROR_CODES, because it is
+    permanent only on the refresh and device grants.
     """
 
     def __init__(
@@ -340,6 +356,41 @@ class RefreshGrantError(OAuthProtocolError):
 
     @property
     def retryable(self) -> bool:
+        if self.error == "invalid_grant":
+            return False
+        return super().retryable
+
+
+class DeviceAuthorizationError(OAuthProtocolError):
+    """OAuth error in the device authorization grant (RFC 8628).
+
+    Raised for an error response from the device authorization endpoint or
+    from a device token poll, including ``authorization_pending`` and
+    ``slow_down``, and for a malformed response (``invalid_response``).
+
+    ``status_code`` is the HTTP status of the response. ``retryable`` is
+    True for a 429 or a 5xx, whatever the code. Otherwise ``invalid_grant``
+    is not retryable, because only a new device authorization request
+    recovers. Every other code follows OAuthProtocolError.
+    """
+
+    def __init__(
+        self,
+        error: str,
+        error_description: str | None = None,
+        error_uri: str | None = None,
+        operation: str = "",
+        reason: str | None = None,
+        status_code: int | None = None,
+    ):
+        super().__init__(error, error_description, error_uri, operation, reason)
+        self.status_code = status_code
+
+    @property
+    def retryable(self) -> bool:
+        status = self.status_code
+        if status is not None and (status == 429 or 500 <= status < 600):
+            return True
         if self.error == "invalid_grant":
             return False
         return super().retryable

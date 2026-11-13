@@ -5,12 +5,17 @@ that record calls and expose ``is_closed`` the way httpx does.
 """
 
 import asyncio
+import gzip
 
 import httpx
 import pytest
 
 from keycardai.oauth.exceptions import NetworkError
-from keycardai.oauth.http._transports import HttpxAsyncTransport, HttpxTransport
+from keycardai.oauth.http._transports import (
+    HttpxAsyncTransport,
+    HttpxTransport,
+    ResponseBodyDecodeError,
+)
 from keycardai.oauth.http._wire import HttpRequest
 from keycardai.oauth.types.models import ClientConfig
 
@@ -21,6 +26,12 @@ class FakeResponse:
     status_code = 200
     headers = {"content-type": "application/json"}
     content = b"{}"
+
+    async def aread(self) -> bytes:
+        return self.content
+
+    async def aclose(self) -> None:
+        pass
 
 
 class FakeClient:
@@ -41,8 +52,15 @@ class FakeClient:
 
 
 class FakeAsyncClient(FakeClient):
-    async def request(self, **kwargs):
-        return FakeClient.request(self, **kwargs)
+    """Records the arguments of build_request, the way FakeClient records
+    the arguments of request."""
+
+    def build_request(self, **kwargs):
+        return kwargs
+
+    async def send(self, request, *, stream=False):
+        assert stream is True
+        return FakeClient.request(self, **request)
 
     async def aclose(self):
         self.is_closed = True
@@ -226,3 +244,108 @@ class TestHttpxAsyncTransport:
         asyncio.run(t.aclose())
         assert created[0].is_closed is False
         assert t._client is None
+
+
+async def body(data: bytes):
+    """A streamed body. httpx.Response decodes a bytes body when it is built,
+    inside the mock handler, so the tests stream it the way a server does."""
+    yield data
+
+
+class TestResponseBodyDecodeError:
+    """The async transport reads the body itself, so a body that does not
+    decode reports the response's status. Real httpx decodes the body here."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("status", [200, 503])
+    async def test_gzip_body_that_is_not_gzip(self, monkeypatch, status):
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                status, headers={"Content-Encoding": "gzip"}, content=body(b"not gzip")
+            )
+
+        t = HttpxAsyncTransport(config=ClientConfig())
+        monkeypatch.setattr(
+            t,
+            "_create_client",
+            lambda: httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        )
+
+        with pytest.raises(ResponseBodyDecodeError) as exc_info:
+            await t.request_raw(REQ)
+
+        err = exc_info.value
+        assert isinstance(err, NetworkError)
+        assert err.status == status
+        assert err.headers["content-encoding"] == "gzip"
+        assert isinstance(err.cause, httpx.DecodingError)
+        assert err.operation == "POST https://zone.example/token"
+
+    @pytest.mark.asyncio
+    async def test_stream_is_closed_after_a_decode_error(self, monkeypatch):
+        closed: list[bool] = []
+
+        class Body(httpx.AsyncByteStream):
+            async def __aiter__(self):
+                yield b"not gzip"
+
+            async def aclose(self) -> None:
+                closed.append(True)
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, headers={"Content-Encoding": "gzip"}, stream=Body())
+
+        t = HttpxAsyncTransport(config=ClientConfig())
+        monkeypatch.setattr(
+            t,
+            "_create_client",
+            lambda: httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        )
+
+        with pytest.raises(ResponseBodyDecodeError):
+            await t.request_raw(REQ)
+
+        assert closed == [True]
+
+    @pytest.mark.asyncio
+    async def test_read_timeout_during_the_body_is_a_network_error(self, monkeypatch):
+        class Body(httpx.AsyncByteStream):
+            async def __aiter__(self):
+                raise httpx.ReadTimeout("slow body")
+                yield b""
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, stream=Body())
+
+        t = HttpxAsyncTransport(config=ClientConfig())
+        monkeypatch.setattr(
+            t,
+            "_create_client",
+            lambda: httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        )
+
+        with pytest.raises(NetworkError) as exc_info:
+            await t.request_raw(REQ)
+
+        assert type(exc_info.value) is NetworkError
+        assert isinstance(exc_info.value.cause, httpx.ReadTimeout)
+
+    @pytest.mark.asyncio
+    async def test_gzip_body_that_is_gzip(self, monkeypatch):
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                headers={"Content-Encoding": "gzip"},
+                content=body(gzip.compress(b"{}")),
+            )
+
+        t = HttpxAsyncTransport(config=ClientConfig())
+        monkeypatch.setattr(
+            t,
+            "_create_client",
+            lambda: httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        )
+
+        response = await t.request_raw(REQ)
+
+        assert (response.status, response.body) == (200, b"{}")

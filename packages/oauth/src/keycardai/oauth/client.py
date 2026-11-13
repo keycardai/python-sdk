@@ -11,12 +11,19 @@ from .client_auth import (
     ClientAuthenticator,
     require_client_authenticator,
 )
+from .clock import Clock, SystemClock
 from .exceptions import (
     AuthorizationServerDiscoveryError,
     ConfigError,
+    MissingTokenEndpointError,
 )
 from .http._context import build_http_context
-from .http._transports import HttpxAsyncTransport, HttpxTransport
+from .http._transports import (
+    HttpxAsyncTransport,
+    HttpxTransport,
+    ResponseBodyDecodeError,
+)
+from .http._wire import HttpRequest, HttpResponse
 from .http.auth import (
     AuthStrategy,
     NoneAuth,
@@ -31,6 +38,16 @@ from .operations._authorize import (
 from .operations._client_credentials import (
     client_credentials_grant,
     client_credentials_grant_async,
+)
+from .operations._device_authorization import (
+    DEVICE_AUTHORIZATION_OPERATION,
+    DEVICE_TOKEN_OPERATION,
+    build_device_authorization_http_request,
+    build_device_token_http_request,
+    check_endpoint,
+    parse_device_authorization_http_response,
+    parse_device_token_http_response,
+    undecodable_body_error,
 )
 from .operations._discovery import (
     discover_server_metadata,
@@ -55,6 +72,7 @@ from .types.models import (
     ClientCredentialsRequest,
     ClientRegistrationRequest,
     ClientRegistrationResponse,
+    DeviceAuthorization,
     Endpoints,
     ResolvedEndpoints,
     ServerMetadataRequest,
@@ -74,6 +92,36 @@ from .utils.jwt import build_substitute_user_token
 
 if TYPE_CHECKING:
     from .server.credentials import ApplicationCredential
+
+
+class _PublicClient:
+    """Client authentication for a public client: ``client_id`` in the body."""
+
+    def __init__(self, client_id: str):
+        self.client_id = client_id
+
+    async def client_authentication(
+        self, *, issuer: str, endpoint: str
+    ) -> ClientAuthentication:
+        return ClientAuthentication(form_fields={"client_id": self.client_id})
+
+
+def _device_client_authenticator(
+    credential: object | None, client_id: str | None
+) -> ClientAuthenticator:
+    """Return the client authentication for one device authorization flow.
+
+    Raises:
+        ConfigError: Not exactly one of ``credential`` and ``client_id`` is
+            set, or the credential does not provide client authentication.
+    """
+    if (credential is None) == (client_id is None):
+        raise ConfigError("Pass exactly one of `credential` and `client_id`.")
+    if credential is not None:
+        return require_client_authenticator(credential)
+    if not client_id:
+        raise ConfigError("`client_id` is empty.")
+    return _PublicClient(client_id)
 
 
 def _resolve_issuer_arg(issuer: str | None, base_url: str | None) -> str:
@@ -304,6 +352,7 @@ class AsyncClient:
         endpoints: Endpoints | None = None,
         transport: AsyncHTTPTransport | None = None,
         config: ClientConfig | None = None,
+        clock: Clock | None = None,
     ):
         """Initialize asynchronous OAuth 2.0 client.
 
@@ -314,9 +363,13 @@ class AsyncClient:
             endpoints: Endpoint overrides for multi-server deployments
             transport: Custom asynchronous HTTP transport
             config: Client configuration with timeouts, retries, etc.
+            clock: Gives the current time and waits. The device
+                authorization grant computes ``expires_at`` from
+                ``clock.now()``. Defaults to SystemClock.
         """
         self.issuer = _resolve_issuer_arg(issuer, base_url)
         self.config = config or ClientConfig()
+        self.clock: Clock = clock or SystemClock()
 
         self.auth_strategy = auth or NoneAuth()
 
@@ -350,7 +403,9 @@ class AsyncClient:
         """Deprecated alias for :attr:`issuer`. Use ``issuer`` instead."""
         return self.issuer
 
-    async def _resolve_metadata(self) -> AuthorizationServerMetadata | None:
+    async def _resolve_metadata(
+        self, *, refresh: bool = False
+    ) -> AuthorizationServerMetadata | None:
         """Return discovered metadata, or None when discovery is disabled.
 
         Success is cached for ``discovery_ttl``; a deterministic failure is
@@ -358,16 +413,21 @@ class AsyncClient:
         nothing. Concurrent cold-cache callers share one in-flight discovery
         task that no single caller's cancellation can cancel.
 
+        ``refresh`` discovers even when the cache is fresh. A transient
+        failure leaves the cached metadata in place.
+
         Raises:
-            AuthorizationServerDiscoveryError: discovery failed or the metadata
-                omits ``token_endpoint``. Never falls back to a guessed endpoint.
+            AuthorizationServerDiscoveryError: discovery failed. Never falls
+                back to a guessed endpoint.
+            MissingTokenEndpointError: the metadata omits ``token_endpoint``.
         """
         if not self.config.enable_metadata_discovery:
             return None
 
-        cached = self._metadata_cache.lookup()
-        if cached is not None:
-            return cached
+        if not refresh:
+            cached = self._metadata_cache.lookup()
+            if cached is not None:
+                return cached
 
         task = self._discovery_task
         if task is None:
@@ -401,12 +461,7 @@ class AsyncClient:
     ) -> AuthorizationServerMetadata:
         overrides_token = self._endpoint_overrides and self._endpoint_overrides.token
         if not metadata.token_endpoint and not overrides_token:
-            raise self._store_discovery_failure(
-                AuthorizationServerDiscoveryError(
-                    self.issuer,
-                    f"Authorization server {self.issuer} does not advertise a token_endpoint",
-                )
-            )
+            raise self._store_discovery_failure(MissingTokenEndpointError(self.issuer))
         self._metadata_cache.store_success(metadata)
         self._discovered_metadata = metadata
         self._discovered_endpoints = resolve_endpoints(
@@ -1103,6 +1158,208 @@ class AsyncClient:
             client_auth=client_auth,
         )
 
+    def _device_grant_endpoint(
+        self, metadata: AuthorizationServerMetadata | None, name: str
+    ) -> str | None:
+        """Return ``device_authorization_endpoint`` or ``token_endpoint``.
+
+        The token endpoint comes from the client's endpoint overrides first.
+        Neither comes from a conventional path.
+        """
+        if name == "token_endpoint":
+            overrides = self._endpoint_overrides
+            if overrides and overrides.token:
+                return overrides.token
+            return metadata.token_endpoint if metadata else None
+        return metadata.device_authorization_endpoint if metadata else None
+
+    async def _resolve_device_endpoint(
+        self, metadata: AuthorizationServerMetadata | None, name: str
+    ) -> tuple[str, str]:
+        """Return the issuer and the URL of the endpoint ``name``.
+
+        Pre-discovered ``metadata`` is used as is, with no discovery request.
+        Otherwise the endpoint comes from discovered metadata. When that
+        metadata fails the endpoint check, the client discovers again once
+        the metadata is older than ``negative_ttl``, so a failed check is
+        remembered for at most ``negative_ttl``. If that discovery fails
+        with a transient error, the cached metadata stays for the client's
+        other operations.
+
+        Raises:
+            ConfigError: The endpoint is missing or is not an http or https
+                URL.
+            AuthorizationServerDiscoveryError: Discovery failed.
+        """
+        if metadata is not None:
+            url = metadata.device_authorization_endpoint
+            if name == "token_endpoint":
+                url = metadata.token_endpoint
+            return metadata.issuer, check_endpoint(metadata.issuer, name, url)
+
+        discovered = await self._resolve_metadata()
+        try:
+            url = self._device_grant_endpoint(discovered, name)
+            return self.issuer, check_endpoint(self.issuer, name, url)
+        except ConfigError:
+            age = self._metadata_cache.success_age()
+            if age is None or age < self.config.negative_ttl:
+                raise
+        discovered = await self._resolve_metadata(refresh=True)
+        url = self._device_grant_endpoint(discovered, name)
+        return self.issuer, check_endpoint(self.issuer, name, url)
+
+    async def _send_device_request(
+        self, request: HttpRequest, timeout: float | None, operation: str
+    ) -> HttpResponse:
+        """Send one device grant request, bounded by the request timeout.
+
+        Raises:
+            DeviceAuthorizationError: A successful response whose body does
+                not decode (``invalid_response``).
+            OAuthHttpError: A 4xx or 5xx response whose body does not decode.
+            NetworkError: The request failed or timed out.
+        """
+        try:
+            return await self.transport.request_raw(
+                request, timeout=timeout or self.config.timeout
+            )
+        except ResponseBodyDecodeError as e:
+            raise undecodable_body_error(e, operation) from e
+
+    async def request_device_authorization(
+        self,
+        *,
+        credential: "ClientAuthenticator | ApplicationCredential | None" = None,
+        client_id: str | None = None,
+        scopes: list[str] | None = None,
+        resources: list[str] | None = None,
+        metadata: AuthorizationServerMetadata | None = None,
+        timeout: float | None = None,
+    ) -> DeviceAuthorization:
+        """Ask the zone for a device code and a user code (RFC 8628 Section 3.1).
+
+        Set exactly one of ``credential`` and ``client_id``, and use the same
+        one for every poll of this flow. The client's auth strategy is not
+        used.
+
+        The SDK does not deliver the user code. Show the person
+        ``verification_uri_complete`` when it is set, and
+        ``verification_uri`` otherwise, together with ``user_code``.
+
+        Args:
+            credential: A credential that provides client authentication.
+                Each request gets a new assertion whose ``aud`` is the
+                endpoint it goes to.
+            client_id: A public client's ID, sent in the body with no other
+                authentication.
+            scopes: Scopes to request, space-joined into ``scope``.
+            resources: RFC 8707 resource indicators, one ``resource``
+                parameter per entry.
+            metadata: Pre-discovered authorization server metadata. No
+                discovery request is made.
+            timeout: Request timeout. Defaults to the client's timeout.
+
+        Returns:
+            DeviceAuthorization, with ``expires_at`` read from the client's
+            clock.
+
+        Raises:
+            ConfigError: Not exactly one of ``credential`` and ``client_id``
+                is set, the credential does not provide client
+                authentication, or ``device_authorization_endpoint`` is
+                missing or is not an http or https URL. No request is sent.
+            AuthorizationServerDiscoveryError: Discovery failed.
+            DeviceAuthorizationError: An OAuth error response, or a
+                malformed response (``invalid_response``).
+            OAuthHttpError: A 4xx or 5xx response without an OAuth error
+                body.
+            NetworkError: The request failed or timed out.
+        """
+        authenticator = _device_client_authenticator(credential, client_id)
+        issuer, endpoint = await self._resolve_device_endpoint(
+            metadata, "device_authorization_endpoint"
+        )
+        client_auth = await authenticator.client_authentication(
+            issuer=issuer, endpoint=endpoint
+        )
+        request = build_device_authorization_http_request(
+            endpoint=endpoint,
+            client_auth=client_auth,
+            scopes=scopes,
+            resources=resources,
+        )
+        response = await self._send_device_request(
+            request, timeout, DEVICE_AUTHORIZATION_OPERATION
+        )
+        return parse_device_authorization_http_response(
+            response, received_at=self.clock.now()
+        )
+
+    async def _poll_device_token_once(
+        self,
+        token_endpoint: str,
+        device_code: str,
+        client_auth: ClientAuthentication,
+        timeout: float | None,
+    ) -> TokenResponse:
+        request = build_device_token_http_request(
+            endpoint=token_endpoint, device_code=device_code, client_auth=client_auth
+        )
+        response = await self._send_device_request(
+            request, timeout, DEVICE_TOKEN_OPERATION
+        )
+        return parse_device_token_http_response(response)
+
+    async def poll_device_token(
+        self,
+        authorization: DeviceAuthorization,
+        *,
+        credential: "ClientAuthenticator | ApplicationCredential | None" = None,
+        client_id: str | None = None,
+        metadata: AuthorizationServerMetadata | None = None,
+        timeout: float | None = None,
+    ) -> TokenResponse:
+        """Poll the token endpoint once with ``authorization.device_code``.
+
+        Authenticate the same way as the device authorization request. A
+        caller that repeats this in its own loop waits ``interval`` between
+        polls, adds 5 seconds on ``slow_down``, and waits longer after a
+        network error (RFC 8628 Section 3.5).
+
+        Args:
+            authorization: The device authorization response. Only
+                ``device_code`` is read.
+            credential: As for request_device_authorization.
+            client_id: As for request_device_authorization.
+            metadata: Pre-discovered authorization server metadata.
+            timeout: Request timeout. Defaults to the client's timeout.
+
+        Returns:
+            The token, with ``refresh_token`` and ``id_token`` as received.
+
+        Raises:
+            ConfigError: As for request_device_authorization, for
+                ``token_endpoint``. No request is sent.
+            AuthorizationServerDiscoveryError: Discovery failed.
+            DeviceAuthorizationError: An OAuth error response, including
+                ``authorization_pending`` and ``slow_down``, or a malformed
+                response (``invalid_response``).
+            OAuthHttpError: A 4xx or 5xx response without an OAuth error
+                body.
+            NetworkError: The request failed or timed out.
+        """
+        authenticator = _device_client_authenticator(credential, client_id)
+        issuer, endpoint = await self._resolve_device_endpoint(
+            metadata, "token_endpoint"
+        )
+        client_auth = await authenticator.client_authentication(
+            issuer=issuer, endpoint=endpoint
+        )
+        return await self._poll_device_token_once(
+            endpoint, authorization.device_code, client_auth, timeout
+        )
+
     async def impersonate(
         self,
         *,
@@ -1310,8 +1567,9 @@ class Client:
         single discovery request serves all of them.
 
         Raises:
-            AuthorizationServerDiscoveryError: discovery failed or the metadata
-                omits ``token_endpoint``. Never falls back to a guessed endpoint.
+            AuthorizationServerDiscoveryError: discovery failed. Never falls
+                back to a guessed endpoint.
+            MissingTokenEndpointError: the metadata omits ``token_endpoint``.
         """
         if not self.config.enable_metadata_discovery:
             return None
@@ -1342,12 +1600,7 @@ class Client:
     ) -> AuthorizationServerMetadata:
         overrides_token = self._endpoint_overrides and self._endpoint_overrides.token
         if not metadata.token_endpoint and not overrides_token:
-            raise self._store_discovery_failure(
-                AuthorizationServerDiscoveryError(
-                    self.issuer,
-                    f"Authorization server {self.issuer} does not advertise a token_endpoint",
-                )
-            )
+            raise self._store_discovery_failure(MissingTokenEndpointError(self.issuer))
         self._metadata_cache.store_success(metadata)
         self._discovered_metadata = metadata
         self._discovered_endpoints = resolve_endpoints(

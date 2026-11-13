@@ -42,6 +42,7 @@ class MetadataCache(Generic[T, E]):
         self._value: T | None = None
         self._error: E | None = None
         self._expires_at = 0.0
+        self._stored_at = 0.0
 
     def lookup(self) -> T | None:
         if _now() >= self._expires_at:
@@ -55,8 +56,18 @@ class MetadataCache(Generic[T, E]):
     def store_success(self, value: T) -> T:
         self._value = value
         self._error = None
-        self._expires_at = _now() + self.discovery_ttl
+        self._stored_at = _now()
+        self._expires_at = self._stored_at + self.discovery_ttl
         return value
+
+    def success_age(self) -> float | None:
+        """Return the seconds since the cached success was stored.
+
+        None when the slot does not hold a fresh success.
+        """
+        if self._value is None or _now() >= self._expires_at:
+            return None
+        return _now() - self._stored_at
 
     def store_failure(self, error: E, *, retryable: bool) -> E:
         """Remember ``error`` when it is deterministic; return it for raising."""

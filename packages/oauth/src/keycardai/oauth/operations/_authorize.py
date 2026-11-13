@@ -6,6 +6,8 @@ with PKCE support (RFC 7636).
 """
 
 import json
+from collections.abc import Mapping
+from typing import Any
 from urllib.parse import urlencode, urlsplit, urlunsplit
 
 from ..client_auth import ClientAuthentication
@@ -195,6 +197,16 @@ def _parse_token_http_response(
             operation=operation,
         )
 
+    return token_response_from_json(data, res.headers)
+
+
+def token_response_from_json(
+    data: dict[str, Any], headers: Mapping[str, str]
+) -> TokenResponse:
+    """Build a TokenResponse from a token endpoint body with ``access_token``.
+
+    ``raw`` keeps the body as received.
+    """
     scope = data.get("scope")
     if isinstance(scope, str):
         scope = scope.split() if scope else None
@@ -209,7 +221,7 @@ def _parse_token_http_response(
         id_token=data.get("id_token"),
         scope=scope,
         raw=data,
-        headers=dict(res.headers),
+        headers=dict(headers),
     )
 
 
