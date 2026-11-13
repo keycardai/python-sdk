@@ -8,10 +8,12 @@ from keycardai.oauth.exceptions import (
     AuthenticationError,
     AuthorizationDeniedError,
     ConfigError,
+    DeviceAuthorizationError,
     NetworkError,
     OAuthError,
     OAuthHttpError,
     OAuthProtocolError,
+    RefreshGrantError,
     TokenExchangeError,
 )
 
@@ -238,9 +240,72 @@ class TestRetryable:
     def test_permanent_code_set(self):
         assert PERMANENT_ERROR_CODES == {
             "access_denied",
+            "expired_token",
             "insufficient_authorization",
             "invalid_client",
         }
+
+    # The protocol-error domain: every code the token, device, and exchange
+    # endpoints define, plus the SDK's invalid_response. A consumer that
+    # only has a serialized code classifies it by membership in
+    # PERMANENT_ERROR_CODES, so membership and the typed classification must
+    # agree on every one (base spec, Retryability).
+    PROTOCOL_ERROR_CODES = [
+        "access_denied",
+        "authorization_pending",
+        "expired_token",
+        "insufficient_authorization",
+        "invalid_client",
+        "invalid_grant",
+        "invalid_request",
+        "invalid_response",
+        "invalid_scope",
+        "invalid_target",
+        "server_error",
+        "slow_down",
+        "temporarily_unavailable",
+        "unauthorized_client",
+        "unsupported_grant_type",
+    ]
+
+    @pytest.mark.parametrize("code", PROTOCOL_ERROR_CODES)
+    @pytest.mark.parametrize(
+        "error_cls", [OAuthProtocolError, TokenExchangeError, AuthorizationDeniedError]
+    )
+    def test_permanent_set_agrees_with_typed_classification(self, error_cls, code):
+        error = error_cls(error=code, operation="POST /token")
+        assert error.retryable is (code not in PERMANENT_ERROR_CODES)
+
+    @pytest.mark.parametrize("code", PROTOCOL_ERROR_CODES)
+    @pytest.mark.parametrize("error_cls", [DeviceAuthorizationError, RefreshGrantError])
+    def test_grant_errors_add_only_invalid_grant(self, error_cls, code):
+        error = error_cls(error=code, operation="POST /token")
+        expected = code != "invalid_grant" and code not in PERMANENT_ERROR_CODES
+        assert error.retryable is expected
+
+    # Device grant Retryability: a 429 or 5xx is retryable whatever its code,
+    # invalid_grant included. Any other status classifies by the code.
+    @pytest.mark.parametrize("code", PROTOCOL_ERROR_CODES)
+    @pytest.mark.parametrize(
+        ("status", "by_status"),
+        [
+            pytest.param(None, False, id="no-status"),
+            pytest.param(200, False, id="200"),
+            pytest.param(400, False, id="400"),
+            pytest.param(401, False, id="401"),
+            pytest.param(429, True, id="429"),
+            pytest.param(500, True, id="500"),
+            pytest.param(503, True, id="503"),
+            pytest.param(599, True, id="599"),
+        ],
+    )
+    def test_device_authorization_error_status_decides_first(
+        self, code, status, by_status
+    ):
+        error = DeviceAuthorizationError(error=code, status_code=status)
+        by_code = code != "invalid_grant" and code not in PERMANENT_ERROR_CODES
+        assert error.status_code == status
+        assert error.retryable is (by_status or by_code)
 
     @pytest.mark.parametrize(
         "code", ["invalid_response", "server_error", "temporarily_unavailable"]

@@ -12,12 +12,36 @@ handshake per request.
 
 import asyncio
 import threading
+from collections.abc import Mapping
 
 import httpx
 
 from ..exceptions import NetworkError
 from ..types.models import ClientConfig
 from ._wire import HttpRequest, HttpResponse
+
+
+class ResponseBodyDecodeError(NetworkError):
+    """The response arrived, but its body did not decode.
+
+    httpx raises ``httpx.DecodingError`` for a body that does not match its
+    ``Content-Encoding``, such as a gzip body that is not gzip. ``status``
+    and ``headers`` are the response's. It subclasses NetworkError, so
+    other operations handle it as a network error. The device
+    authorization grant handles it as a malformed response.
+    """
+
+    def __init__(
+        self,
+        *,
+        status: int,
+        headers: Mapping[str, str],
+        cause: Exception,
+        operation: str = "",
+    ):
+        super().__init__(cause=cause, operation=operation, retriable=False)
+        self.status = status
+        self.headers = dict(headers)
 
 
 class HttpxTransport:
@@ -144,20 +168,34 @@ class HttpxAsyncTransport:
             The HTTP response
 
         Raises:
+            ResponseBodyDecodeError: The body did not decode.
             NetworkError: For network-level failures
         """
+        operation = f"{req.method} {req.url}"
         try:
             client = self._get_client()
-            r = await client.request(
+            request = client.build_request(
                 method=req.method,
                 url=req.url,
                 headers=req.headers,
                 content=req.body,
                 timeout=timeout if timeout is not None else self.config.timeout,
             )
-            return HttpResponse(status=r.status_code, headers=dict(r.headers), body=r.content)
+            r = await client.send(request, stream=True)
+            try:
+                body = await r.aread()
+            except httpx.DecodingError as e:
+                raise ResponseBodyDecodeError(
+                    status=r.status_code,
+                    headers=r.headers,
+                    cause=e,
+                    operation=operation,
+                ) from e
+            finally:
+                await r.aclose()
+            return HttpResponse(status=r.status_code, headers=dict(r.headers), body=body)
         except httpx.HTTPError as e:
-            raise NetworkError(cause=e, operation=f"{req.method} {req.url}", retriable=False) from e
+            raise NetworkError(cause=e, operation=operation, retriable=False) from e
 
     async def aclose(self) -> None:
         """Close the pooled httpx client, if one was created on this loop.

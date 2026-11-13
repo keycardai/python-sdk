@@ -188,6 +188,44 @@ To refresh with an application credential (`ClientSecret`, `WebIdentity`, or
 `client_secret`. The credential authenticates the request. This is async only:
 `refresh_authorization` and `AsyncClient.refresh_token_grant`.
 
+### Device Authorization Grant (RFC 8628)
+
+For a process with no browser, such as a headless agent host. The device asks
+for a user code, the caller shows it to a person, and the device polls the
+token endpoint until the person approves or denies. Async only.
+
+```python
+from keycardai.oauth import AsyncClient
+from keycardai.oauth.server.credentials import FileTokenSource, WorkloadIdentity
+
+credential = WorkloadIdentity(FileTokenSource(), client_id="app-credential-id")
+
+async with AsyncClient("https://zone.keycard.cloud") as client:
+    auth = await client.request_device_authorization(
+        credential=credential,
+        scopes=["openid"],
+        resources=["https://api.example.com"],
+    )
+    print(auth.verification_uri_complete or auth.verification_uri, auth.user_code)
+    token = await client.poll_device_token(auth, credential=credential)
+```
+
+`poll_device_token` polls once. Until the person answers, it raises
+`DeviceAuthorizationError` with `authorization_pending` or `slow_down`.
+
+The endpoints come from discovery or from `metadata=`. An `Endpoints` override
+applies to the token endpoint only.
+
+Pass `client_id=` in place of `credential=` for a public client. Use the same
+client authentication for every request in one flow. `WebIdentity` needs its
+`client_id` option for this grant. `DeviceAuthorization` is a pydantic model,
+so it can be persisted and polled from another process. The client's `clock`
+sets `expires_at`.
+
+When the device authorization request names more than one resource, the token
+is not for any one of them. To get a token for one resource, refresh with that
+resource.
+
 ## Features
 
 - **Token Exchange (RFC 8693)** - Exchange tokens for different audiences, scopes, or token types
@@ -215,6 +253,7 @@ The SDK implements the following OAuth 2.0 specifications:
 | [RFC 7662](https://datatracker.ietf.org/doc/html/rfc7662) | Token Introspection | Validate and inspect token metadata |
 | [RFC 7009](https://datatracker.ietf.org/doc/html/rfc7009) | Token Revocation | Invalidate access and refresh tokens |
 | [RFC 9126](https://datatracker.ietf.org/doc/html/rfc9126) | Pushed Authorization Requests | Enhanced authorization request security |
+| [RFC 8628](https://datatracker.ietf.org/doc/html/rfc8628) | Device Authorization Grant | Get a token on a device with no browser |
 | [OIDC Core 1.0 Section 5.3](https://openid.net/specs/openid-connect-core-1_0.html#UserInfo) | UserInfo | Fetch identity claims for the subject of an access token |
 
 ## Configuration
@@ -555,7 +594,10 @@ operation unchanged could succeed.
 |-----------|-------------|-----------|
 | `OAuthHttpError` | Yes | HTTP 429 (rate limit) or 5xx (server error) |
 | `OAuthHttpError` | No | HTTP 4xx (client error, except 429) |
-| `OAuthProtocolError` / `TokenExchangeError` | No | Error code in `PERMANENT_ERROR_CODES` (`access_denied`, `insufficient_authorization`, `invalid_client`) |
+| `OAuthProtocolError` / `TokenExchangeError` | No | Error code in `PERMANENT_ERROR_CODES` (`access_denied`, `expired_token`, `insufficient_authorization`, `invalid_client`) |
+| `RefreshGrantError` | No | `invalid_grant`, or a code in `PERMANENT_ERROR_CODES` |
+| `DeviceAuthorizationError` | Yes | HTTP 429 or 5xx, whatever the code |
+| `DeviceAuthorizationError` | No | Not 429 or 5xx, and the code is `invalid_grant` or in `PERMANENT_ERROR_CODES` |
 | `OAuthProtocolError` / `TokenExchangeError` | Yes | Any other OAuth error code |
 | `NetworkError` | Yes | Always: transport faults are transient, permanent failures surface as protocol or HTTP errors |
 | `ConfigError` | No | Invalid configuration (requires code fix) |
