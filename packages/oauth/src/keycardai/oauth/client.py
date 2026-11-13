@@ -15,7 +15,11 @@ from .clock import Clock, SystemClock
 from .exceptions import (
     AuthorizationServerDiscoveryError,
     ConfigError,
+    DeviceAuthorizationError,
+    DevicePollError,
     MissingTokenEndpointError,
+    NetworkError,
+    OAuthHttpError,
 )
 from .http._context import build_http_context
 from .http._transports import (
@@ -42,6 +46,7 @@ from .operations._client_credentials import (
 from .operations._device_authorization import (
     DEVICE_AUTHORIZATION_OPERATION,
     DEVICE_TOKEN_OPERATION,
+    SLOW_DOWN_INCREMENT,
     build_device_authorization_http_request,
     build_device_token_http_request,
     check_endpoint,
@@ -365,7 +370,8 @@ class AsyncClient:
             config: Client configuration with timeouts, retries, etc.
             clock: Gives the current time and waits. The device
                 authorization grant computes ``expires_at`` from
-                ``clock.now()``. Defaults to SystemClock.
+                ``clock.now()`` and waits between polls with
+                ``clock.sleep()``. Defaults to SystemClock.
         """
         self.issuer = _resolve_issuer_arg(issuer, base_url)
         self.config = config or ClientConfig()
@@ -1359,6 +1365,130 @@ class AsyncClient:
         return await self._poll_device_token_once(
             endpoint, authorization.device_code, client_auth, timeout
         )
+
+    async def wait_for_device_token(
+        self,
+        authorization: DeviceAuthorization,
+        *,
+        credential: "ClientAuthenticator | ApplicationCredential | None" = None,
+        client_id: str | None = None,
+        interval: int | None = None,
+        metadata: AuthorizationServerMetadata | None = None,
+        timeout: float | None = None,
+    ) -> TokenResponse:
+        """Poll until the person approves or denies (RFC 8628 Section 3.5).
+
+        Waits the interval before each poll, including the first. On
+        ``authorization_pending`` it polls again. On ``slow_down`` it adds 5
+        seconds to the interval for the next poll and every later one. Any other
+        OAuth error stops the loop. A network error, a 429, or a 5xx stops
+        the loop with DevicePollError. The loop never repeats a failed poll.
+
+        Waits go through the client's clock. Cancelling the task ends the
+        wait or the request in progress, and the loop does not call the
+        credential or send another request after it. ``timeout`` is the
+        httpx timeout of each poll (connect, read, write, and pool), also
+        when the caller sets a longer deadline on the whole loop. It does
+        not apply to the waits or the loop.
+
+        When the device authorization request named more than one resource,
+        the token is not for any one of them, even if ``raw["resource"]``
+        names one. NEVER store it as the token for a single resource. To get
+        a token for one resource, refresh with that resource.
+
+        Args:
+            authorization: The device authorization response, or one built
+                from persisted fields.
+            credential: As for request_device_authorization.
+            client_id: As for request_device_authorization.
+            interval: Seconds to wait before the first poll, and the
+                starting interval. Defaults to ``authorization.interval``.
+                To resume after DevicePollError, pass its ``interval``.
+            metadata: Pre-discovered authorization server metadata.
+            timeout: Timeout for each request. Defaults to the client's
+                timeout.
+
+        Returns:
+            The token, with ``refresh_token`` and ``id_token`` as received.
+
+        Raises:
+            ConfigError: As for poll_device_token, or
+                ``authorization.device_code`` is empty, or
+                ``authorization.interval`` is not positive, or ``interval``
+                is not an integer or is below it. No request is sent.
+            AuthorizationServerDiscoveryError: Discovery failed.
+            DeviceAuthorizationError: A terminal OAuth error such as
+                ``access_denied``, ``invalid_grant``, or ``expired_token``,
+                or a malformed response (``invalid_response``).
+                ``expired_token`` is also raised, without sending a poll,
+                when the next poll would start after ``expires_at``.
+            DevicePollError: A poll failed with a network error, a 429, or a
+                5xx, including a 429 or 5xx with an OAuth error body. Its
+                ``interval`` is the interval to resume with.
+            OAuthHttpError: A 4xx other than 429 without an OAuth error body.
+            Exception: The credential's client authentication failed. Its
+                error propagates as is, without ``interval``.
+            asyncio.CancelledError: The task was cancelled.
+        """
+        authenticator = _device_client_authenticator(credential, client_id)
+        if not authorization.device_code:
+            raise ConfigError("authorization.device_code is empty")
+        if authorization.interval < 1:
+            raise ConfigError(
+                f"authorization.interval {authorization.interval} is not positive"
+            )
+        if interval is None:
+            interval = authorization.interval
+        elif not isinstance(interval, int) or isinstance(interval, bool):
+            raise ConfigError(f"interval {interval!r} is not an integer")
+        elif interval < authorization.interval:
+            raise ConfigError(
+                f"interval {interval} is below the device authorization "
+                f"interval {authorization.interval}"
+            )
+        issuer, endpoint = await self._resolve_device_endpoint(
+            metadata, "token_endpoint"
+        )
+
+        def expired() -> DeviceAuthorizationError:
+            return DeviceAuthorizationError(
+                error="expired_token",
+                error_description="The device code expires before the next poll",
+                operation=DEVICE_TOKEN_OPERATION,
+            )
+
+        while True:
+            remaining = (authorization.expires_at - self.clock.now()).total_seconds()
+            if interval > remaining:
+                raise expired()
+            await self.clock.sleep(interval)
+            # asyncio delivers a cancellation only where the task suspends.
+            # This yield stops the loop here when the task was cancelled as
+            # the wait ended, before the credential or the transport runs.
+            await asyncio.sleep(0)
+            if self.clock.now() > authorization.expires_at:
+                raise expired()
+
+            client_auth = await authenticator.client_authentication(
+                issuer=issuer, endpoint=endpoint
+            )
+            try:
+                return await self._poll_device_token_once(
+                    endpoint, authorization.device_code, client_auth, timeout
+                )
+            except NetworkError as e:
+                raise DevicePollError(interval * 2, e) from e
+            except (DeviceAuthorizationError, OAuthHttpError) as e:
+                status = e.status_code
+                if status is not None and (status == 429 or 500 <= status < 600):
+                    raise DevicePollError(interval, e) from e
+                if isinstance(e, DeviceAuthorizationError):
+                    if e.error == "authorization_pending":
+                        continue
+                    if e.error == "slow_down":
+                        interval += SLOW_DOWN_INCREMENT
+                        continue
+                raise
 
     async def impersonate(
         self,

@@ -396,6 +396,32 @@ class DeviceAuthorizationError(OAuthProtocolError):
         return super().retryable
 
 
+class DevicePollError(OAuthError):
+    """Device token polling stopped on a network error, a 429, or a 5xx.
+
+    ``interval`` is the wait in seconds to resume with: the interval the
+    loop would have waited before its next poll, with every ``slow_down``
+    increase. After a network error it is doubled (RFC 8628 Section 3.5).
+    To resume, call ``wait_for_device_token`` again with the same
+    DeviceAuthorization and ``interval=interval``, until its ``expires_at``.
+
+    ``cause`` and ``__cause__`` are the original failure: a NetworkError, an
+    OAuthHttpError, or the DeviceAuthorizationError of a 429 or 5xx with an
+    OAuth error body. ``retryable`` is always True.
+    """
+
+    def __init__(self, interval: int, cause: OAuthError):
+        super().__init__(
+            f"Device token polling stopped, resume with interval {interval}s: {cause}",
+            cause,
+        )
+        self.interval = interval
+
+    @property
+    def retryable(self) -> bool:
+        return True
+
+
 class JWKSError(OAuthError):
     """Base class for JWKS key-resolution failures (fetch and key lookup).
 

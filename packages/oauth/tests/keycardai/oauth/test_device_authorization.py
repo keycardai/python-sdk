@@ -1,9 +1,9 @@
 """Device authorization grant (RFC 8628) on AsyncClient.
 
 Test names start with the row of the unit test table in the Keycard SDK spec
-(specs/oauth-client/device-authorization.md). Every test runs against a fake
-transport and a fake clock, so no test sends a real request or waits in real
-time. The fake clock records each wait and advances its time by it.
+(specs/oauth-client/device-authorization.md). The tests run against a fake
+transport and a fake clock. The fake clock records each wait and advances its
+time by it. Row 28 alone uses a real local server and httpx.
 """
 
 import asyncio
@@ -26,14 +26,17 @@ from keycardai.oauth import (
     ConfigError,
     DeviceAuthorization,
     DeviceAuthorizationError,
+    DevicePollError,
     Endpoints,
     MissingTokenEndpointError,
+    NetworkError,
     OAuthHttpError,
     TokenResponse,
 )
 from keycardai.oauth.http._transports import ResponseBodyDecodeError
 from keycardai.oauth.http._wire import HttpRequest, HttpResponse
 from keycardai.oauth.server.credentials import WebIdentity
+from keycardai.oauth.server.exceptions import WorkloadIdentityRuntimeError
 
 ISSUER = "https://zone.example.com"
 DISCOVERY_URL = f"{ISSUER}/.well-known/oauth-authorization-server"
@@ -199,14 +202,22 @@ def poll_once_op(client: AsyncClient, metadata=METADATA, **auth):
     return client.poll_device_token(authorization(), metadata=metadata, **auth)
 
 
+def poll_until_done_op(client: AsyncClient, metadata=METADATA, **auth):
+    return client.wait_for_device_token(authorization(), metadata=metadata, **auth)
+
+
 OPERATION_NAMES = {
     request_op: "POST /device_authorization",
     poll_once_op: "POST /token (device_code)",
 }
 
-OPERATIONS = [
+SINGLE_REQUEST_OPERATIONS = [
     pytest.param(request_op, id="request"),
     pytest.param(poll_once_op, id="poll-once"),
+]
+OPERATIONS = [
+    *SINGLE_REQUEST_OPERATIONS,
+    pytest.param(poll_until_done_op, id="poll-until-done"),
 ]
 
 
@@ -281,11 +292,13 @@ async def test_row_2_public_client_id():
 @pytest.mark.parametrize("operation", OPERATIONS)
 async def test_rows_3_and_23_client_authentication_misconfigured(operation, auth, message):
     transport = FakeTransport()
+    clock = FakeClock()
 
     with pytest.raises(ConfigError, match=exactly(message)):
-        await operation(make_client(transport), **auth)
+        await operation(make_client(transport, clock), **auth)
 
     assert transport.requests == []
+    assert clock.sleeps == []
 
 
 @pytest.mark.parametrize("operation", OPERATIONS)
@@ -320,6 +333,22 @@ def metadata(**endpoints) -> AuthorizationServerMetadata:
             id="row-30-no-token-endpoint",
         ),
         pytest.param(
+            poll_until_done_op,
+            metadata(device_authorization_endpoint=DEVICE_ENDPOINT),
+            f"Authorization server {ISSUER} does not advertise a token_endpoint",
+            id="row-30-no-token-endpoint-poll-until-done",
+        ),
+        pytest.param(
+            poll_until_done_op,
+            metadata(
+                token_endpoint="file:///etc/token",
+                device_authorization_endpoint=DEVICE_ENDPOINT,
+            ),
+            f"Authorization server {ISSUER} has a token_endpoint that is not an "
+            "http or https URL: 'file:///etc/token'",
+            id="row-30-token-endpoint-not-http-poll-until-done",
+        ),
+        pytest.param(
             request_op,
             metadata(
                 token_endpoint=TOKEN_ENDPOINT,
@@ -343,13 +372,15 @@ def metadata(**endpoints) -> AuthorizationServerMetadata:
 )
 async def test_rows_4_and_30_endpoint_missing_or_not_http(operation, bad_metadata, message):
     transport = FakeTransport()
+    clock = FakeClock()
     credential = FakeCredential()
 
     with pytest.raises(ConfigError, match=exactly(message)):
-        await operation(make_client(transport), bad_metadata, credential=credential)
+        await operation(make_client(transport, clock), bad_metadata, credential=credential)
 
     assert transport.requests == []
     assert credential.calls == []
+    assert clock.sleeps == []
 
 
 async def test_row_30_request_checks_only_the_endpoint_it_sends_to():
@@ -729,7 +760,7 @@ ERROR_RESPONSES = [
 @pytest.mark.parametrize(
     ("response", "error_type", "status", "code", "retryable"), ERROR_RESPONSES
 )
-@pytest.mark.parametrize("operation", OPERATIONS)
+@pytest.mark.parametrize("operation", SINGLE_REQUEST_OPERATIONS)
 async def test_error_responses(operation, response, error_type, status, code, retryable):
     transport = FakeTransport(response)
 
@@ -818,7 +849,11 @@ async def test_poll_once_malformed_token_response(body):
 
 @pytest.mark.parametrize("operation", OPERATIONS)
 async def test_timeout_argument_bounds_the_request(operation):
-    responses = {request_op: device_response(), poll_once_op: respond(200, TOKEN_BODY)}
+    responses = {
+        request_op: device_response(),
+        poll_once_op: respond(200, TOKEN_BODY),
+        poll_until_done_op: respond(200, TOKEN_BODY),
+    }
     transport = FakeTransport(responses[operation])
 
     await operation(make_client(transport), client_id="public-app", timeout=2.5)
@@ -866,3 +901,517 @@ async def test_row_24_multi_resource_token_is_not_associated_with_a_resource():
     assert "resource" not in {f.name for f in dataclasses.fields(TokenResponse)}
     assert "resources" not in DeviceAuthorization.model_fields
     assert token.raw == body
+
+
+# Poll until done
+
+
+def wait(client: AsyncClient, auth: DeviceAuthorization | None = None, **kwargs):
+    kwargs.setdefault("client_id", "public-app")
+    kwargs.setdefault("metadata", METADATA)
+    return client.wait_for_device_token(auth or authorization(), **kwargs)
+
+
+async def test_row_8_pending_twice_then_token():
+    transport = FakeTransport(
+        respond(400, PENDING), respond(400, PENDING), respond(200, TOKEN_BODY)
+    )
+    clock = FakeClock()
+
+    token = await wait(make_client(transport, clock))
+
+    assert len(transport.requests) == 3
+    assert all(form(r) == {
+        "grant_type": [DEVICE_GRANT],
+        "device_code": ["dc"],
+        "client_id": ["public-app"],
+    } for r in transport.requests)
+    assert transport.timeouts == [7.0, 7.0, 7.0]
+    assert clock.sleeps == [5, 5, 5]
+    assert (token.access_token, token.refresh_token, token.id_token) == (
+        "at",
+        "rt",
+        "header.claims.sig",
+    )
+
+
+async def test_row_9_slow_down_adds_five_seconds_for_every_later_poll():
+    transport = FakeTransport(
+        respond(400, SLOW_DOWN), respond(400, PENDING), respond(200, TOKEN_BODY)
+    )
+    clock = FakeClock()
+
+    await wait(make_client(transport, clock))
+
+    assert clock.sleeps == [5, 10, 10]
+
+
+@pytest.mark.parametrize(
+    ("expires_in", "polls"),
+    [
+        pytest.param(10, 2, id="row-11-poll-at-expires_at-is-sent"),
+        pytest.param(9, 1, id="row-11-poll-after-expires_at-is-not-sent"),
+    ],
+)
+async def test_row_11_expiry_boundary(expires_in, polls):
+    transport = FakeTransport(*[respond(400, PENDING)] * polls)
+    clock = FakeClock()
+
+    with pytest.raises(DeviceAuthorizationError) as exc:
+        await wait(make_client(transport, clock), authorization(expires_in=expires_in))
+
+    assert exc.value.error == "expired_token"
+    assert len(transport.requests) == polls
+    assert clock.sleeps == [5] * polls
+
+
+class SuspendingClock(FakeClock):
+    """A wait that takes longer than asked, as across a host suspend."""
+
+    async def sleep(self, seconds: float) -> None:
+        await super().sleep(seconds)
+        self.current += timedelta(seconds=600)
+
+
+async def test_row_11_expiry_is_checked_again_after_the_wait():
+    transport = FakeTransport()
+    clock = SuspendingClock()
+
+    with pytest.raises(DeviceAuthorizationError) as exc:
+        await wait(make_client(transport, clock))
+
+    assert exc.value.error == "expired_token"
+    assert clock.sleeps == [5]
+    assert transport.requests == []
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        pytest.param("access_denied", id="row-10-access_denied"),
+        pytest.param("expired_token", id="row-12-expired_token"),
+        pytest.param("invalid_grant", id="row-12-invalid_grant"),
+        pytest.param("invalid_client", id="invalid_client"),
+    ],
+)
+async def test_rows_10_and_12_terminal_oauth_error_stops_the_loop(code):
+    transport = FakeTransport(respond(400, PENDING), respond(400, {"error": code}))
+
+    with pytest.raises(DeviceAuthorizationError) as exc:
+        await wait(make_client(transport))
+
+    assert type(exc.value) is DeviceAuthorizationError
+    assert (exc.value.error, exc.value.status_code) == (code, 400)
+    assert exc.value.retryable is False
+    assert len(transport.requests) == 2
+
+
+async def test_row_11_clock_passes_expires_at_while_pending():
+    transport = FakeTransport(respond(400, PENDING), respond(400, PENDING))
+    clock = FakeClock()
+
+    with pytest.raises(DeviceAuthorizationError) as exc:
+        await wait(make_client(transport, clock), authorization(expires_in=12))
+
+    assert exc.value.error == "expired_token"
+    assert exc.value.error_description == "The device code expires before the next poll"
+    assert exc.value.retryable is False
+    assert len(transport.requests) == 2
+    assert clock.sleeps == [5, 5]
+
+
+def network_failure() -> NetworkError:
+    return NetworkError(
+        cause=httpx.ConnectTimeout("timed out"), operation="POST", retriable=False
+    )
+
+
+@pytest.mark.parametrize(
+    ("failure", "cause_type", "status", "interval"),
+    [
+        pytest.param(network_failure(), NetworkError, None, 10, id="row-13-network"),
+        pytest.param(respond(503, b"unavailable"), OAuthHttpError, 503, 5, id="row-13-5xx"),
+        pytest.param(respond(429, b"slow"), OAuthHttpError, 429, 5, id="row-17-429"),
+        pytest.param(
+            respond(503, {"error": "temporarily_unavailable"}),
+            DeviceAuthorizationError,
+            503,
+            5,
+            id="row-26-503-with-oauth-body",
+        ),
+        pytest.param(
+            respond(503, {"error": "access_denied"}),
+            DeviceAuthorizationError,
+            503,
+            5,
+            id="row-29-503-with-permanent-code",
+        ),
+        pytest.param(
+            respond(429, {"error": "invalid_grant"}),
+            DeviceAuthorizationError,
+            429,
+            5,
+            id="429-with-invalid_grant",
+        ),
+        pytest.param(undecodable(503), OAuthHttpError, 503, 5, id="row-32-503-not-gzip"),
+    ],
+)
+async def test_rows_13_17_26_29_32_failure_stops_with_interval(
+    failure, cause_type, status, interval
+):
+    transport = FakeTransport(respond(400, PENDING), failure)
+    clock = FakeClock()
+
+    with pytest.raises(DevicePollError) as exc:
+        await wait(make_client(transport, clock))
+
+    assert len(transport.requests) == 2
+    assert clock.sleeps == [5, 5]
+    assert exc.value.retryable is True
+    assert exc.value.interval == interval
+    cause = exc.value.__cause__
+    assert type(cause) is cause_type
+    assert exc.value.cause is cause
+    assert cause.retryable is True
+    assert getattr(cause, "status_code", None) == status
+    if isinstance(failure, NetworkError) and not isinstance(failure, ResponseBodyDecodeError):
+        assert cause is failure
+    if isinstance(cause, DeviceAuthorizationError):
+        assert cause.error == json.loads(failure.body)["error"]
+
+
+async def test_slow_down_then_5xx_reports_the_raised_interval_not_doubled():
+    transport = FakeTransport(respond(400, SLOW_DOWN), respond(503, b"unavailable"))
+
+    with pytest.raises(DevicePollError) as exc:
+        await wait(make_client(transport))
+
+    assert exc.value.interval == 5 + 5
+
+
+async def test_row_13_network_error_then_5xx_on_a_second_call():
+    transport = FakeTransport(network_failure(), respond(503, b"unavailable"))
+    client = make_client(transport)
+
+    with pytest.raises(DevicePollError) as first:
+        await wait(client)
+    with pytest.raises(DevicePollError) as second:
+        await wait(client)
+
+    assert (first.value.interval, second.value.interval) == (10, 5)
+    assert isinstance(first.value.cause, NetworkError)
+    assert isinstance(second.value.cause, OAuthHttpError)
+    assert len(transport.requests) == 2
+
+
+@pytest.mark.parametrize(
+    ("response", "error_type", "status", "code"),
+    [
+        pytest.param(
+            respond(404, b"not found"), OAuthHttpError, 404, None, id="4xx-without-oauth-body"
+        ),
+        pytest.param(
+            undecodable(200),
+            DeviceAuthorizationError,
+            200,
+            "invalid_response",
+            id="row-31-200-not-gzip",
+        ),
+        pytest.param(
+            respond(200, b"<html>"),
+            DeviceAuthorizationError,
+            200,
+            "invalid_response",
+            id="200-not-json",
+        ),
+    ],
+)
+async def test_row_31_other_failures_return_as_is(response, error_type, status, code):
+    transport = FakeTransport(response)
+
+    with pytest.raises(error_type) as exc:
+        await wait(make_client(transport))
+
+    assert type(exc.value) is error_type
+    assert exc.value.status_code == status
+    assert getattr(exc.value, "error", None) == code
+    assert len(transport.requests) == 1
+
+
+async def test_row_14_cancelled_during_wait():
+    block = asyncio.Event()
+    transport = FakeTransport(respond(200, TOKEN_BODY))
+    clock = FakeClock(block=block)
+    task = asyncio.create_task(wait(make_client(transport, clock)))
+    while not clock.sleeps:
+        await asyncio.sleep(0)
+
+    task.cancel()
+    block.set()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert transport.requests == []
+
+
+async def test_row_15_persisted_authorization():
+    original = authorization()
+    original.device_code = "persisted-device-code"
+    restored = DeviceAuthorization.model_validate_json(original.model_dump_json())
+    transport = FakeTransport(respond(200, TOKEN_BODY))
+
+    await wait(make_client(transport), restored)
+
+    assert restored == original
+    assert form(transport.requests[0])["device_code"] == ["persisted-device-code"]
+
+
+async def test_row_16_slow_down_then_network_error():
+    failure = network_failure()
+    transport = FakeTransport(respond(400, SLOW_DOWN), failure)
+
+    with pytest.raises(DevicePollError) as exc:
+        await wait(make_client(transport))
+
+    assert exc.value.retryable is True
+    assert exc.value.interval == 2 * (5 + 5)
+    assert exc.value.__cause__ is failure
+
+
+async def test_row_18_resume_with_the_reported_interval():
+    transport = FakeTransport(respond(400, SLOW_DOWN), network_failure())
+    clock = FakeClock()
+    client = make_client(transport, clock)
+    with pytest.raises(DevicePollError) as exc:
+        await wait(client)
+    transport.responses.append(respond(200, TOKEN_BODY))
+    clock.sleeps.clear()
+
+    await wait(client, interval=exc.value.interval)
+
+    assert clock.sleeps == [20]
+
+
+@pytest.mark.parametrize(
+    ("auth", "interval", "message"),
+    [
+        pytest.param(
+            authorization(),
+            3,
+            "interval 3 is below the device authorization interval 5",
+            id="row-19",
+        ),
+        pytest.param(authorization(), 7.5, "interval 7.5 is not an integer", id="float"),
+        pytest.param(authorization(), "10", "interval '10' is not an integer", id="string"),
+        pytest.param(
+            authorization(interval=0),
+            None,
+            "authorization.interval 0 is not positive",
+            id="persisted-interval-zero",
+        ),
+        pytest.param(
+            authorization(interval=-5),
+            None,
+            "authorization.interval -5 is not positive",
+            id="persisted-interval-negative",
+        ),
+    ],
+)
+async def test_row_19_interval_misconfigured(auth, interval, message):
+    transport = FakeTransport()
+    clock = FakeClock()
+
+    with pytest.raises(ConfigError, match=exactly(message)):
+        await wait(make_client(transport, clock), auth, interval=interval)
+
+    assert transport.requests == []
+    assert clock.sleeps == []
+
+
+async def test_row_19_interval_equal_to_the_authorization_interval():
+    transport = FakeTransport(respond(200, TOKEN_BODY))
+    clock = FakeClock()
+
+    await wait(make_client(transport, clock), interval=5)
+
+    assert clock.sleeps == [5]
+
+
+async def test_empty_device_code_is_a_config_error():
+    transport = FakeTransport()
+    auth = authorization()
+    auth.device_code = ""
+
+    with pytest.raises(ConfigError, match=exactly("authorization.device_code is empty")):
+        await wait(make_client(transport), auth)
+
+    assert transport.requests == []
+
+
+async def test_row_20_cancelled_while_a_poll_is_in_flight():
+    block = asyncio.Event()
+    transport = FakeTransport(respond(400, PENDING), respond(200, TOKEN_BODY), block=block)
+    credential = FakeCredential()
+    task = asyncio.create_task(
+        wait(make_client(transport), client_id=None, credential=credential)
+    )
+    while not transport.requests:
+        await asyncio.sleep(0)
+
+    task.cancel()
+    block.set()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert len(transport.requests) == 1
+    assert len(credential.calls) == 1
+
+
+async def test_row_21_interval_longer_than_time_left():
+    transport = FakeTransport()
+    clock = FakeClock()
+
+    with pytest.raises(DeviceAuthorizationError) as exc:
+        await wait(make_client(transport, clock), authorization(expires_in=10), interval=15)
+
+    assert type(exc.value) is DeviceAuthorizationError
+    assert (exc.value.error, exc.value.status_code) == ("expired_token", None)
+    assert exc.value.error_description == "The device code expires before the next poll"
+    assert exc.value.retryable is False
+    assert transport.requests == []
+    assert clock.sleeps == []
+
+
+async def test_row_22_one_flow_with_poll_until_done(tmp_path):
+    credential = WebIdentity(
+        server_name="device", storage_dir=str(tmp_path), client_id="registered-client"
+    )
+    transport = FakeTransport(
+        device_response(), respond(400, PENDING), respond(200, TOKEN_BODY)
+    )
+    client = make_client(transport)
+
+    auth = await client.request_device_authorization(
+        credential=credential, metadata=METADATA
+    )
+    await client.wait_for_device_token(auth, credential=credential, metadata=METADATA)
+
+    claims = [jwt_claims(form(r)["client_assertion"][0]) for r in transport.requests]
+    assert [c["aud"] for c in claims] == [DEVICE_ENDPOINT, TOKEN_ENDPOINT, TOKEN_ENDPOINT]
+    assert len({c["jti"] for c in claims}) == 3
+
+
+class FailingCredential(FakeCredential):
+    """Authenticates the first poll, then raises ``error`` on the next one."""
+
+    def __init__(self, error: Exception):
+        super().__init__()
+        self.error = error
+
+    async def client_authentication(
+        self, *, issuer: str, endpoint: str
+    ) -> ClientAuthentication:
+        if self.calls:
+            raise self.error
+        return await super().client_authentication(issuer=issuer, endpoint=endpoint)
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        pytest.param(
+            WorkloadIdentityRuntimeError("token source failed", source="custom"),
+            id="row-27-source-error",
+        ),
+        pytest.param(ConfigError("no zone"), id="row-27-config-error"),
+        pytest.param(
+            NetworkError(cause=httpx.ConnectError("refused"), retriable=False),
+            id="row-27-network-error-from-the-credential",
+        ),
+    ],
+)
+async def test_row_27_credential_failure_returns_as_is(error):
+    transport = FakeTransport(respond(400, PENDING))
+    credential = FailingCredential(error)
+
+    with pytest.raises(type(error)) as exc:
+        await wait(make_client(transport), client_id=None, credential=credential)
+
+    assert exc.value is error
+    assert len(transport.requests) == 1
+
+
+@pytest.mark.parametrize(
+    ("deadline", "expected"),
+    [
+        pytest.param(30.0, DevicePollError, id="row-28-longer-deadline"),
+        # A caller deadline shorter than the request timeout ends the loop
+        # with the caller's own TimeoutError, not a DevicePollError.
+        pytest.param(0.05, asyncio.TimeoutError, id="shorter-deadline"),
+    ],
+)
+async def test_row_28_request_timeout_holds_under_a_longer_caller_deadline(deadline, expected):
+    # A local server that accepts each connection and never answers. The
+    # client's real httpx transport has a 0.2 second request timeout, so the
+    # poll ends at 0.2 seconds whatever the caller's deadline.
+    writers: list[asyncio.StreamWriter] = []
+
+    async def never_respond(reader, writer):
+        writers.append(writer)
+        await reader.read(65536)
+
+    server = await asyncio.start_server(never_respond, "127.0.0.1", 0)
+    port = server.sockets[0].getsockname()[1]
+    token_endpoint = f"http://127.0.0.1:{port}/oauth/token"
+    client = AsyncClient(
+        ISSUER,
+        clock=FakeClock(),
+        config=ClientConfig(
+            enable_metadata_discovery=False, auto_register_client=False, timeout=0.2
+        ),
+    )
+
+    try:
+        with pytest.raises(expected) as exc:
+            await asyncio.wait_for(
+                wait(client, metadata=metadata(token_endpoint=token_endpoint)), deadline
+            )
+    finally:
+        await client.aclose()
+        for writer in writers:
+            writer.close()
+        server.close()
+        await server.wait_closed()
+
+    if expected is DevicePollError:
+        assert exc.value.interval == 2 * 5
+        assert exc.value.retryable is True
+        assert type(exc.value.__cause__) is NetworkError
+        assert isinstance(exc.value.__cause__.cause, httpx.ReadTimeout)
+
+
+class CancelAtWaitEnd(FakeClock):
+    """Cancels the polling task as the wait ends, then returns normally."""
+
+    async def sleep(self, seconds: float) -> None:
+        await super().sleep(seconds)
+        task = asyncio.current_task()
+        assert task is not None
+        task.cancel()
+
+
+async def test_row_33_cancelled_when_the_wait_ends():
+    transport = FakeTransport(respond(200, TOKEN_BODY))
+    clock = CancelAtWaitEnd()
+    credential = FakeCredential()
+
+    task = asyncio.create_task(
+        wait(make_client(transport, clock), client_id=None, credential=credential)
+    )
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert clock.sleeps == [5]
+    assert credential.calls == []
+    assert transport.requests == []
