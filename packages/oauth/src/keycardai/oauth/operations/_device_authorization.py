@@ -134,9 +134,13 @@ def undecodable_body_error(error: ResponseBodyDecodeError, operation: str) -> OA
 def _json_object(res: HttpResponse, operation: str) -> dict[str, Any]:
     """Return the JSON object in a 2xx response.
 
+    A 2xx is a success response, whatever its fields. The caller checks the
+    fields it requires.
+
     Raises:
-        DeviceAuthorizationError: An OAuth error body, or a 2xx body that is
-            not a JSON object (``invalid_response``).
+        DeviceAuthorizationError: An OAuth error body on a status other than
+            2xx, or a 2xx body that is not a JSON object
+            (``invalid_response``).
         OAuthHttpError: A status other than 2xx without an OAuth error body.
     """
     try:
@@ -144,16 +148,16 @@ def _json_object(res: HttpResponse, operation: str) -> dict[str, Any]:
     except (ValueError, RecursionError):
         data = None
 
-    if isinstance(data, dict) and isinstance(data.get("error"), str):
-        raise DeviceAuthorizationError(
-            error=data["error"],
-            error_description=data.get("error_description"),
-            error_uri=data.get("error_uri"),
-            reason=data.get("reason"),
-            operation=operation,
-            status_code=res.status,
-        )
     if not _is_success(res.status):
+        if isinstance(data, dict) and isinstance(data.get("error"), str):
+            raise DeviceAuthorizationError(
+                error=data["error"],
+                error_description=data.get("error_description"),
+                error_uri=data.get("error_uri"),
+                reason=data.get("reason"),
+                operation=operation,
+                status_code=res.status,
+            )
         raise OAuthHttpError(
             status_code=res.status,
             response_body=res.body.decode("utf-8", "replace")[:512],

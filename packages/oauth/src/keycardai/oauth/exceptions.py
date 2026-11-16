@@ -399,8 +399,7 @@ class DeviceAuthorizationError(OAuthProtocolError):
 
     @property
     def retryable(self) -> bool:
-        status = self.status_code
-        if status is not None and (status == 429 or 500 <= status < 600):
+        if _is_transient_status(self.status_code):
             return True
         if self.error == "invalid_grant":
             return False

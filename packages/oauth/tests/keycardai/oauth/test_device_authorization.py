@@ -698,14 +698,6 @@ ERROR_RESPONSES = [
         True,
         id="429-with-invalid_grant",
     ),
-    pytest.param(
-        respond(200, {"error": "authorization_pending"}),
-        DeviceAuthorizationError,
-        200,
-        "authorization_pending",
-        True,
-        id="200-with-oauth-error",
-    ),
     pytest.param(respond(502, b"bad gateway"), OAuthHttpError, 502, None, True, id="5xx"),
     pytest.param(respond(429, b""), OAuthHttpError, 429, None, True, id="429"),
     pytest.param(respond(404, b"not found"), OAuthHttpError, 404, None, False, id="4xx"),
@@ -724,6 +716,58 @@ ERROR_RESPONSES = [
         undecodable(503), OAuthHttpError, 503, None, True, id="503-body-does-not-decode"
     ),
 ]
+
+
+@pytest.mark.parametrize(
+    ("operation", "description"),
+    [
+        pytest.param(
+            request_op,
+            "Device authorization response is missing device_code, user_code, "
+            "verification_uri, expires_in",
+            id="request",
+        ),
+        pytest.param(
+            poll_once_op, "Device token response is missing access_token", id="poll-once"
+        ),
+    ],
+)
+async def test_2xx_with_an_error_field_is_a_success_response(operation, description):
+    """Spec, Poll once: a 2xx response returns the token. RFC 6749 Section
+    5.2 sends an OAuth error with 400, or 401 for invalid_client, so an
+    error field on a 2xx is a malformed success response."""
+    transport = FakeTransport(respond(200, {"error": "authorization_pending"}))
+
+    with pytest.raises(DeviceAuthorizationError) as exc:
+        await operation(make_client(transport), client_id="public-app")
+
+    assert exc.value.error == "invalid_response"
+    assert exc.value.error_description == description
+    assert exc.value.status_code == 200
+    assert exc.value.retryable is True
+
+
+async def test_poll_once_returns_a_2xx_token_that_also_has_an_error_field():
+    transport = FakeTransport(respond(200, {**TOKEN_BODY, "error": "authorization_pending"}))
+
+    token = await poll_once_op(make_client(transport), client_id="public-app")
+
+    assert token.access_token == "at"
+
+
+async def test_poll_once_rejects_an_empty_device_code():
+    transport = FakeTransport()
+    credential = FakeCredential()
+
+    with pytest.raises(ConfigError, match=exactly("authorization.device_code is empty")):
+        await make_client(transport).poll_device_token(
+            authorization().model_copy(update={"device_code": ""}),
+            credential=credential,
+            metadata=METADATA,
+        )
+
+    assert transport.requests == []
+    assert credential.calls == []
 
 
 @pytest.mark.parametrize(

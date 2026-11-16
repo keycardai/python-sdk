@@ -1340,7 +1340,8 @@ class AsyncClient:
 
         Raises:
             ConfigError: As for request_device_authorization, for
-                ``token_endpoint``. No request is sent.
+                ``token_endpoint``, or ``authorization.device_code`` is
+                empty. No request is sent.
             AuthorizationServerDiscoveryError: Discovery failed.
             DeviceAuthorizationError: An OAuth error response, including
                 ``authorization_pending`` and ``slow_down``, or a malformed
@@ -1350,6 +1351,8 @@ class AsyncClient:
             NetworkError: The request failed or timed out.
         """
         authenticator = _device_client_authenticator(credential, client_id)
+        if not authorization.device_code:
+            raise ConfigError("authorization.device_code is empty")
         issuer, endpoint = await self._resolve_device_endpoint(
             metadata, "token_endpoint"
         )
