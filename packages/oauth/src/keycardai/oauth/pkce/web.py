@@ -357,19 +357,20 @@ async def refresh_authorization(
             ``issuer``, ``www_authenticate_header``, or ``metadata`` is
             provided; if ``credential`` is combined with ``client_id`` or
             ``client_secret``; if neither ``credential`` nor ``client_id``
-            is set; or if the credential does not provide client
-            authentication. No request is sent.
-        ValueError: If the token endpoint is missing from the supplied
-            metadata or discovered server metadata.
+            is set; if the credential does not provide client
+            authentication; or if ``metadata`` has no ``token_endpoint``.
+            No request is sent.
+        keycardai.oauth.AuthorizationServerDiscoveryError: If discovery
+            fails, or the discovered metadata has no ``token_endpoint``.
         keycardai.oauth.RefreshGrantError: If the token endpoint answers
-            with an OAuth error. ``invalid_grant`` is not retryable: the user
-            must authorize again.
-        keycardai.oauth.OAuthHttpError: If discovery or the token endpoint
-            returns an HTTP error.
+            with an OAuth error. A 429 or 5xx is retryable. Otherwise
+            ``invalid_grant`` is not, and the user must authorize again.
+        keycardai.oauth.OAuthHttpError: If the token endpoint returns an
+            HTTP error without an OAuth error body.
         keycardai.oauth.NetworkError: If the token endpoint is unreachable.
         Exception: The credential's client authentication failed. Its error
-            propagates as is. A multi-zone ClientSecret raises KeyError for
-            an unknown zone.
+            propagates as is. A multi-zone ClientSecret raises ConfigError
+            for an unknown zone.
     """
     _validate_entry_mode(
         issuer=issuer,
@@ -388,9 +389,10 @@ async def refresh_authorization(
         raise ConfigError("Pass 'client_id' or 'credential'")
 
     if metadata is not None:
-        if metadata.token_endpoint is None:
-            raise ValueError(
-                "Authorization server metadata is missing token_endpoint"
+        if not metadata.token_endpoint:
+            raise ConfigError(
+                f"Authorization server {metadata.issuer} does not advertise "
+                "a token_endpoint"
             )
         auth_server_url = metadata.issuer
     else:
@@ -415,12 +417,6 @@ async def refresh_authorization(
         config=config,
         endpoints=Endpoints(token=metadata.token_endpoint) if metadata else None,
     ) as oauth_client:
-        if metadata is None:
-            endpoints = await oauth_client.get_endpoints()
-            if not endpoints.token:
-                raise ValueError(
-                    "Authorization server metadata is missing token_endpoint"
-                )
         return await oauth_client.refresh_token_grant(
             refresh_token=refresh_token,
             client_id=None if client_secret else client_id,

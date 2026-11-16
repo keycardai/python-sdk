@@ -5,7 +5,9 @@ code exchange for OAuth 2.0 authorization code flows (RFC 6749 Section 4.1)
 with PKCE support (RFC 7636).
 """
 
+import functools
 import json
+from collections.abc import Callable
 from urllib.parse import urlencode, urlsplit, urlunsplit
 
 from ..client_auth import ClientAuthentication
@@ -147,7 +149,7 @@ def _parse_token_http_response(
     res: HttpResponse,
     *,
     operation: str,
-    error_cls: type[OAuthProtocolError],
+    error_cls: Callable[..., OAuthProtocolError],
 ) -> TokenResponse:
     if res.status >= 400:
         full_body = res.body.decode("utf-8", "ignore")
@@ -355,14 +357,18 @@ def parse_refresh_token_http_response(res: HttpResponse) -> TokenResponse:
     """Parse the token endpoint response to a refresh-token grant.
 
     Raises:
-        RefreshGrantError: If the response carries an OAuth error.
-            ``invalid_grant`` is not retryable; the user must authorize again.
+        RefreshGrantError: If the response carries an OAuth error. It keeps
+            the response's ``status_code``. A 429 or 5xx is retryable.
+            Otherwise ``invalid_grant`` is not, and the user must authorize
+            again.
         OAuthProtocolError: If the response body is malformed.
         OAuthHttpError: If the HTTP status indicates an error with no OAuth
             error body.
     """
     return _parse_token_http_response(
-        res, operation=REFRESH_OPERATION, error_cls=RefreshGrantError
+        res,
+        operation=REFRESH_OPERATION,
+        error_cls=functools.partial(RefreshGrantError, status_code=res.status),
     )
 
 

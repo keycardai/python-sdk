@@ -1061,12 +1061,12 @@ class AsyncClient:
             ConfigError: ``credential`` is combined with ``client_id``, or
                 does not provide client authentication. No request is sent.
             RefreshGrantError: If the token endpoint answers with an OAuth
-                error. ``invalid_grant`` is not retryable: the user must
-                authorize again.
+                error. A 429 or 5xx is retryable. Otherwise ``invalid_grant``
+                is not, and the user must authorize again.
             OAuthHttpError: If the token endpoint returns an HTTP error.
             Exception: The credential's client authentication failed. Its
                 error propagates as is. A multi-zone ClientSecret raises
-                KeyError for an unknown zone.
+                ConfigError for an unknown zone.
         """
         authenticator: ClientAuthenticator | None = None
         if credential is not None:
@@ -1944,8 +1944,8 @@ class Client:
 
         Raises:
             RefreshGrantError: If the token endpoint answers with an OAuth
-                error. ``invalid_grant`` is not retryable: the user must
-                authorize again.
+                error. A 429 or 5xx is retryable. Otherwise ``invalid_grant``
+                is not, and the user must authorize again.
             OAuthHttpError: If the token endpoint returns an HTTP error.
         """
         endpoints = self._get_current_endpoints()

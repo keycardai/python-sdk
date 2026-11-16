@@ -403,6 +403,27 @@ class TestRefreshTokenGrant:
             parse_refresh_token_http_response(res)
         assert exc.value.reason == "no_policy_matched"
 
+    @pytest.mark.parametrize(
+        ("status", "code", "retryable"),
+        [
+            pytest.param(400, "invalid_grant", False, id="400-invalid_grant"),
+            pytest.param(401, "invalid_client", False, id="401-invalid_client"),
+            pytest.param(400, "invalid_request", True, id="400-invalid_request"),
+            pytest.param(429, "invalid_grant", True, id="429-invalid_grant"),
+            pytest.param(503, "invalid_grant", True, id="503-invalid_grant"),
+            pytest.param(500, "access_denied", True, id="500-access_denied"),
+        ],
+    )
+    def test_status_decides_retryable_first(self, status, code, retryable):
+        """Base spec, Retryability: a 429 or 5xx is retryable whatever its
+        code. Otherwise invalid_grant is not, and the base table decides."""
+        res = HttpResponse(status=status, headers={}, body=f'{{"error":"{code}"}}'.encode())
+        with pytest.raises(RefreshGrantError) as exc:
+            parse_refresh_token_http_response(res)
+        assert exc.value.error == code
+        assert exc.value.status_code == status
+        assert exc.value.retryable is retryable
+
     def test_other_oauth_errors_follow_the_parent_classification(self):
         res = HttpResponse(
             status=400, headers={}, body=b'{"error":"temporarily_unavailable"}'

@@ -607,13 +607,31 @@ async def test_refresh_uses_metadata_without_discovery(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_refresh_rejects_metadata_without_token_endpoint():
+@pytest.mark.parametrize(
+    "token_endpoint",
+    [pytest.param(None, id="absent"), pytest.param("", id="empty")],
+)
+async def test_refresh_rejects_metadata_without_token_endpoint(monkeypatch, token_endpoint):
+    """Base spec: no convention-derived endpoint. An empty token_endpoint is
+    missing too, so the refresh token is never sent to a guessed path."""
+    captured: dict = {}
+    monkeypatch.setattr(
+        "keycardai.oauth.pkce.web.AsyncClient", _async_client_factory(captured=captured)
+    )
     metadata = AuthorizationServerMetadata(
         issuer="https://auth.example.com",
         authorization_endpoint="https://auth.example.com/authorize",
+        token_endpoint=token_endpoint,
     )
-    with pytest.raises(ValueError, match="token_endpoint"):
+
+    with pytest.raises(
+        ConfigError,
+        match="^Authorization server https://auth.example.com does not advertise "
+        "a token_endpoint$",
+    ):
         await refresh_authorization(refresh_token="rt1", client_id="my-app", metadata=metadata)
+
+    assert captured == {}
 
 
 @pytest.mark.asyncio
