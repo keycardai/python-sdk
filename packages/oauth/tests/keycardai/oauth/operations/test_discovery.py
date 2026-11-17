@@ -152,6 +152,34 @@ class TestDiscoveryOperations:
         assert result.userinfo_endpoint is None
         assert result.end_session_endpoint is None
 
+    @pytest.mark.parametrize(
+        ("body", "expected"),
+        [
+            pytest.param(
+                b'{"issuer": "https://auth.example.com", '
+                b'"device_authorization_endpoint": "https://auth.example.com/device"}',
+                "https://auth.example.com/device",
+                id="row-9-present",
+            ),
+            pytest.param(
+                b'{"issuer": "https://auth.example.com"}',
+                None,
+                id="row-10-absent",
+            ),
+        ],
+    )
+    def test_parse_discovery_http_response_types_device_authorization_endpoint(
+        self, body, expected
+    ):
+        """Spec rows 9 and 10: the RFC 8628 endpoint is typed, and optional."""
+        http_response = HttpResponse(
+            status=200, headers={"Content-Type": "application/json"}, body=body
+        )
+
+        result = parse_discovery_http_response(http_response)
+
+        assert result.device_authorization_endpoint == expected
+
     def test_discover_server_metadata_rejects_issuer_mismatch(self):
         """The discovery operation validates the issuer against the request."""
         mock_transport = Mock()
