@@ -1464,24 +1464,24 @@ class AsyncClient:
             metadata, "token_endpoint"
         )
 
-        def expired() -> DeviceAuthorizationError:
+        def expired(description: str) -> DeviceAuthorizationError:
             return DeviceAuthorizationError(
                 error="expired_token",
-                error_description="The device code expires before the next poll",
+                error_description=description,
                 operation=DEVICE_TOKEN_OPERATION,
             )
 
         while True:
             remaining = (authorization.expires_at - self.clock.now()).total_seconds()
             if interval > remaining:
-                raise expired()
+                raise expired("The device code expires before the next poll")
             await self.clock.sleep(interval)
             # asyncio delivers a cancellation only where the task suspends.
             # This yield stops the loop here when the task was cancelled as
             # the wait ended, before the credential or the transport runs.
             await asyncio.sleep(0)
             if self.clock.now() > authorization.expires_at:
-                raise expired()
+                raise expired("The device code expired during the wait before the next poll")
 
             client_auth = await authenticator.client_authentication(
                 issuer=issuer, endpoint=endpoint

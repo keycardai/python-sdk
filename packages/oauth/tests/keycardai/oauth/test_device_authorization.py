@@ -1112,6 +1112,9 @@ async def test_row_11_expiry_is_checked_again_after_the_wait():
         await wait(make_client(transport, clock))
 
     assert exc.value.error == "expired_token"
+    assert exc.value.error_description == (
+        "The device code expired during the wait before the next poll"
+    )
     assert clock.sleeps == [5]
     assert transport.requests == []
 
