@@ -7,6 +7,7 @@ import pytest
 
 from keycardai.oauth.exceptions import (
     PERMANENT_ERROR_CODES,
+    OAuthError,
     OAuthHttpError,
     OAuthProtocolError,
     RefreshGrantError,
@@ -249,6 +250,57 @@ class TestParseAuthorizationCodeHttpResponse:
         )
         with pytest.raises(OAuthProtocolError, match="Missing required"):
             parse_authorization_code_http_response(res)
+
+
+PARSERS = [
+    pytest.param(parse_authorization_code_http_response, OAuthProtocolError, id="authorization_code"),
+    pytest.param(parse_refresh_token_http_response, RefreshGrantError, id="refresh"),
+]
+
+
+# Stands for the parser's own OAuth error class in the table below.
+GRANT_ERROR = object()
+
+
+# The status decides first: a 2xx is a success and must have access_token,
+# and any other status is an error (RFC 6749 Sections 5.1 and 5.2).
+@pytest.mark.parametrize(("parse", "grant_error"), PARSERS)
+@pytest.mark.parametrize(
+    ("status", "body", "error_type", "attrs"),
+    [
+        pytest.param(
+            200, b'{"error":"invalid_grant"}', OAuthProtocolError, {"error": "invalid_response"},
+            id="2xx-error-body-is-invalid_response",
+        ),
+        pytest.param(
+            204, b"", OAuthProtocolError, {"error": "invalid_response"},
+            id="2xx-empty-is-invalid_response",
+        ),
+        pytest.param(
+            302, b'{"error":"invalid_grant"}', GRANT_ERROR, {"error": "invalid_grant"},
+            id="3xx-error-body-is-oauth-error",
+        ),
+        pytest.param(
+            302, b'{"access_token":"at"}', OAuthHttpError, {"status_code": 302, "retryable": False},
+            id="3xx-token-body-is-http-error",
+        ),
+    ],
+)
+def test_token_response_status_decides_first(parse, grant_error, status, body, error_type, attrs):
+    res = HttpResponse(status=status, headers={}, body=body)
+
+    with pytest.raises(OAuthError) as exc:
+        parse(res)
+
+    assert type(exc.value) is (grant_error if error_type is GRANT_ERROR else error_type)
+    assert {name: getattr(exc.value, name) for name in attrs} == attrs
+
+
+@pytest.mark.parametrize(("parse", "grant_error"), PARSERS)
+def test_token_response_any_2xx_is_a_success(parse, grant_error):
+    res = HttpResponse(status=201, headers={}, body=b'{"access_token":"at"}')
+
+    assert parse(res).access_token == "at"
 
 
 class TestExchangeAuthorizationCode:
