@@ -977,6 +977,89 @@ async def test_timeout_argument_bounds_the_request(operation):
     assert transport.timeouts == [2.5]
 
 
+class SlowCredential(FakeCredential):
+    """A FakeCredential that waits ``delay`` seconds, or raises ``error``."""
+
+    def __init__(self, delay: float = 0.0, error: BaseException | None = None):
+        super().__init__()
+        self.delay = delay
+        self.error = error
+
+    async def client_authentication(self, *, issuer: str, endpoint: str) -> ClientAuthentication:
+        await asyncio.sleep(self.delay)
+        if self.error is not None:
+            raise self.error
+        return await super().client_authentication(issuer=issuer, endpoint=endpoint)
+
+
+class SlowTransport(FakeTransport):
+    """A FakeTransport that records each request, then waits ``delay``
+    seconds before it answers."""
+
+    def __init__(self, *responses, delay: float):
+        super().__init__(*responses)
+        self.delay = delay
+
+    async def request_raw(self, req: HttpRequest, *, timeout: float | None = None) -> HttpResponse:
+        self.requests.append(req)
+        self.timeouts.append(timeout)
+        await asyncio.sleep(self.delay)
+        return self.responses.pop(0)
+
+
+SINGLE_REQUESTS = [
+    pytest.param(request_op, device_response(), id="request"),
+    pytest.param(poll_once_op, respond(200, TOKEN_BODY), id="poll-once"),
+]
+
+
+# The timeout is 0.2 seconds. In the "together" row each step alone takes
+# less, so only a bound on both steps together ends it.
+@pytest.mark.parametrize(("operation", "response"), SINGLE_REQUESTS)
+@pytest.mark.parametrize(
+    ("credential_delay", "transport_delay", "requests_sent"),
+    [
+        pytest.param(5.0, 0.0, 0, id="credential-hangs"),
+        pytest.param(0.0, 5.0, 1, id="request-hangs"),
+        pytest.param(0.15, 0.15, 1, id="together"),
+    ],
+)
+async def test_timeout_bounds_the_credential_and_the_request_together(
+    operation, response, credential_delay, transport_delay, requests_sent
+):
+    transport = SlowTransport(response, delay=transport_delay)
+
+    with pytest.raises(NetworkError) as exc:
+        await operation(
+            make_client(transport), credential=SlowCredential(credential_delay), timeout=0.2
+        )
+
+    assert exc.value.operation == OPERATION_NAMES[operation]
+    assert isinstance(exc.value.cause, asyncio.TimeoutError)
+    assert len(transport.requests) == requests_sent
+
+
+# A credential's own exception propagates unchanged, even one of the types
+# the request itself raises.
+@pytest.mark.parametrize(("operation", "response"), SINGLE_REQUESTS)
+@pytest.mark.parametrize(
+    "error",
+    [
+        pytest.param(asyncio.TimeoutError("token source timed out"), id="TimeoutError"),
+        pytest.param(NetworkError(OSError("token source unreachable")), id="NetworkError"),
+    ],
+)
+async def test_credential_error_propagates_unchanged(operation, response, error):
+    transport = FakeTransport(response)
+
+    with pytest.raises(type(error)) as exc:
+        await operation(make_client(transport), credential=SlowCredential(error=error))
+
+    assert exc.value is error
+    assert exc.value.__cause__ is None
+    assert transport.requests == []
+
+
 async def test_row_22_web_identity_signs_a_new_assertion_per_request(tmp_path):
     credential = WebIdentity(
         server_name="device", storage_dir=str(tmp_path), client_id="registered-client"
@@ -1462,6 +1545,10 @@ class FailingCredential(FakeCredential):
             NetworkError(cause=httpx.ConnectError("refused"), retriable=False),
             id="row-27-network-error-from-the-credential",
         ),
+        pytest.param(
+            asyncio.TimeoutError("token source timed out"),
+            id="row-27-timeout-error-from-the-credential",
+        ),
     ],
 )
 async def test_row_27_credential_failure_returns_as_is(error):
@@ -1473,6 +1560,20 @@ async def test_row_27_credential_failure_returns_as_is(error):
 
     assert exc.value is error
     assert len(transport.requests) == 1
+
+
+async def test_credential_that_outlasts_the_timeout_is_a_network_error():
+    transport = FakeTransport()
+
+    with pytest.raises(DevicePollError) as exc:
+        await wait(
+            make_client(transport), client_id=None, credential=SlowCredential(5.0), timeout=0.05
+        )
+
+    assert exc.value.interval == 2 * 5
+    assert type(exc.value.__cause__) is NetworkError
+    assert isinstance(exc.value.__cause__.cause, asyncio.TimeoutError)
+    assert transport.requests == []
 
 
 @pytest.mark.parametrize(
@@ -1521,7 +1622,11 @@ async def test_row_28_request_timeout_holds_under_a_longer_caller_deadline(deadl
         assert exc.value.interval == 2 * 5
         assert exc.value.retryable is True
         assert type(exc.value.__cause__) is NetworkError
-        assert isinstance(exc.value.__cause__.cause, httpx.ReadTimeout)
+        # asyncio.wait_for and httpx's read timeout both use 0.2 seconds, so
+        # either one ends the poll.
+        assert isinstance(
+            exc.value.__cause__.cause, (httpx.ReadTimeout, asyncio.TimeoutError)
+        )
 
 
 class CancelAtWaitEnd(FakeClock):
