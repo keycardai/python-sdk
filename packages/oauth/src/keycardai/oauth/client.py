@@ -21,6 +21,7 @@ from .exceptions import (
     MissingTokenEndpointError,
     NetworkError,
     OAuthHttpError,
+    _is_transient_status,
 )
 from .http._context import build_http_context
 from .http._transports import (
@@ -1492,8 +1493,7 @@ class AsyncClient:
             except NetworkError as e:
                 raise DevicePollError(interval * 2, e) from e
             except (DeviceAuthorizationError, OAuthHttpError) as e:
-                status = e.status_code
-                if status is not None and (status == 429 or 500 <= status < 600):
+                if _is_transient_status(e.status_code):
                     raise DevicePollError(interval, e) from e
                 if isinstance(e, DeviceAuthorizationError):
                     if e.error == "authorization_pending":
