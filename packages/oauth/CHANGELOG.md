@@ -1,3 +1,207 @@
+## 0.36.0-keycardai-oauth (2026-11-17)
+
+
+- feat(keycardai-oauth): poll until done for the device grant (#433)
+- * feat(keycardai-oauth): poll until done for the device grant
+- Adds AsyncClient.wait_for_device_token, which polls until the person
+approves or denies the request, per RFC 8628 Section 3.5 and the spec's
+poll-until-done rules.
+- It waits the interval before each poll, including the first, through
+the client's clock. On authorization_pending it polls again, and on
+slow_down it adds 5 seconds to the interval for the next poll and every
+later one. When the next poll would start after expires_at, it raises
+an expired_token DeviceAuthorizationError without polling. It checks
+expires_at before and after each wait.
+- A network error, a 429, or a 5xx stops the loop with DevicePollError.
+Its interval is the wait the loop would have used next, doubled after
+a network error. Its cause is the original failure, including the
+DeviceAuthorizationError of a 429 or 5xx with an OAuth error body. To
+resume, call wait_for_device_token again with interval=error.interval.
+Any other failure returns as is, including a credential whose client
+authentication fails.
+- Task cancellation ends the wait or the request in flight. After it, the
+loop does not call the credential or send another request. The
+client's timeout applies to each poll, also under a longer caller
+deadline. An empty device_code, a non-positive authorization.interval,
+or an interval argument that is not an integer is a ConfigError.
+- examples/device_authorization runs the flow against a zone.
+- Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+- * test(keycardai-oauth): slow_down increases accumulate across polls
+- Row 9 is a table. The new rows send two slow_down responses, in a row
+and with a pending between them, and expect the interval to rise by 5
+each time (RFC 8628 Section 3.5). A loop that resets to
+authorization.interval + 5 fails them.
+- Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+- * refactor(keycardai-oauth): poll until done uses _is_transient_status
+- The loop stops with DevicePollError on the same 429 or 5xx rule that
+RefreshGrantError and DeviceAuthorizationError use for retryable.
+- Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+- * fix(keycardai-oauth): the expiry error after the wait says the code expired
+- poll until done checks expires_at before and after each wait. The
+check before the wait says the code expires before the next poll. The
+check after the wait says it expired during the wait. Both raise
+expired_token.
+- Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+- ---------
+- Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+- feat(keycardai-oauth): device authorization request and single poll (#432)
+- * feat(keycardai-oauth): device authorization request and single poll
+- Adds the device side of the RFC 8628 device authorization grant on
+AsyncClient, per the Device Authorization Grant spec. The polling loop
+follows in the next change.
+- - request_device_authorization returns a DeviceAuthorization, a
+  pydantic model whose expires_at comes from the client's clock.
+- poll_device_token polls the token endpoint once.
+- Each takes exactly one of credential= (a ClientAuthenticator) or a
+  public client_id=, and optional pre-discovered metadata=.
+- The endpoint an operation sends to must be an http or https URL. The
+  token endpoint comes from metadata, the client's endpoint overrides,
+  or discovery, never from a conventional path. When discovered
+  metadata fails this check, the client discovers again after
+  negative_ttl.
+- Only a 2xx is a success. DeviceAuthorizationError keeps the
+  response's status_code. A 429 or 5xx is retryable whatever the code.
+  Otherwise invalid_grant is not retryable and every other code
+  follows OAuthProtocolError.
+- expired_token joins PERMANENT_ERROR_CODES, so every operation
+  classifies an expired_token error as not retryable.
+- A body that does not decode is invalid_response on a 2xx and the HTTP
+  error for the status otherwise. HttpxAsyncTransport reads the body
+  itself and raises ResponseBodyDecodeError, a NetworkError with the
+  status, so other operations see the same exception type.
+- AsyncClient(clock=) takes a Clock. SystemClock is the default.
+- AuthorizationServerMetadata has device_authorization_endpoint.
+- Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+- * fix(keycardai-oauth): a missing token_endpoint is a ConfigError, and rediscovery keeps the cache
+- - Discovered metadata without token_endpoint raises
+  MissingTokenEndpointError on Client and AsyncClient. It subclasses
+  both AuthorizationServerDiscoveryError and ConfigError, so device
+  grant unit row 30 holds for discovered metadata as well as for
+  metadata=. Existing except AuthorizationServerDiscoveryError blocks
+  still catch it. ConfigError takes an optional cause.
+- When discovered metadata fails a device endpoint check and is older
+  than negative_ttl, AsyncClient discovers again without emptying the
+  cache first. A transient failure leaves the cached metadata for the
+  client's other operations. A deterministic failure replaces it for
+  negative_ttl, as before.
+- MetadataCache.invalidate is removed. Nothing calls it.
+- Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+- * fix(keycardai-oauth): a 2xx device response is a success, and poll once checks device_code
+- - A 2xx from the device authorization endpoint or the token endpoint is
+  a success response, whatever its fields. One with an error field and
+  without the required fields is invalid_response. Only a status other
+  than 2xx gives a typed OAuth error. RFC 6749 Section 5.2 sends OAuth
+  errors with 400, or 401 for invalid_client.
+- poll_device_token raises ConfigError for an empty
+  authorization.device_code, before discovery or the credential call.
+- DeviceAuthorizationError and RefreshGrantError share one rule for a
+  429 or 5xx.
+- Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+- * fix(keycardai-oauth): DeviceAuthorization repr leaves out device_code
+- A public client redeems device_code with client_id alone (RFC 8628
+Section 3.4), so logging the value leaked a working credential.
+device_code now uses Field(repr=False). model_dump() and
+model_dump_json() still include it, so a persisted value can poll.
+- Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+- * fix(keycardai-oauth): device requests use overrides and configured headers
+- - A token endpoint override wins over metadata= as it does over
+  discovered metadata. poll_device_token sent to the metadata's
+  token_endpoint, or raised ConfigError when it had none.
+- Both device requests send config.user_agent and config.custom_headers,
+  as every other operation does. The request's own headers, including
+  client authentication, win over both.
+- check_endpoint raises ConfigError for an endpoint that is not a string
+  or that urlsplit cannot parse, as spec row 30 requires. It raised
+  ValueError, AttributeError, or TypeError, which also skipped the
+  rediscovery after negative_ttl.
+- Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+- ---------
+- Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+- feat(keycardai-oauth): refresh with a credential (#431)
+- * feat(keycardai-oauth): refresh with a credential
+- Adds the credential option to the refresh step in Authorization Code
+with PKCE (spec-version 5). AsyncClient.refresh_token_grant and
+refresh_authorization take credential=. The credential's client
+authentication is called with the token endpoint, and its headers and
+form fields go on the request in place of the client's auth strategy
+and the body client_id.
+- credential together with client_id (or client_secret on
+refresh_authorization), or a credential without client authentication,
+raises ConfigError before any request. refresh_authorization's client_id
+is optional and required only without credential.
+- The sync Client does not take a credential, because credentials are
+async only.
+- Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+- * fix(keycardai-oauth): refresh classifies by status first and never guesses the token endpoint
+- - RefreshGrantError keeps the response's status_code. A 429 or 5xx is
+  retryable whatever the code, as base.md Retryability requires.
+  Otherwise invalid_grant is not retryable, and every other code
+  follows OAuthProtocolError.
+- refresh_authorization with metadata whose token_endpoint is absent or
+  empty raises ConfigError before any request. An empty value no longer
+  falls through to a convention-derived endpoint. It raised ValueError
+  for an absent value before.
+- The discovered-metadata check that discovery already enforces is
+  removed, and the docstrings name the errors raised: discovery
+  failures, and ConfigError for an unknown ClientSecret zone.
+- Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+- * fix(keycardai-oauth): a token response classifies by status first
+- Authorization-code exchange and refresh now classify a token endpoint
+response the way the device grant does. A 2xx is a success and must
+have access_token, so a 2xx with an error member is invalid_response.
+Any other status is an error: the grant's OAuth error class when the
+body is an OAuth error (RFC 6749 Section 5.2), OAuthHttpError
+otherwise. A 3xx was parsed as a success before.
+- Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+- ---------
+- Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+- feat(keycardai-oauth): client authentication on credentials (#430)
+- * feat(keycardai-oauth): client authentication on credentials
+- Adds the client-authentication operation from the base spec's
+Credential operations section. ClientSecret, WebIdentity, and
+WorkloadIdentity implement ClientAuthenticator:
+- - client_authentication(issuer=, endpoint=) returns a
+  ClientAuthentication with the headers and form fields that
+  authenticate one request. It never includes a grant parameter.
+- ClientSecret returns the Basic header for the issuer's zone. A
+  multi-zone credential raises KeyError for an unknown zone.
+- WebIdentity signs a new assertion per call, with aud set to the
+  endpoint and iss and sub set to the new client_id option.
+  audience_config does not apply. Without client_id it raises
+  ConfigError.
+- WorkloadIdentity returns the source's token, and client_id when
+  configured.
+- ClientAuthenticator is a runtime-checkable Protocol separate from
+ApplicationCredential, so credentials implemented outside the SDK keep
+working. require_client_authenticator raises ConfigError for a
+credential without it.
+- WebIdentity token exchange and set_client_config use the auth
+context's resource_client_id when present, and the client_id option
+otherwise.
+- Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+- * fix(keycardai-oauth): ClientAuthentication repr leaves out its secrets
+- headers and form_fields hold a Basic header or a client assertion.
+repr() printed both, so a traceback that captures locals showed the
+client secret. Both fields now use field(repr=False).
+- Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+- ---------
+- Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+- fix(keycardai-oauth): percent-encode the client ID and secret in HTTP Basic (#429)
+- RFC 6749 Section 2.3.1 requires the client ID and secret to be encoded
+before they go into the HTTP Basic credential. BasicAuth.apply_headers
+encodes each one with urllib.parse.quote(value, safe=""). A space
+becomes %20, which form decoders and decodeURIComponent both read as a
+space.
+- Keycard zones percent-decode each half (svc-sts
+packages/w3/src/auth/basic.js), so a client ID with a colon or a secret
+with a percent sign now authenticates. A server that does not decode
+the Basic credential rejects a client ID or secret with a character
+outside A-Z a-z 0-9 - . _ ~.
+- Every Basic header in the SDK comes from BasicAuth, including
+MultiZoneBasicAuth, ClientSecret, and the PKCE helpers.
+- Follows typescript-sdk #338 and go-sdk #59. ECO-486.
+- Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+
 ## 0.35.2-keycardai-oauth (2026-11-06)
 
 
