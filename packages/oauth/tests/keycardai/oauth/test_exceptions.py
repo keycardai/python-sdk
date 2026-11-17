@@ -9,6 +9,7 @@ from keycardai.oauth.exceptions import (
     AuthorizationDeniedError,
     ConfigError,
     DeviceAuthorizationError,
+    DevicePollError,
     NetworkError,
     OAuthError,
     OAuthHttpError,
@@ -282,6 +283,30 @@ class TestRetryable:
         error = error_cls(error=code, operation="POST /token")
         expected = code != "invalid_grant" and code not in PERMANENT_ERROR_CODES
         assert error.retryable is expected
+
+    @pytest.mark.parametrize(
+        "cause",
+        [
+            pytest.param(
+                NetworkError(cause=httpx.ConnectError("refused"), retriable=False),
+                id="network",
+            ),
+            pytest.param(OAuthHttpError(status_code=503), id="5xx"),
+            pytest.param(OAuthHttpError(status_code=429), id="429"),
+            pytest.param(
+                DeviceAuthorizationError(error="access_denied", status_code=503),
+                id="503-with-permanent-code",
+            ),
+        ],
+    )
+    def test_device_poll_error(self, cause):
+        error = DevicePollError(15, cause)
+        assert error.interval == 15
+        assert error.cause is cause
+        assert error.retryable is True
+        assert str(error) == (
+            f"Device token polling stopped, resume with interval 15s: {cause}"
+        )
 
     # Device grant Retryability: a 429 or 5xx is retryable whatever its code,
     # invalid_grant included. Any other status classifies by the code.

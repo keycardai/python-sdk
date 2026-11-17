@@ -25,6 +25,7 @@ from ._authorize import token_response_from_json
 DEVICE_AUTHORIZATION_OPERATION = "POST /device_authorization"
 DEVICE_TOKEN_OPERATION = "POST /token (device_code)"
 DEFAULT_POLL_INTERVAL = 5
+SLOW_DOWN_INCREMENT = 5
 
 _REQUIRED_STRINGS = ("device_code", "user_code", "verification_uri")
 
