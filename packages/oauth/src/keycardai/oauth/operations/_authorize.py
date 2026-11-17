@@ -5,9 +5,12 @@ code exchange for OAuth 2.0 authorization code flows (RFC 6749 Section 4.1)
 with PKCE support (RFC 7636).
 """
 
+import functools
 import json
+from collections.abc import Callable
 from urllib.parse import urlencode, urlsplit, urlunsplit
 
+from ..client_auth import ClientAuthentication
 from ..exceptions import OAuthHttpError, OAuthProtocolError, RefreshGrantError
 from ..http._context import HTTPContext
 from ..http._wire import HttpRequest, HttpResponse
@@ -146,9 +149,15 @@ def _parse_token_http_response(
     res: HttpResponse,
     *,
     operation: str,
-    error_cls: type[OAuthProtocolError],
+    error_cls: Callable[..., OAuthProtocolError],
 ) -> TokenResponse:
-    if res.status >= 400:
+    """Parse a token endpoint response.
+
+    A 2xx is a success and must have ``access_token``. Any other status is an
+    error: ``error_cls`` when the body is an OAuth error (RFC 6749 Section
+    5.2), OAuthHttpError otherwise.
+    """
+    if not 200 <= res.status < 300:
         full_body = res.body.decode("utf-8", "ignore")
         try:
             data = json.loads(full_body)
@@ -177,15 +186,6 @@ def _parse_token_http_response(
             error_description=f"Invalid JSON in {operation} response",
             operation=operation,
         ) from e
-
-    if isinstance(data, dict) and "error" in data:
-        raise error_cls(
-            error=data["error"],
-            error_description=data.get("error_description"),
-            error_uri=data.get("error_uri"),
-            reason=data.get("reason"),
-            operation=operation,
-        )
 
     if not isinstance(data, dict) or "access_token" not in data:
         raise OAuthProtocolError(
@@ -302,18 +302,21 @@ def build_refresh_token_http_request(
     context: HTTPContext,
     resources: list[str] | None = None,
     scope: str | None = None,
+    client_auth: ClientAuthentication | None = None,
 ) -> HttpRequest:
     """Build the HTTP request for a refresh-token grant (RFC 6749 Section 6).
 
     Args:
         refresh_token: The refresh token returned by the authorization server.
         client_id: Client ID for the form body. Public clients send it; a
-            confidential client authenticates through ``context.auth`` and
-            passes None.
+            confidential client authenticates through ``context.auth`` or
+            ``client_auth`` and passes None.
         context: HTTP context with endpoint, transport, and auth.
         resources: RFC 8707 resource indicators, one ``resource`` parameter
             per entry.
         scope: Space-separated scope string to narrow the refreshed token.
+        client_auth: A credential's client authentication. Its headers and
+            form fields are added to the request.
 
     Returns:
         HttpRequest ready to send.
@@ -335,6 +338,9 @@ def build_refresh_token_http_request(
     }
     if context.auth:
         headers.update(dict(context.auth.apply_headers(context.issuer)))
+    if client_auth is not None:
+        headers.update(client_auth.headers)
+        payload.extend(client_auth.form_fields.items())
 
     return HttpRequest(
         method="POST",
@@ -348,14 +354,18 @@ def parse_refresh_token_http_response(res: HttpResponse) -> TokenResponse:
     """Parse the token endpoint response to a refresh-token grant.
 
     Raises:
-        RefreshGrantError: If the response carries an OAuth error.
-            ``invalid_grant`` is not retryable; the user must authorize again.
+        RefreshGrantError: If the response carries an OAuth error. It keeps
+            the response's ``status_code``. A 429 or 5xx is retryable.
+            Otherwise ``invalid_grant`` is not, and the user must authorize
+            again.
         OAuthProtocolError: If the response body is malformed.
         OAuthHttpError: If the HTTP status indicates an error with no OAuth
             error body.
     """
     return _parse_token_http_response(
-        res, operation=REFRESH_OPERATION, error_cls=RefreshGrantError
+        res,
+        operation=REFRESH_OPERATION,
+        error_cls=functools.partial(RefreshGrantError, status_code=res.status),
     )
 
 
@@ -396,6 +406,7 @@ async def refresh_token_grant_async(
     context: HTTPContext[AsyncHTTPTransport],
     resources: list[str] | None = None,
     scope: str | None = None,
+    client_auth: ClientAuthentication | None = None,
 ) -> TokenResponse:
     """Redeem a refresh token for a new access token (async).
 
@@ -414,6 +425,7 @@ async def refresh_token_grant_async(
         context=context,
         resources=resources,
         scope=scope,
+        client_auth=client_auth,
     )
     http_res = await context.transport.request_raw(http_req, timeout=context.timeout)
     return parse_refresh_token_http_response(http_res)

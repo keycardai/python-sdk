@@ -7,11 +7,13 @@ returned ``state`` and ``code_verifier`` between those calls.
 
 import secrets
 from collections.abc import Mapping
+from typing import TYPE_CHECKING
 
 import httpx
 from pydantic import BaseModel
 
 from ..client import AsyncClient
+from ..client_auth import ClientAuthenticator, require_client_authenticator
 from ..exceptions import (
     AuthorizationDeniedError,
     ConfigError,
@@ -28,6 +30,9 @@ from ..types.models import (
 )
 from ..utils.pkce import PKCEGenerator
 from ._issuer import resolve_issuer_from_challenge
+
+if TYPE_CHECKING:
+    from ..server.credentials import ApplicationCredential
 
 
 class AuthorizationRedirect(BaseModel):
@@ -303,11 +308,12 @@ async def complete_authorization(
 async def refresh_authorization(
     *,
     refresh_token: str,
-    client_id: str,
+    client_id: str | None = None,
     www_authenticate_header: str | None = None,
     issuer: str | None = None,
     metadata: AuthorizationServerMetadata | None = None,
     client_secret: str | None = None,
+    credential: "ClientAuthenticator | ApplicationCredential | None" = None,
     resources: list[str] | None = None,
     scopes: list[str] | None = None,
     http_client: httpx.AsyncClient | None = None,
@@ -316,22 +322,27 @@ async def refresh_authorization(
 
     Takes the same entry modes as :func:`complete_authorization`: exactly
     one of ``issuer``, ``www_authenticate_header``, or ``metadata``. A public
-    client sends ``client_id`` in the body; a confidential client
-    authenticates with HTTP Basic and omits ``client_id`` from the body.
+    client sends ``client_id`` in the body. A confidential client
+    authenticates with HTTP Basic and omits ``client_id`` from the body. A
+    client with a ``credential`` sends the credential's client
+    authentication in place of ``client_id`` and ``client_secret``.
 
-    The SDK keeps no state. When the returned ``TokenResponse`` carries a
+    The SDK keeps no state. When the returned ``TokenResponse`` has a
     ``refresh_token`` the server rotated it, and the application must store
     it in place of the old one.
 
     Args:
         refresh_token: The refresh token stored from the completed flow.
-        client_id: OAuth client ID.
+        client_id: OAuth client ID. Required unless ``credential`` is set.
         www_authenticate_header: The ``WWW-Authenticate`` challenge from the
             protected resource. Mutually exclusive with ``issuer``.
         issuer: Authorization server issuer URL to use directly. Mutually
             exclusive with ``www_authenticate_header``.
         metadata: Optional pre-discovered authorization server metadata.
         client_secret: Optional client secret for confidential clients.
+        credential: A credential that provides client authentication
+            (ClientSecret, WebIdentity, WorkloadIdentity). Cannot be
+            combined with ``client_id`` or ``client_secret``.
         resources: RFC 8707 resource indicators, one ``resource`` parameter
             per entry.
         scopes: Scopes to request, space-joined into ``scope``.
@@ -344,25 +355,44 @@ async def refresh_authorization(
     Raises:
         keycardai.oauth.ConfigError: If anything other than exactly one of
             ``issuer``, ``www_authenticate_header``, or ``metadata`` is
-            provided.
-        ValueError: If the token endpoint is missing from the supplied
-            metadata or discovered server metadata.
+            provided; if ``credential`` is combined with ``client_id`` or
+            ``client_secret``; if neither ``credential`` nor ``client_id``
+            is set; if the credential does not provide client
+            authentication; or if ``metadata`` has no ``token_endpoint``.
+            No request is sent.
+        keycardai.oauth.AuthorizationServerDiscoveryError: If discovery
+            fails, or the discovered metadata has no ``token_endpoint``.
         keycardai.oauth.RefreshGrantError: If the token endpoint answers
-            with an OAuth error. ``invalid_grant`` is not retryable: the user
-            must authorize again.
-        keycardai.oauth.OAuthHttpError: If discovery or the token endpoint
-            returns an HTTP error.
+            with an OAuth error. A 429 or 5xx is retryable. Otherwise
+            ``invalid_grant`` is not, and the user must authorize again.
+        keycardai.oauth.OAuthHttpError: If the token endpoint returns an
+            HTTP error without an OAuth error body.
         keycardai.oauth.NetworkError: If the token endpoint is unreachable.
+        Exception: The credential's client authentication failed. Its error
+            propagates as is. A multi-zone ClientSecret raises ConfigError
+            for an unknown zone.
     """
     _validate_entry_mode(
         issuer=issuer,
         www_authenticate_header=www_authenticate_header,
         metadata=metadata,
     )
+    authenticator: ClientAuthenticator | None = None
+    if credential is not None:
+        if client_id is not None or client_secret is not None:
+            raise ConfigError(
+                "Pass either 'credential' or 'client_id' and 'client_secret', "
+                "not both"
+            )
+        authenticator = require_client_authenticator(credential)
+    elif not client_id:
+        raise ConfigError("Pass 'client_id' or 'credential'")
+
     if metadata is not None:
-        if metadata.token_endpoint is None:
-            raise ValueError(
-                "Authorization server metadata is missing token_endpoint"
+        if not metadata.token_endpoint:
+            raise ConfigError(
+                f"Authorization server {metadata.issuer} does not advertise "
+                "a token_endpoint"
             )
         auth_server_url = metadata.issuer
     else:
@@ -373,7 +403,9 @@ async def refresh_authorization(
         )
 
     auth_strategy = (
-        BasicAuth(client_id, client_secret) if client_secret else NoneAuth()
+        BasicAuth(client_id, client_secret)
+        if client_id is not None and client_secret
+        else NoneAuth()
     )
     config = ClientConfig(
         enable_metadata_discovery=metadata is None, auto_register_client=False
@@ -385,15 +417,10 @@ async def refresh_authorization(
         config=config,
         endpoints=Endpoints(token=metadata.token_endpoint) if metadata else None,
     ) as oauth_client:
-        if metadata is None:
-            endpoints = await oauth_client.get_endpoints()
-            if not endpoints.token:
-                raise ValueError(
-                    "Authorization server metadata is missing token_endpoint"
-                )
         return await oauth_client.refresh_token_grant(
             refresh_token=refresh_token,
             client_id=None if client_secret else client_id,
+            credential=authenticator,
             resources=resources,
             scopes=scopes,
         )

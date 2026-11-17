@@ -7,6 +7,7 @@ import pytest
 
 from keycardai.oauth.exceptions import (
     PERMANENT_ERROR_CODES,
+    OAuthError,
     OAuthHttpError,
     OAuthProtocolError,
     RefreshGrantError,
@@ -251,6 +252,57 @@ class TestParseAuthorizationCodeHttpResponse:
             parse_authorization_code_http_response(res)
 
 
+PARSERS = [
+    pytest.param(parse_authorization_code_http_response, OAuthProtocolError, id="authorization_code"),
+    pytest.param(parse_refresh_token_http_response, RefreshGrantError, id="refresh"),
+]
+
+
+# Stands for the parser's own OAuth error class in the table below.
+GRANT_ERROR = object()
+
+
+# The status decides first: a 2xx is a success and must have access_token,
+# and any other status is an error (RFC 6749 Sections 5.1 and 5.2).
+@pytest.mark.parametrize(("parse", "grant_error"), PARSERS)
+@pytest.mark.parametrize(
+    ("status", "body", "error_type", "attrs"),
+    [
+        pytest.param(
+            200, b'{"error":"invalid_grant"}', OAuthProtocolError, {"error": "invalid_response"},
+            id="2xx-error-body-is-invalid_response",
+        ),
+        pytest.param(
+            204, b"", OAuthProtocolError, {"error": "invalid_response"},
+            id="2xx-empty-is-invalid_response",
+        ),
+        pytest.param(
+            302, b'{"error":"invalid_grant"}', GRANT_ERROR, {"error": "invalid_grant"},
+            id="3xx-error-body-is-oauth-error",
+        ),
+        pytest.param(
+            302, b'{"access_token":"at"}', OAuthHttpError, {"status_code": 302, "retryable": False},
+            id="3xx-token-body-is-http-error",
+        ),
+    ],
+)
+def test_token_response_status_decides_first(parse, grant_error, status, body, error_type, attrs):
+    res = HttpResponse(status=status, headers={}, body=body)
+
+    with pytest.raises(OAuthError) as exc:
+        parse(res)
+
+    assert type(exc.value) is (grant_error if error_type is GRANT_ERROR else error_type)
+    assert {name: getattr(exc.value, name) for name in attrs} == attrs
+
+
+@pytest.mark.parametrize(("parse", "grant_error"), PARSERS)
+def test_token_response_any_2xx_is_a_success(parse, grant_error):
+    res = HttpResponse(status=201, headers={}, body=b'{"access_token":"at"}')
+
+    assert parse(res).access_token == "at"
+
+
 class TestExchangeAuthorizationCode:
     """Test the sync exchange function."""
 
@@ -402,6 +454,27 @@ class TestRefreshTokenGrant:
         with pytest.raises(RefreshGrantError) as exc:
             parse_refresh_token_http_response(res)
         assert exc.value.reason == "no_policy_matched"
+
+    @pytest.mark.parametrize(
+        ("status", "code", "retryable"),
+        [
+            pytest.param(400, "invalid_grant", False, id="400-invalid_grant"),
+            pytest.param(401, "invalid_client", False, id="401-invalid_client"),
+            pytest.param(400, "invalid_request", True, id="400-invalid_request"),
+            pytest.param(429, "invalid_grant", True, id="429-invalid_grant"),
+            pytest.param(503, "invalid_grant", True, id="503-invalid_grant"),
+            pytest.param(500, "access_denied", True, id="500-access_denied"),
+        ],
+    )
+    def test_status_decides_retryable_first(self, status, code, retryable):
+        """Base spec, Retryability: a 429 or 5xx is retryable whatever its
+        code. Otherwise invalid_grant is not, and the base table decides."""
+        res = HttpResponse(status=status, headers={}, body=f'{{"error":"{code}"}}'.encode())
+        with pytest.raises(RefreshGrantError) as exc:
+            parse_refresh_token_http_response(res)
+        assert exc.value.error == code
+        assert exc.value.status_code == status
+        assert exc.value.retryable is retryable
 
     def test_other_oauth_errors_follow_the_parent_classification(self):
         res = HttpResponse(

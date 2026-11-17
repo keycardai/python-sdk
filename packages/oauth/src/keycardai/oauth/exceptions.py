@@ -318,14 +318,22 @@ class TokenExchangeError(OAuthProtocolError):
         super().__init__(error, error_description, error_uri, operation, reason)
 
 
+def _is_transient_status(status: int | None) -> bool:
+    """Return True for a 429 or a 5xx. A response with either status is
+    retryable whatever its OAuth error code."""
+    return status is not None and (status == 429 or 500 <= status < 600)
+
+
 class RefreshGrantError(OAuthProtocolError):
     """OAuth error response to a refresh-token grant (RFC 6749 Section 6).
 
-    ``retryable`` is False for ``invalid_grant``: the refresh token is
-    expired, revoked, or unknown, and the user must authorize again. Every
-    other code follows OAuthProtocolError's classification. The shared
-    PERMANENT_ERROR_CODES set is unchanged, since ``invalid_grant`` is
-    permanent only on the refresh path.
+    ``status_code`` is the HTTP status of the response. ``retryable`` is
+    True for a 429 or a 5xx, whatever the code. Otherwise ``invalid_grant``
+    is not retryable: the refresh token is expired, revoked, or unknown, and
+    the user must authorize again. Every other code follows
+    OAuthProtocolError. The shared PERMANENT_ERROR_CODES set does not
+    include ``invalid_grant``, since it is permanent only on the refresh
+    path.
     """
 
     def __init__(
@@ -335,11 +343,15 @@ class RefreshGrantError(OAuthProtocolError):
         error_uri: str | None = None,
         operation: str = "",
         reason: str | None = None,
+        status_code: int | None = None,
     ):
         super().__init__(error, error_description, error_uri, operation, reason)
+        self.status_code = status_code
 
     @property
     def retryable(self) -> bool:
+        if _is_transient_status(self.status_code):
+            return True
         if self.error == "invalid_grant":
             return False
         return super().retryable

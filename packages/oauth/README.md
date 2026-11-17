@@ -183,6 +183,11 @@ async def refresh_session(session):
 The same grant is available on `AsyncClient` and `Client` as
 `refresh_token_grant(refresh_token=..., client_id=..., resources=..., scopes=...)`.
 
+To refresh with an application credential (`ClientSecret`, `WebIdentity`, or
+`WorkloadIdentity`), pass `credential=` in place of `client_id` and
+`client_secret`. The credential authenticates the request. This is async only:
+`refresh_authorization` and `AsyncClient.refresh_token_grant`.
+
 ## Features
 
 - **Token Exchange (RFC 8693)** - Exchange tokens for different audiences, scopes, or token types
