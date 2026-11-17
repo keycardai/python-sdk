@@ -117,10 +117,13 @@ class DeviceAuthorization(BaseModel):
     Show the person ``verification_uri_complete`` when it is set, and
     ``verification_uri`` otherwise. Always show ``user_code`` too, so the
     person can compare it with the confirmation page. NEVER show
-    ``device_code``.
+    ``device_code``. A public client redeems it with ``client_id`` alone
+    (RFC 8628 Section 3.4), so ``repr()`` leaves it out.
+    ``model_dump()`` and ``model_dump_json()`` include it, so persisting
+    the value keeps it; store the dump as a secret.
     """
 
-    device_code: str
+    device_code: str = Field(repr=False)
     user_code: str
     verification_uri: str
     verification_uri_complete: str | None = None

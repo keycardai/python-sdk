@@ -561,6 +561,15 @@ async def test_row_5_interval_defaults_and_expires_at_from_clock():
     )
 
 
+async def test_device_code_is_left_out_of_repr_and_kept_in_the_dump():
+    value = authorization()
+
+    assert "device_code" not in repr(value)
+    assert "'dc'" not in repr(value)
+    assert value.model_dump()["device_code"] == "dc"
+    assert DeviceAuthorization.model_validate_json(value.model_dump_json()) == value
+
+
 @pytest.mark.parametrize(
     ("response", "description"),
     [
