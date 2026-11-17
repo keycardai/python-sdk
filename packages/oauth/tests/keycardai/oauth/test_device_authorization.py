@@ -211,6 +211,7 @@ OPERATIONS = [
 
 
 FORM_HEADERS = {
+    "User-Agent": ClientConfig().user_agent,
     "Accept": "application/json",
     "Content-Type": "application/x-www-form-urlencoded",
 }
@@ -232,11 +233,7 @@ async def test_row_1_credential_scopes_and_two_resources():
 
     [req] = transport.requests
     assert (req.method, req.url) == ("POST", DEVICE_ENDPOINT)
-    assert req.headers == {
-        "Accept": "application/json",
-        "Content-Type": "application/x-www-form-urlencoded",
-        "X-Client-Auth": "credential-header",
-    }
+    assert req.headers == {**FORM_HEADERS, "X-Client-Auth": "credential-header"}
     assert form(req) == {
         "scope": ["openid profile"],
         "resource": ["https://a.example.com", "https://b.example.com"],
@@ -338,6 +335,29 @@ def metadata(**endpoints) -> AuthorizationServerMetadata:
             f"Authorization server {ISSUER} has a token_endpoint that is not an "
             "http or https URL: '/oauth/token'",
             id="row-30-token-endpoint-relative",
+        ),
+        pytest.param(
+            poll_once_op,
+            metadata(
+                token_endpoint="https://[bad", device_authorization_endpoint=DEVICE_ENDPOINT
+            ),
+            f"Authorization server {ISSUER} has a token_endpoint that is not an "
+            "http or https URL: 'https://[bad'",
+            id="row-30-token-endpoint-does-not-parse",
+        ),
+        pytest.param(
+            request_op,
+            metadata(token_endpoint=TOKEN_ENDPOINT, device_authorization_endpoint=123),
+            f"Authorization server {ISSUER} has a device_authorization_endpoint "
+            "that is not an http or https URL: 123",
+            id="row-30-device-endpoint-not-a-string",
+        ),
+        pytest.param(
+            poll_once_op,
+            metadata(token_endpoint=[TOKEN_ENDPOINT], device_authorization_endpoint=DEVICE_ENDPOINT),
+            f"Authorization server {ISSUER} has a token_endpoint that is not an "
+            f"http or https URL: ['{TOKEN_ENDPOINT}']",
+            id="row-30-token-endpoint-a-list",
         ),
     ],
 )
@@ -505,7 +525,19 @@ async def test_discovered_endpoints_are_used():
     ]
 
 
-async def test_token_endpoint_override_without_discovery():
+# A token endpoint override wins over every source of metadata.
+@pytest.mark.parametrize(
+    "source",
+    [
+        pytest.param(None, id="no-metadata"),
+        pytest.param(METADATA, id="metadata-with-token-endpoint"),
+        pytest.param(
+            metadata(device_authorization_endpoint=DEVICE_ENDPOINT),
+            id="metadata-without-token-endpoint",
+        ),
+    ],
+)
+async def test_token_endpoint_override_wins(source):
     override = "https://override.example.com/token"
     transport = FakeTransport(respond(200, TOKEN_BODY))
     client = AsyncClient(
@@ -516,9 +548,40 @@ async def test_token_endpoint_override_without_discovery():
         config=ClientConfig(enable_metadata_discovery=False),
     )
 
-    await client.poll_device_token(authorization(), client_id="public-app")
+    await client.poll_device_token(authorization(), client_id="public-app", metadata=source)
 
     assert [r.url for r in transport.requests] == [override]
+
+
+@pytest.mark.parametrize(
+    ("operation", "response"),
+    [
+        pytest.param(request_op, device_response(), id="request"),
+        pytest.param(poll_once_op, respond(200, TOKEN_BODY), id="poll-once"),
+    ],
+)
+async def test_requests_send_the_configured_user_agent_and_custom_headers(operation, response):
+    transport = FakeTransport(response)
+    client = AsyncClient(
+        ISSUER,
+        transport=transport,
+        clock=FakeClock(),
+        config=ClientConfig(
+            enable_metadata_discovery=False,
+            user_agent="test-agent/1.0",
+            custom_headers={"X-Tenant": "t1", "X-Client-Auth": "from-config"},
+        ),
+    )
+
+    await operation(client, credential=FakeCredential())
+
+    [req] = transport.requests
+    assert req.headers == {
+        **FORM_HEADERS,
+        "User-Agent": "test-agent/1.0",
+        "X-Tenant": "t1",
+        "X-Client-Auth": "credential-header",
+    }
 
 
 @pytest.mark.parametrize(

@@ -35,14 +35,20 @@ def check_endpoint(issuer: str, name: str, url: str | None) -> str:
     Raises:
         ConfigError: ``url`` is missing or is not an http or https URL.
     """
-    if not url:
+    if url is None or url == "":
         raise ConfigError(f"Authorization server {issuer} does not advertise a {name}")
-    parts = urlsplit(url)
+    not_http = ConfigError(
+        f"Authorization server {issuer} has a {name} that is not an http "
+        f"or https URL: {url!r}"
+    )
+    if not isinstance(url, str):
+        raise not_http
+    try:
+        parts = urlsplit(url)
+    except ValueError as e:
+        raise not_http from e
     if parts.scheme not in ("http", "https") or not parts.netloc:
-        raise ConfigError(
-            f"Authorization server {issuer} has a {name} that is not an http "
-            f"or https URL: {url!r}"
-        )
+        raise not_http
     return url
 
 

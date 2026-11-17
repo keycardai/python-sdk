@@ -3,6 +3,7 @@
 import asyncio
 import threading
 import warnings
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any, overload
 
 from ._metadata_cache import MetadataCache
@@ -1179,6 +1180,7 @@ class AsyncClient:
         """Return the issuer and the URL of the endpoint ``name``.
 
         Pre-discovered ``metadata`` is used as is, with no discovery request.
+        A token endpoint override wins over ``metadata`` and discovery alike.
         Otherwise the endpoint comes from discovered metadata. When that
         metadata fails the endpoint check, the client discovers again once
         the metadata is older than ``negative_ttl``, so a failed check is
@@ -1192,9 +1194,7 @@ class AsyncClient:
             AuthorizationServerDiscoveryError: Discovery failed.
         """
         if metadata is not None:
-            url = metadata.device_authorization_endpoint
-            if name == "token_endpoint":
-                url = metadata.token_endpoint
+            url = self._device_grant_endpoint(metadata, name)
             return metadata.issuer, check_endpoint(metadata.issuer, name, url)
 
         discovered = await self._resolve_metadata()
@@ -1214,15 +1214,25 @@ class AsyncClient:
     ) -> HttpResponse:
         """Send one device grant request, bounded by the request timeout.
 
+        The request gets ``config.user_agent`` and ``config.custom_headers``,
+        as every other operation does. The request's own headers, including
+        client authentication, win over both.
+
         Raises:
             DeviceAuthorizationError: A successful response whose body does
                 not decode (``invalid_response``).
             OAuthHttpError: A 4xx or 5xx response whose body does not decode.
             NetworkError: The request failed or timed out.
         """
+        headers = {
+            "User-Agent": self.config.user_agent,
+            **(self.config.custom_headers or {}),
+            **request.headers,
+        }
         try:
             return await self.transport.request_raw(
-                request, timeout=timeout or self.config.timeout
+                replace(request, headers=headers),
+                timeout=timeout or self.config.timeout,
             )
         except ResponseBodyDecodeError as e:
             raise undecodable_body_error(e, operation) from e
