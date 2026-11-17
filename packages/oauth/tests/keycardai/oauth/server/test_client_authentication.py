@@ -119,6 +119,15 @@ async def test_require_client_authenticator_refuses(tmp_path, make, error_type, 
     assert isinstance(exc.value, ConfigError)
 
 
+async def test_client_authentication_repr_leaves_out_secrets():
+    auth = ClientAuthentication(
+        headers={"Authorization": basic("cid", "secret")},
+        form_fields={"client_assertion": "signed.jwt.value"},
+    )
+
+    assert repr(auth) == "ClientAuthentication()"
+
+
 # ClientSecret
 
 
