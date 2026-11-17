@@ -1051,15 +1051,30 @@ async def test_row_8_pending_twice_then_token():
     )
 
 
-async def test_row_9_slow_down_adds_five_seconds_for_every_later_poll():
+# Each slow_down adds 5 seconds to the interval in force, so the increases
+# accumulate (RFC 8628 Section 3.5).
+@pytest.mark.parametrize(
+    ("responses", "sleeps"),
+    [
+        pytest.param([SLOW_DOWN, PENDING], [5, 10, 10], id="row-9-slow_down-then-pending"),
+        pytest.param([SLOW_DOWN, SLOW_DOWN], [5, 10, 15], id="two-slow_down-in-a-row"),
+        pytest.param(
+            [SLOW_DOWN, PENDING, SLOW_DOWN, PENDING],
+            [5, 10, 10, 15, 15],
+            id="slow_down-after-pending",
+        ),
+    ],
+)
+async def test_row_9_slow_down_adds_five_seconds_for_every_later_poll(responses, sleeps):
     transport = FakeTransport(
-        respond(400, SLOW_DOWN), respond(400, PENDING), respond(200, TOKEN_BODY)
+        *[respond(400, body) for body in responses], respond(200, TOKEN_BODY)
     )
     clock = FakeClock()
 
     await wait(make_client(transport, clock))
 
-    assert clock.sleeps == [5, 10, 10]
+    assert clock.sleeps == sleeps
+    assert len(transport.requests) == len(sleeps)
 
 
 @pytest.mark.parametrize(
