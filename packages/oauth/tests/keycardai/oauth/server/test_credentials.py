@@ -212,7 +212,7 @@ class TestWebIdentity:
                 storage_dir=tmpdir
             )
 
-            with pytest.raises(ValueError, match="auth_info with 'resource_client_id' is required"):
+            with pytest.raises(ValueError, match="auth_info with 'resource_client_id' or the client_id option"):
                 await provider.prepare_token_exchange_request(
                     client=mock_client,
                     subject_token="test_access_token",
@@ -328,7 +328,7 @@ class TestWebIdentityAuthInfoValidation:
     ):
         with tempfile.TemporaryDirectory() as tmpdir:
             provider = WebIdentity(mcp_server_name="Test Server", storage_dir=tmpdir)
-            with pytest.raises(ValueError, match="auth_info with 'resource_client_id' is required"):
+            with pytest.raises(ValueError, match="auth_info with 'resource_client_id' or the client_id option"):
                 await provider.prepare_token_exchange_request(
                     client=mock_client,
                     subject_token="test_access_token",
