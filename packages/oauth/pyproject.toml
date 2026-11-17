@@ -35,6 +35,8 @@ test = [
     "pytest>=8.4.1",
     "pytest-asyncio>=1.1.0",
     "blockbuster>=1.5.27",
+    "starlette>=1.0.1",
+    "uvicorn>=0.32.0",
 ]
 
 [project.urls]
