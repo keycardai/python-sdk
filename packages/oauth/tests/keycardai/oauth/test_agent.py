@@ -549,10 +549,15 @@ async def test_unparseable_expiry_is_an_agent_response_error(expires_at):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("scopes", ["a b", [1], {"a": 1}])
-async def test_malformed_scopes_is_an_agent_response_error(scopes):
-    with pytest.raises(AgentResponseError, match="scopes"):
-        await _Agent(_issued(scopes=scopes)).source().resource_token(RESOURCE)
+@pytest.mark.parametrize("scopes", ["a b", [1], ["a", 1], {"a": 1}])
+async def test_malformed_scopes_is_treated_as_absent(scopes):
+    # The spec's scope is the agent's list "when the response carries a
+    # non-empty list; absent otherwise", and its error table does not make
+    # a malformed one an error, so the token is kept.
+    token = await _Agent(_issued(scopes=scopes)).source().resource_token(RESOURCE, ["a"])
+
+    assert token.access_token == "tok"
+    assert token.scope is None
 
 
 @pytest.mark.asyncio
