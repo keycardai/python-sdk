@@ -117,6 +117,18 @@ async def test_row_02_tenant_headers():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("field", ["org", "zone"])
+@pytest.mark.parametrize("bad", ["a\r\nX-Injected: 1", "a\x00", "a\x7f"], ids=repr)
+async def test_tenant_header_with_a_control_character_is_a_config_error(field, bad):
+    # Otherwise h11 refuses it mid-send as a TransportError, which surfaces
+    # as a retryable NetworkError blaming the socket.
+    source = AgentTokenSource(socket="/unused.sock", _transport=_never_dialled(), **{field: bad})
+
+    with pytest.raises(ConfigError, match=field):
+        await source.resource_token(RESOURCE)
+
+
+@pytest.mark.asyncio
 async def test_row_03_app_id():
     agent = _Agent()
 

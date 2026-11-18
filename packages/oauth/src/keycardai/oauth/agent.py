@@ -304,8 +304,8 @@ class AgentTokenSource:
         ``resource`` and each scope are sent exactly as given.
 
         Raises:
-            ConfigError: ``resource`` is empty, or the default socket cannot
-                be located.
+            ConfigError: ``resource`` is empty, ``org`` or ``zone`` contains
+                a control character, or the default socket cannot be located.
             NetworkError: The socket cannot be reached, or the connection
                 failed mid-request. The message names the socket and how it
                 was chosen.
@@ -317,6 +317,9 @@ class AgentTokenSource:
             raise ConfigError("resource is required")
         if isinstance(scopes, str):
             raise ConfigError("scopes must be a list of strings, not a string")
+        for name, value in (("org", self.org), ("zone", self.zone)):
+            if _has_control_character(value):
+                raise ConfigError(f"{name} contains a control character")
 
         socket = _resolve_socket(
             self.socket, os.environ if self._env is None else self._env
@@ -380,7 +383,7 @@ class AgentTokenSource:
             raise AgentResponseError("response has no token")
         # The token may be an opaque third-party secret headed for an
         # Authorization header, where a control character splits or ends it.
-        if any(c < " " or c == "\x7f" for c in token):
+        if _has_control_character(token):
             raise AgentResponseError("token contains a control character")
 
         expires_in = None
@@ -408,6 +411,11 @@ class AgentTokenSource:
             expires_in=expires_in,
             scope=granted,
         )
+
+
+def _has_control_character(value: str) -> bool:
+    """A C0 control or DEL, any of which splits or ends an HTTP header value."""
+    return any(c < " " or c == "\x7f" for c in value)
 
 
 async def _read_prefix(response: httpx.Response, limit: int) -> bytes:
