@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 import httpx
 import pytest
 
+from keycardai.oauth import agent as agent_module
 from keycardai.oauth import (
     AgentCode,
     AgentError,
@@ -138,10 +139,16 @@ async def test_row_04_resource_is_not_normalized():
 
 
 @pytest.mark.asyncio
-async def test_row_05_empty_resource():
+async def test_row_05_empty_resource(monkeypatch):
+    # An unresolvable env would raise ConfigError too, so resolution itself
+    # must be shown not to run.
+    def unreachable(*args):
+        raise AssertionError("the socket must not be resolved")
+
+    monkeypatch.setattr(agent_module, "_resolve_socket", unreachable)
     source = AgentTokenSource(env={}, _transport=_never_dialled())
 
-    with pytest.raises(ConfigError):
+    with pytest.raises(ConfigError, match="resource"):
         await source.resource_token("")
 
 
