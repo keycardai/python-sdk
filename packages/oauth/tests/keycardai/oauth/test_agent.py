@@ -6,6 +6,7 @@ Each test is named for its row in the Unit Tests table of the spec
 caching-only rows 19 to 23 have no test, and row 18 expects two requests.
 """
 
+import asyncio
 import json
 import os
 import sys
@@ -505,6 +506,46 @@ async def test_error_body_is_read_to_a_bounded_prefix():
         await agent.source().resource_token(RESOURCE)
 
     assert exc_info.value.status_code == 503
+
+
+@pytest.mark.asyncio
+async def test_success_body_is_bounded():
+    padded = {"token": "tok", "padding": "x" * (1024 * 1024)}
+    agent = _Agent(httpx.Response(200, json=padded))
+
+    with pytest.raises(AgentResponseError, match="too large") as exc_info:
+        await agent.source().resource_token(RESOURCE)
+
+    assert "tok" not in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status", "error"), [(200, AgentResponseError), (503, OAuthHttpError)]
+)
+async def test_endless_body_is_not_read_to_the_end(status, error):
+    async def endless():
+        while True:
+            # Yields to the loop so wait_for can cancel a read that never stops.
+            await asyncio.sleep(0)
+            yield b"x" * 4096
+
+    agent = _Agent(httpx.Response(status, content=endless()))
+
+    with pytest.raises(error):
+        await asyncio.wait_for(agent.source().resource_token(RESOURCE), timeout=5)
+
+
+@pytest.mark.asyncio
+async def test_success_body_just_under_the_bound_is_read():
+    body = json.dumps({"token": "tok", "padding": ""}).encode()
+    padded = body[:-2] + b"x" * (1024 * 1024 - len(body)) + b'"}'
+    assert len(padded) == 1024 * 1024
+    agent = _Agent(httpx.Response(200, content=padded))
+
+    token = await agent.source().resource_token(RESOURCE)
+
+    assert token.access_token == "tok"
 
 
 @pytest.mark.asyncio

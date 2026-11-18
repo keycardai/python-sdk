@@ -44,6 +44,10 @@ _OPERATION = "keycard agent IssueToken"
 
 _ERROR_BODY_LIMIT = 64 * 1024
 
+# The socket's owner is not checked, so a peer on it may stream an endless or
+# decompression-amplified body.
+_RESPONSE_BODY_LIMIT = 1024 * 1024
+
 _NOT_JSON = object()
 
 
@@ -346,8 +350,13 @@ class AgentTokenSource:
                 ) as response,
             ):
                 if response.status_code != 200:
-                    raise _refusal(response.status_code, await _read_prefix(response))
-                content = await response.aread()
+                    raise _refusal(
+                        response.status_code,
+                        await _read_prefix(response, _ERROR_BODY_LIMIT),
+                    )
+                content = await _read_prefix(response, _RESPONSE_BODY_LIMIT + 1)
+                if len(content) > _RESPONSE_BODY_LIMIT:
+                    raise AgentResponseError("response is too large")
         except httpx.TransportError as err:
             raise NetworkError(err, operation=socket.describe()) from err
 
@@ -401,13 +410,13 @@ class AgentTokenSource:
         )
 
 
-async def _read_prefix(response: httpx.Response) -> bytes:
+async def _read_prefix(response: httpx.Response, limit: int) -> bytes:
     prefix = bytearray()
     async for chunk in response.aiter_bytes():
         prefix += chunk
-        if len(prefix) >= _ERROR_BODY_LIMIT:
+        if len(prefix) >= limit:
             break
-    return bytes(prefix[:_ERROR_BODY_LIMIT])
+    return bytes(prefix[:limit])
 
 
 def _refusal(status: int, prefix: bytes) -> OAuthError:
