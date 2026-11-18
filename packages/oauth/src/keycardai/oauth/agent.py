@@ -99,12 +99,18 @@ class AgentResponseError(OAuthError):
 
 
 def _agent_code(err: BaseException | None) -> str | None:
+    # Follows explicit wrapping only: ``raise ... from`` and OAuthError's
+    # ``cause``, which does not set ``__cause__``. ``__context__`` is not
+    # followed, since raising inside ``except AgentError`` is a new failure.
     seen: set[int] = set()
     while err is not None and id(err) not in seen:
         if isinstance(err, AgentError):
             return err.code
         seen.add(id(err))
-        err = err.__cause__
+        cause = err.__cause__
+        if cause is None and isinstance(err, OAuthError):
+            cause = err.cause
+        err = cause
     return None
 
 

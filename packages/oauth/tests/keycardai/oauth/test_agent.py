@@ -427,6 +427,40 @@ def test_row_30_predicates_follow_the_cause_chain():
     assert not is_declined(None)
 
 
+def test_predicates_follow_oauth_error_cause():
+    # OAuthError(message, cause) is this SDK's wrapping idiom, and it sets
+    # .cause without setting __cause__.
+    declined = AgentError(AgentCode.PERMISSION_DENIED.value, "declined")
+    wrapped = OAuthError("token exchange failed", cause=declined)
+
+    assert is_declined(wrapped)
+    deep = RuntimeError("outer")
+    deep.__cause__ = OAuthError("middle", cause=declined)
+    assert is_declined(deep)
+
+
+def test_predicates_stop_on_a_cause_cycle():
+    a, b = RuntimeError("a"), RuntimeError("b")
+    a.__cause__, b.__cause__ = b, a
+    c = OAuthError("c")
+    c.cause = c
+
+    assert not is_declined(a)
+    assert not is_declined(c)
+
+
+def test_predicates_ignore_implicit_context():
+    # Raising inside an `except AgentError:` block is a new failure, not a
+    # wrapped refusal.
+    try:
+        try:
+            raise AgentError(AgentCode.PERMISSION_DENIED.value, "declined")
+        except AgentError:
+            raise RuntimeError("fallback failed")  # noqa: B904
+    except RuntimeError as err:
+        assert not is_declined(err)
+
+
 @pytest.mark.asyncio
 async def test_row_31_non_json_error_body_is_an_http_error():
     agent = _Agent(httpx.Response(502, text="<html>bad gateway</html>"))
