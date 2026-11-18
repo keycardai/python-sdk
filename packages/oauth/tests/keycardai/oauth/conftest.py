@@ -11,6 +11,7 @@ import os
 import shutil
 import tempfile
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
+from contextlib import AbstractAsyncContextManager, AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
 
 import pytest
@@ -36,6 +37,25 @@ def issued(_: AgentCall) -> Response:
     return JSONResponse({"token": "agent-token"})
 
 
+@asynccontextmanager
+async def serve_on_uds(app: Starlette, path: str) -> AsyncIterator[None]:
+    """Serve ``app`` under uvicorn on the Unix socket ``path`` until exit."""
+    server = uvicorn.Server(
+        uvicorn.Config(app, uds=path, log_level="warning", lifespan="off")
+    )
+    task = asyncio.create_task(server.serve())
+    try:
+        while not server.started:
+            if task.done():
+                task.result()
+                raise RuntimeError(f"uvicorn stopped before serving {path}")
+            await asyncio.sleep(0.01)
+        yield
+    finally:
+        server.should_exit = True
+        await task
+
+
 @dataclass
 class FakeAgent:
     """A stand-in for the Keycard agent serving IssueToken on ``path``.
@@ -47,8 +67,6 @@ class FakeAgent:
     path: str
     respond: Callable[[AgentCall], Response] = issued
     calls: list[AgentCall] = field(default_factory=list)
-    _server: uvicorn.Server | None = None
-    _task: asyncio.Task | None = None
 
     async def _issue_token(self, request: Request) -> Response:
         call = AgentCall(
@@ -58,37 +76,31 @@ class FakeAgent:
         self.calls.append(call)
         return self.respond(call)
 
-    async def start(self) -> None:
-        app = Starlette(
+    def app(self) -> Starlette:
+        return Starlette(
             routes=[Route(ISSUE_TOKEN_PATH, self._issue_token, methods=["POST"])]
         )
-        config = uvicorn.Config(app, uds=self.path, log_level="warning", lifespan="off")
-        self._server = uvicorn.Server(config)
-        self._task = asyncio.create_task(self._server.serve())
-        while not self._server.started:
-            if self._task.done():
-                self._task.result()
-            await asyncio.sleep(0.01)
-
-    async def stop(self) -> None:
-        if self._server is not None:
-            self._server.should_exit = True
-        if self._task is not None:
-            await self._task
 
 
 @pytest.fixture
 def short_tmp() -> Iterator[str]:
     """A fresh empty directory with a short path.
 
-    pytest's tmp_path can exceed the platform's Unix socket path limit (104
-    bytes on macOS) once a socket name is appended.
+    pytest's tmp_path, and on macOS TMPDIR itself, leave too little of the
+    Unix socket path limit (104 bytes on macOS) for the deepest default
+    socket path, so the directory is made under /tmp where that exists.
     """
-    path = tempfile.mkdtemp(prefix="kc")
+    path = tempfile.mkdtemp(prefix="kc", dir="/tmp" if os.path.isdir("/tmp") else None)
     try:
         yield path
     finally:
         shutil.rmtree(path, ignore_errors=True)
+
+
+@pytest.fixture
+def uds_server() -> Callable[[Starlette, str], AbstractAsyncContextManager[None]]:
+    """``async with uds_server(app, path):`` serves ``app`` on ``path``."""
+    return serve_on_uds
 
 
 @pytest_asyncio.fixture
@@ -96,17 +108,16 @@ async def agent_server() -> AsyncIterator[Callable[..., Awaitable[FakeAgent]]]:
     """Start fake agents on demand: ``await agent_server(path, respond=...)``.
 
     Creates the socket's parent directory, as the Keycard CLI does, and stops
-    every agent it started at teardown.
+    every agent it started at teardown, even when stopping one fails.
     """
-    started: list[FakeAgent] = []
+    async with AsyncExitStack() as stack:
 
-    async def start(path: str, respond: Callable[[AgentCall], Response] | None = None) -> FakeAgent:
-        os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
-        agent = FakeAgent(path) if respond is None else FakeAgent(path, respond)
-        await agent.start()
-        started.append(agent)
-        return agent
+        async def start(
+            path: str, respond: Callable[[AgentCall], Response] | None = None
+        ) -> FakeAgent:
+            os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+            agent = FakeAgent(path) if respond is None else FakeAgent(path, respond)
+            await stack.enter_async_context(serve_on_uds(agent.app(), path))
+            return agent
 
-    yield start
-    for agent in started:
-        await agent.stop()
+        yield start

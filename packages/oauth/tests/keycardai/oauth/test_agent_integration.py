@@ -10,14 +10,12 @@ authorization server's to test. The resource server is served on a Unix
 socket too, so nothing here touches the network.
 """
 
-import asyncio
 import os
 import sys
 
 import httpx
 import pytest
 import pytest_asyncio
-import uvicorn
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
@@ -82,19 +80,8 @@ class _ResourceServer:
             return Response(status_code=401)
         return JSONResponse({"items": []})
 
-    async def __aenter__(self) -> "_ResourceServer":
-        app = Starlette(routes=[Route("/items", self._items)])
-        self._server = uvicorn.Server(
-            uvicorn.Config(app, uds=self.path, log_level="warning", lifespan="off")
-        )
-        self._task = asyncio.create_task(self._server.serve())
-        while not self._server.started:
-            await asyncio.sleep(0.01)
-        return self
-
-    async def __aexit__(self, *exc) -> None:
-        self._server.should_exit = True
-        await self._task
+    def app(self) -> Starlette:
+        return Starlette(routes=[Route("/items", self._items)])
 
     def client(self, auth: httpx.Auth) -> httpx.AsyncClient:
         return httpx.AsyncClient(
@@ -107,6 +94,13 @@ class _ResourceServer:
 @pytest_asyncio.fixture
 async def daemon(short_tmp, agent_server):
     return await agent_server(os.path.join(short_tmp, "agent.sock"), respond=_daemon)
+
+
+@pytest_asyncio.fixture
+async def resource_server(short_tmp, uds_server):
+    server = _ResourceServer(os.path.join(short_tmp, "resource.sock"))
+    async with uds_server(server.app(), server.path):
+        yield server
 
 
 def _source(daemon, **kwargs) -> AgentTokenSource:
@@ -129,24 +123,23 @@ async def test_row_1_mint_with_no_application_credential(daemon):
 
 
 @pytest.mark.asyncio
-async def test_row_2_request_through_resource_transport(daemon, short_tmp):
-    async with _ResourceServer(os.path.join(short_tmp, "resource.sock")) as server:
-        async with server.client(ResourceAuth(_source(daemon), RESOURCE, ["read"])) as client:
-            response = await client.get("/items")
+async def test_row_2_request_through_resource_transport(daemon, resource_server):
+    auth = ResourceAuth(_source(daemon), RESOURCE, ["read"])
+    async with resource_server.client(auth) as client:
+        response = await client.get("/items")
 
     assert response.status_code == 200
-    assert server.authorizations == [f"Bearer token-for:{RESOURCE}"]
+    assert resource_server.authorizations == [f"Bearer token-for:{RESOURCE}"]
 
 
 @pytest.mark.asyncio
-async def test_row_3_every_call_reaches_the_agent(daemon, short_tmp):
+async def test_row_3_every_call_reaches_the_agent(daemon, resource_server):
     source = _source(daemon)
     await source.resource_token(RESOURCE, ["read"])
     await source.resource_token(RESOURCE, ["read"])
 
-    async with _ResourceServer(os.path.join(short_tmp, "resource.sock")) as server:
-        async with server.client(ResourceAuth(source, RESOURCE, ["read"])) as client:
-            response = await client.get("/items")
+    async with resource_server.client(ResourceAuth(source, RESOURCE, ["read"])) as client:
+        response = await client.get("/items")
 
     assert response.status_code == 200
     assert len(daemon.calls) == 3
