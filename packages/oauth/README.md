@@ -533,7 +533,7 @@ the request.
 
 ```python
 import httpx
-from keycardai.oauth import AgentTokenSource, ResourceAuth, is_declined
+from keycardai.oauth import AgentTokenSource, ResourceAuth
 
 source = AgentTokenSource(workload="my-agent")
 
@@ -559,7 +559,7 @@ from `keycard.toml`. Construction does no I/O.
 
 The first request for a resource and scope set blocks until someone answers
 the approval prompt, so no timeout is applied; bound the call with
-`asyncio.timeout`. The SDK does not cache tokens: each call is one request to
+`asyncio.wait_for`, or `asyncio.timeout` on Python 3.11+. The SDK does not cache tokens: each call is one request to
 the agent, which caches them itself.
 
 Options, all keyword-only:

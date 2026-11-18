@@ -202,9 +202,10 @@ class _Socket:
 def _resolve_socket(socket: str | None, env: Mapping[str, str]) -> _Socket:
     """Choose the agent socket by the spec's three ordered rules.
 
-    Transcribes the Keycard CLI's ``Config.AgentSocketPath``, the canonical
-    source for the daemon's socket, except that only the environment is read,
-    never ``keycard.toml``. Computes a path and touches nothing on disk.
+    Transcribes the Keycard CLI's Unix ``Config.AgentSocketPath``, the
+    canonical source for the daemon's socket, except that only the
+    environment is read, never ``keycard.toml``. Computes a path and touches
+    nothing on disk.
     """
     if socket:
         return _Socket(socket, _SocketRule.OPTION)
@@ -217,8 +218,8 @@ def _resolve_socket(socket: str | None, env: Mapping[str, str]) -> _Socket:
 
     if sys.platform == "win32":
         raise ConfigError(
-            f"{AGENT_SOCKET_ENV} is not set, and the keycard agent daemon's "
-            "default socket is a Unix socket, unavailable on Windows; pass "
+            f"{AGENT_SOCKET_ENV} is not set, and on Windows the keycard agent "
+            "daemon listens on a named pipe, which this SDK cannot dial; pass "
             f"socket= or set {AGENT_SOCKET_ENV}"
         )
 
@@ -250,7 +251,8 @@ class AgentTokenSource:
     happen on each ``resource_token`` call, so a changed environment takes
     effect on the next call. The first request for an approval blocks for as
     long as a human takes to answer the prompt, so no timeout is applied:
-    bound the call with ``asyncio.timeout`` or cancellation. Tokens are not
+    bound the call with ``asyncio.wait_for``, ``asyncio.timeout`` (3.11+),
+    or cancellation. Tokens are not
     cached here; the agent caches them, and each call is one request to it.
 
     Args:

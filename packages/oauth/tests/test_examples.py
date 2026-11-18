@@ -6,6 +6,7 @@ is compatible with the current SDK API.
 """
 
 import importlib.util
+import inspect
 import sys
 from pathlib import Path
 
@@ -43,5 +44,4 @@ def test_dynamic_client_registration_example_loads():
 def test_agent_token_source_example_loads():
     """The agent_token_source example imports and exposes a main coroutine."""
     mod = _load_example("agent_token_source")
-    assert hasattr(mod, "main")
-    assert callable(mod.main)
+    assert inspect.iscoroutinefunction(mod.main)
