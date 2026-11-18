@@ -515,16 +515,27 @@ async def test_error_body_is_read_to_a_bounded_prefix():
         httpx.Response(200, json={"expiresAt": "2030-01-01T00:00:00Z"}),
         httpx.Response(200, json={"token": 42}),
         httpx.Response(200, text="not json"),
+        httpx.Response(200, text='{"token": "secret-value" trailing'),
         httpx.Response(200, json=["tok"]),
     ],
-    ids=["empty-token", "missing-token", "non-string-token", "not-json", "not-object"],
+    ids=[
+        "empty-token",
+        "missing-token",
+        "non-string-token",
+        "not-json",
+        "malformed-json-with-token",
+        "not-object",
+    ],
 )
 async def test_row_32_unusable_success(response):
     with pytest.raises(AgentResponseError) as exc_info:
         await _Agent(response).source().resource_token(RESOURCE)
 
     assert not exc_info.value.retryable
+    # A JSONDecodeError holds the whole document in .doc, so it must be
+    # neither the cause nor the suppressed context.
     assert exc_info.value.__cause__ is None
+    assert exc_info.value.__context__ is None
 
 
 @pytest.mark.asyncio

@@ -44,6 +44,8 @@ _OPERATION = "keycard agent IssueToken"
 
 _ERROR_BODY_LIMIT = 64 * 1024
 
+_NOT_JSON = object()
+
 
 class AgentCode(str, Enum):
     """Connect error codes the Keycard agent refuses a request with.
@@ -352,12 +354,15 @@ class AgentTokenSource:
         return self._token(content)
 
     def _token(self, content: bytes) -> TokenResponse:
+        # Raised outside the except block: the decode error holds the whole
+        # document, which may contain the token, and `from None` would still
+        # leave it reachable as __context__.
         try:
             body = json.loads(content)
         except ValueError:
-            # Not chained: the decode error holds the whole document, which
-            # may contain the token.
-            raise AgentResponseError("response is not JSON") from None
+            body = _NOT_JSON
+        if body is _NOT_JSON:
+            raise AgentResponseError("response is not JSON")
         if not isinstance(body, dict):
             raise AgentResponseError("response is not a JSON object")
 
