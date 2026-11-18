@@ -425,11 +425,14 @@ def _refusal(status: int, prefix: bytes) -> OAuthError:
 
 
 # protojson renders a Timestamp with up to nine fractional digits, beyond
-# datetime's microseconds, and before Python 3.11 fromisoformat accepts
-# neither a "Z" suffix nor a fraction of other than three or six digits.
+# datetime's microseconds on every Python version, and before 3.11
+# fromisoformat also rejects a "Z" suffix. The pattern accepts the wider RFC
+# 3339 grammar, offsets included; re.ASCII keeps \d to the digits RFC 3339
+# allows, since int() would accept any Unicode decimal.
 _RFC3339 = re.compile(
     r"(\d{4})-(\d{2})-(\d{2})[Tt](\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?"
-    r"(?:([Zz])|([+-])(\d{2}):(\d{2}))"
+    r"(?:([Zz])|([+-])(\d{2}):(\d{2}))",
+    re.ASCII,
 )
 
 

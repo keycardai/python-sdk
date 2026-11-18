@@ -541,7 +541,14 @@ async def test_row_32_unusable_success(response):
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "expires_at",
-    ["tomorrow", "2030-01-01", "2030-01-01T00:00:00", "2030-13-01T00:00:00Z", 1893456000],
+    [
+        "tomorrow",
+        "2030-01-01",
+        "2030-01-01T00:00:00",
+        "2030-13-01T00:00:00Z",
+        1893456000,
+        "٢٠٣٠-01-01T00:00:00Z",  # Arabic-Indic digits, which \d matches
+    ],
 )
 async def test_unparseable_expiry_is_an_agent_response_error(expires_at):
     with pytest.raises(AgentResponseError, match="expiresAt"):
