@@ -1038,13 +1038,16 @@ class AsyncClient:
         redirect_uri: str,
         code_verifier: str,
         client_id: str | None = None,
+        credential: "ClientAuthenticator | ApplicationCredential | None" = None,
         resource: str | None = None,
         timeout: float | None = None,
     ) -> TokenResponse:
         """Exchange an authorization code for tokens.
 
         Supports both public clients (client_id in the body, no auth header)
-        and confidential clients (auth via the client's auth strategy).
+        and confidential clients (auth via the client's auth strategy). With
+        ``credential``, the request has the credential's client
+        authentication and the client's auth strategy is not used.
 
         Args:
             code: The authorization code from the callback.
@@ -1053,6 +1056,11 @@ class AsyncClient:
             client_id: Client ID for the form body. Required for public
                 clients. Optional for confidential clients where identity
                 is provided via the auth strategy.
+            credential: A credential that provides client authentication
+                (ClientSecret, WebIdentity, WorkloadIdentity). Cannot be
+                combined with ``client_id``. It must authenticate as the
+                client the code was issued to; the zone rejects any other
+                client with ``invalid_grant``.
             resource: Optional RFC 8707 resource indicator. Scopes the
                 issued token to a specific resource.
             timeout: Optional request timeout override.
@@ -1061,15 +1069,34 @@ class AsyncClient:
             TokenResponse with access token and metadata.
 
         Raises:
+            ConfigError: ``credential`` is combined with ``client_id``, or
+                does not provide client authentication. No request is sent.
             OAuthHttpError: If the token endpoint returns an HTTP error.
             OAuthProtocolError: If the response contains an OAuth error.
+            Exception: The credential's client authentication failed. Its
+                error propagates as is. A multi-zone ClientSecret raises
+                ConfigError for an unknown zone.
         """
+        authenticator: ClientAuthenticator | None = None
+        if credential is not None:
+            if client_id is not None:
+                raise ConfigError("Pass either `credential` or `client_id`, not both.")
+            authenticator = require_client_authenticator(credential)
+
         endpoints = await self._get_current_endpoints()
+
+        client_auth: ClientAuthentication | None = None
+        auth = self.auth_strategy
+        if authenticator is not None:
+            client_auth = await authenticator.client_authentication(
+                issuer=self.issuer, endpoint=endpoints.token
+            )
+            auth = NoneAuth()
 
         ctx = build_http_context(
             endpoint=endpoints.token,
             transport=self.transport,
-            auth=self.auth_strategy,
+            auth=auth,
             issuer=self.issuer,
             user_agent=self.config.user_agent,
             custom_headers=self.config.custom_headers,
@@ -1083,6 +1110,7 @@ class AsyncClient:
             client_id=client_id,
             context=ctx,
             resource=resource,
+            client_auth=client_auth,
         )
 
     async def refresh_token_grant(

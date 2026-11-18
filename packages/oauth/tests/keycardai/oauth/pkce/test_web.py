@@ -1,11 +1,14 @@
 """Tests for the stateless web-app authorization-code flow."""
 
+import base64
+import json
 from unittest.mock import AsyncMock, MagicMock
 from urllib.parse import parse_qs, urlsplit
 
 import httpx
 import pytest
 
+from keycardai.oauth import AsyncClient
 from keycardai.oauth.exceptions import (
     AuthorizationDeniedError,
     ConfigError,
@@ -13,6 +16,7 @@ from keycardai.oauth.exceptions import (
     RefreshGrantError,
     StateMismatchError,
 )
+from keycardai.oauth.http._wire import HttpResponse
 from keycardai.oauth.http.auth import BasicAuth, NoneAuth
 from keycardai.oauth.pkce import (
     AuthorizationRedirect,
@@ -20,8 +24,15 @@ from keycardai.oauth.pkce import (
     complete_authorization,
     refresh_authorization,
 )
+from keycardai.oauth.server.credentials import (
+    ClientSecret,
+    WebIdentity,
+    WorkloadIdentity,
+)
+from keycardai.oauth.server.exceptions import WorkloadIdentityRuntimeError
 from keycardai.oauth.types.models import (
     AuthorizationServerMetadata,
+    ClientConfig,
     Endpoints,
     TokenResponse,
 )
@@ -145,6 +156,7 @@ async def test_complete_exchanges_matching_state(monkeypatch):
         "redirect_uri": "https://app.example.com/callback",
         "code_verifier": "stored-verifier",
         "client_id": "my-app",
+        "credential": None,
     }
 
 
@@ -718,3 +730,225 @@ def _http_client_mock(json_bodies: list[dict]) -> MagicMock:
         side_effect=[_mock_json_response(body) for body in json_bodies]
     )
     return mock
+
+
+# ---------------------------------------------------------------------------
+# Code exchange with a credential (spec-version 6)
+# ---------------------------------------------------------------------------
+
+TOKEN_ENDPOINT = "https://auth.example.com/token"
+JWT_BEARER = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
+
+
+def _token_transport() -> AsyncMock:
+    transport = AsyncMock()
+    transport.request_raw.return_value = HttpResponse(
+        status=200,
+        headers={"Content-Type": "application/json"},
+        body=b'{"access_token":"user-token","token_type":"Bearer"}',
+    )
+    return transport
+
+
+def _sent_form(transport: AsyncMock) -> dict[str, list[str]]:
+    return parse_qs(transport.request_raw.call_args.args[0].body.decode())
+
+
+def _wire_client(transport: AsyncMock) -> AsyncClient:
+    return AsyncClient(
+        "https://auth.example.com",
+        transport=transport,
+        endpoints=Endpoints(token=TOKEN_ENDPOINT),
+        config=ClientConfig(enable_metadata_discovery=False, auto_register_client=False),
+    )
+
+
+@pytest.mark.asyncio
+async def test_exchange_with_credential_sends_credential_fields():
+    """Spec row 17."""
+    transport = _token_transport()
+    credential = WorkloadIdentity(lambda: "platform-token", client_id="acr_123")
+
+    result = await _wire_client(transport).exchange_authorization_code(
+        code="code",
+        redirect_uri="https://app.example.com/callback",
+        code_verifier="verifier",
+        credential=credential,
+    )
+
+    assert result.access_token == "user-token"
+    request = transport.request_raw.call_args.args[0]
+    assert "Authorization" not in request.headers
+    assert _sent_form(transport) == {
+        "grant_type": ["authorization_code"],
+        "code": ["code"],
+        "redirect_uri": ["https://app.example.com/callback"],
+        "code_verifier": ["verifier"],
+        "client_assertion": ["platform-token"],
+        "client_assertion_type": [JWT_BEARER],
+        "client_id": ["acr_123"],
+    }
+
+
+@pytest.mark.asyncio
+async def test_exchange_with_client_secret_credential_uses_its_headers():
+    """Spec row 17: the headers are the credential's."""
+    transport = _token_transport()
+
+    await _wire_client(transport).exchange_authorization_code(
+        code="code",
+        redirect_uri="https://app.example.com/callback",
+        code_verifier="verifier",
+        credential=ClientSecret(("my-app", "secret")),
+    )
+
+    request = transport.request_raw.call_args.args[0]
+    assert request.headers["Authorization"] == BasicAuth("my-app", "secret").apply_headers()["Authorization"]
+    assert "client_id" not in _sent_form(transport)
+    assert "subject_token_type" not in _sent_form(transport)
+
+
+class _NoClientAuthentication:
+    async def prepare_token_exchange_request(self, *args, **kwargs):
+        raise AssertionError("not called")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"credential": WorkloadIdentity(lambda: "t"), "client_id": "my-app"},
+        {"credential": _NoClientAuthentication()},
+    ],
+)
+async def test_exchange_rejects_invalid_credential_config(kwargs):
+    """Spec row 18 for the code-exchange building block."""
+    transport = _token_transport()
+
+    with pytest.raises(ConfigError):
+        await _wire_client(transport).exchange_authorization_code(
+            code="code",
+            redirect_uri="https://app.example.com/callback",
+            code_verifier="verifier",
+            **kwargs,
+        )
+
+    transport.request_raw.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"credential": WorkloadIdentity(lambda: "t"), "client_id": "my-app"},
+        {"credential": WorkloadIdentity(lambda: "t"), "client_secret": "secret"},
+        {"credential": _NoClientAuthentication()},
+        {},
+    ],
+)
+async def test_complete_rejects_invalid_client_config(monkeypatch, kwargs):
+    """Spec row 18 for web-app complete; no client authentication is also rejected."""
+    async_client = MagicMock()
+    monkeypatch.setattr("keycardai.oauth.pkce.web.AsyncClient", async_client)
+
+    with pytest.raises(ConfigError):
+        await complete_authorization(
+            callback_params={"code": "code", "state": "state"},
+            state="state",
+            code_verifier="verifier",
+            issuer="https://auth.example.com",
+            redirect_uri="https://app.example.com/callback",
+            **kwargs,
+        )
+
+    async_client.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_exchange_with_web_identity_signs_for_token_endpoint(tmp_path):
+    """Spec row 20."""
+    transport = _token_transport()
+    credential = WebIdentity(
+        server_name="app", storage_dir=str(tmp_path), client_id="https://app.example.com"
+    )
+
+    await _wire_client(transport).exchange_authorization_code(
+        code="code",
+        redirect_uri="https://app.example.com/callback",
+        code_verifier="verifier",
+        credential=credential,
+    )
+
+    request = transport.request_raw.call_args.args[0]
+    assert "Authorization" not in request.headers
+    form = _sent_form(transport)
+    assert form["client_assertion_type"] == [JWT_BEARER]
+    payload = form["client_assertion"][0].split(".")[1]
+    claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+    assert claims["aud"] == TOKEN_ENDPOINT
+    assert claims["iss"] == claims["sub"] == "https://app.example.com"
+
+
+@pytest.mark.asyncio
+async def test_exchange_returns_credential_error_without_request():
+    """Spec row 21."""
+    transport = _token_transport()
+    failure = WorkloadIdentityRuntimeError("token file is empty", source="file")
+
+    def failing_source() -> str:
+        raise failure
+
+    with pytest.raises(WorkloadIdentityRuntimeError) as error:
+        await _wire_client(transport).exchange_authorization_code(
+            code="code",
+            redirect_uri="https://app.example.com/callback",
+            code_verifier="verifier",
+            credential=WorkloadIdentity(failing_source),
+        )
+
+    assert error.value is failure
+    transport.request_raw.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_begin_then_complete_with_workload_identity(monkeypatch):
+    """Spec rows 19 and 22: one client_id on the authorize URL and the exchange."""
+    transport = _token_transport()
+    monkeypatch.setattr(
+        "keycardai.oauth.pkce.web.AsyncClient",
+        lambda *args, **kwargs: AsyncClient(*args, transport=transport, **kwargs),
+    )
+    metadata = AuthorizationServerMetadata(
+        issuer="https://auth.example.com",
+        authorization_endpoint="https://auth.example.com/authorize",
+        token_endpoint=TOKEN_ENDPOINT,
+    )
+    credential = WorkloadIdentity(lambda: "platform-token", client_id="acr_123")
+
+    redirect = await begin_authorization(
+        client_id=credential.client_id,
+        redirect_uri="https://app.example.com/callback",
+        metadata=metadata,
+    )
+    authorize_params = parse_qs(urlsplit(redirect.url).query)
+    assert authorize_params["client_id"] == ["acr_123"]
+    assert "client_assertion" not in authorize_params
+
+    result = await complete_authorization(
+        callback_params={"code": "code", "state": redirect.state},
+        state=redirect.state,
+        code_verifier=redirect.code_verifier,
+        redirect_uri="https://app.example.com/callback",
+        metadata=metadata,
+        credential=credential,
+    )
+
+    assert result.access_token == "user-token"
+    request = transport.request_raw.call_args.args[0]
+    assert request.url == TOKEN_ENDPOINT
+    assert "Authorization" not in request.headers
+    form = _sent_form(transport)
+    assert form["client_id"] == ["acr_123"]
+    assert form["client_assertion"] == ["platform-token"]
+    assert form["client_assertion_type"] == [JWT_BEARER]
+    assert form["code_verifier"] == [redirect.code_verifier]

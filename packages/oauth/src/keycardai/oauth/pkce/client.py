@@ -26,16 +26,22 @@ browser, and runs the loopback callback server (RFC 8252).
 import logging
 import secrets
 import webbrowser
+from typing import TYPE_CHECKING
 
 import httpx
 
 from ..client import AsyncClient
+from ..client_auth import ClientAuthenticator, require_client_authenticator
+from ..exceptions import ConfigError
 from ..http.auth import BasicAuth, NoneAuth
 from ..operations._authorize import build_authorize_url
 from ..types.models import ClientConfig, TokenResponse
 from ..utils.pkce import PKCEGenerator
 from ._issuer import _resolve_auth_server_url
 from .callback import OAuthCallbackServer
+
+if TYPE_CHECKING:
+    from ..server.credentials import ApplicationCredential
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +53,7 @@ async def authenticate(
     www_authenticate_header: str | None = None,
     issuer: str | None = None,
     client_secret: str | None = None,
+    credential: "ClientAuthenticator | ApplicationCredential | None" = None,
     redirect_uri: str = "http://localhost:8765/callback",
     callback_port: int = 8765,
     scopes: list[str] | None = None,
@@ -65,10 +72,12 @@ async def authenticate(
 
     Targets desktop / CLI public clients running against a loopback redirect
     URI (RFC 8252). Confidential clients pass ``client_secret`` and get HTTP
-    Basic auth on the token endpoint.
+    Basic auth on the token endpoint, or pass ``credential`` to authenticate
+    the code exchange with its client authentication.
 
     Args:
-        client_id: OAuth client ID.
+        client_id: OAuth client ID. With ``credential``, it goes on the
+            authorize URL only.
         resource_url: The protected resource the caller is targeting. Passed
             through as the RFC 8707 ``resource`` parameter on both the
             authorize and token requests. Required in challenge mode;
@@ -82,6 +91,11 @@ async def authenticate(
             Mutually exclusive with ``www_authenticate_header``.
         client_secret: Optional client secret for confidential clients.
             Public clients (the typical PKCE use case) omit this.
+        credential: A credential that provides client authentication
+            (ClientSecret, WebIdentity, WorkloadIdentity). Cannot be
+            combined with ``client_secret``. It must authenticate as
+            ``client_id``; for a ``WorkloadIdentity``, that is its
+            ``client_id``.
         redirect_uri: Loopback redirect URI registered with the authorization
             server.
         callback_port: Port for the local callback server.
@@ -99,8 +113,10 @@ async def authenticate(
 
     Raises:
         keycardai.oauth.ConfigError: If both or neither of ``issuer`` and
-            ``www_authenticate_header`` are provided, or if challenge mode
-            is used without ``resource_url``.
+            ``www_authenticate_header`` are provided, if challenge mode
+            is used without ``resource_url``, if ``credential`` is combined
+            with ``client_secret``, or if the credential does not provide
+            client authentication. No request is sent.
         ValueError: If discovery fails (no ``resource_metadata`` in the
             challenge, no ``authorization_servers`` in the metadata, or the
             authorization server is missing required endpoints).
@@ -113,7 +129,17 @@ async def authenticate(
             ``callback_timeout``.
         RuntimeError: If the authorization redirect carried an OAuth
             ``error`` parameter.
+        Exception: The credential's client authentication failed. Its error
+            propagates as is.
     """
+    authenticator: ClientAuthenticator | None = None
+    if credential is not None:
+        if client_secret is not None:
+            raise ConfigError(
+                "Pass either 'credential' or 'client_secret', not both"
+            )
+        authenticator = require_client_authenticator(credential)
+
     auth_server_url = await _resolve_auth_server_url(
         issuer=issuer,
         www_authenticate_header=www_authenticate_header,
@@ -166,6 +192,7 @@ async def authenticate(
             code=code,
             redirect_uri=redirect_uri,
             code_verifier=pkce.code_verifier,
-            client_id=client_id,
+            client_id=None if authenticator is not None else client_id,
+            credential=authenticator,
             resource=resource_url,
         )

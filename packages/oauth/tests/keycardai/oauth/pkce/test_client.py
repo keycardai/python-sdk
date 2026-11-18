@@ -5,6 +5,7 @@ full authentication flow without opening a browser or making network calls.
 """
 
 from unittest.mock import AsyncMock, MagicMock
+from urllib.parse import parse_qs, urlsplit
 
 import httpx
 import pytest
@@ -17,6 +18,7 @@ from keycardai.oauth.pkce import (
     resolve_issuer_from_challenge,
 )
 from keycardai.oauth.pkce._issuer import _extract_resource_metadata_url
+from keycardai.oauth.server.credentials import WorkloadIdentity
 from keycardai.oauth.types.models import TokenResponse
 
 WWW_AUTHENTICATE = (
@@ -163,6 +165,61 @@ async def test_authenticate_uses_none_auth_for_public_client(monkeypatch):
     )
 
     assert isinstance(captured["auth"], NoneAuth)
+
+
+@pytest.mark.asyncio
+async def test_authenticate_with_credential_puts_client_id_on_authorize_url_only(
+    monkeypatch,
+):
+    _patch_callback_and_browser(monkeypatch, code="code")
+    opened = []
+    monkeypatch.setattr(
+        "keycardai.oauth.pkce.client.webbrowser.open", opened.append
+    )
+    captured = {}
+    monkeypatch.setattr(
+        "keycardai.oauth.pkce.client.AsyncClient",
+        _async_client_factory(
+            endpoints=MagicMock(
+                authorize="https://auth.example.com/authorize",
+                token="https://auth.example.com/token",
+            ),
+            exchange_response=TokenResponse(access_token="tok", token_type="Bearer"),
+            capture=captured,
+        ),
+    )
+    credential = WorkloadIdentity(lambda: "platform-token", client_id="acr_123")
+
+    await authenticate(
+        client_id="acr_123",
+        issuer="https://auth.example.com",
+        credential=credential,
+    )
+
+    assert parse_qs(urlsplit(opened[0]).query)["client_id"] == ["acr_123"]
+    assert isinstance(captured["auth"], NoneAuth)
+    assert captured["exchange_kwargs"]["client_id"] is None
+    assert captured["exchange_kwargs"]["credential"] is credential
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"credential": WorkloadIdentity(lambda: "t"), "client_secret": "secret"},
+        {"credential": object()},
+    ],
+)
+async def test_authenticate_rejects_invalid_credential_config(monkeypatch, kwargs):
+    async_client = MagicMock()
+    monkeypatch.setattr("keycardai.oauth.pkce.client.AsyncClient", async_client)
+
+    with pytest.raises(ConfigError):
+        await authenticate(
+            client_id="cid", issuer="https://auth.example.com", **kwargs
+        )
+
+    async_client.assert_not_called()
 
 
 @pytest.mark.asyncio
