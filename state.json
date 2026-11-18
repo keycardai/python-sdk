@@ -11,7 +11,7 @@
     }
   },
   "mcp:mcp": {
-    "run": "https://github.com/keycardai/python-sdk/actions/runs/44033739429",
+    "run": "https://github.com/keycardai/python-sdk/actions/runs/44253829012",
     "version": "2.3.0"
   },
   "pydantic-ai:pydantic-ai-slim": {
