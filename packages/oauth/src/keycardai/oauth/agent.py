@@ -331,7 +331,11 @@ class AgentTokenSource:
         if self.zone:
             headers["Keycard-Zone"] = self.zone
 
-        transport = self._transport or httpx.AsyncHTTPTransport(uds=socket.path)
+        # verify=False skips loading the CA bundle, about 9 ms per call, for
+        # a plain-HTTP Unix socket on which TLS never applies.
+        transport = self._transport or httpx.AsyncHTTPTransport(
+            uds=socket.path, verify=False
+        )
         try:
             async with (
                 httpx.AsyncClient(transport=transport, timeout=None) as client,
