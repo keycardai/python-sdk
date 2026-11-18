@@ -15,7 +15,6 @@ from datetime import datetime, timezone
 import httpx
 import pytest
 
-from keycardai.oauth import agent as agent_module
 from keycardai.oauth import (
     AgentCode,
     AgentError,
@@ -29,6 +28,7 @@ from keycardai.oauth import (
     ResourceTokenSource,
     TokenResponse,
     TokenType,
+    agent as agent_module,
     is_application_not_found,
     is_authorization_required,
     is_declined,
@@ -145,10 +145,11 @@ async def test_row_04_resource_is_not_normalized():
     messy = "https://API.Example.com:443/a/./b/../c"
     agent = _Agent()
 
-    await agent.source().resource_token(messy, ["Scope:B", "a"])
+    await agent.source().resource_token(messy, ["Scope:B", "a", "Scope:B"])
 
     assert agent.body()["resource"] == messy
-    assert agent.body()["scopes"] == ["Scope:B", "a"]
+    # Neither sorted nor deduplicated.
+    assert agent.body()["scopes"] == ["Scope:B", "a", "Scope:B"]
 
 
 @pytest.mark.asyncio
@@ -240,6 +241,33 @@ async def test_row_08_empty_keycard_socket_is_unset():
 )
 async def test_rows_09_to_13_default_socket(row, env, want):
     assert f" {want} " in await _dialled(env)
+
+
+@unix_only
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "unset", ["KEYCARD_AGENT_DIR", "XDG_RUNTIME_DIR", "XDG_STATE_HOME", "KEYCARD_HOME"]
+)
+async def test_empty_socket_variable_is_unset(unset):
+    env = {"HOME": "/h", unset: ""}
+    assert " /h/.local/state/keycard/run/agent.sock " in await _dialled(env)
+
+
+@unix_only
+@pytest.mark.asyncio
+async def test_empty_socket_option_is_unset():
+    with pytest.raises(NetworkError) as exc_info:
+        await AgentTokenSource(socket="", env={"HOME": "/h"}).resource_token(RESOURCE)
+    assert " /h/.local/state/keycard/run/agent.sock " in str(exc_info.value)
+
+
+@unix_only
+@pytest.mark.asyncio
+async def test_empty_home_is_unset():
+    source = AgentTokenSource(env={"HOME": ""}, _transport=_never_dialled())
+
+    with pytest.raises(ConfigError, match="HOME"):
+        await source.resource_token(RESOURCE)
 
 
 @unix_only
@@ -359,16 +387,22 @@ async def test_row_26_nanosecond_expiry_against_injected_clock():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("stamp", "want"),
+    ("stamp", "elapsed", "want"),
     [
-        ("2030-06-01T13:00:00.5Z", 3600),
-        ("2030-06-01T14:00:00+01:00", 3600),
-        ("2030-06-01t13:00:00z", 3600),
-        ("2030-06-01T12:59:59.999-00:00", 3599),
+        ("2030-06-01T13:00:00.5Z", 0, 3600),
+        ("2030-06-01T14:00:00+01:00", 0, 3600),
+        ("2030-06-01T18:30:00+05:30", 0, 3600),
+        ("2030-06-01t13:00:00z", 0, 3600),
+        ("2030-06-01T12:59:59.999-00:00", 0, 3599),
+        # A fractional clock makes the expiry's fraction decide the second:
+        # 3600.5 - 0.25 floors to 3600, but to 3599 if the fraction is lost.
+        ("2030-06-01T13:00:00.5Z", 0.25, 3600),
+        # One digit is a tenth, not a nanosecond: 3600.1 - 0.05 is 3600.
+        ("2030-06-01T13:00:00.1Z", 0.05, 3600),
     ],
 )
-async def test_rfc3339_forms(stamp, want):
-    now = datetime(2030, 6, 1, 12, 0, 0, tzinfo=timezone.utc).timestamp()
+async def test_rfc3339_forms(stamp, elapsed, want):
+    now = datetime(2030, 6, 1, 12, 0, 0, tzinfo=timezone.utc).timestamp() + elapsed
 
     token = await _Agent(_issued(expiresAt=stamp)).source(
         clock=lambda: now
@@ -505,6 +539,27 @@ async def test_row_31_json_error_without_a_code_is_an_http_error(body):
         await agent.source().resource_token(RESOURCE)
 
     assert exc_info.value.status_code == 500
+
+
+@pytest.mark.asyncio
+async def test_non_string_error_message_is_dropped():
+    agent = _Agent(httpx.Response(503, json={"code": "unavailable", "message": 7}))
+
+    with pytest.raises(AgentError) as exc_info:
+        await agent.source().resource_token(RESOURCE)
+
+    assert exc_info.value.message == ""
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [201, 204, 302])
+async def test_success_other_than_200_is_an_http_error(status):
+    agent = _Agent(httpx.Response(status, json={"token": "tok"}))
+
+    with pytest.raises(OAuthHttpError) as exc_info:
+        await agent.source().resource_token(RESOURCE)
+
+    assert exc_info.value.status_code == status
 
 
 @pytest.mark.asyncio
@@ -688,6 +743,21 @@ async def test_row_35_resource_auth_attaches_bearer():
     assert response.json() == {"authorization": "Bearer tok-123"}
     # The bound resource, not one derived from the request URL.
     assert source.asked == [(RESOURCE, ["read"])]
+
+
+@pytest.mark.asyncio
+async def test_resource_auth_scopes_are_a_copy():
+    source = _StubSource()
+    scopes = ["read"]
+    auth = ResourceAuth(source, RESOURCE, scopes)
+    scopes.append("write")
+    unscoped = ResourceAuth(source, RESOURCE)
+
+    async with httpx.AsyncClient(transport=_Resource().transport()) as client:
+        await client.get("https://api.example.com/items", auth=auth)
+        await client.get("https://api.example.com/items", auth=unscoped)
+
+    assert source.asked == [(RESOURCE, ["read"]), (RESOURCE, [])]
 
 
 @pytest.mark.asyncio
