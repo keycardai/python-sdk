@@ -174,19 +174,22 @@ async def complete_authorization(
     callback_params: Mapping[str, str],
     state: str,
     code_verifier: str,
-    client_id: str,
+    client_id: str | None = None,
     redirect_uri: str,
     www_authenticate_header: str | None = None,
     issuer: str | None = None,
     metadata: AuthorizationServerMetadata | None = None,
     client_secret: str | None = None,
+    credential: "ClientAuthenticator | ApplicationCredential | None" = None,
     http_client: httpx.AsyncClient | None = None,
 ) -> TokenResponse:
     """Complete a web-app authorization-code-with-PKCE flow.
 
     Callback validation occurs before issuer discovery or any token request.
     The application supplies the ``state`` and ``code_verifier`` retained
-    from :func:`begin_authorization`.
+    from :func:`begin_authorization`. A client with a ``credential`` sends
+    the credential's client authentication in place of ``client_id`` and
+    ``client_secret``.
 
     No RFC 8707 ``resource`` parameter is sent on the token request: the
     authorization server derives the issued token's audience from the
@@ -200,7 +203,7 @@ async def complete_authorization(
         state: The state value stored from the begin step.
         code_verifier: The PKCE verifier stored from the begin step. This
             value must never be sent to the browser.
-        client_id: OAuth client ID.
+        client_id: OAuth client ID. Required unless ``credential`` is set.
         redirect_uri: The same registered redirect URI used in the begin step.
         www_authenticate_header: The ``WWW-Authenticate`` challenge from the
             protected resource. Must contain a ``resource_metadata`` URL per
@@ -212,6 +215,11 @@ async def complete_authorization(
             caching and refreshing this metadata.
         client_secret: Optional client secret for confidential clients.
             Public clients omit this and use no token-endpoint auth.
+        credential: A credential that provides client authentication
+            (ClientSecret, WebIdentity, WorkloadIdentity). Cannot be
+            combined with ``client_id`` or ``client_secret``. It must
+            authenticate as the ``client_id`` passed to the begin step; for
+            a ``WorkloadIdentity``, that is its ``client_id``.
         http_client: Optional ``httpx.AsyncClient`` used to fetch protected
             resource metadata in challenge-driven mode. When omitted, a
             short-lived client is created internally.
@@ -223,7 +231,10 @@ async def complete_authorization(
     Raises:
         keycardai.oauth.ConfigError: If anything other than exactly one of
             ``issuer``, ``www_authenticate_header``, or ``metadata`` is
-            provided.
+            provided; if ``credential`` is combined with ``client_id`` or
+            ``client_secret``; if neither ``credential`` nor ``client_id``
+            is set; or if the credential does not provide client
+            authentication. No request is sent.
         ValueError: If the token endpoint is missing from the supplied
             metadata or discovered server metadata, or if challenge discovery
             metadata is incomplete.
@@ -236,7 +247,21 @@ async def complete_authorization(
         httpx.HTTPStatusError: If fetching protected resource metadata fails.
         keycardai.oauth.OAuthHttpError: If authorization server discovery or
             the token endpoint returns an HTTP error.
+        Exception: The credential's client authentication failed. Its error
+            propagates as is. A multi-zone ClientSecret raises ConfigError
+            for an unknown zone.
     """
+    authenticator: ClientAuthenticator | None = None
+    if credential is not None:
+        if client_id is not None or client_secret is not None:
+            raise ConfigError(
+                "Pass either 'credential' or 'client_id' and 'client_secret', "
+                "not both"
+            )
+        authenticator = require_client_authenticator(credential)
+    elif not client_id:
+        raise ConfigError("Pass 'client_id' or 'credential'")
+
     error = callback_params.get("error")
     if error is not None:
         raise AuthorizationDeniedError(
@@ -278,7 +303,9 @@ async def complete_authorization(
         )
 
     auth_strategy = (
-        BasicAuth(client_id, client_secret) if client_secret else NoneAuth()
+        BasicAuth(client_id, client_secret)
+        if client_id is not None and client_secret
+        else NoneAuth()
     )
     config = ClientConfig(
         enable_metadata_discovery=metadata is None, auto_register_client=False
@@ -301,6 +328,7 @@ async def complete_authorization(
             redirect_uri=redirect_uri,
             code_verifier=code_verifier,
             client_id=client_id,
+            credential=authenticator,
         )
 
 

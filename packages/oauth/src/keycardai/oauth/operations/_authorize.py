@@ -82,6 +82,7 @@ def build_authorization_code_http_request(
     client_id: str | None,
     context: HTTPContext,
     resource: str | None = None,
+    client_auth: ClientAuthentication | None = None,
 ) -> HttpRequest:
     """Build the HTTP request for an authorization code exchange.
 
@@ -94,6 +95,8 @@ def build_authorization_code_http_request(
         context: HTTP context with endpoint, transport, and auth.
         resource: Optional RFC 8707 resource indicator. Scopes the issued
             token to a specific resource.
+        client_auth: A credential's client authentication. Its headers and
+            form fields are added to the request.
 
     Returns:
         HttpRequest ready to send.
@@ -115,6 +118,9 @@ def build_authorization_code_http_request(
     }
     if context.auth:
         headers.update(dict(context.auth.apply_headers(context.issuer)))
+    if client_auth is not None:
+        headers.update(client_auth.headers)
+        payload.update(client_auth.form_fields)
 
     form_data = urlencode(payload).encode("utf-8")
 
@@ -269,6 +275,7 @@ async def exchange_authorization_code_async(
     client_id: str | None = None,
     context: HTTPContext[AsyncHTTPTransport],
     resource: str | None = None,
+    client_auth: ClientAuthentication | None = None,
 ) -> TokenResponse:
     """Exchange an authorization code for tokens (async).
 
@@ -279,6 +286,8 @@ async def exchange_authorization_code_async(
         client_id: Client ID for the form body. Required for public clients.
         context: HTTP context with endpoint, transport, and auth.
         resource: Optional RFC 8707 resource indicator.
+        client_auth: A credential's client authentication. Its headers and
+            form fields are added to the request.
 
     Returns:
         TokenResponse with tokens.
@@ -294,6 +303,7 @@ async def exchange_authorization_code_async(
         client_id=client_id,
         context=context,
         resource=resource,
+        client_auth=client_auth,
     )
     http_res = await context.transport.request_raw(http_req, timeout=context.timeout)
     return parse_authorization_code_http_response(http_res)

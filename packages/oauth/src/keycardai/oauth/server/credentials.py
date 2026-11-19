@@ -601,12 +601,14 @@ class WorkloadIdentity:
         source: A IdentityTokenSource, or a bare callable (sync or async)
             returning the token. A synchronous callable runs directly on the
             event loop, so it must not perform blocking I/O.
-        client_id: Optional ID of the Keycard application credential this
-            workload authenticates as, sent as the client_id form parameter
-            alongside the assertion. Token-federation application credentials
-            are resolved by this ID, so they require it; legacy token
-            credentials are resolved by the assertion's subject and do not
-            use it.
+        client_id: Optional public ID of the Keycard application credential
+            this workload authenticates as, sent as the client_id form
+            parameter alongside the assertion on every token request and
+            client authentication. A v2 token credential is resolved by this
+            ID and requires it; a v1 token credential (deprecated) is
+            resolved by the assertion's issuer and subject and rejects it.
+            Interactive grants (authorization code, device authorization)
+            need a v2 credential, so they need client_id.
     """
 
     def __init__(
@@ -862,8 +864,8 @@ def discover_credential(
     Environment variables read:
         KEYCARD_CLIENT_ID, KEYCARD_CLIENT_SECRET: together build a
             ClientSecret. KEYCARD_CLIENT_ID alone is also attached to a
-            WorkloadIdentity as its client_id (token-federation credentials
-            are resolved by it).
+            WorkloadIdentity as its client_id (v2 token credentials are
+            resolved by it).
         KEYCARD_EKS_WORKLOAD_IDENTITY_TOKEN_FILE,
         AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE, AWS_WEB_IDENTITY_TOKEN_FILE,
         AZURE_FEDERATED_TOKEN_FILE: any one of them (the FileTokenSource

@@ -149,6 +149,24 @@ cached_metadata = AuthorizationServerMetadata(
 #             -> metadata=cached_metadata
 ```
 
+A confidential client can authenticate the code exchange with a credential
+instead of `client_secret`. Pass `credential=` to `complete_authorization` and
+omit `client_id`. The credential must authenticate as the `client_id` given to
+`begin_authorization`. For a `WorkloadIdentity`, that is its `client_id`, which
+names a v2 token credential:
+
+```python
+from keycardai.oauth.server.credentials import FileTokenSource, WorkloadIdentity
+
+credential = WorkloadIdentity(FileTokenSource(), client_id="app-credential-id")
+
+# login_route:    begin_authorization(client_id=credential.client_id, ...)
+# callback_route: complete_authorization(credential=credential, ...)
+```
+
+This is async only: `complete_authorization`, `authenticate`, and
+`AsyncClient.exchange_authorization_code`.
+
 ### Refreshing a Grant
 
 A token response from the web-app flow may carry a `refresh_token`. Redeem it
