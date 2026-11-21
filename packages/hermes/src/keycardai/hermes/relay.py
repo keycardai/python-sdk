@@ -25,6 +25,7 @@ from .settings import (
 from .store import EXPIRY_SKEW_SECONDS
 
 INTERNAL_ERROR = -32603
+PARSE_ERROR = -32700
 SESSION_HEADER = "Mcp-Session-Id"
 
 
@@ -174,12 +175,19 @@ class Relay:
         is_request = "id" in message
         try:
             replies = self.send(message)
-        except (RelayError, httpx.HTTPError) as exc:
+        except Exception as exc:
+            # The relay keeps running whatever fails. RelayError and httpx
+            # errors carry messages written to name the resource and never a
+            # token; anything else is reported by class only.
+            if isinstance(exc, (RelayError, httpx.HTTPError)):
+                detail = str(exc)
+            else:
+                detail = f"{self.resource}: {type(exc).__name__}"
             if is_request:
                 self._write(out, json.dumps({
                     "jsonrpc": "2.0",
                     "id": message.get("id"),
-                    "error": {"code": INTERNAL_ERROR, "message": f"keycard relay: {exc}"},
+                    "error": {"code": INTERNAL_ERROR, "message": f"keycard relay: {detail}"},
                 }))
             return
         for reply in replies:
@@ -198,6 +206,12 @@ class Relay:
             try:
                 parsed = json.loads(line)
             except json.JSONDecodeError:
+                # JSON-RPC 2.0 section 5: a parse error is answered with id null.
+                self._write(out, json.dumps({
+                    "jsonrpc": "2.0",
+                    "id": None,
+                    "error": {"code": PARSE_ERROR, "message": "keycard relay: parse error"},
+                }))
                 continue
             for message in parsed if isinstance(parsed, list) else [parsed]:
                 if isinstance(message, dict):

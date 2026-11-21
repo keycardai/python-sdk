@@ -54,6 +54,7 @@ plugins:
         # actors: {alice: alice@example.com}   # for impersonate and verify_sign_in
         # secrets: {CALENDAR_KEY: https://calendar.example.com}
         # block_without_sign_in: true
+        # sign_in_on_admission: false        # answer a sender with no sign-in before the turn
         # authorization_url: https://...
         # verify_sign_in: false
 ```
@@ -64,6 +65,7 @@ settings file never holds it. A `workload_identity` block
 platform-projected token file instead.
 
 `plugins.isolation: host` is not supported: the plugin refuses to load there,
+including inside the plugin host child (`HERMES_PLUGIN_HOST_PROCESS=1`),
 because a ContextVar set in the plugin host process cannot reach a tool.
 
 ## Sign in an actor
@@ -77,13 +79,17 @@ token grants, no client authentication), runs the device flow for
 `sign_in_resource`, and stores the sign-in under the actor in a 0600 file under
 the profile's Hermes home. Without `--actor` the sign-in is stored under
 `owner_actor`. With `verify_sign_in: true`, the zone's UserInfo must match
-`actors[alice]` or nothing is stored.
+`actors[alice]` (its `sub`, or its `email` when the value is an email) or
+nothing is stored. Each sign-in file is named by a readable prefix of the actor plus a digest of
+the full id, so two actors never share one, and the directories are 0700.
 
 In a gateway turn the actor is the sender (`HERMES_SESSION_ACTOR_ID`); CLI,
 TUI, cron and kanban turns act as `owner_actor`. A tool call that needs a
 sign-in and has none is answered with a tool result naming the login command,
 and the tool does not run (`block_without_sign_in: false` records the error on
-the context and runs the tool instead).
+the context and runs the tool instead). With `sign_in_on_admission: true`, a
+message from a sender with no sign-in is answered with the login command before
+the turn starts, whether or not the turn would have called a tool.
 
 ## Read the credential in a tool
 

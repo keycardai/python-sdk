@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import importlib
+import importlib.util
 import os
 from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import asynccontextmanager, contextmanager
@@ -33,6 +34,8 @@ from .settings import (
 from .store import SignInStore
 
 ISOLATION_HOST = "host"
+# Hermes sets this in the plugin host child (hermes_cli/plugin_isolation.py:98),
+# where isolation_mode() answers in_process, so the child is detected by it.
 HOST_PROCESS_ENV = "HERMES_PLUGIN_HOST_PROCESS"
 MISSING_IDENTITY_MESSAGE = "No Keycard sign-in for this actor. Run `hermes keycard login --actor <actor>`."
 
@@ -99,9 +102,11 @@ class KeycardPlugin:
         *,
         session_env: SessionEnv = default_session_env,
         toolset_of: ToolsetOf = default_toolset_of,
+        home: Path | None = None,
     ) -> None:
         self.grants = grants
         self.settings = grants.settings
+        self.home = home if home is not None else grants.store.home
         self.middleware = KeycardMiddleware(grants, session_env=session_env, toolset_of=toolset_of)
         self.secret_source = KeycardSecretSource(grants)
 
@@ -132,16 +137,35 @@ class KeycardPlugin:
         return handle(self, args)
 
 
-_registered: KeycardPlugin | None = None
+# One plugin per Hermes home: a multiplexed gateway registers each profile in
+# one process, so the escape hatch looks its profile up rather than taking the
+# last registration.
+_registered: dict[Path, KeycardPlugin] = {}
 
 
-def current_plugin() -> KeycardPlugin:
-    if _registered is None:
+def _inside_hermes() -> bool:
+    return importlib.util.find_spec("hermes_constants") is not None
+
+
+def current_plugin(
+    home: Callable[[], Path] | None = None,
+    inside_hermes: Callable[[], bool] | None = None,
+) -> KeycardPlugin:
+    """The plugin registered for the active Hermes home. Inside Hermes the
+    lookup is by home only, so a profile without the plugin never gets another
+    profile's. Outside Hermes (tests, scripts) a single registration is used
+    whatever the home resolves to."""
+    home = home or default_hermes_home
+    inside_hermes = inside_hermes or _inside_hermes
+    plugin = _registered.get(Path(home()).resolve())
+    if plugin is None and len(_registered) == 1 and not inside_hermes():
+        plugin = next(iter(_registered.values()))
+    if plugin is None:
         raise RuntimeError(
-            "keycardai-hermes is not registered: enable the plugin for this profile, "
-            "or build a KeycardPlugin and pass it to grant()."
+            "keycardai-hermes is not registered for this profile: enable the plugin "
+            "for it, or build a KeycardPlugin and pass it to grant()."
         )
-    return _registered
+    return plugin
 
 
 def register(
@@ -162,7 +186,6 @@ def register(
     ``plugins.isolation: host``; Hermes then marks the plugin failed and
     unwinds whatever it registered.
     """
-    global _registered
     if isolation_mode() == ISOLATION_HOST:
         raise HermesConfigurationError(
             "plugins.isolation",
@@ -171,8 +194,9 @@ def register(
             absolute=True,
         )
     settings = load_settings(ctx.get_config)
-    grants = build_grants(settings, home=hermes_home(), get_secret=get_secret, client=client)
-    plugin = KeycardPlugin(grants, session_env=session_env, toolset_of=toolset_of)
+    home = Path(hermes_home()).resolve()
+    grants = build_grants(settings, home=home, get_secret=get_secret, client=client)
+    plugin = KeycardPlugin(grants, session_env=session_env, toolset_of=toolset_of, home=home)
     ctx.register_middleware("tool_execution", plugin.middleware)
     ctx.register_secret_source(plugin.secret_source)
     ctx.register_cli_command(
@@ -181,9 +205,14 @@ def register(
         plugin.setup_cli,
         plugin.handle_cli,
     )
-    if admission_hook and settings.default_pattern == "on_behalf_of" and hasattr(ctx, "register_hook"):
+    if (
+        admission_hook
+        and settings.sign_in_on_admission
+        and settings.default_pattern == "on_behalf_of"
+        and hasattr(ctx, "register_hook")
+    ):
         ctx.register_hook("post_gateway_admission", plugin.post_gateway_admission)
-    _registered = plugin
+    _registered[home] = plugin
     return plugin
 
 

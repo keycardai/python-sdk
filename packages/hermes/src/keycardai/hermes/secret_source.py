@@ -56,6 +56,7 @@ class KeycardSecretSource(_secret_source_base()):  # ty: ignore[unsupported-base
     def __init__(self, grants: Grants) -> None:
         self.grants = grants
         self._fetched: dict[str, str] | None = None
+        self._warnings: list[str] = []
         self.acquisitions = 0
 
     def is_enabled(self, cfg: dict[str, Any]) -> bool:
@@ -82,13 +83,20 @@ class KeycardSecretSource(_secret_source_base()):  # ty: ignore[unsupported-base
     def fetch(self, cfg: dict[str, Any], home_path: Path) -> Any:
         if self._fetched is None:
             self._fetched = self._acquire()
-        return _result(secrets=dict(self._fetched))
+        return _result(secrets=dict(self._fetched), warnings=list(self._warnings))
 
     def _acquire(self) -> dict[str, str]:
+        """Acquire every name; a name that fails is left out and named in a
+        warning (with the zone's error code, never a token) so Hermes can say
+        why the key is missing."""
         values: dict[str, str] = {}
         for name, resource in self.grants.settings.secrets.items():
             self.acquisitions += 1
             access, _ = self.grants.acquire(None, [resource], "as_self")
             if resource in access.get_successful_resources():
                 values[name] = access.access(resource).access_token
+                continue
+            error = access.get_resource_error(resource) or access.get_error() or {}
+            code = error.get("code") or "error"
+            self._warnings.append(f"keycard: {name} not acquired for {resource} ({code})")
         return values

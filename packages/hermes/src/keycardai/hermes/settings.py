@@ -58,6 +58,7 @@ class HermesSettings:
     actors: dict[str, str] = field(default_factory=dict)
     secrets: dict[str, str] = field(default_factory=dict)
     block_without_sign_in: bool = True
+    sign_in_on_admission: bool = False
     authorization_url: str | None = None
     verify_sign_in: bool = False
 
@@ -168,6 +169,7 @@ def load_settings(get: Getter) -> HermesSettings:
         actors=_str_map(get, "actors"),
         secrets=_str_map(get, "secrets"),
         block_without_sign_in=_bool(get, "block_without_sign_in", True),
+        sign_in_on_admission=_bool(get, "sign_in_on_admission", False),
         authorization_url=_str(get, "authorization_url"),
         verify_sign_in=_bool(get, "verify_sign_in", False),
     )

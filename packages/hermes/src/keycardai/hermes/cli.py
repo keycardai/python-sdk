@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 
 class LoginError(Exception):
     """``login`` stored nothing; ``code`` is ``refresh_token_missing``,
-    ``sign_in_mismatch`` or ``missing_actor``."""
+    ``sign_in_mismatch``, ``missing_actor`` or ``missing_sign_in_resource``."""
 
     def __init__(self, code: str, message: str) -> None:
         self.code = code
@@ -66,7 +66,7 @@ def login(plugin: KeycardPlugin, actor: str | None, *, client: Any = None) -> st
     if not resolved:
         raise LoginError("missing_actor", "Pass --actor, or set owner_actor in the profile settings.")
     if not settings.sign_in_resource:
-        raise LoginError("missing_actor", "sign_in_resource is required to sign in.")
+        raise LoginError("missing_sign_in_resource", "sign_in_resource is required to sign in.")
     if client is None:
         return asyncio.run(_login_with_new_client(plugin, resolved))
     return asyncio.run(_login(plugin, resolved, client))
@@ -106,22 +106,35 @@ async def _login(plugin: KeycardPlugin, actor: str, client: Any) -> str:
     if settings.verify_sign_in:
         expected = settings.actors.get(actor)
         info = await client.userinfo(response.access_token)
-        if not expected or info.sub != expected:
+        if not expected or not _same_user(expected, info):
             raise LoginError(
                 "sign_in_mismatch",
                 "The signed-in user is not the one mapped for this actor; nothing was stored.",
             )
     expires_in = response.expires_in if response.expires_in is not None else 300
-    store.save(
-        actor,
-        SignIn(
-            client_id=client_id,
-            refresh_token=response.refresh_token,
-            access_token=response.access_token,
-            expires_at=plugin.grants.clock() + float(expires_in),
-        ),
-    )
+    # Under the sign-in's lock, so a refresh running in the gateway cannot
+    # finish after this and write the replaced sign-in back over it.
+    with store.lock(actor):
+        store.save(
+            actor,
+            SignIn(
+                client_id=client_id,
+                refresh_token=response.refresh_token,
+                access_token=response.access_token,
+                expires_at=plugin.grants.clock() + float(expires_in),
+            ),
+        )
     return actor
+
+
+def _same_user(expected: str, info: Any) -> bool:
+    """``actors`` values are zone user identifiers, which are also what
+    impersonation sends, so match the UserInfo ``sub`` or, for an email, the
+    ``email`` claim (case-insensitive)."""
+    if info.sub == expected:
+        return True
+    email = (getattr(info, "claims", None) or {}).get("email")
+    return isinstance(email, str) and "@" in expected and email.lower() == expected.lower()
 
 
 def token(plugin: KeycardPlugin, resource: str, *, actor: str | None = None, as_self: bool = False) -> str:

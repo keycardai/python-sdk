@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import re
+import tempfile
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -42,12 +43,19 @@ def _zone_key(zone_url: str) -> str:
     return hashlib.sha256(zone_url.rstrip("/").encode()).hexdigest()[:16]
 
 
+def _private_dir(path: Path) -> None:
+    """Create ``path`` and its parent 0700; ``mkdir(mode=)`` only applies to
+    the leaf, so the parent is created on its own first."""
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    path.mkdir(exist_ok=True, mode=0o700)
+
+
 def _write_private(path: Path, payload: dict[str, object]) -> None:
-    """Create the file 0600 (never chmod after the fact), write a temp file
-    beside it and rename it over the old one."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    """Write a 0600 temp file beside ``path`` (``mkstemp`` creates it 0600
+    under a unique name, so concurrent writers never share one) and rename it
+    over the old one."""
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+    tmp = Path(tmp_name)
     try:
         with os.fdopen(fd, "w") as handle:
             json.dump(payload, handle)
@@ -66,9 +74,10 @@ class SignInStore:
     """Sign-ins and the registered public client for one profile and zone.
 
     The profile is the Hermes home, so the key (zone, profile, actor) becomes
-    ``<home>/keycard/<zone>/signin-<actor>.json``; the public client ``login``
-    registered lives beside them in ``client.json`` and is shared by every
-    actor in the zone. Files are created 0600 and replaced by rename.
+    ``<home>/keycard/<zone digest>/signin-<actor digest>.json``; the public
+    client ``login`` registered lives beside them in ``client.json`` and is
+    shared by every actor in the zone. Directories are 0700, files are created
+    0600 and replaced by rename.
     """
 
     def __init__(self, home: Path | str, zone_url: str) -> None:
@@ -94,6 +103,7 @@ class SignInStore:
         )
 
     def save(self, actor: str, sign_in: SignIn) -> None:
+        _private_dir(self.dir)
         _write_private(self.path(actor), {"actor": actor, **asdict(sign_in)})
 
     def client_id(self) -> str | None:
@@ -103,6 +113,7 @@ class SignInStore:
             return None
 
     def save_client_id(self, client_id: str) -> None:
+        _private_dir(self.dir)
         _write_private(self.dir / "client.json", {"client_id": client_id})
 
     @contextmanager
@@ -113,7 +124,7 @@ class SignInStore:
         on the kernel lock, and a second thread of this process blocks on it
         too because each ``with`` opens its own descriptor.
         """
-        self.dir.mkdir(parents=True, exist_ok=True)
+        _private_dir(self.dir)
         lock_path = self.path(actor).with_suffix(".lock")
         fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
         try:

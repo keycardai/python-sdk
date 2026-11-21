@@ -108,4 +108,4 @@ def make_harness(tmp_path: Path):
 @pytest.fixture(autouse=True)
 def _reset_registered():
     yield
-    plugin_module._registered = None
+    plugin_module._registered.clear()

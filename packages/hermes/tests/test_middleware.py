@@ -229,13 +229,19 @@ def test_row_16_grant_and_agrant_outside_a_run(harness: Harness) -> None:
 
 
 # row 17
-def test_row_17_post_gateway_admission_asks_for_sign_in(harness: Harness) -> None:
-    hook = harness.ctx.hooks["post_gateway_admission"][0]
+def test_row_17_post_gateway_admission_asks_for_sign_in(make_harness) -> None:
+    h = make_harness(base_settings(sign_in_on_admission=True))
+    hook = h.ctx.hooks["post_gateway_admission"][0]
+    # Hermes consumes a message only for {"action": "handled"} (gateway/run_inbound_consumer.py:53-58).
     result = hook(session_key="k", platform="telegram", source={"user_id": "carol"}, message_id="1", text="hi")
     assert result is not None and result["action"] == "handled"
     assert "hermes keycard login --actor carol" in result["reply"]
-    harness.store_sign_in("carol")
+    h.store_sign_in("carol")
     assert hook(session_key="k", platform="telegram", source={"user_id": "carol"}, message_id="2", text="hi") is None
+
+
+def test_admission_hook_is_off_by_default(harness: Harness) -> None:
+    assert "post_gateway_admission" not in harness.ctx.hooks
 
 
 def test_sign_ins_of_colliding_actor_ids_never_share_a_file(harness: Harness) -> None:
@@ -438,7 +444,7 @@ def test_registrations_match_the_spec_table(harness: Harness) -> None:
     assert list(harness.ctx.middleware) == ["tool_execution"]
     assert harness.ctx.secret_sources[0].name == "keycard"
     assert list(harness.ctx.cli_commands) == ["keycard"]
-    assert list(harness.ctx.hooks) == ["post_gateway_admission"]
+    assert list(harness.ctx.hooks) == []
 
 
 @pytest.mark.skipif(sys.platform == "win32" or os.name != "posix", reason="flock")

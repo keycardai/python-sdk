@@ -144,6 +144,7 @@ class StubClient:
         self.refresh_delay = 0.0
         self.device_refresh_token: str | None = "refresh-1"
         self.userinfo_sub = "user-1"
+        self.userinfo_email: str | None = None
         self.exchange_raises: Exception | None = None
 
     async def exchange_token(self, request: TokenExchangeRequest) -> TokenResponse:
@@ -206,7 +207,10 @@ class StubClient:
 
     async def userinfo(self, access_token: str, **kwargs: Any) -> UserInfoResponse:
         self.userinfo_calls.append(access_token)
-        return UserInfoResponse(sub=self.userinfo_sub, claims={"sub": self.userinfo_sub})
+        claims: dict[str, Any] = {"sub": self.userinfo_sub}
+        if self.userinfo_email is not None:
+            claims["email"] = self.userinfo_email
+        return UserInfoResponse(sub=self.userinfo_sub, claims=claims)
 
 
 def invalid_grant() -> RefreshGrantError:

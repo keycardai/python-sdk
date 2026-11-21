@@ -39,7 +39,7 @@ moves.
 | 14 | `test_row_14_denied_grant_with_authorization_url_blocks` |
 | 15 | `test_row_15_as_self_with_denied_grant_records_and_runs` |
 | 16 | `test_row_16_grant_and_agrant_outside_a_run` |
-| 17 | `test_row_17_post_gateway_admission_asks_for_sign_in` |
+| 17 | `test_row_17_post_gateway_admission_asks_for_sign_in` (with `sign_in_on_admission: true`) |
 | 18 | `test_row_18_near_expiry_refreshes_as_the_public_client_then_exchanges` |
 | 19 | `test_row_19_rotated_refresh_token_is_stored_by_rename_at_0600` |
 | 20 | `test_row_20_two_threads_share_one_refresh`, `test_row_20_two_processes_share_one_refresh` |
@@ -67,3 +67,10 @@ covers `keycardai.hermes.testing`.
 
 None against a live zone, as the spec says: the framework is not on PyPI and
 the sign-in is interactive.
+
+Beyond the spec rows, `tests/test_hardening.py` covers: distinct actors never
+sharing a sign-in file, private store directories, the plugin host child
+counting as host isolation, `grant()` resolving its profile by Hermes home, the
+relay surviving an unexpected error and answering a parse error, `login`
+saving under the sign-in lock, UserInfo email matching and secret source
+warnings.

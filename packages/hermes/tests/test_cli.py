@@ -34,9 +34,11 @@ def test_row_9_login_registers_once_runs_the_device_flow_and_stores_0600(harness
     assert data["refresh_token"] == "refresh-1" and data["access_token"] == "device-access"
     assert stat.S_IMODE((store.dir / "client.json").stat().st_mode) == 0o600
     added = sorted(set(files_under(harness.home)) - set(before))
-    assert added == sorted(
-        [path.relative_to(harness.home).as_posix(), (store.dir / "client.json").relative_to(harness.home).as_posix()]
-    )
+    # The sign-in, its lock file (login saves under the lock) and the public client.
+    expected = [path, path.with_suffix(".lock"), store.dir / "client.json"]
+    assert added == sorted(p.relative_to(harness.home).as_posix() for p in expected)
+    assert stat.S_IMODE(store.dir.stat().st_mode) == 0o700
+    assert stat.S_IMODE(store.dir.parent.stat().st_mode) == 0o700
 
 
 # row 10

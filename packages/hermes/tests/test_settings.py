@@ -123,6 +123,6 @@ def test_default_seams_fall_back_without_hermes(monkeypatch, tmp_path: Path) -> 
 
 
 def test_grant_without_a_registered_plugin() -> None:
-    plugin._registered = None
+    plugin._registered.clear()
     with pytest.raises(RuntimeError, match="not registered"):
         plugin.current_plugin()
