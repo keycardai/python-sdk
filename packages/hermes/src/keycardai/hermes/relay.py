@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import threading
 import time
@@ -45,12 +46,17 @@ def _one_line(text: str) -> str:
         return " ".join(text.split())
 
 
+# SSE ends a line only at CRLF, LF or CR. str.splitlines() also breaks on
+# U+2028, U+2029 and U+0085, which JSON carries unescaped inside strings.
+_SSE_LINE_END = re.compile(r"\r\n|\r|\n")
+
+
 def _sse_events(text: str) -> list[str]:
     """The ``data`` of each server-sent event, its ``data:`` lines joined with
     newlines as the SSE format defines; events end at a blank line."""
     events: list[str] = []
     data: list[str] = []
-    for line in text.splitlines():
+    for line in _SSE_LINE_END.split(text):
         if not line:
             if data:
                 events.append("\n".join(data))
@@ -177,9 +183,13 @@ class Relay:
             response, _ = self._post(self.initialize_request, None)
             if response.status_code >= 400:
                 raise RelayError(f"re-initialize with {self.resource} failed with HTTP {response.status_code}")
-            self.session_id = response.headers.get(SESSION_HEADER) or None
+            replacement = response.headers.get(SESSION_HEADER) or None
             if self.initialized_notification is not None:
-                self._post(self.initialized_notification, self.session_id)
+                self._post(self.initialized_notification, replacement)
+            # Published only once the handshake is complete: a request that
+            # read the lost session meanwhile gets a 404, waits on the lock
+            # above and retries here, so none reaches a half-open session.
+            self.session_id = replacement
 
     def send(self, message: dict[str, Any], *, retry_auth: bool = True, retry_session: bool = True) -> list[str]:
         """Relay one message; the replies as JSON text, one per line to write."""
@@ -237,11 +247,12 @@ class Relay:
             out.flush()
 
     def run(self, inp: IO[str], out: IO[str]) -> int:
-        """Relay until standard input closes. ``initialize`` and its
-        ``notifications/initialized`` run inline, since every later request
-        needs the session they open; everything else runs
-        concurrently, and the relay waits for requests in flight before it
-        returns."""
+        """Relay until standard input closes. ``initialize`` and every
+        notification run inline on the reading thread: ``initialize`` opens
+        the session later requests need, and a notification such as
+        ``notifications/cancelled`` must not wait for a free worker. Requests
+        run concurrently, and the relay waits for requests in flight before
+        it returns."""
         with ThreadPoolExecutor(max_workers=MAX_IN_FLIGHT, thread_name_prefix="relay") as pool:
             self._read(inp, out, pool)
         return 0
@@ -264,7 +275,11 @@ class Relay:
             for message in parsed if isinstance(parsed, list) else [parsed]:
                 if not isinstance(message, dict):
                     continue
-                if message.get("method") in ("initialize", "notifications/initialized"):
+                if message.get("method") == "initialize" or "id" not in message:
+                    # initialize opens the session every later request needs.
+                    # Notifications (notifications/initialized, and
+                    # notifications/cancelled above all) are short and must not
+                    # queue behind tool calls holding every worker.
                     self.handle(message, out)
                 else:
                     pool.submit(self.handle, message, out)

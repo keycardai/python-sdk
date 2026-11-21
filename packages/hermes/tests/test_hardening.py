@@ -218,3 +218,61 @@ def test_admission_hook_without_a_sender_lets_the_turn_run(make_harness) -> None
     obj = types.SimpleNamespace(user_id="carol")
     result = hook(session_key="k", platform="telegram", source=obj, message_id="1", text="hi")
     assert result is not None and "--actor carol" in result["reply"]
+
+
+def test_relay_keeps_an_sse_event_whole_across_unicode_line_separators(tmp_path: Path) -> None:
+    import httpx
+
+    server = FakeServer()
+    relay, _ = make_relay(tmp_path, server)
+    text = "a b c\u0085d"
+    payload = json.dumps({"jsonrpc": "2.0", "id": 5, "result": {"text": text}}, ensure_ascii=False)
+    inner = server.handler
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if json.loads(request.content).get("method") == "tools/call":
+            return httpx.Response(200, text=f"event: message\ndata: {payload}\n\n", headers={"Content-Type": "text/event-stream"})
+        return inner(request)
+
+    relay.http = httpx.Client(transport=httpx.MockTransport(handler))
+    replies = run(relay, req(5, "tools/call"))
+    assert replies == [{"jsonrpc": "2.0", "id": 5, "result": {"text": text}}]
+
+
+def test_relay_publishes_a_replacement_session_only_after_initialized(tmp_path: Path) -> None:
+    import httpx
+
+    server = FakeServer()
+    relay, _ = make_relay(tmp_path, server)
+    seen_during_handshake: list[str | None] = []
+    inner = server.handler
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if json.loads(request.content).get("method") == "notifications/initialized" and server.sessions > 1:
+            seen_during_handshake.append(relay.session_id)
+        return inner(request)
+
+    relay.http = httpx.Client(transport=httpx.MockTransport(handler))
+    run(relay, req(1, "initialize"), {"jsonrpc": "2.0", "method": "notifications/initialized"})
+    assert relay.session_id == "s1"
+    server.lost_sessions.add("s1")
+    replies = run(relay, req(2, "tools/list"))
+    assert replies[0]["result"]["session"] == "s2"
+    assert seen_during_handshake == ["s1"]
+    assert relay.session_id == "s2"
+
+
+def test_relay_dispatches_notifications_inline_and_requests_to_workers(tmp_path: Path) -> None:
+    server = FakeServer()
+    relay, _ = make_relay(tmp_path, server)
+    submitted: list[dict] = []
+
+    class RecordingPool:
+        def submit(self, fn, message, out):  # noqa: ANN001
+            submitted.append(message)
+
+    cancel = {"jsonrpc": "2.0", "method": "notifications/cancelled", "params": {"requestId": 9}}
+    lines = "".join(json.dumps(m) + "\n" for m in (cancel, req(9, "tools/call")))
+    relay._read(io.StringIO(lines), io.StringIO(), RecordingPool())  # type: ignore[arg-type]
+    assert [m.get("method") for m in submitted] == ["tools/call"]
+    assert any(json.loads(r.content).get("method") == "notifications/cancelled" for r in server.requests)
