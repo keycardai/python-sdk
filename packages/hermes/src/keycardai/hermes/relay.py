@@ -6,8 +6,10 @@ import argparse
 import json
 import os
 import sys
+import threading
 import time
 from collections.abc import Mapping
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import IO, Any
 
@@ -27,6 +29,11 @@ from .store import EXPIRY_SKEW_SECONDS
 INTERNAL_ERROR = -32603
 PARSE_ERROR = -32700
 SESSION_HEADER = "Mcp-Session-Id"
+# A tool call can run for minutes, so only connecting is bounded tightly.
+TIMEOUT = httpx.Timeout(30.0, read=300.0)
+# Requests in flight at once: Hermes can run tool calls in parallel, and a
+# slow call must not hold up the rest (or a cancellation for it).
+MAX_IN_FLIGHT = 8
 
 
 def _one_line(text: str) -> str:
@@ -36,6 +43,24 @@ def _one_line(text: str) -> str:
         return json.dumps(json.loads(text), separators=(",", ":"))
     except json.JSONDecodeError:
         return " ".join(text.split())
+
+
+def _sse_events(text: str) -> list[str]:
+    """The ``data`` of each server-sent event, its ``data:`` lines joined with
+    newlines as the SSE format defines; events end at a blank line."""
+    events: list[str] = []
+    data: list[str] = []
+    for line in text.splitlines():
+        if not line:
+            if data:
+                events.append("\n".join(data))
+                data = []
+        elif line.startswith("data:"):
+            value = line[len("data:"):]
+            data.append(value[1:] if value.startswith(" ") else value)
+    if data:
+        events.append("\n".join(data))
+    return [event for event in events if event.strip()]
 
 
 class RelayError(Exception):
@@ -77,7 +102,7 @@ class Relay:
         self.settings = settings
         self.url = url
         self.resource = resource or url
-        self.http = http or httpx.Client(timeout=60.0)
+        self.http = http or httpx.Client(timeout=TIMEOUT)
         self.grants: Grants | None
         self.credential_error: str | None
         try:
@@ -91,10 +116,17 @@ class Relay:
         self.initialized_notification: dict[str, Any] | None = None
         self._token: str | None = None
         self._token_expires_at = 0.0
+        self._token_lock = threading.Lock()
+        self._session_lock = threading.Lock()
+        self._out_lock = threading.Lock()
 
     # Token
 
     def token(self) -> str:
+        with self._token_lock:
+            return self._token_locked()
+
+    def _token_locked(self) -> str:
         if self._token and time.time() < self._token_expires_at - EXPIRY_SKEW_SECONDS:
             return self._token
         if self.grants is None:
@@ -113,41 +145,51 @@ class Relay:
         self._token_expires_at = time.time() + float(expires_in)
         return self._token
 
-    def invalidate_token(self) -> None:
-        self._token = None
-        self._token_expires_at = 0.0
+    def invalidate_token(self, rejected: str | None = None) -> None:
+        """Drop the cached token, unless another request already replaced the
+        ``rejected`` one."""
+        with self._token_lock:
+            if rejected is None or self._token == rejected:
+                self._token = None
+                self._token_expires_at = 0.0
 
     # Transport
 
-    def _post(self, message: dict[str, Any]) -> httpx.Response:
+    def _post(self, message: dict[str, Any], session: str | None) -> tuple[httpx.Response, str]:
+        token = self.token()
         headers = {
-            "Authorization": f"Bearer {self.token()}",
+            "Authorization": f"Bearer {token}",
             "Accept": "application/json, text/event-stream",
             "Content-Type": "application/json",
         }
-        if self.session_id:
-            headers[SESSION_HEADER] = self.session_id
-        return self.http.post(self.url, content=json.dumps(message).encode(), headers=headers)
+        if session:
+            headers[SESSION_HEADER] = session
+        response = self.http.post(self.url, content=json.dumps(message).encode(), headers=headers)
+        return response, token
 
-    def _replay_session(self) -> None:
-        if self.initialize_request is None:
-            raise RelayError(f"the session with {self.resource} is gone and no initialize was seen")
-        self.session_id = None
-        response = self._post(self.initialize_request)
-        if response.status_code >= 400:
-            raise RelayError(f"re-initialize with {self.resource} failed with HTTP {response.status_code}")
-        self.session_id = response.headers.get(SESSION_HEADER) or None
-        if self.initialized_notification is not None:
-            self._post(self.initialized_notification)
+    def _replay_session(self, lost: str) -> None:
+        """Start a new session once, however many requests found ``lost`` gone."""
+        with self._session_lock:
+            if self.session_id != lost:
+                return
+            if self.initialize_request is None:
+                raise RelayError(f"the session with {self.resource} is gone and no initialize was seen")
+            response, _ = self._post(self.initialize_request, None)
+            if response.status_code >= 400:
+                raise RelayError(f"re-initialize with {self.resource} failed with HTTP {response.status_code}")
+            self.session_id = response.headers.get(SESSION_HEADER) or None
+            if self.initialized_notification is not None:
+                self._post(self.initialized_notification, self.session_id)
 
     def send(self, message: dict[str, Any], *, retry_auth: bool = True, retry_session: bool = True) -> list[str]:
         """Relay one message; the replies as JSON text, one per line to write."""
-        response = self._post(message)
+        session = self.session_id
+        response, token = self._post(message, session)
         if response.status_code == 401 and retry_auth:
-            self.invalidate_token()
+            self.invalidate_token(token)
             return self.send(message, retry_auth=False, retry_session=retry_session)
-        if response.status_code == 404 and self.session_id and retry_session:
-            self._replay_session()
+        if response.status_code == 404 and session and retry_session:
+            self._replay_session(session)
             return self.send(message, retry_auth=retry_auth, retry_session=False)
         if response.status_code >= 400:
             raise RelayError(f"{self.resource} answered HTTP {response.status_code}")
@@ -157,11 +199,7 @@ class Relay:
             return []
         content_type = response.headers.get("content-type", "")
         if content_type.startswith("text/event-stream"):
-            return [
-                _one_line(line[len("data:"):].strip())
-                for line in response.text.splitlines()
-                if line.startswith("data:") and line[len("data:"):].strip()
-            ]
+            return [_one_line(event) for event in _sse_events(response.text)]
         return [_one_line(response.text.strip())]
 
     # Loop
@@ -193,12 +231,22 @@ class Relay:
         for reply in replies:
             self._write(out, reply)
 
-    @staticmethod
-    def _write(out: IO[str], text: str) -> None:
-        out.write(text + "\n")
-        out.flush()
+    def _write(self, out: IO[str], text: str) -> None:
+        with self._out_lock:
+            out.write(text + "\n")
+            out.flush()
 
     def run(self, inp: IO[str], out: IO[str]) -> int:
+        """Relay until standard input closes. ``initialize`` and its
+        ``notifications/initialized`` run inline, since every later request
+        needs the session they open; everything else runs
+        concurrently, and the relay waits for requests in flight before it
+        returns."""
+        with ThreadPoolExecutor(max_workers=MAX_IN_FLIGHT, thread_name_prefix="relay") as pool:
+            self._read(inp, out, pool)
+        return 0
+
+    def _read(self, inp: IO[str], out: IO[str], pool: ThreadPoolExecutor) -> None:
         for line in inp:
             line = line.strip()
             if not line:
@@ -214,9 +262,12 @@ class Relay:
                 }))
                 continue
             for message in parsed if isinstance(parsed, list) else [parsed]:
-                if isinstance(message, dict):
+                if not isinstance(message, dict):
+                    continue
+                if message.get("method") in ("initialize", "notifications/initialized"):
                     self.handle(message, out)
-        return 0
+                else:
+                    pool.submit(self.handle, message, out)
 
 
 def main(argv: list[str] | None = None) -> int:

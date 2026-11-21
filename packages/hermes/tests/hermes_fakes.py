@@ -98,6 +98,7 @@ def run_tool_execution_middleware(
 _SESSION: dict[str, ContextVar[str | None]] = {
     "HERMES_SESSION_ACTOR_ID": ContextVar("fake_actor_id", default=None),
     "HERMES_SESSION_USER_ID": ContextVar("fake_user_id", default=None),
+    "HERMES_SESSION_PLATFORM": ContextVar("fake_platform", default=None),
 }
 
 
@@ -117,12 +118,12 @@ class FakeSession:
 
     @staticmethod
     def bind(**values: str | None) -> list[Any]:
-        return [_SESSION[name].set(value) for name, value in values.items()]
+        return [(_SESSION[name], _SESSION[name].set(value)) for name, value in values.items()]
 
     @staticmethod
     def unbind(tokens: list[Any]) -> None:
-        for name, token in zip(_SESSION, tokens, strict=False):
-            _SESSION[name].reset(token)
+        for var, token in reversed(tokens):
+            var.reset(token)
 
 
 class StubClient:

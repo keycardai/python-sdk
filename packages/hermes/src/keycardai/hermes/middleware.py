@@ -13,6 +13,8 @@ from .access import _current_access
 from .grants import Grants, resolve_actor, sign_in_text
 
 ACTOR_VAR = "HERMES_SESSION_ACTOR_ID"
+# Bound to the chat platform on gateway turns and empty on cron, kanban and TUI turns.
+PLATFORM_VAR = "HERMES_SESSION_PLATFORM"
 SessionEnv = Callable[[str, str], str]
 ToolsetOf = Callable[[str], str | None]
 
@@ -88,7 +90,8 @@ class KeycardMiddleware:
 
     def resolve_actor(self) -> str | None:
         bound = self._session_env(ACTOR_VAR, "")
-        return resolve_actor(self.settings, bound)
+        chat_turn = not bound and bool(self._session_env(PLATFORM_VAR, ""))
+        return resolve_actor(self.settings, bound, chat_turn=chat_turn)
 
     def resources_for(self, tool_name: str) -> list[str]:
         if is_mcp_toolset(self._toolset_of(tool_name)):

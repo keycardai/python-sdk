@@ -399,6 +399,22 @@ def test_row_27_empty_actor_is_owner_actor(harness: Harness) -> None:
         FakeSession.unbind(tokens)
 
 
+# row 38
+def test_row_38_empty_actor_on_a_chat_turn_never_falls_back_to_the_owner(harness: Harness) -> None:
+    # Hermes clears the actor when another sender's message joins a running
+    # turn (gateway/session_context.py:224-225); that turn is not the owner's.
+    harness.store_sign_in("owner", "owner-token")
+    calls: list[str] = []
+    tokens = FakeSession.bind(HERMES_SESSION_ACTOR_ID="", HERMES_SESSION_PLATFORM="discord")
+    try:
+        result = harness.call("calendar", ran(calls))
+    finally:
+        FakeSession.unbind(tokens)
+    assert calls == []
+    assert "reason: missing_identity" in result and "--actor" not in result
+    assert harness.client.exchange_calls == []
+
+
 # row 28
 def test_row_28_actor_aliases_map_an_a2a_peer(make_harness) -> None:
     h = make_harness(base_settings(actor_aliases={"athena": "owner"}))

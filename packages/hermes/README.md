@@ -79,12 +79,15 @@ token grants, no client authentication), runs the device flow for
 `sign_in_resource`, and stores the sign-in under the actor in a 0600 file under
 the profile's Hermes home. Without `--actor` the sign-in is stored under
 `owner_actor`. With `verify_sign_in: true`, the zone's UserInfo must match
-`actors[alice]` (its `sub`, or its `email` when the value is an email) or
+`actors[alice]` (its `sub`, or its `email` when the value is an email and the zone marks it
+verified) or
 nothing is stored. Each sign-in file is named by a readable prefix of the actor plus a digest of
 the full id, so two actors never share one, and the directories are 0700.
 
 In a gateway turn the actor is the sender (`HERMES_SESSION_ACTOR_ID`); CLI,
-TUI, cron and kanban turns act as `owner_actor`. A tool call that needs a
+TUI, cron and kanban turns act as `owner_actor`. A chat turn whose actor is
+empty (Hermes clears it when a second sender's message joins a running turn)
+gets no actor, never the owner's. A tool call that needs a
 sign-in and has none is answered with a tool result naming the login command,
 and the tool does not run (`block_without_sign_in: false` records the error on
 the context and runs the tool instead). With `sign_in_on_admission: true`, a
@@ -136,7 +139,8 @@ wrapper that writes it where the next command reads it keeps it out.
 endpoint, attaching a token for the endpoint (or `--resource`) acquired as
 `owner_actor`. It retries once on a 401 with a new token and once on a 404 by
 replaying `initialize`; anything that still fails is a JSON-RPC error on that
-request naming the resource. In the profile's `config.yaml`:
+request naming the resource. Requests run concurrently, so a slow tool call
+holds up nothing else, and a reply may take up to five minutes. In the profile's `config.yaml`:
 
 ```yaml
 mcp_servers:

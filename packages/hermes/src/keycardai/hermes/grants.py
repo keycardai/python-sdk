@@ -38,10 +38,19 @@ class RefreshFailed(Exception):
     sign-in is unchanged and this call records a per-resource error."""
 
 
-def resolve_actor(settings: HermesSettings, bound: str | None) -> str | None:
-    """The actor a turn acts as: the bound sender, or ``owner_actor`` when the
-    turn binds none or an empty one, then through ``actor_aliases``."""
-    actor = bound if bound else settings.owner_actor
+def resolve_actor(settings: HermesSettings, bound: str | None, *, chat_turn: bool = False) -> str | None:
+    """The actor a turn acts as, through ``actor_aliases``: the bound sender;
+    else ``owner_actor`` for a turn with no sender (CLI, TUI, cron, kanban).
+    A chat turn with an empty actor has no single sender (Hermes clears it
+    when another sender's message joins a running turn,
+    gateway/session_context.py:224-225), so it gets no actor at all rather
+    than the owner's."""
+    if bound:
+        actor: str | None = bound
+    elif chat_turn:
+        return None
+    else:
+        actor = settings.owner_actor
     if actor is None:
         return None
     return settings.actor_aliases.get(actor, actor)

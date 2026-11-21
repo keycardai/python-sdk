@@ -120,10 +120,49 @@ def test_row_32_batch_notification_and_sse(tmp_path) -> None:
     batch = [req(1, "tools/list"), req(2, "prompts/list")]
     notification = {"jsonrpc": "2.0", "method": "notifications/cancelled"}
     replies = run(relay, batch, notification, req(3, "tools/call"))
-    assert [r.get("id") for r in replies] == [1, 2, None, 3]
-    assert replies[2] == {"jsonrpc": "2.0", "method": "notifications/progress"}
-    assert replies[3]["result"] == {"sse": True}
+    # Requests run concurrently, so only each request's own replies keep their order.
+    assert sorted(r.get("id") or 0 for r in replies) == [0, 1, 2, 3]
+    progress = replies.index({"jsonrpc": "2.0", "method": "notifications/progress"})
+    final = next(i for i, r in enumerate(replies) if r.get("id") == 3)
+    assert progress < final and replies[final]["result"] == {"sse": True}
     assert len(server.requests) == 4
+
+
+def test_an_sse_event_split_over_several_data_lines_is_one_message(tmp_path) -> None:
+    from keycardai.hermes.relay import _sse_events
+
+    text = 'event: message\ndata: {"jsonrpc": "2.0",\ndata:  "id": 7}\n\ndata: {"a": 1}\n'
+    assert _sse_events(text) == ['{"jsonrpc": "2.0",\n "id": 7}', '{"a": 1}']
+
+
+# row 42
+def test_row_42_a_slow_request_does_not_hold_up_the_next(tmp_path) -> None:
+    import threading
+
+    server = FakeServer()
+    released = threading.Event()
+    order: list[str] = []
+    handler = server.handler
+
+    def slow_first(request: httpx.Request) -> httpx.Response:
+        method = json.loads(request.content).get("method")
+        if method == "slow":
+            assert released.wait(timeout=5)
+        response = handler(request)
+        order.append(method)
+        if method == "fast":
+            released.set()
+        return response
+
+    settings = settings_from_mapping(base_settings())
+    home = tmp_path / "home"
+    home.mkdir()
+    SignInStore(home, ZONE).save("owner", SignIn("public-1", "refresh-1", "owner-token", 4_000_000_000))
+    relay = Relay(settings, URL, home=home, environ={SECRET_NAME: "s3cret"},
+                  http=httpx.Client(transport=httpx.MockTransport(slow_first)), client=StubClient())
+    replies = run(relay, req(1, "slow"), req(2, "fast"))
+    assert order == ["fast", "slow"]
+    assert sorted(r["id"] for r in replies) == [1, 2]
 
 
 # row 34

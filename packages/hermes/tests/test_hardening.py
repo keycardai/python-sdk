@@ -130,6 +130,7 @@ def test_verify_sign_in_matches_an_email_identifier(make_harness) -> None:
     assert h.plugin.grants.store.load("A") is not None
 
 
+# row 41
 def test_verify_sign_in_rejects_an_unverified_email(make_harness) -> None:
     h = make_harness(base_settings(verify_sign_in=True, actors={"A": "larry@example.com"}))
     h.client.userinfo_email = "larry@example.com"
@@ -164,6 +165,7 @@ def test_secret_source_warns_for_a_name_it_could_not_acquire(make_harness) -> No
     assert "self-for" not in result.warnings[0]
 
 
+# row 39
 def test_login_command_shell_quotes_the_actor() -> None:
     from keycardai.hermes.grants import login_command, sign_in_text
 
@@ -171,6 +173,7 @@ def test_login_command_shell_quotes_the_actor() -> None:
     assert "--actor 'a b;$(x)'" in sign_in_text("missing_identity", "a b;$(x)", "t")
 
 
+# row 40
 def test_refresh_failure_is_not_a_consent_prompt(make_harness) -> None:
     from .conftest import base_settings
     from .hermes_fakes import server_error
@@ -202,6 +205,7 @@ def test_toolset_lookup_failure_counts_as_not_mcp(monkeypatch) -> None:
     assert middleware.default_toolset_of("t") is None
 
 
+# row 43
 def test_admission_hook_without_a_sender_lets_the_turn_run(make_harness) -> None:
     import types
 
