@@ -133,7 +133,10 @@ def _same_user(expected: str, info: Any) -> bool:
     ``email`` claim (case-insensitive)."""
     if info.sub == expected:
         return True
-    email = (getattr(info, "claims", None) or {}).get("email")
+    claims = getattr(info, "claims", None) or {}
+    email = claims.get("email")
+    if claims.get("email_verified") is not True:
+        return False
     return isinstance(email, str) and "@" in expected and email.lower() == expected.lower()
 
 

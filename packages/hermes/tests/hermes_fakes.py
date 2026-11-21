@@ -145,6 +145,7 @@ class StubClient:
         self.device_refresh_token: str | None = "refresh-1"
         self.userinfo_sub = "user-1"
         self.userinfo_email: str | None = None
+        self.userinfo_email_verified = True
         self.exchange_raises: Exception | None = None
 
     async def exchange_token(self, request: TokenExchangeRequest) -> TokenResponse:
@@ -210,6 +211,7 @@ class StubClient:
         claims: dict[str, Any] = {"sub": self.userinfo_sub}
         if self.userinfo_email is not None:
             claims["email"] = self.userinfo_email
+            claims["email_verified"] = self.userinfo_email_verified
         return UserInfoResponse(sub=self.userinfo_sub, claims=claims)
 
 

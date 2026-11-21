@@ -130,6 +130,14 @@ def test_verify_sign_in_matches_an_email_identifier(make_harness) -> None:
     assert h.plugin.grants.store.load("A") is not None
 
 
+def test_verify_sign_in_rejects_an_unverified_email(make_harness) -> None:
+    h = make_harness(base_settings(verify_sign_in=True, actors={"A": "larry@example.com"}))
+    h.client.userinfo_email = "larry@example.com"
+    h.client.userinfo_email_verified = False
+    assert h.cli("login", "--actor", "A")[0] == 1
+    assert h.plugin.grants.store.load("A") is None
+
+
 def test_verify_sign_in_does_not_match_an_email_against_a_non_email(make_harness) -> None:
     h = make_harness(base_settings(verify_sign_in=True, actors={"A": "user-expected"}))
     h.client.userinfo_email = "user-expected"
