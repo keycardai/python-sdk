@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shlex
 import time
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
@@ -188,8 +189,14 @@ class Grants:
         return await self.engine.build_access(identity, resources)
 
 
+def login_command(actor: str | None) -> str:
+    """The login command for ``actor``, shell-quoted: the actor is a sender id
+    from a chat platform and the text asks the operator to paste it."""
+    return LOGIN_COMMAND.format(actor=shlex.quote(actor)) if actor else "hermes keycard login"
+
+
 def sign_in_message(reason: str, actor: str | None) -> str:
-    command = LOGIN_COMMAND.format(actor=actor) if actor else "hermes keycard login"
+    command = login_command(actor)
     if reason == "subject_token_expired":
         return f"The sign-in for this actor has expired. Run `{command}` on the Hermes host."
     return f"No Keycard sign-in for this actor. Run `{command}` on the Hermes host."
@@ -199,7 +206,7 @@ def sign_in_text(reason: str, actor: str | None, tool_name: str) -> str:
     """The blocking tool result for a call that needs a sign-in: the LangChain
     fallback shape, with the login command where a URL would be, since the
     sign-in runs on the host and no URL can complete it."""
-    command = LOGIN_COMMAND.format(actor=actor) if actor else "hermes keycard login"
+    command = login_command(actor)
     return (
         f"sign_in_required: the tool {tool_name} cannot run yet (reason: {reason}).\n"
         f"{command}\n"

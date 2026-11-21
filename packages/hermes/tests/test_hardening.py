@@ -154,3 +154,41 @@ def test_secret_source_warns_for_a_name_it_could_not_acquire(make_harness) -> No
     assert len(result.warnings) == 1
     assert "CAL_KEY" in result.warnings[0] and RESOURCE in result.warnings[0]
     assert "self-for" not in result.warnings[0]
+
+
+def test_login_command_shell_quotes_the_actor() -> None:
+    from keycardai.hermes.grants import login_command, sign_in_text
+
+    assert login_command("a b;$(x)") == "hermes keycard login --actor 'a b;$(x)'"
+    assert "--actor 'a b;$(x)'" in sign_in_text("missing_identity", "a b;$(x)", "t")
+
+
+def test_refresh_failure_is_not_a_consent_prompt(make_harness) -> None:
+    from .conftest import base_settings
+    from .hermes_fakes import server_error
+
+    h = make_harness(base_settings(authorization_url="https://consent.example.test"))
+    h.store_sign_in("owner", "old", expires_in=10)
+    h.client.refresh_error = server_error()
+    ran: list[str] = []
+
+    def tool(args):
+        ran.append("ran")
+        return "ok"
+
+    assert h.call("calendar", tool) == "ok" and ran == ["ran"]
+
+
+def test_toolset_lookup_failure_counts_as_not_mcp(monkeypatch) -> None:
+    import sys
+    import types
+
+    from keycardai.hermes import middleware
+
+    def boom(name):
+        raise KeyError(name)
+
+    module = types.ModuleType("tools.registry")
+    module.registry = types.SimpleNamespace(get_toolset_for_tool=boom)
+    monkeypatch.setitem(sys.modules, "tools.registry", module)
+    assert middleware.default_toolset_of("t") is None

@@ -32,7 +32,10 @@ def default_toolset_of(tool_name: str) -> str | None:
         registry = importlib.import_module("tools.registry").registry
     except ImportError:
         return None
-    toolset = registry.get_toolset_for_tool(tool_name)
+    try:
+        toolset = registry.get_toolset_for_tool(tool_name)
+    except Exception:
+        return None
     return str(toolset) if toolset else None
 
 
@@ -101,7 +104,11 @@ class KeycardMiddleware:
         access, needed = self.grants.acquire(actor, resources, pattern)
         if needed is not None and self.settings.block_without_sign_in:
             return sign_in_text(needed.reason, needed.actor, tool_name)
-        failed = access.get_failed_resources()
+        failed = [
+            resource
+            for resource in access.get_failed_resources()
+            if (access.get_resource_error(resource) or {}).get("code") != "refresh_failed"
+        ]
         if failed and pattern != "as_self" and self.settings.authorization_url:
             payload = self.engine.authorization_payload(failed, access)
             return self.engine.fallback_text(self.engine.fallback_fields(payload, tool_name))
