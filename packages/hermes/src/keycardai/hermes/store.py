@@ -29,8 +29,13 @@ class SignIn:
         return (now if now is not None else time.time()) >= self.expires_at - skew
 
 
-def _slug(value: str) -> str:
-    return re.sub(r"[^A-Za-z0-9._-]+", "_", value)[:64]
+def _actor_key(actor: str) -> str:
+    """A filename-safe key that is unique per actor: a readable prefix plus a
+    hash of the full id, so `alice@example.com` and `alice_example.com` never
+    share a file."""
+    prefix = re.sub(r"[^A-Za-z0-9._-]+", "_", actor)[:32]
+    digest = hashlib.sha256(actor.encode()).hexdigest()[:16]
+    return f"{prefix}-{digest}"
 
 
 def _zone_key(zone_url: str) -> str:
@@ -72,12 +77,14 @@ class SignInStore:
         self.dir = self.home / "keycard" / _zone_key(zone_url)
 
     def path(self, actor: str) -> Path:
-        return self.dir / f"signin-{_slug(actor)}.json"
+        return self.dir / f"signin-{_actor_key(actor)}.json"
 
     def load(self, actor: str) -> SignIn | None:
         try:
             data = json.loads(self.path(actor).read_text())
         except FileNotFoundError:
+            return None
+        if data.get("actor") != actor:
             return None
         return SignIn(
             client_id=str(data["client_id"]),
@@ -87,7 +94,7 @@ class SignInStore:
         )
 
     def save(self, actor: str, sign_in: SignIn) -> None:
-        _write_private(self.path(actor), asdict(sign_in))
+        _write_private(self.path(actor), {"actor": actor, **asdict(sign_in)})
 
     def client_id(self) -> str | None:
         try:

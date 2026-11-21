@@ -24,7 +24,16 @@ def _result(**fields: Any) -> Any:
     return FetchResult(**fields)
 
 
-class KeycardSecretSource:
+def _secret_source_base() -> type:
+    """Hermes's ``SecretSource`` ABC, which ``register_secret_source`` checks
+    with isinstance; ``object`` where Hermes is not importable (tests)."""
+    try:
+        return importlib.import_module("agent.secret_sources.base").SecretSource
+    except ImportError:
+        return object
+
+
+class KeycardSecretSource(_secret_source_base()):  # ty: ignore[unsupported-base]
     """Static keys for a profile: each name in ``secrets`` is a token for its
     resource, acquired as-itself under ``application_credential``.
 

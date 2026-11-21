@@ -54,9 +54,8 @@ class FakeServer:
                 f'data: {json.dumps({"jsonrpc": "2.0", "id": body["id"], "result": {"sse": True}})}\n\n'
             )
             return httpx.Response(200, text=text, headers={"Content-Type": "text/event-stream"})
-        return httpx.Response(
-            200, json={"jsonrpc": "2.0", "id": body["id"], "result": {"echo": body.get("method"), "session": session}}
-        )
+        payload = {"jsonrpc": "2.0", "id": body["id"], "result": {"echo": body.get("method"), "session": session}}
+        return httpx.Response(200, text=json.dumps(payload, indent=2), headers={"Content-Type": "application/json"})
 
 
 def make_relay(tmp_path: Path, server: FakeServer, *, secret: str | None = "s3cret", **overrides: Any) -> tuple[Relay, StubClient]:

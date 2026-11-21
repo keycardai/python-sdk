@@ -54,6 +54,7 @@ class Grants:
     engine: AgentGrantEngine
     store: SignInStore
     clock: Callable[[], float] = time.time
+    public_client: AsyncClient | None = None
 
     def run(self, coro: Coroutine[Any, Any, Any]) -> Any:
         return self.engine.run_sync(coro)
@@ -84,7 +85,17 @@ class Grants:
                 raise SignInRequired("subject_token_expired", actor)
             return self._refresh(actor, current)
 
-    async def _refresh_coro(self, client: AsyncClient, sign_in: SignIn) -> Any:
+    def _public(self) -> AsyncClient:
+        """The unauthenticated client the public sign-in client's requests go
+        through: the engine's client carries the application's own client
+        authentication, which must not be sent with a public client_id.
+        Built on the running loop (the engine's persistent loop)."""
+        if self.public_client is None:
+            self.public_client = AsyncClient(issuer=self.settings.zone_url)
+        return self.public_client
+
+    async def _refresh_coro(self, sign_in: SignIn) -> Any:
+        client = self._public()
         resources = [self.settings.sign_in_resource] if self.settings.sign_in_resource else None
         return await client.refresh_token_grant(
             refresh_token=sign_in.refresh_token or "",
@@ -94,7 +105,7 @@ class Grants:
 
     def _refresh(self, actor: str, sign_in: SignIn) -> SignIn:
         try:
-            response = self.run(self._refresh_coro(self.engine.client(), sign_in))
+            response = self.run(self._refresh_coro(sign_in))
         except OAuthProtocolError as exc:
             if exc.error == "invalid_grant":
                 raise SignInRequired("subject_token_expired", actor) from exc
@@ -126,15 +137,15 @@ class Grants:
             return Access.impersonate(user)
         return Access.on_behalf_of(self.fresh_sign_in(actor).access_token)
 
-    def acquire(
+    def resolve(
         self, actor: str | None, resources: list[str], pattern: str | None = None
-    ) -> tuple[AccessContext, SignInRequired | None]:
-        """Acquire ``resources`` for ``actor``: the AccessContext, and the
-        sign-in the call needs when it has none. Never raises for a grant;
-        a refresh failure is recorded per resource."""
+    ) -> tuple[KeycardIdentity | None, AccessContext | None, SignInRequired | None]:
+        """The identity for ``actor``, or the AccessContext that records why
+        there is none. Never raises: a missing or expired sign-in is a
+        context error, a failed refresh a per-resource error."""
         pattern = pattern or self.settings.default_pattern
         try:
-            identity = self.identity_for(actor, pattern)
+            return self.identity_for(actor, pattern), None, None
         except SignInRequired as needed:
             access = AccessContext()
             access.set_error(
@@ -143,7 +154,7 @@ class Grants:
                     "code": needed.reason,
                 }
             )
-            return access, needed
+            return None, access, needed
         except RefreshFailed as exc:
             access = AccessContext()
             for resource in resources:
@@ -155,8 +166,26 @@ class Grants:
                         "retryable": True,
                     },
                 )
-            return access, None
+            return None, access, None
+
+    def acquire(
+        self, actor: str | None, resources: list[str], pattern: str | None = None
+    ) -> tuple[AccessContext, SignInRequired | None]:
+        """Acquire ``resources`` for ``actor`` on the engine's loop: the
+        AccessContext, and the sign-in the call needs when it has none."""
+        identity, access, needed = self.resolve(actor, resources, pattern)
+        if access is not None:
+            return access, needed
         return self.run(self.engine.build_access(identity, resources)), None
+
+    async def aacquire(
+        self, actor: str | None, resources: list[str], pattern: str | None = None
+    ) -> AccessContext:
+        """``acquire`` on the running loop, for ``agrant``."""
+        identity, access, _ = self.resolve(actor, resources, pattern)
+        if access is not None:
+            return access
+        return await self.engine.build_access(identity, resources)
 
 
 def sign_in_message(reason: str, actor: str | None) -> str:

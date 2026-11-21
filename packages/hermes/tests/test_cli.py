@@ -74,6 +74,13 @@ def test_row_23_login_defaults_to_owner_actor_and_reuses_the_client(harness: Har
     assert [c["client_id"] for c in harness.client.device_calls] == ["public-1", "public-1"]
 
 
+def test_login_stores_under_the_canonical_actor_after_aliases(make_harness) -> None:
+    h = make_harness(base_settings(actor_aliases={"athena": "owner"}))
+    assert h.cli("login", "--actor", "athena")[0] == 0
+    assert h.plugin.grants.store.load("owner") is not None
+    assert h.plugin.grants.store.load("athena") is None
+
+
 def test_login_without_any_actor_fails(make_harness) -> None:
     settings = base_settings()
     del settings["owner_actor"]

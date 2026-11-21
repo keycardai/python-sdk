@@ -33,6 +33,7 @@ from .settings import (
 from .store import SignInStore
 
 ISOLATION_HOST = "host"
+HOST_PROCESS_ENV = "HERMES_PLUGIN_HOST_PROCESS"
 MISSING_IDENTITY_MESSAGE = "No Keycard sign-in for this actor. Run `hermes keycard login --actor <actor>`."
 
 
@@ -47,6 +48,11 @@ def default_get_secret(name: str) -> str | None:
 
 
 def default_isolation_mode() -> str:
+    """Hermes's ``isolation_mode()``; inside the plugin host process itself
+    (``HERMES_PLUGIN_HOST_PROCESS=1``) it reports in-process, so the host
+    marker is checked first."""
+    if os.environ.get(HOST_PROCESS_ENV) == "1":
+        return ISOLATION_HOST
     try:
         isolation_mode = importlib.import_module("hermes_cli.plugin_isolation").isolation_mode
     except ImportError:
@@ -80,7 +86,7 @@ def build_grants(
         missing_identity_message=MISSING_IDENTITY_MESSAGE,
         client=client,
     )
-    return Grants(settings, engine, SignInStore(home, settings.zone_url))
+    return Grants(settings, engine, SignInStore(home, settings.zone_url), public_client=client)
 
 
 class KeycardPlugin:
@@ -99,19 +105,21 @@ class KeycardPlugin:
         self.middleware = KeycardMiddleware(grants, session_env=session_env, toolset_of=toolset_of)
         self.secret_source = KeycardSecretSource(grants)
 
-    def post_gateway_admission(self, **context: Any) -> tuple[bool, str | None]:
+    def post_gateway_admission(self, **context: Any) -> dict[str, str] | None:
         """Answer a message from an actor with no sign-in with the login
-        instruction, consuming it before the turn starts."""
+        instruction, consuming it before the turn starts. Hermes consumes
+        a ``{"action": "handled", "reply": ...}`` result
+        (gateway/run_inbound_consumer.py:53-58); None lets the turn run."""
         if self.settings.default_pattern != "on_behalf_of":
-            return False, None
+            return None
         source = context.get("source") or {}
         sender = str(source.get("user_id") or "") if isinstance(source, dict) else ""
         actor = resolve_actor(self.settings, sender)
         if actor is None:
-            return True, sign_in_message("missing_identity", None)
+            return {"action": "handled", "reply": sign_in_message("missing_identity", None)}
         if self.grants.store.load(actor) is None:
-            return True, sign_in_message("missing_identity", actor)
-        return False, None
+            return {"action": "handled", "reply": sign_in_message("missing_identity", actor)}
+        return None
 
     def setup_cli(self, parser: argparse.ArgumentParser) -> None:
         from .cli import setup_parser
@@ -217,8 +225,9 @@ async def agrant(
     engine = plugin.grants.engine
     targets = _targets(plugin, tool_name, resources)
     if identity is None:
-        identity = plugin.grants.identity_for(resolve_actor(plugin.settings, None))
-    access = await engine.build_access(identity, targets)
+        access = await plugin.grants.aacquire(resolve_actor(plugin.settings, None), targets)
+    else:
+        access = await engine.build_access(identity, targets)
     token = _current_access.set(access)
     try:
         yield access

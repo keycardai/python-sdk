@@ -118,6 +118,8 @@ def test_default_seams_fall_back_without_hermes(monkeypatch, tmp_path: Path) -> 
     assert plugin.default_get_secret("S") == "from-env"
     assert plugin.default_isolation_mode() == "inline"
     assert plugin.default_hermes_home() == tmp_path
+    monkeypatch.setenv(plugin.HOST_PROCESS_ENV, "1")
+    assert plugin.default_isolation_mode() == "host"
 
 
 def test_grant_without_a_registered_plugin() -> None:

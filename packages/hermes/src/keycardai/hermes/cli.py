@@ -58,10 +58,11 @@ def handle(plugin: KeycardPlugin, args: argparse.Namespace, *, client: Any = Non
 
 def login(plugin: KeycardPlugin, actor: str | None, *, client: Any = None) -> str:
     """The device flow as the profile's public client, stored under ``actor``
-    (default ``owner_actor``). Registers the client on first use in the zone.
+    (default ``owner_actor``, after ``actor_aliases``, so the middleware's lookup
+    finds it). Registers the client on first use in the zone.
     The Python Client has no sync device flow, so this runs on ``asyncio.run``."""
     settings = plugin.settings
-    resolved = actor or settings.owner_actor
+    resolved = resolve_actor(settings, actor)
     if not resolved:
         raise LoginError("missing_actor", "Pass --actor, or set owner_actor in the profile settings.")
     if not settings.sign_in_resource:

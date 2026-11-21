@@ -231,11 +231,22 @@ def test_row_16_grant_and_agrant_outside_a_run(harness: Harness) -> None:
 # row 17
 def test_row_17_post_gateway_admission_asks_for_sign_in(harness: Harness) -> None:
     hook = harness.ctx.hooks["post_gateway_admission"][0]
-    consumed, reply = hook(session_key="k", platform="telegram", source={"user_id": "carol"}, message_id="1", text="hi")
-    assert consumed is True and reply is not None
-    assert "hermes keycard login --actor carol" in reply
+    result = hook(session_key="k", platform="telegram", source={"user_id": "carol"}, message_id="1", text="hi")
+    assert result is not None and result["action"] == "handled"
+    assert "hermes keycard login --actor carol" in result["reply"]
     harness.store_sign_in("carol")
-    assert hook(session_key="k", platform="telegram", source={"user_id": "carol"}, message_id="2", text="hi") == (False, None)
+    assert hook(session_key="k", platform="telegram", source={"user_id": "carol"}, message_id="2", text="hi") is None
+
+
+def test_sign_ins_of_colliding_actor_ids_never_share_a_file(harness: Harness) -> None:
+    store = harness.plugin.grants.store
+    harness.store_sign_in("alice@example.com", "at-token")
+    harness.store_sign_in("alice_example.com", "underscore-token")
+    assert store.load("alice@example.com").access_token == "at-token"
+    assert store.load("alice_example.com").access_token == "underscore-token"
+    assert store.path("alice@example.com") != store.path("alice_example.com")
+    store.path("bob").write_text(store.path("alice@example.com").read_text())
+    assert store.load("bob") is None
 
 
 # row 18

@@ -28,6 +28,15 @@ INTERNAL_ERROR = -32603
 SESSION_HEADER = "Mcp-Session-Id"
 
 
+def _one_line(text: str) -> str:
+    """A reply as one line of stdout: pretty-printed JSON is compacted; text
+    that is not JSON is passed through with its newlines removed."""
+    try:
+        return json.dumps(json.loads(text), separators=(",", ":"))
+    except json.JSONDecodeError:
+        return " ".join(text.split())
+
+
 class RelayError(Exception):
     """A request could not be relayed; the message names the resource, never a token."""
 
@@ -148,11 +157,11 @@ class Relay:
         content_type = response.headers.get("content-type", "")
         if content_type.startswith("text/event-stream"):
             return [
-                line[len("data:"):].strip()
+                _one_line(line[len("data:"):].strip())
                 for line in response.text.splitlines()
                 if line.startswith("data:") and line[len("data:"):].strip()
             ]
-        return [response.text.strip()]
+        return [_one_line(response.text.strip())]
 
     # Loop
 
