@@ -415,6 +415,32 @@ def test_row_38_empty_actor_on_a_chat_turn_never_falls_back_to_the_owner(harness
     assert harness.client.exchange_calls == []
 
 
+# row 44
+def test_row_44_empty_actor_on_an_api_server_turn_acts_as_the_owner(harness: Harness) -> None:
+    # api_server binds a platform but no sender (gateway/platforms/api_server.py:3557)
+    # and is not a messaging surface (gateway/session_context.py:241-244).
+    harness.store_sign_in("owner", "owner-token")
+    tokens = FakeSession.bind(HERMES_SESSION_ACTOR_ID="", HERMES_SESSION_PLATFORM="api_server")
+    try:
+        assert harness.call("calendar", tool_reading()) == f"obo-owner-token-for-{RESOURCE}"
+    finally:
+        FakeSession.unbind(tokens)
+
+
+# row 45
+def test_row_45_empty_actor_on_an_unknown_surface_is_missing_identity(harness: Harness) -> None:
+    # Hermes counts any surface it does not list as messaging, so the plugin fails closed.
+    harness.store_sign_in("owner", "owner-token")
+    calls: list[str] = []
+    tokens = FakeSession.bind(HERMES_SESSION_ACTOR_ID="", HERMES_SESSION_PLATFORM="brand-new-chat")
+    try:
+        result = harness.call("calendar", ran(calls))
+    finally:
+        FakeSession.unbind(tokens)
+    assert calls == [] and "reason: missing_identity" in result
+    assert harness.client.exchange_calls == []
+
+
 # row 28
 def test_row_28_actor_aliases_map_an_a2a_peer(make_harness) -> None:
     h = make_harness(base_settings(actor_aliases={"athena": "owner"}))

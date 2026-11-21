@@ -84,10 +84,13 @@ verified) or
 nothing is stored. Each sign-in file is named by a readable prefix of the actor plus a digest of
 the full id, so two actors never share one, and the directories are 0700.
 
-In a gateway turn the actor is the sender (`HERMES_SESSION_ACTOR_ID`); CLI,
-TUI, cron and kanban turns act as `owner_actor`. A chat turn whose actor is
-empty (Hermes clears it when a second sender's message joins a running turn)
-gets no actor, never the owner's. A tool call that needs a
+In a gateway turn the actor is the sender (`HERMES_SESSION_ACTOR_ID`). A turn
+with an empty actor acts as `owner_actor` unless Hermes's
+`session_is_messaging_surface()` reports it as a messaging turn: API server,
+CLI, TUI, cron and kanban turns use the owner, while a messaging turn with an
+empty actor (Hermes clears it when a second sender's message joins a running
+turn) gets no actor, never the owner's. Hermes counts any surface it doesn't
+list as messaging, so an unknown surface gets no actor either. A tool call that needs a
 sign-in and has none is answered with a tool result naming the login command,
 and the tool does not run (`block_without_sign_in: false` records the error on
 the context and runs the tool instead). With `sign_in_on_admission: true`, a

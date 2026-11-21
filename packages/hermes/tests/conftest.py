@@ -52,6 +52,7 @@ class Harness:
             "hermes_home": lambda: self.home,
             "session_env": self.session.get_session_env,
             "toolset_of": self.toolsets.get,
+            "messaging_surface": self.session.is_messaging_surface,
             "client": self.client,
         }
         kwargs.update(register_kwargs)

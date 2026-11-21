@@ -40,9 +40,10 @@ class RefreshFailed(Exception):
 
 def resolve_actor(settings: HermesSettings, bound: str | None, *, chat_turn: bool = False) -> str | None:
     """The actor a turn acts as, through ``actor_aliases``: the bound sender;
-    else ``owner_actor`` for a turn with no sender (CLI, TUI, cron, kanban).
-    A chat turn with an empty actor has no single sender (Hermes clears it
-    when another sender's message joins a running turn,
+    else ``owner_actor`` for a turn with no sender on a non-messaging surface
+    (api_server, CLI, TUI, cron, kanban). A turn on a messaging surface with
+    an empty actor (``chat_turn``) has no single sender (Hermes clears it when
+    another sender's message joins a running turn,
     gateway/session_context.py:224-225), so it gets no actor at all rather
     than the owner's."""
     if bound:

@@ -18,8 +18,10 @@ from .access import _current_access
 from .grants import Grants, resolve_actor, sign_in_message
 from .middleware import (
     KeycardMiddleware,
+    MessagingSurface,
     SessionEnv,
     ToolsetOf,
+    default_messaging_surface,
     default_session_env,
     default_toolset_of,
 )
@@ -102,12 +104,15 @@ class KeycardPlugin:
         *,
         session_env: SessionEnv = default_session_env,
         toolset_of: ToolsetOf = default_toolset_of,
+        messaging_surface: MessagingSurface = default_messaging_surface,
         home: Path | None = None,
     ) -> None:
         self.grants = grants
         self.settings = grants.settings
         self.home = home if home is not None else grants.store.home
-        self.middleware = KeycardMiddleware(grants, session_env=session_env, toolset_of=toolset_of)
+        self.middleware = KeycardMiddleware(
+            grants, session_env=session_env, toolset_of=toolset_of, messaging_surface=messaging_surface
+        )
         self.secret_source = KeycardSecretSource(grants)
 
     def post_gateway_admission(self, **context: Any) -> dict[str, str] | None:
@@ -181,6 +186,7 @@ def register(
     hermes_home: Callable[[], Path] = default_hermes_home,
     session_env: SessionEnv = default_session_env,
     toolset_of: ToolsetOf = default_toolset_of,
+    messaging_surface: MessagingSurface = default_messaging_surface,
     client: AsyncClient | None = None,
     admission_hook: bool = True,
 ) -> KeycardPlugin:
@@ -201,7 +207,9 @@ def register(
     settings = load_settings(ctx.get_config)
     home = Path(hermes_home()).resolve()
     grants = build_grants(settings, home=home, get_secret=get_secret, client=client)
-    plugin = KeycardPlugin(grants, session_env=session_env, toolset_of=toolset_of, home=home)
+    plugin = KeycardPlugin(
+        grants, session_env=session_env, toolset_of=toolset_of, messaging_surface=messaging_surface, home=home
+    )
     ctx.register_middleware("tool_execution", plugin.middleware)
     ctx.register_secret_source(plugin.secret_source)
     ctx.register_cli_command(

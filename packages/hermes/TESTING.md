@@ -72,5 +72,8 @@ Beyond the spec rows, `tests/test_hardening.py` covers: distinct actors never
 sharing a sign-in file, private store directories, the plugin host child
 counting as host isolation, `grant()` resolving its profile by Hermes home, the
 relay surviving an unexpected error and answering a parse error, `login`
-saving under the sign-in lock, UserInfo email matching and secret source
-warnings.
+saving under the sign-in lock, UserInfo email matching, secret source
+warnings, and the relay's SSE line splitting, session replay and inline
+notifications. Rows 44 (an API server turn with an empty actor uses
+`owner_actor`) and 45 (an unknown surface with an empty actor is
+`missing_identity`) are in `tests/test_middleware.py`.

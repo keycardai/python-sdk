@@ -13,10 +13,9 @@ from .access import _current_access
 from .grants import Grants, resolve_actor, sign_in_text
 
 ACTOR_VAR = "HERMES_SESSION_ACTOR_ID"
-# Bound to the chat platform on gateway turns and empty on cron, kanban and TUI turns.
-PLATFORM_VAR = "HERMES_SESSION_PLATFORM"
 SessionEnv = Callable[[str, str], str]
 ToolsetOf = Callable[[str], str | None]
+MessagingSurface = Callable[[], bool]
 
 
 def default_session_env(name: str, default: str = "") -> str:
@@ -26,6 +25,23 @@ def default_session_env(name: str, default: str = "") -> str:
     except ImportError:
         return os.environ.get(name, default)
     return str(get_session_env(name, default))
+
+
+def default_messaging_surface() -> bool:
+    """Hermes's ``session_is_messaging_surface()`` (gateway/session_context.py:247-252):
+    whether this turn arrived over a human messaging channel. Hermes keeps the
+    list of non-messaging surfaces (api_server, cli, kanban, tui, webhook, ...)
+    and counts anything else as messaging. Outside Hermes there is no turn, so
+    False; if the call itself fails the turn counts as messaging, so an empty
+    actor never falls back to the owner on a guess."""
+    try:
+        is_messaging = importlib.import_module("gateway.session_context").session_is_messaging_surface
+    except (ImportError, AttributeError):
+        return False
+    try:
+        return bool(is_messaging())
+    except Exception:
+        return True
 
 
 def default_toolset_of(tool_name: str) -> str | None:
@@ -68,12 +84,14 @@ class KeycardMiddleware:
         *,
         session_env: SessionEnv = default_session_env,
         toolset_of: ToolsetOf = default_toolset_of,
+        messaging_surface: MessagingSurface = default_messaging_surface,
     ) -> None:
         self.grants = grants
         self.settings = grants.settings
         self.engine = grants.engine
         self._session_env = session_env
         self._toolset_of = toolset_of
+        self._messaging_surface = messaging_surface
 
     def __call__(
         self, tool_name: str, args: dict[str, Any], next_call: Callable[..., Any], **context: Any
@@ -90,7 +108,10 @@ class KeycardMiddleware:
 
     def resolve_actor(self) -> str | None:
         bound = self._session_env(ACTOR_VAR, "")
-        chat_turn = not bound and bool(self._session_env(PLATFORM_VAR, ""))
+        # An empty actor on a messaging turn means another sender joined it
+        # (gateway/session_context.py:224-225): no single sender, so no actor.
+        # Any other empty actor (api_server, cron, kanban, TUI, CLI) is the owner.
+        chat_turn = not bound and self._messaging_surface()
         return resolve_actor(self.settings, bound, chat_turn=chat_turn)
 
     def resources_for(self, tool_name: str) -> list[str]:

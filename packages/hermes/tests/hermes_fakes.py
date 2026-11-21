@@ -99,7 +99,14 @@ _SESSION: dict[str, ContextVar[str | None]] = {
     "HERMES_SESSION_ACTOR_ID": ContextVar("fake_actor_id", default=None),
     "HERMES_SESSION_USER_ID": ContextVar("fake_user_id", default=None),
     "HERMES_SESSION_PLATFORM": ContextVar("fake_platform", default=None),
+    "HERMES_SESSION_SOURCE": ContextVar("fake_source", default=None),
 }
+
+# Copied from gateway/session_context.py:241-244 at ae2a81cc.
+NON_MESSAGING_SESSION_SURFACES = frozenset({
+    "", "api_server", "cli", "codex", "desktop", "gateway", "kanban", "local",
+    "msgraph_webhook", "tool", "tui", "webhook",
+})
 
 
 class FakeSession:
@@ -115,6 +122,12 @@ class FakeSession:
             return default
         value = var.get()
         return default if value is None else value
+
+    def is_messaging_surface(self) -> bool:
+        """Mirrors ``session_is_messaging_surface()`` (gateway/session_context.py:247-252):
+        the platform, then the source, against Hermes's non-messaging list."""
+        idents = (self.get_session_env("HERMES_SESSION_PLATFORM", ""), self.get_session_env("HERMES_SESSION_SOURCE", ""))
+        return any(i.strip().lower() not in NON_MESSAGING_SESSION_SURFACES for i in idents if i and i.strip())
 
     @staticmethod
     def bind(**values: str | None) -> list[Any]:

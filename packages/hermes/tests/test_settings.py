@@ -93,13 +93,19 @@ def _install(monkeypatch, name: str, **attrs) -> None:
 
 
 def test_default_seams_use_hermes_when_importable(monkeypatch, tmp_path: Path) -> None:
-    _install(monkeypatch, "gateway.session_context", get_session_env=lambda name, default="": f"{name}!")
+    _install(
+        monkeypatch,
+        "gateway.session_context",
+        get_session_env=lambda name, default="": f"{name}!",
+        session_is_messaging_surface=lambda: True,
+    )
     _install(monkeypatch, "tools.registry", registry=types.SimpleNamespace(get_toolset_for_tool=lambda n: "mcp-x"))
     _install(monkeypatch, "agent.secret_scope", get_secret=lambda name: "from-scope")
     _install(monkeypatch, "hermes_cli.plugin_isolation", isolation_mode=lambda: "host")
     _install(monkeypatch, "hermes_constants", get_hermes_home=lambda: str(tmp_path))
     _install(monkeypatch, "agent.secret_sources.base", FetchResult=lambda **f: ("fetch-result", f))
     assert middleware.default_session_env("HERMES_SESSION_ACTOR_ID") == "HERMES_SESSION_ACTOR_ID!"
+    assert middleware.default_messaging_surface() is True
     assert middleware.default_toolset_of("t") == "mcp-x"
     assert plugin.default_get_secret("S") == "from-scope"
     assert plugin.default_isolation_mode() == "host"
@@ -115,6 +121,7 @@ def test_default_seams_fall_back_without_hermes(monkeypatch, tmp_path: Path) -> 
     monkeypatch.setenv("S", "from-env")
     assert middleware.default_session_env("HERMES_SESSION_ACTOR_ID") == "env-actor"
     assert middleware.default_toolset_of("t") is None
+    assert middleware.default_messaging_surface() is False
     assert plugin.default_get_secret("S") == "from-env"
     assert plugin.default_isolation_mode() == "inline"
     assert plugin.default_hermes_home() == tmp_path
@@ -126,3 +133,11 @@ def test_grant_without_a_registered_plugin() -> None:
     plugin._registered.clear()
     with pytest.raises(RuntimeError, match="not registered"):
         plugin.current_plugin()
+
+
+def test_messaging_surface_check_that_fails_counts_as_messaging(monkeypatch) -> None:
+    def broken() -> bool:
+        raise RuntimeError("surface lookup failed")
+
+    _install(monkeypatch, "gateway.session_context", session_is_messaging_surface=broken)
+    assert middleware.default_messaging_surface() is True
