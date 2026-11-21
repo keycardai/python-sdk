@@ -117,8 +117,13 @@ class KeycardPlugin:
         (gateway/run_inbound_consumer.py:53-58); None lets the turn run."""
         if self.settings.default_pattern != "on_behalf_of":
             return None
-        source = context.get("source") or {}
-        sender = str(source.get("user_id") or "") if isinstance(source, dict) else ""
+        source = context.get("source")
+        raw = source.get("user_id") if isinstance(source, dict) else getattr(source, "user_id", None)
+        sender = str(raw or "")
+        if not sender:
+            # No sender to check: let the turn run and the middleware decide,
+            # rather than admitting an unknown sender as owner_actor.
+            return None
         actor = resolve_actor(self.settings, sender)
         if actor is None:
             return {"action": "handled", "reply": sign_in_message("missing_identity", None)}

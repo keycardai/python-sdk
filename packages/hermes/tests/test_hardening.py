@@ -200,3 +200,17 @@ def test_toolset_lookup_failure_counts_as_not_mcp(monkeypatch) -> None:
     module.registry = types.SimpleNamespace(get_toolset_for_tool=boom)
     monkeypatch.setitem(sys.modules, "tools.registry", module)
     assert middleware.default_toolset_of("t") is None
+
+
+def test_admission_hook_without_a_sender_lets_the_turn_run(make_harness) -> None:
+    import types
+
+    from .conftest import base_settings
+
+    h = make_harness(base_settings(sign_in_on_admission=True))
+    hook = h.ctx.hooks["post_gateway_admission"][0]
+    assert hook(session_key="k", platform="telegram", source=None, message_id="1", text="hi") is None
+    assert hook(session_key="k", platform="telegram", source={}, message_id="1", text="hi") is None
+    obj = types.SimpleNamespace(user_id="carol")
+    result = hook(session_key="k", platform="telegram", source=obj, message_id="1", text="hi")
+    assert result is not None and "--actor carol" in result["reply"]
