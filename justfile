@@ -9,6 +9,7 @@ build:
     uv sync --all-packages
     cd packages/fastmcp && uv sync --extra test
     cd packages/pydantic-ai && uv sync --extra test
+    cd packages/hermes && uv sync --extra test
 
 # Run tests for all packages
 test: build
@@ -20,6 +21,7 @@ test: build
     just test-package langchain
     just test-package temporal
     just test-package pydantic-ai
+    just test-package hermes
 
 # Run tests for a specific package
 test-package PACKAGE:
@@ -45,6 +47,7 @@ test-coverage: build
     cd packages/langchain && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=85
     cd packages/temporal && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=85
     cd packages/pydantic-ai && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=85
+    cd packages/hermes && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=85
 
 check:
     uv run ruff check
@@ -63,9 +66,11 @@ typecheck:
     uv sync --all-packages --all-extras
     cd packages/fastmcp && uv sync --extra test
     cd packages/pydantic-ai && uv sync --extra test
+    cd packages/hermes && uv sync --extra test
     uv run --frozen ty check packages/oauth/src packages/starlette/src packages/mcp/src packages/a2a/src packages/langchain/src packages/temporal/src
     uv run --frozen ty check --project packages/fastmcp --python packages/fastmcp/.venv packages/fastmcp/src
     uv run --frozen ty check --project packages/pydantic-ai --python packages/pydantic-ai/.venv packages/pydantic-ai/src
+    uv run --frozen ty check --project packages/hermes --python packages/hermes/.venv packages/hermes/src
 
 # Validate commit messages for PR
 validate-commits BASE_BRANCH="origin/main":

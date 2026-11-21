@@ -82,7 +82,7 @@ TAIL_LINES = 60
 PYPI_JSON = "https://pypi.org/pypi/{name}/json"
 
 # Packages outside the uv workspace keep their own lock and virtualenv.
-STANDALONE_PACKAGES = {"fastmcp", "pydantic-ai"}
+STANDALONE_PACKAGES = {"fastmcp", "hermes", "pydantic-ai"}
 
 
 @dataclass
