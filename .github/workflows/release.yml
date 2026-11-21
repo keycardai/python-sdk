@@ -12,6 +12,7 @@ on:
       - '*-keycardai-langchain'
       - '*-keycardai-temporal'
       - '*-keycardai-pydantic-ai'
+      - '*-keycardai-hermes'
 
 jobs:
   detect-package:

@@ -1,0 +1,102 @@
+"""A Hermes secret source serving the names in ``secrets``, acquired as-itself."""
+
+from __future__ import annotations
+
+import importlib
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
+
+from .grants import Grants
+
+SOURCE_NAME = "keycard"
+
+
+def _result(**fields: Any) -> Any:
+    """Hermes's ``FetchResult`` when Hermes is importable, else a stand-in with the same fields."""
+    try:
+        FetchResult = importlib.import_module("agent.secret_sources.base").FetchResult
+    except ImportError:
+        defaults: dict[str, Any] = {
+            "secrets": {}, "applied": [], "skipped": [], "warnings": [], "error": None, "error_kind": None,
+        }
+        return SimpleNamespace(**{**defaults, **fields})
+    return FetchResult(**fields)
+
+
+def _secret_source_base() -> type:
+    """Hermes's ``SecretSource`` ABC, which ``register_secret_source`` checks
+    with isinstance; ``object`` where Hermes is not importable (tests)."""
+    try:
+        return importlib.import_module("agent.secret_sources.base").SecretSource
+    except ImportError:
+        return object
+
+
+class KeycardSecretSource(_secret_source_base()):  # ty: ignore[unsupported-base]
+    """Static keys for a profile: each name in ``secrets`` is a token for its
+    resource, acquired as-itself under ``application_credential``.
+
+    Hermes hydrates secret sources once per process per Hermes home and never
+    asks again, and this source acquires once too: a second ``fetch`` serves
+    the first result. Anything that rotates goes through the middleware, the
+    relay or ``hermes keycard token``.
+    """
+
+    api_version = 1
+    name = SOURCE_NAME
+    label = "Keycard"
+    shape = "mapped"
+    scheme = None
+    token_env_key = None
+    default_token_env = ""
+    override_existing_default = False
+    remediation_hints: dict[Any, str] = {}
+
+    def __init__(self, grants: Grants) -> None:
+        self.grants = grants
+        self._fetched: dict[str, str] | None = None
+        self._warnings: list[str] = []
+        self.acquisitions = 0
+
+    def is_enabled(self, cfg: dict[str, Any]) -> bool:
+        return bool(self.grants.settings.secrets)
+
+    def override_existing(self, cfg: dict[str, Any]) -> bool:
+        return False
+
+    def token_env(self, cfg: dict[str, Any]) -> str:
+        return ""
+
+    def protected_env_vars(self, cfg: dict[str, Any]) -> frozenset[str]:
+        return frozenset()
+
+    def fetch_timeout_seconds(self, cfg: dict[str, Any]) -> float:
+        return 120.0
+
+    def config_schema(self) -> dict[str, Any]:
+        return {}
+
+    def remediation(self, kind: Any, cfg: dict[str, Any]) -> str:
+        return "Check the profile's application_credential and the resource of each name in secrets."
+
+    def fetch(self, cfg: dict[str, Any], home_path: Path) -> Any:
+        if self._fetched is None:
+            self._fetched = self._acquire()
+        return _result(secrets=dict(self._fetched), warnings=list(self._warnings))
+
+    def _acquire(self) -> dict[str, str]:
+        """Acquire every name; a name that fails is left out and named in a
+        warning (with the zone's error code, never a token) so Hermes can say
+        why the key is missing."""
+        values: dict[str, str] = {}
+        for name, resource in self.grants.settings.secrets.items():
+            self.acquisitions += 1
+            access, _ = self.grants.acquire(None, [resource], "as_self")
+            if resource in access.get_successful_resources():
+                values[name] = access.access(resource).access_token
+                continue
+            error = access.get_resource_error(resource) or access.get_error() or {}
+            code = error.get("code") or "error"
+            self._warnings.append(f"keycard: {name} not acquired for {resource} ({code})")
+        return values

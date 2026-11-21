@@ -1,0 +1,33 @@
+# A Hermes profile with the Keycard plugin: one assistant, one zone.
+# Secrets live in this profile's .env (KEYCARD_CLIENT_SECRET=...), never here.
+
+plugins:
+  enabled:
+    - keycardai-hermes
+  entries:
+    keycardai-hermes:
+      settings:
+        zone_url: https://your-zone.keycard.cloud
+        application_credential:
+          type: client_secret
+          client_id: app_REPLACE_ME
+          secret_name: KEYCARD_CLIENT_SECRET
+        sign_in_resource: urn:hermes:assistant
+        owner_actor: alice
+        actor_aliases:
+          athena: alice            # an A2A peer that acts as the owner
+        actors:
+          alice: alice@example.com # the zone user alice stands for
+        tool_resources:
+          calendar_search:
+            - https://calendar.example.com
+        secrets:
+          SEARCH_API_KEY: https://search.example.com
+        authorization_url: https://your-zone.keycard.cloud/consent
+
+mcp_servers:
+  calendar:
+    command: keycardai-hermes-mcp
+    args: ["https://gateway.example.com/mcp/calendar"]
+    env:
+      KEYCARD_CLIENT_SECRET: "${KEYCARD_CLIENT_SECRET}"
