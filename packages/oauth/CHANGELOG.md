@@ -1,3 +1,22 @@
+## 0.37.0-keycardai-oauth (2026-11-22)
+
+
+- fix(keycardai-oauth)!: require an issuer allow-list before sending client auth to a challenge-resolved issuer (#441)
+- * fix(keycardai-oauth): require allowed_issuers before sending client auth to a challenge-resolved issuer
+- authenticate, complete_authorization and refresh_authorization take the
+issuer from the protected resource's metadata in challenge mode. With
+client_secret or credential set they now require allowed_issuers and
+check the resolved issuer against it before any request to that issuer.
+begin_authorization accepts the same list. SDK-120.
+- * fix(keycardai-oauth): use a multi-zone ClientSecret's zone issuers as the challenge allow-list
+- When allowed_issuers is unset and the credential is a multi-zone
+ClientSecret, the challenge entry points check the resolved issuer
+against the credential's zone issuers. An explicit allowed_issuers wins.
+SDK-120.
+- * fix(keycardai-oauth): a challenge-entered refresh needs allowed_issuers for every client
+- ---------
+- Co-authored-by: Larry Osakwe <larry@keycard.ai>
+
 ## 0.36.0-keycardai-oauth (2026-11-17)
 
 
