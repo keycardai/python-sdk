@@ -15,17 +15,21 @@ async def _resolve_pinned_challenge_issuer(
     allowed_issuers: Sequence[str] | None,
     sends_client_auth: bool,
     http_client: httpx.AsyncClient | None,
+    credential: object | None = None,
 ) -> str:
     """Resolve the issuer from a challenge and check it against ``allowed_issuers``.
 
     The protected resource names the issuer, so client authentication goes
-    to it only when the caller pinned it. With ``sends_client_auth`` and no
-    ``allowed_issuers``, raises ``ConfigError`` before any request. With
-    ``allowed_issuers`` set, raises ``ConfigError`` after the resource
-    metadata fetch when the resolved issuer is not among them, compared
-    without a trailing slash.
+    to it only when the caller pinned it. A multi-zone ``ClientSecret``
+    ``credential`` counts as the pin: with ``allowed_issuers`` unset, its
+    zone issuers are the allow-list. With ``sends_client_auth`` and no
+    allow-list, raises ``ConfigError`` before any request. With an
+    allow-list, raises ``ConfigError`` after the resource metadata fetch
+    when the resolved issuer is not in it, compared without a trailing
+    slash.
     """
-    if sends_client_auth and not allowed_issuers:
+    allow_list: Sequence[str] | None = allowed_issuers or _zone_issuers(credential)
+    if sends_client_auth and not allow_list:
         raise ConfigError(
             "Pass 'allowed_issuers' to send 'client_secret' or 'credential' "
             "to an issuer resolved from a WWW-Authenticate challenge"
@@ -34,14 +38,30 @@ async def _resolve_pinned_challenge_issuer(
     resolved = await resolve_issuer_from_challenge(
         www_authenticate_header, http_client=http_client
     )
-    if allowed_issuers and resolved.rstrip("/") not in {
-        allowed.rstrip("/") for allowed in allowed_issuers
+    if allow_list and resolved.rstrip("/") not in {
+        allowed.rstrip("/") for allowed in allow_list
     }:
+        source = (
+            "'allowed_issuers'"
+            if allowed_issuers
+            else "the multi-zone ClientSecret's zone issuers"
+        )
         raise ConfigError(
             f"The WWW-Authenticate challenge resolved issuer '{resolved}', "
-            "which is not in 'allowed_issuers'"
+            f"which is not in {source}"
         )
     return resolved
+
+
+def _zone_issuers(credential: object | None) -> Sequence[str] | None:
+    """Return a multi-zone ``ClientSecret``'s zone issuers, else ``None``."""
+    if credential is None:
+        return None
+    from ..server.credentials import ClientSecret
+
+    if isinstance(credential, ClientSecret):
+        return credential.zone_issuers
+    return None
 
 
 async def _resolve_auth_server_url(
@@ -52,6 +72,7 @@ async def _resolve_auth_server_url(
     http_client: httpx.AsyncClient | None,
     allowed_issuers: Sequence[str] | None = None,
     sends_client_auth: bool = False,
+    credential: object | None = None,
 ) -> str:
     """Resolve the authorization server from the supported flow entry modes."""
     if issuer is not None:
@@ -78,6 +99,7 @@ async def _resolve_auth_server_url(
         allowed_issuers=allowed_issuers,
         sends_client_auth=sends_client_auth,
         http_client=http_client,
+        credential=credential,
     )
 
 

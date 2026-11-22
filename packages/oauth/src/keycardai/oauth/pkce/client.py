@@ -114,8 +114,10 @@ async def authenticate(
             of them, compared without a trailing slash. Required in
             challenge mode with ``client_secret`` or ``credential``, since
             the protected resource names the issuer that receives the
-            client authentication. Optional for a public client; when set,
-            it is enforced the same way.
+            client authentication. A multi-zone ``ClientSecret`` credential
+            counts as the pin: when this is unset, its zone issuers are the
+            allow-list. Optional for a public client; when set, it is
+            enforced the same way.
 
     Returns:
         ``TokenResponse`` from the token endpoint.
@@ -160,6 +162,7 @@ async def authenticate(
         http_client=http_client,
         allowed_issuers=allowed_issuers,
         sends_client_auth=authenticator is not None or bool(client_secret),
+        credential=credential,
     )
     if issuer is not None:
         logger.info("PKCE flow starting against issuer %s", issuer)

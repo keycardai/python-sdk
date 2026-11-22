@@ -136,6 +136,17 @@ class ClientSecret:
         """Whether this credential holds per-zone credentials."""
         return isinstance(self.auth, MultiZoneBasicAuth)
 
+    @property
+    def zone_issuers(self) -> tuple[str, ...] | None:
+        """The zone issuers a multi-zone credential holds, without a trailing slash.
+
+        ``None`` for a single-zone credential. The PKCE challenge entry points
+        use them as the allow-list when ``allowed_issuers`` is unset.
+        """
+        if isinstance(self.auth, MultiZoneBasicAuth):
+            return tuple(self.auth.issuer_credentials)
+        return None
+
     def get_http_client_auth(self) -> AuthStrategy:
         return self.auth
 

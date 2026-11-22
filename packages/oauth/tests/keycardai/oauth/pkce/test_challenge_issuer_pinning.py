@@ -18,6 +18,7 @@ from keycardai.oauth.pkce import (
     complete_authorization,
     refresh_authorization,
 )
+from keycardai.oauth.server.credentials import ClientSecret
 
 ISSUER = "https://zone.example.com"
 RESOURCE_METADATA_URL = "https://api.example.com/.well-known/oauth-protected-resource"
@@ -152,3 +153,45 @@ async def test_row_28_issuer_direct_client_auth_needs_no_allowed_issuers(fetches
     assert reached.value.issuer == ISSUER
     with pytest.raises(ReachedIssuer):
         await authenticate(client_id="app", issuer=ISSUER, client_secret="shh")
+
+
+def multi_zone_secret(*issuers: str) -> ClientSecret:
+    return ClientSecret({issuer: (f"id-{n}", f"secret-{n}") for n, issuer in enumerate(issuers)})
+
+
+@pytest.mark.parametrize("entry_name", AUTH_ENTRIES)
+async def test_multi_zone_client_secret_zone_issuer_proceeds(fetches, entry_name):
+    credential = multi_zone_secret("https://other.example.com", ISSUER + "/")
+    with pytest.raises(ReachedIssuer) as reached:
+        await entry(entry_name, fetches, credential=credential)
+    assert reached.value.issuer == ISSUER
+    assert fetches == [RESOURCE_METADATA_URL]
+
+
+@pytest.mark.parametrize("entry_name", AUTH_ENTRIES)
+async def test_multi_zone_client_secret_issuer_outside_zones_raises(fetches, entry_name):
+    credential = multi_zone_secret("https://other.example.com", "https://third.example.com")
+    with pytest.raises(ConfigError, match=f"'{ISSUER}', which is not in the multi-zone ClientSecret's zone issuers"):
+        await entry(entry_name, fetches, credential=credential)
+    # The resolved issuer was never contacted: no discovery, no token request.
+    assert fetches == [RESOURCE_METADATA_URL]
+
+
+@pytest.mark.parametrize("entry_name", AUTH_ENTRIES)
+async def test_explicit_allowed_issuers_wins_over_zone_issuers(fetches, entry_name):
+    credential = multi_zone_secret(ISSUER)
+    with pytest.raises(ConfigError, match="not in 'allowed_issuers'"):
+        await entry(
+            entry_name,
+            fetches,
+            credential=credential,
+            allowed_issuers=["https://trusted.example.com"],
+        )
+    assert fetches == [RESOURCE_METADATA_URL]
+
+
+@pytest.mark.parametrize("entry_name", AUTH_ENTRIES)
+async def test_single_zone_client_secret_still_needs_allowed_issuers(fetches, entry_name):
+    with pytest.raises(ConfigError, match="allowed_issuers"):
+        await entry(entry_name, fetches, credential=ClientSecret(("app", "shh")))
+    assert fetches == []

@@ -238,8 +238,10 @@ async def complete_authorization(
             of them, compared without a trailing slash. Required in
             challenge mode with ``client_secret`` or ``credential``, since
             the protected resource names the issuer that receives the
-            client authentication. Optional for a public client; when set,
-            it is enforced the same way.
+            client authentication. A multi-zone ``ClientSecret`` credential
+            counts as the pin: when this is unset, its zone issuers are the
+            allow-list. Optional for a public client; when set, it is
+            enforced the same way.
 
     Returns:
         ``TokenResponse`` returned by the authorization server's token
@@ -323,6 +325,7 @@ async def complete_authorization(
             http_client=http_client,
             allowed_issuers=allowed_issuers,
             sends_client_auth=authenticator is not None or bool(client_secret),
+            credential=credential,
         )
 
     auth_strategy = (
@@ -404,8 +407,9 @@ async def refresh_authorization(
             mode only. The issuer resolved from the challenge must equal one
             of them, compared without a trailing slash. Required in
             challenge mode with ``client_secret`` or ``credential``.
-            Optional for a public client; when set, it is enforced the same
-            way.
+            A multi-zone ``ClientSecret`` credential counts as the pin: when
+            this is unset, its zone issuers are the allow-list. Optional for
+            a public client; when set, it is enforced the same way.
 
     Returns:
         ``TokenResponse`` returned by the token endpoint.
@@ -463,6 +467,7 @@ async def refresh_authorization(
             http_client=http_client,
             allowed_issuers=allowed_issuers,
             sends_client_auth=authenticator is not None or bool(client_secret),
+            credential=credential,
         )
 
     auth_strategy = (
@@ -496,6 +501,7 @@ async def _resolve_issuer(
     http_client: httpx.AsyncClient | None,
     allowed_issuers: Sequence[str] | None,
     sends_client_auth: bool,
+    credential: object | None = None,
 ) -> str:
     if issuer is not None:
         return issuer.rstrip("/")
@@ -509,6 +515,7 @@ async def _resolve_issuer(
         allowed_issuers=allowed_issuers,
         sends_client_auth=sends_client_auth,
         http_client=http_client,
+        credential=credential,
     )
 
 
