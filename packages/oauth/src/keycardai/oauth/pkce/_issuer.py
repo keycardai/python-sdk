@@ -16,6 +16,7 @@ async def _resolve_pinned_challenge_issuer(
     sends_client_auth: bool,
     http_client: httpx.AsyncClient | None,
     credential: object | None = None,
+    sends_refresh_token: bool = False,
 ) -> str:
     """Resolve the issuer from a challenge and check it against ``allowed_issuers``.
 
@@ -23,7 +24,9 @@ async def _resolve_pinned_challenge_issuer(
     to it only when the caller pinned it. A multi-zone ``ClientSecret``
     ``credential`` counts as the pin: with ``allowed_issuers`` unset, its
     zone issuers are the allow-list. With ``sends_client_auth`` and no
-    allow-list, raises ``ConfigError`` before any request. With an
+    allow-list, raises ``ConfigError`` before any request; so does
+    ``sends_refresh_token`` with no allow-list, for every client, since a
+    public client's refresh token works without client authentication. With an
     allow-list, raises ``ConfigError`` after the resource metadata fetch
     when the resolved issuer is not in it, compared without a trailing
     slash.
@@ -33,6 +36,11 @@ async def _resolve_pinned_challenge_issuer(
         raise ConfigError(
             "Pass 'allowed_issuers' to send 'client_secret' or 'credential' "
             "to an issuer resolved from a WWW-Authenticate challenge"
+        )
+    if sends_refresh_token and not allow_list:
+        raise ConfigError(
+            "Pass 'allowed_issuers' to send a refresh token to an issuer "
+            "resolved from a WWW-Authenticate challenge"
         )
 
     resolved = await resolve_issuer_from_challenge(

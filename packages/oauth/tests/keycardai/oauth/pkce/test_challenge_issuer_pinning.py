@@ -1,6 +1,6 @@
 """Challenge-resolved issuer pinning (Authorization Code with PKCE, spec-version 7).
 
-Covers unit rows 23 to 28: client authentication goes to an issuer resolved
+Covers unit rows 23 to 33: client authentication goes to an issuer resolved
 from a WWW-Authenticate challenge only when the caller lists it in
 ``allowed_issuers``. Each challenge entry point is driven up to the point
 where it would contact the resolved issuer, which the patched
@@ -140,11 +140,25 @@ async def test_row_26_allowed_issuer_proceeds(fetches, entry_name, auth, allowed
     assert fetches == [RESOURCE_METADATA_URL]
 
 
-@pytest.mark.parametrize("entry_name", AUTH_ENTRIES)
+@pytest.mark.parametrize("entry_name", ["authenticate", "complete"])
 async def test_row_27_public_client_without_allowed_issuers_proceeds(fetches, entry_name):
     with pytest.raises(ReachedIssuer) as reached:
         await entry(entry_name, fetches)
     assert reached.value.issuer == ISSUER
+
+
+@pytest.mark.parametrize("allowed", [None, []])
+async def test_row_33_public_refresh_without_allowed_issuers(fetches, allowed):
+    with pytest.raises(ConfigError, match="refresh token"):
+        await entry("refresh", fetches, allowed_issuers=allowed)
+    assert fetches == []
+
+
+async def test_row_33_public_refresh_with_allowed_issuer_proceeds(fetches):
+    with pytest.raises(ReachedIssuer) as reached:
+        await entry("refresh", fetches, allowed_issuers=[ISSUER])
+    assert reached.value.issuer == ISSUER
+    assert fetches == [RESOURCE_METADATA_URL]
 
 
 async def test_row_28_issuer_direct_client_auth_needs_no_allowed_issuers(fetches):

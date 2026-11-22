@@ -406,10 +406,10 @@ async def refresh_authorization(
         allowed_issuers: The issuers the caller trusts, used in challenge
             mode only. The issuer resolved from the challenge must equal one
             of them, compared without a trailing slash. Required in
-            challenge mode with ``client_secret`` or ``credential``.
-            A multi-zone ``ClientSecret`` credential counts as the pin: when
-            this is unset, its zone issuers are the allow-list. Optional for
-            a public client; when set, it is enforced the same way.
+            challenge mode for every client, public or confidential, since
+            the refresh token goes to the resolved issuer. A multi-zone
+            ``ClientSecret`` credential counts as the pin: when this is
+            unset, its zone issuers are the allow-list.
 
     Returns:
         ``TokenResponse`` returned by the token endpoint.
@@ -421,8 +421,8 @@ async def refresh_authorization(
             ``client_secret``; if neither ``credential`` nor ``client_id``
             is set; if the credential does not provide client
             authentication; if ``metadata`` has no ``token_endpoint``; or
-            if challenge mode has ``client_secret`` or ``credential``
-            without ``allowed_issuers``. No request is sent. Also raised
+            if challenge mode has no ``allowed_issuers`` (or multi-zone
+            ``ClientSecret`` zone issuers). No request is sent. Also raised
             after the resource metadata fetch, with no request to the
             resolved issuer, when that issuer is not in ``allowed_issuers``.
         keycardai.oauth.AuthorizationServerDiscoveryError: If discovery
@@ -468,6 +468,7 @@ async def refresh_authorization(
             allowed_issuers=allowed_issuers,
             sends_client_auth=authenticator is not None or bool(client_secret),
             credential=credential,
+            sends_refresh_token=True,
         )
 
     auth_strategy = (
@@ -502,6 +503,7 @@ async def _resolve_issuer(
     allowed_issuers: Sequence[str] | None,
     sends_client_auth: bool,
     credential: object | None = None,
+    sends_refresh_token: bool = False,
 ) -> str:
     if issuer is not None:
         return issuer.rstrip("/")
@@ -516,6 +518,7 @@ async def _resolve_issuer(
         sends_client_auth=sends_client_auth,
         http_client=http_client,
         credential=credential,
+        sends_refresh_token=sends_refresh_token,
     )
 
 
