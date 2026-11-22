@@ -110,6 +110,7 @@ def hosts(monkeypatch):
             refresh_token="rt1",
             www_authenticate_header=CHALLENGE,
             http_client=resource_metadata_client(fetches),
+            allowed_issuers=[ISSUER],
             **kw,
         ),
     }

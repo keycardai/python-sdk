@@ -1,11 +1,47 @@
 """Shared authorization-server issuer resolution for PKCE flows."""
 
 import re
+from collections.abc import Sequence
 from typing import Any
 
 import httpx
 
 from ..exceptions import ConfigError
+
+
+async def _resolve_pinned_challenge_issuer(
+    www_authenticate_header: str,
+    *,
+    allowed_issuers: Sequence[str] | None,
+    sends_client_auth: bool,
+    http_client: httpx.AsyncClient | None,
+) -> str:
+    """Resolve the issuer from a challenge and check it against ``allowed_issuers``.
+
+    The protected resource names the issuer, so client authentication goes
+    to it only when the caller pinned it. With ``sends_client_auth`` and no
+    ``allowed_issuers``, raises ``ConfigError`` before any request. With
+    ``allowed_issuers`` set, raises ``ConfigError`` after the resource
+    metadata fetch when the resolved issuer is not among them, compared
+    without a trailing slash.
+    """
+    if sends_client_auth and not allowed_issuers:
+        raise ConfigError(
+            "Pass 'allowed_issuers' to send 'client_secret' or 'credential' "
+            "to an issuer resolved from a WWW-Authenticate challenge"
+        )
+
+    resolved = await resolve_issuer_from_challenge(
+        www_authenticate_header, http_client=http_client
+    )
+    if allowed_issuers and resolved.rstrip("/") not in {
+        allowed.rstrip("/") for allowed in allowed_issuers
+    }:
+        raise ConfigError(
+            f"The WWW-Authenticate challenge resolved issuer '{resolved}', "
+            "which is not in 'allowed_issuers'"
+        )
+    return resolved
 
 
 async def _resolve_auth_server_url(
@@ -14,6 +50,8 @@ async def _resolve_auth_server_url(
     www_authenticate_header: str | None,
     resource_url: str | None,
     http_client: httpx.AsyncClient | None,
+    allowed_issuers: Sequence[str] | None = None,
+    sends_client_auth: bool = False,
 ) -> str:
     """Resolve the authorization server from the supported flow entry modes."""
     if issuer is not None:
@@ -35,8 +73,11 @@ async def _resolve_auth_server_url(
             "WWW-Authenticate challenge"
         )
 
-    return await resolve_issuer_from_challenge(
-        www_authenticate_header, http_client=http_client
+    return await _resolve_pinned_challenge_issuer(
+        www_authenticate_header,
+        allowed_issuers=allowed_issuers,
+        sends_client_auth=sends_client_auth,
+        http_client=http_client,
     )
 
 

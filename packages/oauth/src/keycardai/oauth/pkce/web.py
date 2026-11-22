@@ -6,7 +6,7 @@ returned ``state`` and ``code_verifier`` between those calls.
 """
 
 import secrets
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
 
 import httpx
@@ -29,7 +29,7 @@ from ..types.models import (
     TokenResponse,
 )
 from ..utils.pkce import PKCEGenerator
-from ._issuer import resolve_issuer_from_challenge
+from ._issuer import _resolve_pinned_challenge_issuer
 
 if TYPE_CHECKING:
     from ..server.credentials import ApplicationCredential
@@ -67,6 +67,7 @@ async def begin_authorization(
     metadata: AuthorizationServerMetadata | None = None,
     scopes: list[str] | None = None,
     http_client: httpx.AsyncClient | None = None,
+    allowed_issuers: Sequence[str] | None = None,
 ) -> AuthorizationRedirect:
     """Begin a web-app authorization-code-with-PKCE flow.
 
@@ -93,6 +94,11 @@ async def begin_authorization(
         http_client: Optional ``httpx.AsyncClient`` used to fetch protected
             resource metadata in challenge-driven mode. When omitted, a
             short-lived client is created internally.
+        allowed_issuers: Optional issuers the caller trusts, used in
+            challenge mode only. When set, the issuer resolved from the
+            challenge must equal one of them, compared without a trailing
+            slash. Pass the same list to :func:`complete_authorization`,
+            where client authentication makes it required.
 
     Returns:
         ``AuthorizationRedirect`` containing the authorization URL, generated
@@ -102,7 +108,8 @@ async def begin_authorization(
     Raises:
         keycardai.oauth.ConfigError: If anything other than exactly one of
             ``issuer``, ``www_authenticate_header``, or ``metadata`` is
-            provided, or challenge mode omits ``resources``.
+            provided, challenge mode omits ``resources``, or the issuer
+            resolved from the challenge is not in ``allowed_issuers``.
         ValueError: If the authorization endpoint is missing from the
             supplied metadata or discovered server metadata, or if challenge
             discovery metadata is incomplete.
@@ -134,6 +141,8 @@ async def begin_authorization(
             issuer=issuer,
             www_authenticate_header=www_authenticate_header,
             http_client=http_client,
+            allowed_issuers=allowed_issuers,
+            sends_client_auth=False,
         )
         config = ClientConfig(
             enable_metadata_discovery=True, auto_register_client=False
@@ -182,6 +191,7 @@ async def complete_authorization(
     client_secret: str | None = None,
     credential: "ClientAuthenticator | ApplicationCredential | None" = None,
     http_client: httpx.AsyncClient | None = None,
+    allowed_issuers: Sequence[str] | None = None,
 ) -> TokenResponse:
     """Complete a web-app authorization-code-with-PKCE flow.
 
@@ -223,6 +233,13 @@ async def complete_authorization(
         http_client: Optional ``httpx.AsyncClient`` used to fetch protected
             resource metadata in challenge-driven mode. When omitted, a
             short-lived client is created internally.
+        allowed_issuers: The issuers the caller trusts, used in challenge
+            mode only. The issuer resolved from the challenge must equal one
+            of them, compared without a trailing slash. Required in
+            challenge mode with ``client_secret`` or ``credential``, since
+            the protected resource names the issuer that receives the
+            client authentication. Optional for a public client; when set,
+            it is enforced the same way.
 
     Returns:
         ``TokenResponse`` returned by the authorization server's token
@@ -233,8 +250,12 @@ async def complete_authorization(
             ``issuer``, ``www_authenticate_header``, or ``metadata`` is
             provided; if ``credential`` is combined with ``client_id`` or
             ``client_secret``; if neither ``credential`` nor ``client_id``
-            is set; or if the credential does not provide client
-            authentication. No request is sent.
+            is set; if the credential does not provide client
+            authentication; or if challenge mode has ``client_secret`` or
+            ``credential`` without ``allowed_issuers``. No request is sent.
+            Also raised after the resource metadata fetch, with no request
+            to the resolved issuer, when that issuer is not in
+            ``allowed_issuers``.
         ValueError: If the token endpoint is missing from the supplied
             metadata or discovered server metadata, or if challenge discovery
             metadata is incomplete.
@@ -300,6 +321,8 @@ async def complete_authorization(
             issuer=issuer,
             www_authenticate_header=www_authenticate_header,
             http_client=http_client,
+            allowed_issuers=allowed_issuers,
+            sends_client_auth=authenticator is not None or bool(client_secret),
         )
 
     auth_strategy = (
@@ -345,6 +368,7 @@ async def refresh_authorization(
     resources: list[str] | None = None,
     scopes: list[str] | None = None,
     http_client: httpx.AsyncClient | None = None,
+    allowed_issuers: Sequence[str] | None = None,
 ) -> TokenResponse:
     """Refresh a grant obtained through the web-app authorization-code flow.
 
@@ -376,6 +400,12 @@ async def refresh_authorization(
         scopes: Scopes to request, space-joined into ``scope``.
         http_client: Optional ``httpx.AsyncClient`` used to fetch protected
             resource metadata in challenge-driven mode.
+        allowed_issuers: The issuers the caller trusts, used in challenge
+            mode only. The issuer resolved from the challenge must equal one
+            of them, compared without a trailing slash. Required in
+            challenge mode with ``client_secret`` or ``credential``.
+            Optional for a public client; when set, it is enforced the same
+            way.
 
     Returns:
         ``TokenResponse`` returned by the token endpoint.
@@ -386,8 +416,11 @@ async def refresh_authorization(
             provided; if ``credential`` is combined with ``client_id`` or
             ``client_secret``; if neither ``credential`` nor ``client_id``
             is set; if the credential does not provide client
-            authentication; or if ``metadata`` has no ``token_endpoint``.
-            No request is sent.
+            authentication; if ``metadata`` has no ``token_endpoint``; or
+            if challenge mode has ``client_secret`` or ``credential``
+            without ``allowed_issuers``. No request is sent. Also raised
+            after the resource metadata fetch, with no request to the
+            resolved issuer, when that issuer is not in ``allowed_issuers``.
         keycardai.oauth.AuthorizationServerDiscoveryError: If discovery
             fails, or the discovered metadata has no ``token_endpoint``.
         keycardai.oauth.RefreshGrantError: If the token endpoint answers
@@ -428,6 +461,8 @@ async def refresh_authorization(
             issuer=issuer,
             www_authenticate_header=www_authenticate_header,
             http_client=http_client,
+            allowed_issuers=allowed_issuers,
+            sends_client_auth=authenticator is not None or bool(client_secret),
         )
 
     auth_strategy = (
@@ -459,6 +494,8 @@ async def _resolve_issuer(
     issuer: str | None,
     www_authenticate_header: str | None,
     http_client: httpx.AsyncClient | None,
+    allowed_issuers: Sequence[str] | None,
+    sends_client_auth: bool,
 ) -> str:
     if issuer is not None:
         return issuer.rstrip("/")
@@ -467,8 +504,11 @@ async def _resolve_issuer(
             "Provide exactly one of 'issuer', 'www_authenticate_header', "
             "or 'metadata'"
         )
-    return await resolve_issuer_from_challenge(
-        www_authenticate_header, http_client=http_client
+    return await _resolve_pinned_challenge_issuer(
+        www_authenticate_header,
+        allowed_issuers=allowed_issuers,
+        sends_client_auth=sends_client_auth,
+        http_client=http_client,
     )
 
 

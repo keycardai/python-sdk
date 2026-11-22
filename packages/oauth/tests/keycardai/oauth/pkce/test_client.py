@@ -115,6 +115,7 @@ async def test_authenticate_completes_full_flow(monkeypatch):
         resource_url="https://api.example.com",
         www_authenticate_header=WWW_AUTHENTICATE,
         http_client=http_mock,
+        allowed_issuers=["https://auth.example.com"],
     )
 
     assert result is token_response

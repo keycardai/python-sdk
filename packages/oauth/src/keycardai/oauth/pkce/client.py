@@ -26,6 +26,7 @@ browser, and runs the loopback callback server (RFC 8252).
 import logging
 import secrets
 import webbrowser
+from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 import httpx
@@ -59,6 +60,7 @@ async def authenticate(
     scopes: list[str] | None = None,
     callback_timeout: int = 300,
     http_client: httpx.AsyncClient | None = None,
+    allowed_issuers: Sequence[str] | None = None,
 ) -> TokenResponse:
     """Run the OAuth 2.0 authorization-code-with-PKCE flow.
 
@@ -107,6 +109,13 @@ async def authenticate(
             short-lived client is created internally. The OAuth-server
             calls (server metadata discovery, token exchange) always go
             through a fresh :class:`AsyncClient`.
+        allowed_issuers: The issuers the caller trusts, used in challenge
+            mode only. The issuer resolved from the challenge must equal one
+            of them, compared without a trailing slash. Required in
+            challenge mode with ``client_secret`` or ``credential``, since
+            the protected resource names the issuer that receives the
+            client authentication. Optional for a public client; when set,
+            it is enforced the same way.
 
     Returns:
         ``TokenResponse`` from the token endpoint.
@@ -115,8 +124,12 @@ async def authenticate(
         keycardai.oauth.ConfigError: If both or neither of ``issuer`` and
             ``www_authenticate_header`` are provided, if challenge mode
             is used without ``resource_url``, if ``credential`` is combined
-            with ``client_secret``, or if the credential does not provide
-            client authentication. No request is sent.
+            with ``client_secret``, if the credential does not provide
+            client authentication, or if challenge mode has
+            ``client_secret`` or ``credential`` without ``allowed_issuers``.
+            No request is sent. Also raised after the resource metadata
+            fetch, with no request to the resolved issuer, when that issuer
+            is not in ``allowed_issuers``.
         ValueError: If discovery fails (no ``resource_metadata`` in the
             challenge, no ``authorization_servers`` in the metadata, or the
             authorization server is missing required endpoints).
@@ -145,6 +158,8 @@ async def authenticate(
         www_authenticate_header=www_authenticate_header,
         resource_url=resource_url,
         http_client=http_client,
+        allowed_issuers=allowed_issuers,
+        sends_client_auth=authenticator is not None or bool(client_secret),
     )
     if issuer is not None:
         logger.info("PKCE flow starting against issuer %s", issuer)
