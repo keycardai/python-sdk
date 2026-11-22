@@ -24,7 +24,7 @@ from keycardai.oauth import (
 )
 from keycardai.oauth.http._wire import HttpRequest, HttpResponse
 from keycardai.oauth.pkce import refresh_authorization
-from keycardai.oauth.server.credentials import ClientSecret
+from keycardai.oauth.server.credentials import ClientSecret, WorkloadIdentity
 
 ISSUER = "https://zone.example.com"
 TOKEN_ENDPOINT = "https://zone.example.com/oauth/token"
@@ -223,6 +223,12 @@ HELPER_CASES = [
 ]
 
 
+WORKLOAD_IDENTITY_WITHOUT_CLIENT_ID = (
+    "WorkloadIdentity: client_id is required for interactive grants "
+    "(the public ID of a v2 token credential)"
+)
+
+
 @pytest.mark.parametrize(
     ("host", "kwargs", "message"),
     [
@@ -238,6 +244,15 @@ HELPER_CASES = [
             NO_CAPABILITY,
             id="async-client-no-client-authentication",
         ),
+        *[
+            pytest.param(
+                host,
+                {"credential": WorkloadIdentity(lambda: "platform-token")},
+                WORKLOAD_IDENTITY_WITHOUT_CLIENT_ID,
+                id=f"{host}-workload-identity-without-client_id",
+            )
+            for host in HOSTS
+        ],
         *[
             pytest.param(host, kwargs, message, id=f"{host}-{case}")
             for host in ["helper-issuer", "helper-metadata", "helper-challenge"]
