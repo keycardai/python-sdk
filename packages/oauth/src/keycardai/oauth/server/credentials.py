@@ -618,8 +618,9 @@ class WorkloadIdentity:
             client authentication. A v2 token credential is resolved by this
             ID and requires it; a v1 token credential (deprecated) is
             resolved by the assertion's issuer and subject and rejects it.
-            Interactive grants (authorization code, device authorization)
-            need a v2 credential, so they need client_id.
+            Interactive grants (authorization code, refresh, device
+            authorization) need a v2 credential, so they need client_id and
+            raise ConfigError before any request without it.
     """
 
     def __init__(
@@ -694,6 +695,23 @@ class WorkloadIdentity:
             client_assertion=assertion,
             client_id=self.client_id,
         )
+
+    def check_client_authentication(self) -> None:
+        """Raise unless ``client_id`` is set.
+
+        The interactive grants (authorization code, refresh, device
+        authorization) need a v2 token credential, which the zone resolves by
+        ``client_id``. require_client_authenticator calls this before any
+        request, so a missing ``client_id`` fails before the user signs in.
+
+        Raises:
+            ConfigError: ``client_id`` is not set.
+        """
+        if not self.client_id:
+            raise ConfigError(
+                "WorkloadIdentity: client_id is required for interactive grants "
+                "(the public ID of a v2 token credential)"
+            )
 
     async def client_authentication(
         self, *, issuer: str, endpoint: str

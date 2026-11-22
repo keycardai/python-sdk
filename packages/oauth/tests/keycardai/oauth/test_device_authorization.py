@@ -35,7 +35,7 @@ from keycardai.oauth import (
 )
 from keycardai.oauth.http._transports import ResponseBodyDecodeError
 from keycardai.oauth.http._wire import HttpRequest, HttpResponse
-from keycardai.oauth.server.credentials import WebIdentity
+from keycardai.oauth.server.credentials import WebIdentity, WorkloadIdentity
 from keycardai.oauth.server.exceptions import WorkloadIdentityRuntimeError
 
 ISSUER = "https://zone.example.com"
@@ -283,6 +283,12 @@ async def test_row_2_public_client_id():
             {"credential": ExchangeOnlyCredential()},
             "ExchangeOnlyCredential does not provide client authentication",
             id="row-23-no-client-authentication",
+        ),
+        pytest.param(
+            {"credential": WorkloadIdentity(lambda: "platform-token")},
+            "WorkloadIdentity: client_id is required for interactive grants "
+            "(the public ID of a v2 token credential)",
+            id="workload-identity-without-client_id",
         ),
     ],
 )
