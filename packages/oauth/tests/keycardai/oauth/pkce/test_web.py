@@ -819,6 +819,7 @@ class _NoClientAuthentication:
     [
         {"credential": WorkloadIdentity(lambda: "t"), "client_id": "my-app"},
         {"credential": _NoClientAuthentication()},
+        {"credential": WorkloadIdentity(lambda: "t")},
     ],
 )
 async def test_exchange_rejects_invalid_credential_config(kwargs):
@@ -843,6 +844,7 @@ async def test_exchange_rejects_invalid_credential_config(kwargs):
         {"credential": WorkloadIdentity(lambda: "t"), "client_id": "my-app"},
         {"credential": WorkloadIdentity(lambda: "t"), "client_secret": "secret"},
         {"credential": _NoClientAuthentication()},
+        {"credential": WorkloadIdentity(lambda: "t")},
         {},
     ],
 )
@@ -903,7 +905,7 @@ async def test_exchange_returns_credential_error_without_request():
             code="code",
             redirect_uri="https://app.example.com/callback",
             code_verifier="verifier",
-            credential=WorkloadIdentity(failing_source),
+            credential=WorkloadIdentity(failing_source, client_id="acr_123"),
         )
 
     assert error.value is failure

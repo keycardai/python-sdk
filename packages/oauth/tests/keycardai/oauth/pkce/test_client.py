@@ -209,6 +209,7 @@ async def test_authenticate_with_credential_puts_client_id_on_authorize_url_only
     [
         {"credential": WorkloadIdentity(lambda: "t"), "client_secret": "secret"},
         {"credential": object()},
+        {"credential": WorkloadIdentity(lambda: "t")},
     ],
 )
 async def test_authenticate_rejects_invalid_credential_config(monkeypatch, kwargs):

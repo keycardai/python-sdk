@@ -85,7 +85,10 @@ class ExchangeOnlyCredential:
     [
         pytest.param(lambda tmp: ClientSecret(("cid", "secret")), id="ClientSecret"),
         pytest.param(lambda tmp: web_identity(tmp, client_id="cid"), id="WebIdentity"),
-        pytest.param(lambda tmp: WorkloadIdentity(lambda: "token"), id="WorkloadIdentity"),
+        pytest.param(
+            lambda tmp: WorkloadIdentity(lambda: "token", client_id="acr_123"),
+            id="WorkloadIdentity",
+        ),
         pytest.param(lambda tmp: ThirdPartyCredential(), id="third-party"),
     ],
 )
@@ -109,6 +112,20 @@ async def test_credentials_provide_client_authentication(tmp_path, make):
             WebIdentityConfigurationError,
             "WebIdentity client authentication requires client_id",
             id="web-identity-row-8-before-any-request",
+        ),
+        pytest.param(
+            lambda tmp: WorkloadIdentity(lambda: "token"),
+            ConfigError,
+            "WorkloadIdentity: client_id is required for interactive grants "
+            "(the public ID of a v2 token credential)",
+            id="workload-identity-without-client_id",
+        ),
+        pytest.param(
+            lambda tmp: WorkloadIdentity(lambda: "token", client_id=""),
+            ConfigError,
+            "WorkloadIdentity: client_id is required for interactive grants "
+            "(the public ID of a v2 token credential)",
+            id="workload-identity-empty-client_id",
         ),
     ],
 )

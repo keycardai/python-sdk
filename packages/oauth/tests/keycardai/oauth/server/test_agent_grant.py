@@ -26,6 +26,7 @@ from keycardai.oauth.server import (
     KeycardIdentity,
     subject_token_expired,
 )
+from keycardai.oauth.server.credentials import WorkloadIdentity
 from keycardai.oauth.server.exceptions import ResourceAccessError
 from keycardai.oauth.types.models import TokenExchangeRequest
 
@@ -317,6 +318,24 @@ def test_credential_assertion_without_client_id_omits_it_from_as_self() -> None:
     eng = engine(stub, application_credential=StubAssertionCredential())
     build(eng, Access.as_self())
     assert "client_id" not in stub.self_calls[0]
+
+
+def test_workload_identity_without_client_id_runs_both_grants() -> None:
+    """Workload Identity row 4e: client_credentials and token exchange are
+    not checked for client_id."""
+    stub = StubExchangeClient()
+    eng = engine(stub, application_credential=WorkloadIdentity(lambda: "platform-token"))
+    build(eng, Access.as_self())
+    build(eng, Access.on_behalf_of("caller-token"))
+    assert stub.self_calls == [
+        {
+            "resource": RESOURCE,
+            "client_assertion": "platform-token",
+            "client_assertion_type": "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+        }
+    ]
+    assert stub.exchange_calls[0].client_assertion == "platform-token"
+    assert stub.exchange_calls[0].client_id is None
 
 
 # Resource and target selection
