@@ -1,3 +1,18 @@
+## 0.37.1-keycardai-oauth (2026-11-22)
+
+
+- fix(keycardai-oauth): WorkloadIdentity requires client_id before an interactive grant (#443)
+- The authorization code, refresh and device grants need a v2 token
+credential, which the zone resolves by client_id. WorkloadIdentity defines
+check_client_authentication(), so require_client_authenticator raises
+ConfigError before any request, discovery and the resource metadata fetch
+included, when client_id is not set. client_credentials and token
+exchange do not check.
+- Workload Identity spec-version 4 (rows 4d, 4e), Authorization Code with
+PKCE spec-version 8 (row 34), Device Authorization spec-version 5 (row 34).
+- Refs SDK-122
+- Co-authored-by: Larry Osakwe <23560354+Larry-Osakwe@users.noreply.github.com>
+
 ## 0.37.0-keycardai-oauth (2026-11-22)
 
 
