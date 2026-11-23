@@ -37,7 +37,7 @@ dev = [
     "black>=26.10.1",
     "isort>=5.13.2",
     "ruff>=0.12.10",
-    "pre-commit>=4.3.0",
+    "pre-commit>=4.3.0; python_version >= '3.11'",
     "commitizen>=3.29.0",
 ]
 
@@ -139,7 +139,7 @@ dev = [
     "pytest>=8.4.1",
     "pytest-asyncio>=1.1.0",
     "ruff>=0.12.10",
-    "pre-commit>=4.3.0",
+    "pre-commit>=4.3.0; python_version >= '3.11'",
     "commitizen>=3.29.0",
     "httpx>=0.28.1",
     # Exact pin: ty is pre-1.0 and its rule set moves weekly. Bump deliberately.
