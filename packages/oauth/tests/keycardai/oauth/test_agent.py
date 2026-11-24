@@ -674,6 +674,24 @@ async def test_row_39_malformed_scopes(scopes):
 
 
 @pytest.mark.asyncio
+async def test_row_40_null_expiry():
+    token = await _Agent(_issued(expiresAt=None)).source().resource_token(RESOURCE)
+
+    assert token.access_token == "tok"
+    assert token.expires_in is None
+
+
+@pytest.mark.asyncio
+async def test_row_41_empty_socket_option_falls_back_to_env(short_tmp, agent_server):
+    named = await agent_server(os.path.join(short_tmp, "named.sock"))
+    source = AgentTokenSource(socket="", env={"KEYCARD_SOCKET": named.path})
+
+    await source.resource_token(RESOURCE)
+
+    assert len(named.calls) == 1
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("bad", ["\r\n", "\n", "\x00", "\t", "\x1f", "\x7f"], ids=repr)
 async def test_row_33_control_character_in_token(bad):
     secret = f"secret{bad}value"
