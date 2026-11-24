@@ -1,3 +1,14 @@
+## 2.3.8-keycardai-mcp (2026-11-24)
+
+
+- fix(keycardai-mcp): set validate_token_resource=False in get_auth_settings (#449)
+- Keycard access tokens carry the resource in aud, which TokenVerifier
+checks, and have no RFC 8707 resource claim. Leaving the setting unset
+logs an MCPDeprecationWarning on mcp 2.2+, and mcp 3.0 defaults it to
+True, which would refuse every Keycard token.
+- SDK-26
+- Co-authored-by: Larry Osakwe <23560354+Larry-Osakwe@users.noreply.github.com>
+
 ## 2.3.7-keycardai-mcp (2026-11-05)
 
 
