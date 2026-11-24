@@ -26,7 +26,7 @@ from keycardai.oauth import (
     AgentError,
     AgentTokenSource,
     NetworkError,
-    ResourceAuth,
+    ResourceTransport,
     is_application_not_found,
     is_declined,
 )
@@ -124,7 +124,7 @@ async def test_row_1_mint_with_no_application_credential(daemon):
 
 @pytest.mark.asyncio
 async def test_row_2_request_through_resource_transport(daemon, resource_server):
-    auth = ResourceAuth(_source(daemon), RESOURCE, ["read"])
+    auth = ResourceTransport(_source(daemon), RESOURCE, ["read"])
     async with resource_server.client(auth) as client:
         response = await client.get("/items")
 
@@ -138,7 +138,7 @@ async def test_row_3_every_call_reaches_the_agent(daemon, resource_server):
     await source.resource_token(RESOURCE, ["read"])
     await source.resource_token(RESOURCE, ["read"])
 
-    async with resource_server.client(ResourceAuth(source, RESOURCE, ["read"])) as client:
+    async with resource_server.client(ResourceTransport(source, RESOURCE, ["read"])) as client:
         response = await client.get("/items")
 
     assert response.status_code == 200

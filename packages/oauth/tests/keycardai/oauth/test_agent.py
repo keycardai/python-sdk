@@ -25,8 +25,8 @@ from keycardai.oauth import (
     NetworkError,
     OAuthError,
     OAuthHttpError,
-    ResourceAuth,
     ResourceTokenSource,
+    ResourceTransport,
     TokenResponse,
     TokenType,
     agent as agent_module,
@@ -822,10 +822,10 @@ def test_stub_source_satisfies_protocol():
 
 
 @pytest.mark.asyncio
-async def test_row_35_resource_auth_attaches_bearer():
+async def test_row_35_resource_transport_attaches_bearer():
     source = _StubSource()
     server = _Resource()
-    auth = ResourceAuth(source, RESOURCE, ["read"])
+    auth = ResourceTransport(source, RESOURCE, ["read"])
 
     async with httpx.AsyncClient(transport=server.transport(), auth=auth) as client:
         response = await client.get("https://elsewhere.example.net/items")
@@ -836,12 +836,12 @@ async def test_row_35_resource_auth_attaches_bearer():
 
 
 @pytest.mark.asyncio
-async def test_resource_auth_scopes_are_a_copy():
+async def test_resource_transport_scopes_are_a_copy():
     source = _StubSource()
     scopes = ["read"]
-    auth = ResourceAuth(source, RESOURCE, scopes)
+    auth = ResourceTransport(source, RESOURCE, scopes)
     scopes.append("write")
-    unscoped = ResourceAuth(source, RESOURCE)
+    unscoped = ResourceTransport(source, RESOURCE)
 
     async with httpx.AsyncClient(transport=_Resource().transport()) as client:
         await client.get("https://api.example.com/items", auth=auth)
@@ -854,7 +854,7 @@ async def test_resource_auth_scopes_are_a_copy():
 async def test_row_36_source_error_propagates_and_nothing_is_sent():
     declined = AgentError(AgentCode.PERMISSION_DENIED.value, "the human declined")
     server = _Resource()
-    auth = ResourceAuth(_StubSource(error=declined), RESOURCE)
+    auth = ResourceTransport(_StubSource(error=declined), RESOURCE)
 
     async with httpx.AsyncClient(transport=server.transport(), auth=auth) as client:
         with pytest.raises(AgentError) as exc_info:
@@ -865,18 +865,18 @@ async def test_row_36_source_error_propagates_and_nothing_is_sent():
     assert server.requests == []
 
 
-def test_row_37_resource_auth_requires_source_and_resource():
+def test_row_37_resource_transport_requires_source_and_resource():
     with pytest.raises(ConfigError):
-        ResourceAuth(None, RESOURCE)  # type: ignore[arg-type]
+        ResourceTransport(None, RESOURCE)  # type: ignore[arg-type]
     with pytest.raises(ConfigError):
-        ResourceAuth(_StubSource(), "")
+        ResourceTransport(_StubSource(), "")
 
 
 @pytest.mark.asyncio
 async def test_row_38_existing_authorization_is_replaced_and_caller_headers_untouched():
     server = _Resource()
     caller_headers = {"Authorization": "Bearer stale"}
-    auth = ResourceAuth(_StubSource(), RESOURCE)
+    auth = ResourceTransport(_StubSource(), RESOURCE)
 
     async with httpx.AsyncClient(transport=server.transport(), auth=auth) as client:
         response = await client.get("https://api.example.com/items", headers=caller_headers)
@@ -886,9 +886,9 @@ async def test_row_38_existing_authorization_is_replaced_and_caller_headers_unto
     assert caller_headers == {"Authorization": "Bearer stale"}
 
 
-def test_resource_auth_refuses_a_sync_client():
+def test_resource_transport_refuses_a_sync_client():
     server = _Resource()
-    auth = ResourceAuth(_StubSource(), RESOURCE)
+    auth = ResourceTransport(_StubSource(), RESOURCE)
 
     with httpx.Client(transport=server.transport(), auth=auth) as client:
         with pytest.raises(ConfigError, match="AsyncClient"):
@@ -904,7 +904,7 @@ async def test_scopes_given_as_a_string_are_refused():
     with pytest.raises(ConfigError):
         await source.resource_token(RESOURCE, "read")  # type: ignore[arg-type]
     with pytest.raises(ConfigError):
-        ResourceAuth(source, RESOURCE, "read")  # type: ignore[arg-type]
+        ResourceTransport(source, RESOURCE, "read")  # type: ignore[arg-type]
 
 
 @pytest.mark.asyncio

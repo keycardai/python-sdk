@@ -38,7 +38,7 @@ from keycardai.oauth import (
     AgentTokenSource,
     ConfigError,
     NetworkError,
-    ResourceAuth,
+    ResourceTransport,
     is_application_not_found,
     is_authorization_required,
     is_declined,
@@ -85,7 +85,7 @@ async def main() -> int:
         # The agent caches the token, so this second request is answered
         # without another prompt. The client's timeout bounds the GET, not
         # the wait for the token.
-        auth = ResourceAuth(source, resource, scopes)
+        auth = ResourceTransport(source, resource, scopes)
         async with httpx.AsyncClient(auth=auth) as client:
             response = await client.get(call)
         print(f"GET {call} -> {response.status_code}")

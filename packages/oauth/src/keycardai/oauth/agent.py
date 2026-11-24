@@ -496,10 +496,12 @@ def _parse_rfc3339(value: object) -> tuple[int, int]:
     return (when - epoch) // timedelta(seconds=1), int((fraction or "0").ljust(9, "0"))
 
 
-class ResourceAuth(httpx.Auth):
+class ResourceTransport(httpx.Auth):
     """Attaches a resource token to each request an ``httpx.AsyncClient`` sends.
 
-    The spec's resource transport. It binds one source to one resource and
+    The spec's resource transport, named as every Keycard SDK names it,
+    though in httpx terms it is an ``httpx.Auth``, passed as ``auth=``, not an
+    ``httpx`` transport. It binds one source to one resource and
     its scopes and never derives a resource from the request URL; a client
     calling several resources uses one instance per resource. Each request
     gets ``Authorization: Bearer <token>``, replacing any existing value.
@@ -518,9 +520,9 @@ class ResourceAuth(httpx.Auth):
         scopes: Sequence[str] | None = None,
     ):
         if source is None:
-            raise ConfigError("ResourceAuth requires a source")
+            raise ConfigError("ResourceTransport requires a source")
         if not resource:
-            raise ConfigError("ResourceAuth requires a resource")
+            raise ConfigError("ResourceTransport requires a resource")
         if isinstance(scopes, str):
             raise ConfigError("scopes must be a list of strings, not a string")
         self.source = source
@@ -539,5 +541,5 @@ class ResourceAuth(httpx.Auth):
     ) -> Generator[httpx.Request, httpx.Response, None]:
         # httpx.Auth's default sync flow passes the request through untouched,
         # which would send it unauthenticated.
-        raise ConfigError("ResourceAuth requires httpx.AsyncClient")
+        raise ConfigError("ResourceTransport requires httpx.AsyncClient")
         yield request  # pragma: no cover

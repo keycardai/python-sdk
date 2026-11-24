@@ -533,14 +533,14 @@ the request.
 
 ```python
 import httpx
-from keycardai.oauth import AgentTokenSource, ResourceAuth
+from keycardai.oauth import AgentTokenSource, ResourceTransport
 
 source = AgentTokenSource(workload="my-agent")
 
 token = await source.resource_token("https://api.example.com", ["read"])
 
 # Or attach a token to every request an httpx.AsyncClient sends:
-auth = ResourceAuth(source, "https://api.example.com", ["read"])
+auth = ResourceTransport(source, "https://api.example.com", ["read"])
 async with httpx.AsyncClient(auth=auth) as client:
     response = await client.get("https://api.example.com/items")
 ```

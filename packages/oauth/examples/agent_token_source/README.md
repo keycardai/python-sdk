@@ -8,7 +8,7 @@ holding no application credential, then optionally calls the resource with it.
 1. Asks the agent for a token for `RESOURCE` with `AgentTokenSource`. The
    first request for a resource and scope set opens an approval prompt; the
    agent remembers the approval and caches the token.
-2. If `CALL_URL` is set, sends a GET to it through `ResourceAuth`, which
+2. If `CALL_URL` is set, sends a GET to it through `ResourceTransport`, which
    attaches `Authorization: Bearer <token>`.
 
 A refusal is reported by the predicate it matches: declined, authorization
