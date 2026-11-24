@@ -1140,3 +1140,30 @@ class TestAuthProviderZoneConfigurationDiscovery:
             )
 
         assert auth_provider.zone_url == "https://explicit_zone.keycard.cloud"
+
+
+class TestGetAuthSettings:
+    """Test the AuthSettings that AuthProvider builds for the MCP server."""
+
+    def test_builds_without_warning(self, auth_provider_config, mock_client_factory):
+        """Test that get_auth_settings() sets validate_token_resource, so mcp does not warn."""
+        auth_provider = AuthProvider(**auth_provider_config, client_factory=mock_client_factory)
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            settings = auth_provider.get_auth_settings()
+
+        assert settings.validate_token_resource is False
+        assert str(settings.resource_server_url) == "http://localhost:8000/mcp"
+
+    def test_builds_without_server_url(self, mock_client_factory):
+        """Test that get_auth_settings() builds when no mcp_server_url is configured."""
+        with patch.dict(os.environ, {}, clear=True):
+            auth_provider = AuthProvider(zone_id="test_zone", client_factory=mock_client_factory)
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            settings = auth_provider.get_auth_settings()
+
+        assert settings.resource_server_url is None
+        assert settings.validate_token_resource is False

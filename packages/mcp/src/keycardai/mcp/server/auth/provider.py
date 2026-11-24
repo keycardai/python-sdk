@@ -327,6 +327,11 @@ class AuthProvider:
                 "issuer_url": self.zone_url,
                 "resource_server_url": self.mcp_server_url,
                 "required_scopes": self.required_scopes,
+                # Keycard access tokens name their resource in `aud`, which
+                # TokenVerifier checks against `audience`. They carry no
+                # RFC 8707 `resource` claim, so mcp's AccessToken.resource
+                # check would refuse every Keycard token.
+                "validate_token_resource": False,
             }
         )
 
