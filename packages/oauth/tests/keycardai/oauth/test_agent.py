@@ -7,6 +7,7 @@ caching-only rows 19 to 23 have no test, and row 18 expects two requests.
 """
 
 import asyncio
+import gzip
 import json
 import os
 import sys
@@ -54,8 +55,14 @@ class _Agent:
     def _handle(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
         if len(self._responses) > 1:
-            return self._responses.pop(0)
-        return self._responses[0]
+            response = self._responses.pop(0)
+        else:
+            response = self._responses[0]
+        # Response(content=...) is read at construction, and the source reads
+        # the raw stream, which a read response refuses; a transport's is unread.
+        return httpx.Response(
+            response.status_code, headers=response.headers, stream=response.stream
+        )
 
     def source(self, **kwargs) -> AgentTokenSource:
         kwargs.setdefault("socket", "/unused.sock")
@@ -602,6 +609,63 @@ async def test_endless_body_is_not_read_to_the_end(status, error):
 
     with pytest.raises(error):
         await asyncio.wait_for(agent.source().resource_token(RESOURCE), timeout=5)
+
+
+@pytest.mark.asyncio
+async def test_identity_encoding_is_requested():
+    agent = _Agent()
+
+    await agent.source().resource_token(RESOURCE)
+
+    assert agent.requests[0].headers["Accept-Encoding"] == "identity"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "content",
+    [b"\x1f\x8b corrupt", gzip.compress(json.dumps({"token": "tok"}).encode())],
+    ids=["corrupt", "valid"],
+)
+async def test_encoded_success_is_an_agent_response_error(content):
+    # A corrupt body would otherwise escape as a raw httpx.DecodingError,
+    # which is not a TransportError.
+    agent = _Agent(
+        httpx.Response(
+            200, headers={"Content-Encoding": "gzip"}, stream=httpx.ByteStream(content)
+        )
+    )
+
+    with pytest.raises(AgentResponseError, match="Content-Encoding") as exc_info:
+        await agent.source().resource_token(RESOURCE)
+
+    assert not exc_info.value.retryable
+
+
+@pytest.mark.asyncio
+async def test_explicit_identity_encoding_is_accepted():
+    agent = _Agent(
+        httpx.Response(200, headers={"Content-Encoding": "Identity"}, json={"token": "tok"})
+    )
+
+    token = await agent.source().resource_token(RESOURCE)
+
+    assert token.access_token == "tok"
+
+
+@pytest.mark.asyncio
+async def test_encoded_error_body_is_not_decoded():
+    agent = _Agent(
+        httpx.Response(
+            503,
+            headers={"Content-Encoding": "gzip"},
+            stream=httpx.ByteStream(b"\x1f\x8b corrupt"),
+        )
+    )
+
+    with pytest.raises(OAuthHttpError) as exc_info:
+        await agent.source().resource_token(RESOURCE)
+
+    assert exc_info.value.status_code == 503
 
 
 @pytest.mark.asyncio

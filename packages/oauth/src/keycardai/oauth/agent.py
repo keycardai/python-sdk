@@ -44,8 +44,8 @@ _OPERATION = "keycard agent IssueToken"
 
 _ERROR_BODY_LIMIT = 64 * 1024
 
-# The socket's owner is not checked, so a peer on it may stream an endless or
-# decompression-amplified body.
+# The socket's owner is not checked, so a peer on it may stream an endless
+# body. Bodies are read raw, never decompressed, so the limit bounds memory.
 _RESPONSE_BODY_LIMIT = 1024 * 1024
 
 _NOT_JSON = object()
@@ -313,7 +313,8 @@ class AgentTokenSource:
                 was chosen.
             AgentError: The agent refused.
             OAuthHttpError: A non-200 response that is not a Connect error.
-            AgentResponseError: A 200 response that cannot be used.
+            AgentResponseError: A 200 response that cannot be used,
+                including one carrying a Content-Encoding other than identity.
         """
         if not resource:
             raise ConfigError("resource is required")
@@ -336,7 +337,7 @@ class AgentTokenSource:
         # declaration, so it is omitted rather than sent empty.
         if self.app_id:
             fields["appId"] = self.app_id
-        headers = {"Connect-Protocol-Version": "1"}
+        headers = {"Connect-Protocol-Version": "1", "Accept-Encoding": "identity"}
         if self.org:
             headers["Keycard-Org"] = self.org
         if self.zone:
@@ -358,6 +359,11 @@ class AgentTokenSource:
                     raise _refusal(
                         response.status_code,
                         await _read_prefix(response, _ERROR_BODY_LIMIT),
+                    )
+                encoding = response.headers.get("Content-Encoding", "identity")
+                if encoding.strip().lower() != "identity":
+                    raise AgentResponseError(
+                        f"response has Content-Encoding {encoding!r}, not identity"
                     )
                 content = await _read_prefix(response, _RESPONSE_BODY_LIMIT + 1)
                 if len(content) > _RESPONSE_BODY_LIMIT:
@@ -419,7 +425,9 @@ def _has_control_character(value: str) -> bool:
 
 async def _read_prefix(response: httpx.Response, limit: int) -> bytes:
     prefix = bytearray()
-    async for chunk in response.aiter_bytes():
+    # aiter_raw: httpx decodes a whole network chunk before yielding it, so a
+    # compressed chunk could inflate far past the limit before it is checked.
+    async for chunk in response.aiter_raw():
         prefix += chunk
         if len(prefix) >= limit:
             break
