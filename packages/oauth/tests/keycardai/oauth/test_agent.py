@@ -465,6 +465,8 @@ CODES = [
     (AgentCode.NOT_FOUND, 404),
     (AgentCode.UNAVAILABLE, 503),
     (AgentCode.INVALID_ARGUMENT, 400),
+    (AgentCode.INTERNAL, 500),
+    (AgentCode.UNKNOWN, 500),
 ]
 
 

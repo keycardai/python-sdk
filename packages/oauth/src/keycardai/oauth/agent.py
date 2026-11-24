@@ -66,6 +66,8 @@ class AgentCode(str, Enum):
     NOT_FOUND = "not_found"
     UNAVAILABLE = "unavailable"
     INVALID_ARGUMENT = "invalid_argument"
+    INTERNAL = "internal"
+    UNKNOWN = "unknown"
 
 
 _RETRYABLE_CODES = frozenset({AgentCode.RESOURCE_EXHAUSTED, AgentCode.UNAVAILABLE})
