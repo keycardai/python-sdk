@@ -421,9 +421,10 @@ async def test_row_27_granted_scopes_as_reported():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("reported", [None, []], ids=["absent", "empty"])
-async def test_row_28_scope_never_derived_from_request(reported):
-    body = {} if reported is None else {"scopes": reported}
+@pytest.mark.parametrize(
+    "body", [{}, {"scopes": None}, {"scopes": []}], ids=["absent", "null", "empty"]
+)
+async def test_row_28_scope_never_derived_from_request(body):
 
     token = await _Agent(_issued(**body)).source().resource_token(RESOURCE, ["a"])
 
@@ -664,15 +665,12 @@ async def test_unparseable_expiry_is_an_agent_response_error(expires_at):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("scopes", ["a b", [1], ["a", 1], {"a": 1}])
-async def test_malformed_scopes_is_treated_as_absent(scopes):
-    # The spec's scope is the agent's list "when the response carries a
-    # non-empty list; absent otherwise", and its error table does not make
-    # a malformed one an error, so the token is kept.
-    token = await _Agent(_issued(scopes=scopes)).source().resource_token(RESOURCE, ["a"])
+@pytest.mark.parametrize("scopes", ["a b", ["a", 1], [1], {"a": 1}])
+async def test_row_39_malformed_scopes(scopes):
+    with pytest.raises(AgentResponseError, match="scopes") as exc_info:
+        await _Agent(_issued(scopes=scopes)).source().resource_token(RESOURCE, ["a"])
 
-    assert token.access_token == "tok"
-    assert token.scope is None
+    assert "tok" not in str(exc_info.value)
 
 
 @pytest.mark.asyncio

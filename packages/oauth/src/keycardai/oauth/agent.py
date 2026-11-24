@@ -397,21 +397,18 @@ class AgentTokenSource:
             expires_in = max(0, math.floor(seconds - self._clock() + nanos / 1e9))
 
         granted = body.get("scopes")
-        # Absent, empty, or not a list of strings means the grant is unknown,
-        # so it is never filled in from the request, and a usable token is
-        # not discarded over it.
-        if not (
-            isinstance(granted, list)
-            and granted
-            and all(isinstance(s, str) for s in granted)
+        if granted is not None and not (
+            isinstance(granted, list) and all(isinstance(s, str) for s in granted)
         ):
-            granted = None
+            raise AgentResponseError("scopes is not a list of strings")
 
         return TokenResponse(
             access_token=token,
             token_type=TokenType.BEARER,
             expires_in=expires_in,
-            scope=granted,
+            # Absent or empty means the grant is unknown, so it is never
+            # filled in from the request.
+            scope=list(granted) if granted else None,
         )
 
 
