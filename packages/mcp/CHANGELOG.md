@@ -1,3 +1,13 @@
+## 2.3.9-keycardai-mcp (2026-11-24)
+
+
+- fix(keycardai-mcp): drop no-op follow_redirects on the streamable HTTP client (#452)
+- streamable_http_client in mcp 2.2+ follows redirects only within the
+server's origin and ignores the client's follow_redirects setting.
+Document that cross-origin redirects aren't followed.
+- Refs SDK-25
+- Co-authored-by: Larry Osakwe <23560354+Larry-Osakwe@users.noreply.github.com>
+
 ## 2.3.8-keycardai-mcp (2026-11-24)
 
 
