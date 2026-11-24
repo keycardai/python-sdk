@@ -1066,6 +1066,12 @@ uv run mcp-crewai
 - Check callback endpoint is publicly accessible (for web apps)
 - Ensure `handle_completion()` is called with correct parameters
 
+### Server URL Redirects to Another Origin
+
+- The client follows a redirect only when it stays on the server URL's origin (same scheme, host and port, or http to https on the same host). This is how the underlying `mcp` streamable HTTP transport works.
+- A redirect to another host, port or scheme is not followed, and the connection fails with an error naming the redirect location.
+- Configure the server `url` as the final location the redirect points to.
+
 ---
 
 ## Support

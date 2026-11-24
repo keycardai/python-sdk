@@ -89,9 +89,11 @@ class StreamableHttpConnection(Connection):
             raise ValueError("HTTP server configuration requires a URL")
 
         auth = HttpxAuth(strategy=self.auth_strategy)
+        # streamable_http_client follows a redirect only within the server's
+        # origin and ignores the client's follow_redirects setting, so it is
+        # left at the httpx2 default.
         self._http_client = httpx2.AsyncClient(
             auth=auth,
-            follow_redirects=True,
             timeout=httpx2.Timeout(
                 MCP_DEFAULT_TIMEOUT,
                 read=MCP_DEFAULT_SSE_READ_TIMEOUT,
