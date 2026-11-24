@@ -8,7 +8,6 @@ import time
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
 from typing import Any, cast
-from weakref import WeakKeyDictionary
 
 from keycardai.oauth import AsyncClient
 from keycardai.oauth.exceptions import OAuthProtocolError
@@ -20,7 +19,7 @@ from keycardai.oauth.server import (
 )
 
 from .settings import HermesSettings
-from .store import EXPIRY_SKEW_SECONDS, SignIn, SignInStore
+from .store import EXPIRY_SKEW_SECONDS, LockHeldByThisLoop, SignIn, SignInStore
 
 LOGIN_COMMAND = "hermes keycard login --actor {actor}"
 
@@ -68,9 +67,7 @@ class Grants:
     store: SignInStore
     clock: Callable[[], float] = time.time
     public_client: AsyncClient | None = None
-    _public_clients: WeakKeyDictionary[asyncio.AbstractEventLoop, AsyncClient] = field(
-        default_factory=WeakKeyDictionary, init=False, repr=False
-    )
+    _engine_public: AsyncClient | None = field(default=None, init=False, repr=False)
 
     def run(self, coro: Coroutine[Any, Any, Any]) -> Any:
         return self.engine.run_sync(coro)
@@ -95,26 +92,40 @@ class Grants:
         refresh failure. At most one refresh per sign-in runs at a time across
         threads and processes; a waiter re-reads the store and uses the
         other's result.
+
+        Called on a thread whose running loop has an ``agrant`` refresh of
+        the same sign-in in flight, waiting for its lock would hang that
+        loop, so the call raises ``RefreshFailed`` (a retryable per-resource
+        error) instead of waiting.
         """
         sign_in, stale = self._checked(actor, self.store.load(actor))
         if not stale:
             return sign_in
-        with self.store.lock(actor):
-            current, stale = self._checked(actor, self.store.load(actor))
-            if not stale:
-                return current
-            try:
-                response = self.run(self._refresh_coro(current))
-            except Exception as exc:
-                raise _refresh_error(actor, exc) from exc
-            return self._store_refreshed(actor, current, response)
+        try:
+            with self.store.lock(actor):
+                current, stale = self._checked(actor, self.store.load(actor))
+                if not stale:
+                    return current
+                try:
+                    response = self.run(self._refresh_coro(current, self._engine_client()))
+                except Exception as exc:
+                    raise _refresh_error(actor, exc) from exc
+                return self._store_refreshed(actor, current, response)
+        except LockHeldByThisLoop as exc:
+            raise RefreshFailed(str(exc)) from exc
 
     async def afresh_sign_in(self, actor: str) -> SignIn:
         """``fresh_sign_in`` on the running loop: the sign-in lock is taken
         with ``SignInStore.alock`` and the refresh is awaited here, so other
         tasks on the loop keep running while it is in flight. The lock is the
         same one ``fresh_sign_in`` takes, so sync and async callers still
-        share one refresh per sign-in."""
+        share one refresh per sign-in.
+
+        The refresh and the save run as their own task, shielded from the
+        caller: the zone may rotate the refresh token as soon as it gets the
+        request, so a caller cancelled mid refresh still waits, holding the
+        lock, until the replacement is saved, and then raises
+        ``CancelledError``."""
         sign_in, stale = self._checked(actor, self.store.load(actor))
         if not stale:
             return sign_in
@@ -122,32 +133,40 @@ class Grants:
             current, stale = self._checked(actor, self.store.load(actor))
             if not stale:
                 return current
-            try:
-                response = await self._refresh_coro(current)
-            except Exception as exc:
-                raise _refresh_error(actor, exc) from exc
-            return self._store_refreshed(actor, current, response)
+            return await _uncancellable(self._arefresh_and_store(actor, current))
 
-    def _public(self) -> AsyncClient:
-        """The unauthenticated client the public sign-in client's requests go
-        through: the engine's client carries the application's own client
-        authentication, which must not be sent with a public client_id.
+    async def _arefresh_and_store(self, actor: str, sign_in: SignIn) -> SignIn:
+        if self.public_client is not None:
+            client = self.public_client
+            owned = False
+        else:
+            # One client per refresh on the caller's loop: a refresh runs once
+            # per access token lifetime, and a client kept past this loop
+            # would hold the loop through its transport after it closes.
+            client = AsyncClient(issuer=self.settings.zone_url)
+            owned = True
+        try:
+            response = await self._refresh_coro(sign_in, client)
+        except Exception as exc:
+            raise _refresh_error(actor, exc) from exc
+        finally:
+            if owned:
+                await client.aclose()
+        return self._store_refreshed(actor, sign_in, response)
 
-        An injected ``public_client`` is used as is. Otherwise one client is
-        kept per running loop, as ``AgentGrantEngine.client`` does, since a
-        refresh runs on the engine's persistent loop for the sync path and on
-        the caller's loop for ``agrant``."""
+    def _engine_client(self) -> AsyncClient:
+        """The unauthenticated client for refreshes on the engine's persistent
+        loop: the engine's client carries the application's own client
+        authentication, which must not be sent with a public client_id. An
+        injected ``public_client`` is used as is; otherwise one client is
+        kept for the life of the profile, as that loop is."""
         if self.public_client is not None:
             return self.public_client
-        loop = asyncio.get_running_loop()
-        client = self._public_clients.get(loop)
-        if client is None:
-            client = AsyncClient(issuer=self.settings.zone_url)
-            self._public_clients[loop] = client
-        return client
+        if self._engine_public is None:
+            self._engine_public = AsyncClient(issuer=self.settings.zone_url)
+        return self._engine_public
 
-    async def _refresh_coro(self, sign_in: SignIn) -> Any:
-        client = self._public()
+    async def _refresh_coro(self, sign_in: SignIn, client: AsyncClient) -> Any:
         resources = [self.settings.sign_in_resource] if self.settings.sign_in_resource else None
         return await client.refresh_token_grant(
             refresh_token=sign_in.refresh_token or "",
@@ -238,6 +257,26 @@ class Grants:
         if access is not None:
             return access
         return await self.engine.build_access(identity, resources)
+
+
+async def _uncancellable(coro: Coroutine[Any, Any, SignIn]) -> SignIn:
+    """Await ``coro`` as a task the caller's cancellation cannot interrupt.
+    A cancelled caller waits for the task to finish, then raises
+    ``CancelledError``, so the cancellation still reaches it (and an
+    ``asyncio.timeout`` around it still turns into ``TimeoutError``)."""
+    task = asyncio.ensure_future(coro)
+    cancelled = False
+    while not task.done():
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            cancelled = True
+    if cancelled:
+        if not task.cancelled():
+            # Retrieved so a failed refresh is not logged as never retrieved.
+            task.exception()
+        raise asyncio.CancelledError
+    return task.result()
 
 
 def _refresh_error(actor: str, exc: Exception) -> SignInRequired | RefreshFailed:

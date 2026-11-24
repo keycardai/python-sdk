@@ -18,6 +18,23 @@ from pathlib import Path
 EXPIRY_SKEW_SECONDS = 60.0
 LOCK_POLL_SECONDS = 0.02
 
+# Lock file path -> the event loop whose task holds ``alock`` on it, for this
+# process. Only the holder's loop thread writes its entry.
+_ALOCK_HOLDERS: dict[str, asyncio.AbstractEventLoop] = {}
+
+
+class LockHeldByThisLoop(RuntimeError):
+    """``SignInStore.lock`` was called on a thread whose running event loop
+    has a task holding ``alock`` on the same sign-in. Waiting would hang the
+    loop, since the holder can only release the lock on that same thread."""
+
+
+def _running_loop() -> asyncio.AbstractEventLoop | None:
+    try:
+        return asyncio.get_running_loop()
+    except RuntimeError:
+        return None
+
 
 @dataclass(frozen=True)
 class SignIn:
@@ -125,9 +142,21 @@ class SignInStore:
         ``flock`` on a lock file beside the sign-in: a second process blocks
         on the kernel lock, and a second thread of this process blocks on it
         too because each ``with`` opens its own descriptor.
+
+        Raises ``LockHeldByThisLoop`` instead of blocking when a task on this
+        thread's running loop holds ``alock`` on the sign-in. No await runs
+        between the check and the ``flock``, so that task cannot take the
+        lock in between.
         """
         _private_dir(self.dir)
         lock_path = self.path(actor).with_suffix(".lock")
+        loop = _running_loop()
+        if loop is not None and _ALOCK_HOLDERS.get(os.path.abspath(lock_path)) is loop:
+            raise LockHeldByThisLoop(
+                f"the sign-in lock for {actor!r} is held by a task on this thread's "
+                "running event loop (an agrant() refresh); a blocking lock here "
+                "would hang that loop, so use agrant() from async code"
+            )
         fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
         try:
             fcntl.flock(fd, fcntl.LOCK_EX)
@@ -146,9 +175,13 @@ class SignInStore:
         another descriptor holds the lock. No call waits in the kernel, so a
         cancelled waiter only closes its descriptor and leaves no worker
         thread behind that could take the lock later.
+
+        While held, the lock is recorded against the running loop, so a
+        ``lock`` call on that loop's thread raises instead of hanging it.
         """
         _private_dir(self.dir)
         lock_path = self.path(actor).with_suffix(".lock")
+        key = os.path.abspath(lock_path)
         fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
         try:
             while True:
@@ -157,9 +190,11 @@ class SignInStore:
                     break
                 except BlockingIOError:
                     await asyncio.sleep(poll)
+            _ALOCK_HOLDERS[key] = asyncio.get_running_loop()
             try:
                 yield
             finally:
+                _ALOCK_HOLDERS.pop(key, None)
                 fcntl.flock(fd, fcntl.LOCK_UN)
         finally:
             os.close(fd)

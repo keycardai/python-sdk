@@ -455,6 +455,167 @@ async def _take(store: Any) -> None:
         pass
 
 
+def test_cancelled_agrant_still_saves_the_rotated_refresh_token(harness: Harness) -> None:
+    harness.store_sign_in("owner", "old", expires_in=10)
+    harness.client.refresh_delay = 0.2
+    store = harness.plugin.grants.store
+
+    async def one() -> None:
+        async with agrant(tool_name="calendar"):
+            pass
+
+    async def body() -> Any:
+        task = asyncio.create_task(one())
+        # The zone has the request (and rotates refresh-1 to refresh-2) before
+        # the caller is cancelled.
+        while not harness.client.refresh_calls:
+            await asyncio.sleep(0.005)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        # Cancellation reaches the caller only once the replacement is saved.
+        return store.load("owner")
+
+    saved = asyncio.run(body())
+    assert saved is not None
+    assert (saved.refresh_token, saved.access_token) == ("refresh-2", "access-1")
+
+    harness.now += 600
+    with grant(tool_name="calendar") as access:
+        token = access.access(RESOURCE).access_token
+    assert [call["refresh_token"] for call in harness.client.refresh_calls] == ["refresh-1", "refresh-2"]
+    assert token == f"obo-access-2-for-{RESOURCE}"
+
+
+def test_agrant_timeout_still_saves_the_refresh_and_raises_timeout(harness: Harness) -> None:
+    harness.store_sign_in("owner", "old", expires_in=10)
+    harness.client.refresh_delay = 0.2
+
+    async def body() -> None:
+        async with asyncio.timeout(0.05):
+            async with agrant(tool_name="calendar"):
+                pass
+
+    with pytest.raises(TimeoutError):
+        asyncio.run(body())
+    saved = harness.plugin.grants.store.load("owner")
+    assert saved is not None and saved.refresh_token == "refresh-2"
+
+
+def _on_daemon_thread(fn: Any, timeout: float = 5) -> Any:
+    """``fn()`` on a daemon thread, failing rather than hanging the run."""
+    out: dict[str, Any] = {}
+
+    def target() -> None:
+        try:
+            out["value"] = fn()
+        except BaseException as exc:
+            out["error"] = exc
+
+    thread = threading.Thread(target=target, daemon=True)
+    thread.start()
+    thread.join(timeout=timeout)
+    assert not thread.is_alive(), "deadlocked"
+    if "error" in out:
+        raise out["error"]
+    return out["value"]
+
+
+def test_sync_grant_on_the_loop_of_an_agrant_refresh_fails_fast(harness: Harness) -> None:
+    harness.store_sign_in("owner", "old", expires_in=10)
+    harness.client.refresh_delay = 0.3
+
+    async def one() -> str:
+        async with agrant(tool_name="calendar"):
+            return get_access_context().access(RESOURCE).access_token
+
+    async def body() -> tuple[Any, str]:
+        task = asyncio.create_task(one())
+        while not harness.client.refresh_calls:
+            await asyncio.sleep(0.005)
+        # A blocking grant() on the holder's own loop thread.
+        with grant(tool_name="calendar") as access:
+            error = access.get_resource_error(RESOURCE)
+        return error, await task
+
+    error, token = _on_daemon_thread(lambda: asyncio.run(body()))
+    assert error["code"] == "refresh_failed"
+    assert error["retryable"] is True
+    assert token == f"obo-access-1-for-{RESOURCE}"
+    assert len(harness.client.refresh_calls) == 1
+
+
+def test_lock_raises_on_the_thread_whose_loop_holds_alock(harness: Harness) -> None:
+    from keycardai.hermes.store import LockHeldByThisLoop
+
+    store = harness.plugin.grants.store
+    released = threading.Event()
+
+    def other_thread_waits() -> None:
+        with store.lock("owner"):
+            released.set()
+
+    async def body() -> None:
+        async with store.alock("owner"):
+            with pytest.raises(LockHeldByThisLoop):
+                with store.lock("owner"):
+                    pass
+            waiter = threading.Thread(target=other_thread_waits, daemon=True)
+            waiter.start()
+            await asyncio.sleep(0.1)
+            # Another thread still waits for the holder as before.
+            assert not released.is_set()
+        await asyncio.to_thread(waiter.join, 5)
+        assert released.is_set()
+        # Once released, this thread takes it normally.
+        with store.lock("owner"):
+            pass
+
+    _on_daemon_thread(lambda: asyncio.run(body()))
+
+
+def test_agrant_refresh_client_does_not_outlive_its_loop(harness: Harness, monkeypatch: pytest.MonkeyPatch) -> None:
+    import gc
+    import weakref
+
+    from keycardai.hermes import grants as grants_module
+
+    closed: list[bool] = []
+    stub = harness.client
+
+    class LoopHoldingClient:
+        """Holds the loop strongly once used, as the httpx transport does."""
+
+        def __init__(self, issuer: str) -> None:
+            self.loop: Any = None
+            self.index = len(closed)
+            closed.append(False)
+
+        async def refresh_token_grant(self, **kwargs: Any) -> Any:
+            self.loop = asyncio.get_running_loop()
+            return await stub.refresh_token_grant(**kwargs)
+
+        async def aclose(self) -> None:
+            closed[self.index] = True
+
+    monkeypatch.setattr(grants_module, "AsyncClient", LoopHoldingClient)
+    harness.plugin.grants.public_client = None
+    loops: list[weakref.ref[asyncio.AbstractEventLoop]] = []
+
+    async def body() -> str:
+        loops.append(weakref.ref(asyncio.get_running_loop()))
+        async with agrant(tool_name="calendar"):
+            return get_access_context().access(RESOURCE).access_token
+
+    for _ in range(2):
+        harness.store_sign_in("owner", "old", expires_in=10)
+        assert asyncio.run(body()).startswith("obo-access-")
+    gc.collect()
+    assert closed == [True, True]
+    assert [ref() for ref in loops] == [None, None]
+    assert harness.plugin.grants._engine_public is None
+
+
 # row 21
 @pytest.mark.parametrize("error", [network_error(), server_error()])
 def test_row_21_other_refresh_failures_are_per_resource_and_leave_the_store(harness: Harness, error) -> None:
