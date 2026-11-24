@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import fcntl
 import hashlib
 import json
@@ -9,12 +10,13 @@ import os
 import re
 import tempfile
 import time
-from collections.abc import Iterator
-from contextlib import contextmanager
+from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager, contextmanager
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
 EXPIRY_SKEW_SECONDS = 60.0
+LOCK_POLL_SECONDS = 0.02
 
 
 @dataclass(frozen=True)
@@ -132,4 +134,32 @@ class SignInStore:
             yield
         finally:
             fcntl.flock(fd, fcntl.LOCK_UN)
+            os.close(fd)
+
+    @asynccontextmanager
+    async def alock(self, actor: str, *, poll: float = LOCK_POLL_SECONDS) -> AsyncIterator[None]:
+        """``lock`` for a coroutine: the same ``flock`` on the same lock file,
+        so it excludes ``lock`` holders in any thread or process, taken
+        without blocking the event loop.
+
+        A non-blocking ``flock`` is retried every ``poll`` seconds while
+        another descriptor holds the lock. No call waits in the kernel, so a
+        cancelled waiter only closes its descriptor and leaves no worker
+        thread behind that could take the lock later.
+        """
+        _private_dir(self.dir)
+        lock_path = self.path(actor).with_suffix(".lock")
+        fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
+        try:
+            while True:
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    break
+                except BlockingIOError:
+                    await asyncio.sleep(poll)
+            try:
+                yield
+            finally:
+                fcntl.flock(fd, fcntl.LOCK_UN)
+        finally:
             os.close(fd)
