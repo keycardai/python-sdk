@@ -1,7 +1,7 @@
 {
   "fastmcp:fastmcp": {
-    "run": "https://github.com/keycardai/python-sdk/actions/runs/45127519802",
-    "version": "4.2.4"
+    "run": "https://github.com/keycardai/python-sdk/actions/runs/45343126430",
+    "version": "4.2.5"
   },
   "langchain:langchain+langgraph": {
     "run": "https://github.com/keycardai/python-sdk/actions/runs/45343126430",
