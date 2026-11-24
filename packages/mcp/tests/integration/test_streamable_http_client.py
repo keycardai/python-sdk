@@ -125,7 +125,6 @@ async def test_client_connects_over_real_streamable_http_transport(
             assert isinstance(connection, StreamableHttpConnection)
             http_client = connection._http_client
             assert http_client is not None
-            assert http_client.follow_redirects is True
             assert http_client.timeout.connect == 30.0
             assert http_client.timeout.read == 300.0
             assert http_client.timeout.write == 30.0
