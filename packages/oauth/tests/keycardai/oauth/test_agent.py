@@ -126,7 +126,7 @@ async def test_row_02_tenant_headers():
 @pytest.mark.asyncio
 @pytest.mark.parametrize("field", ["org", "zone"])
 @pytest.mark.parametrize("bad", ["a\r\nX-Injected: 1", "a\x00", "a\x7f"], ids=repr)
-async def test_tenant_header_with_a_control_character_is_a_config_error(field, bad):
+async def test_row_42_control_character_in_tenant_header(field, bad):
     # Otherwise h11 refuses it mid-send as a TransportError, which surfaces
     # as a retryable NetworkError blaming the socket.
     source = AgentTokenSource(socket="/unused.sock", _transport=_never_dialled(), **{field: bad})
@@ -594,7 +594,7 @@ async def test_error_body_is_read_to_a_bounded_prefix():
 
 
 @pytest.mark.asyncio
-async def test_success_body_is_bounded():
+async def test_row_43_success_body_over_1_mib():
     padded = {"token": "tok", "padding": "x" * (1024 * 1024)}
     agent = _Agent(httpx.Response(200, json=padded))
 
