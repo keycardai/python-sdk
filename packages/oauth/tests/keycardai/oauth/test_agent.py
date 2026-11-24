@@ -766,6 +766,23 @@ async def test_row_41_empty_socket_option_falls_back_to_env(short_tmp, agent_ser
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "invalid", [b"\xff", b"\xc3", b"\xed\xa0\x80"], ids=["ff", "truncated", "surrogate"]
+)
+async def test_row_44_token_not_utf8(invalid):
+    content = b'{"token": "secret' + invalid + b'value"}'
+    agent = _Agent(httpx.Response(200, content=content))
+
+    with pytest.raises(AgentResponseError, match="UTF-8") as exc_info:
+        await agent.source().resource_token(RESOURCE)
+
+    assert "secret" not in str(exc_info.value)
+    # A UnicodeDecodeError holds the whole body in .object.
+    assert exc_info.value.__cause__ is None
+    assert exc_info.value.__context__ is None
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("bad", ["\r\n", "\n", "\x00", "\t", "\x1f", "\x7f"], ids=repr)
 async def test_row_33_control_character_in_token(bad):
     secret = f"secret{bad}value"

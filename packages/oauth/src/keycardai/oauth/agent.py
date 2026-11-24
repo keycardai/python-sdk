@@ -379,11 +379,19 @@ class AgentTokenSource:
         return self._token(content)
 
     def _token(self, content: bytes) -> TokenResponse:
-        # Raised outside the except block: the decode error holds the whole
+        # Raised outside the except blocks: each decode error holds the whole
         # document, which may contain the token, and `from None` would still
         # leave it reachable as __context__.
         try:
-            body = json.loads(content)
+            text = content.decode("utf-8")
+        except UnicodeDecodeError:
+            text = None
+        # Decoded here, not by json.loads, which decodes bytes with
+        # surrogatepass and so accepts an encoded lone surrogate.
+        if text is None:
+            raise AgentResponseError("response is not UTF-8")
+        try:
+            body = json.loads(text)
         except ValueError:
             body = _NOT_JSON
         if body is _NOT_JSON:
