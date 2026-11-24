@@ -136,6 +136,16 @@ async def test_tenant_header_with_a_control_character_is_a_config_error(field, b
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("field", ["org", "zone"])
+@pytest.mark.parametrize("bad", ["café", "a\u00a0b", "a\u2028"], ids=repr)
+async def test_tenant_header_with_a_non_ascii_character_is_a_config_error(field, bad):
+    source = AgentTokenSource(socket="/unused.sock", _transport=_never_dialled(), **{field: bad})
+
+    with pytest.raises(ConfigError, match=f"{field} contains a non-ASCII"):
+        await source.resource_token(RESOURCE)
+
+
+@pytest.mark.asyncio
 async def test_row_03_app_id():
     agent = _Agent()
 

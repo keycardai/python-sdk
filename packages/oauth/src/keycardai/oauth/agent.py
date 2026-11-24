@@ -307,7 +307,8 @@ class AgentTokenSource:
 
         Raises:
             ConfigError: ``resource`` is empty, ``org`` or ``zone`` contains
-                a control character, or the default socket cannot be located.
+                a control character or a non-ASCII character, or the default
+                socket cannot be located.
             NetworkError: The socket cannot be reached, or the connection
                 failed mid-request. The message names the socket and how it
                 was chosen.
@@ -323,6 +324,10 @@ class AgentTokenSource:
         for name, value in (("org", self.org), ("zone", self.zone)):
             if _has_control_character(value):
                 raise ConfigError(f"{name} contains a control character")
+            # httpx encodes header values as ASCII, and would otherwise raise
+            # a UnicodeEncodeError from inside the request.
+            if not value.isascii():
+                raise ConfigError(f"{name} contains a non-ASCII character")
 
         socket = _resolve_socket(
             self.socket, os.environ if self._env is None else self._env
