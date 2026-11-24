@@ -9,7 +9,7 @@ import functools
 import json
 from collections.abc import Callable, Mapping
 from typing import Any
-from urllib.parse import urlencode, urlsplit, urlunsplit
+from urllib.parse import unquote_plus, urlencode, urlsplit, urlunsplit
 
 from ..client_auth import ClientAuthentication
 from ..exceptions import OAuthHttpError, OAuthProtocolError, RefreshGrantError
@@ -40,7 +40,7 @@ def build_authorize_url(
         client_id: The OAuth client ID.
         redirect_uri: The redirect URI for the callback.
         pkce: PKCE challenge/verifier pair.
-        resources: Resource URIs to request (each becomes a separate
+        resources: Resource URIs to request (each distinct URI becomes a separate
             ``resource`` query parameter per RFC 8707).
         scope: Space-separated scope string.
         state: Opaque state value for CSRF protection.
@@ -56,17 +56,20 @@ def build_authorize_url(
         "code_challenge_method": pkce.code_challenge_method,
     }
     if resources:
-        params["resource"] = resources
+        params["resource"] = list(dict.fromkeys(resources))
     if scope:
         params["scope"] = scope
     if state:
         params["state"] = state
 
     endpoint = urlsplit(authorize_endpoint)
-    query = urlencode(params, doseq=True)
-    if endpoint.query:
-        query = f"{endpoint.query}&{query}"
-    return urlunsplit(endpoint._replace(query=query))
+    query = [
+        entry
+        for entry in endpoint.query.split("&")
+        if entry and unquote_plus(entry.partition("=")[0]) not in params
+    ]
+    query.append(urlencode(params, doseq=True))
+    return urlunsplit(endpoint._replace(query="&".join(query)))
 
 
 # ---------------------------------------------------------------------------

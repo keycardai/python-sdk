@@ -48,6 +48,55 @@ def test_preserves_endpoint_query(existing_query):
         assert qs["redirect"] == ["/team?a=b"]
 
 
+def test_row_3a_replaces_inherited_sdk_parameters():
+    url = build_authorize_url(
+        "https://as.example/authorize?tenant=acme&client_id=x&client%5Fid=y",
+        client_id="sdk-client",
+        redirect_uri="https://app.example/callback",
+        pkce=PKCEGenerator().generate_pkce_pair(),
+    )
+    params = parse_qs(urlsplit(url).query)
+    assert params["tenant"] == ["acme"]
+    assert params["client_id"] == ["sdk-client"]
+    assert all(len(values) == 1 for values in params.values())
+
+
+@pytest.mark.parametrize(
+    ("resources", "expected"),
+    [
+        (["a", "b"], ["a", "b"]),
+        (["a", "b", "a"], ["a", "b"]),
+        ([], ["https://old"]),
+        (None, ["https://old"]),
+    ],
+)
+def test_row_3b_replaces_inherited_resources_when_sent(resources, expected):
+    url = build_authorize_url(
+        "https://as.example/authorize?resource=https://old",
+        client_id="sdk-client",
+        redirect_uri="https://app.example/callback",
+        pkce=PKCEGenerator().generate_pkce_pair(),
+        resources=resources,
+    )
+    assert parse_qs(urlsplit(url).query)["resource"] == expected
+
+
+@pytest.mark.asyncio
+async def test_row_12_web_app_begin_sends_distinct_resources():
+    metadata = AuthorizationServerMetadata(
+        issuer="https://auth.example.com",
+        authorization_endpoint="https://auth.example.com/authorize?resource=old",
+        token_endpoint="https://auth.example.com/token",
+    )
+    result = await begin_authorization(
+        client_id="my-app",
+        redirect_uri="https://app.example.com/callback",
+        metadata=metadata,
+        resources=["a", "b", "a"],
+    )
+    assert parse_qs(urlsplit(result.url).query)["resource"] == ["a", "b"]
+
+
 @pytest.mark.asyncio
 async def test_begin_preserves_query_from_discovered_authorization_endpoint():
     metadata = AuthorizationServerMetadata(
