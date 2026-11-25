@@ -456,6 +456,27 @@ class DeviceAuthorizationError(OAuthProtocolError):
         return super().retryable
 
 
+class TokenRevocationError(OAuthProtocolError):
+    """OAuth error response from the revocation endpoint (RFC 7009).
+
+    Raised for ``invalid_client``, ``invalid_grant`` (the token was issued
+    to another client), ``unsupported_token_type``, and any other OAuth
+    error, and for a response whose body exceeds the size limit
+    (``invalid_response``).
+
+    ``status_code`` is the HTTP status of the response. ``retryable`` is
+    True for a 429 or a 5xx, whatever the code. Every other code follows
+    OAuthProtocolError, so ``invalid_grant`` and ``unsupported_token_type``
+    are retryable and ``invalid_client`` is not.
+    """
+
+    @property
+    def retryable(self) -> bool:
+        if _is_transient_status(self.status_code):
+            return True
+        return super().retryable
+
+
 class DevicePollError(OAuthError):
     """Device token polling stopped on a network error, a 429, or a 5xx.
 
