@@ -124,6 +124,32 @@ class TestExchangeCredential:
         assert form["client_assertion_type"] == [self.assertion_type]
         assert form["client_id"] == ["caller-client"]
 
+    async def test_row_4b_preparation_receives_configured_client(self, client_type):
+        async def prepare(preparation_client, subject_token, resource):
+            assert isinstance(preparation_client, AsyncClient)
+            if isinstance(client, AsyncClient):
+                assert preparation_client is client
+            assert preparation_client.config.custom_headers == {"X-Custom": "custom"}
+            assert preparation_client.config.user_agent == "test-agent"
+            assert preparation_client.config.timeout == 12
+            assert preparation_client.config.verify_ssl is False
+            return TokenExchangeRequest(
+                subject_token=subject_token, client_assertion="prepared-jwt"
+            )
+
+        credential = Mock(get_http_client_auth=Mock(return_value=NoneAuth()))
+        credential.prepare_token_exchange_request = AsyncMock(side_effect=prepare)
+        client = self.client(client_type, credential)
+        client.config.custom_headers = {"X-Custom": "custom"}
+        client.config.user_agent = "test-agent"
+        client.config.timeout = 12
+        client.config.verify_ssl = False
+
+        await self.exchange(client)
+
+        _, form = self.post(client)
+        assert form["client_assertion"] == ["prepared-jwt"]
+
     async def test_row_4d_source_failure_sends_no_token_post(self, client_type):
         failure = RuntimeError("metadata down")
         fetch = Mock(spec=lambda: None, side_effect=failure)

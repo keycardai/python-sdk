@@ -119,20 +119,30 @@ if hasattr(os, "register_at_fork"):
 async def _prepare_exchange_assertion(
     credential: "ApplicationCredential",
     request: TokenExchangeRequest,
+    client: "Client | AsyncClient",
     issuer: str,
-    endpoint: str,
+    endpoints: ResolvedEndpoints,
 ) -> TokenExchangeRequest:
     subject_token = request.subject_token
     if subject_token is None:
         raise ConfigError("subject_token is required to prepare token exchange")
-    async with AsyncClient(
-        issuer,
-        endpoints=Endpoints(token=endpoint),
-        config=ClientConfig(enable_metadata_discovery=False, auto_register_client=False),
-    ) as client:
+    if isinstance(client, AsyncClient) and issuer == client.issuer:
         prepared = await credential.prepare_token_exchange_request(
             client, subject_token, request.resource or ""
         )
+    else:
+        async with AsyncClient(
+            issuer,
+            endpoints=endpoints,
+            auth=client.auth_strategy,
+            transport=client.transport if isinstance(client, AsyncClient) else None,
+            config=replace(
+                client.config, enable_metadata_discovery=False, auto_register_client=False
+            ),
+        ) as preparation_client:
+            prepared = await credential.prepare_token_exchange_request(
+                preparation_client, subject_token, request.resource or ""
+            )
     return request.model_copy(
         update={
             "client_assertion": prepared.client_assertion,
@@ -145,8 +155,9 @@ async def _prepare_exchange_assertion(
 def _prepare_exchange_assertion_sync(
     credential: "ApplicationCredential",
     request: TokenExchangeRequest,
+    client: "Client",
     issuer: str,
-    endpoint: str,
+    endpoints: ResolvedEndpoints,
 ) -> TokenExchangeRequest:
     """Keep credential-owned async connections on one persistent loop."""
     global _exchange_loop
@@ -161,7 +172,7 @@ def _prepare_exchange_assertion_sync(
             ).start()
             _exchange_loop = loop
     return asyncio.run_coroutine_threadsafe(
-        _prepare_exchange_assertion(credential, request, issuer, endpoint), loop
+        _prepare_exchange_assertion(credential, request, client, issuer, endpoints), loop
     ).result()
 
 
@@ -1019,7 +1030,7 @@ class AsyncClient:
             and not auth.apply_headers(target_issuer)
         ):
             request = await _prepare_exchange_assertion(
-                self._exchange_credential, request, target_issuer, endpoints.token
+                self._exchange_credential, request, self, target_issuer, endpoints
             )
             auth = NoneAuth()
 
@@ -2292,7 +2303,7 @@ class Client:
             and not auth.apply_headers(target_issuer)
         ):
             request = _prepare_exchange_assertion_sync(
-                self._exchange_credential, request, target_issuer, endpoints.token
+                self._exchange_credential, request, self, target_issuer, endpoints
             )
             auth = NoneAuth()
 
