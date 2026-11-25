@@ -1,3 +1,15 @@
+## 0.40.0-keycardai-oauth (2026-11-25)
+
+
+- fix(keycardai-oauth)!: reject request client IDs with Basic token exchange (#465)
+- * fix(keycardai-oauth)!: reject request client IDs with Basic token exchange
+- Co-Authored-By: Larry Osakwe <larry@keycard.ai>
+- * test(keycardai-oauth): reject a request client_id with a ClientSecret credential
+- ---------
+- Co-authored-by: devin-ai-keycard <devin-ai@keycard.ai>
+Co-authored-by: Larry Osakwe <larry@keycard.ai>
+Co-authored-by: Larry Osakwe <23560354+Larry-Osakwe@users.noreply.github.com>
+
 ## 0.39.0-keycardai-oauth (2026-11-25)
 
 
