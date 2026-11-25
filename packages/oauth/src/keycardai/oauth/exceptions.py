@@ -492,9 +492,9 @@ class JWKSFetchError(JWKSError):
     def __init__(
         self,
         message: str,
+        cause: Exception | None = None,
         *,
         status_code: int | None = None,
-        cause: Exception | None = None,
     ):
         super().__init__(message, cause)
         self.status_code = status_code

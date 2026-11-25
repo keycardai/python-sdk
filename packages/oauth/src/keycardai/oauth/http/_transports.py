@@ -25,6 +25,10 @@ from ..exceptions import (
 from ..types.models import ClientConfig
 from ._wire import HttpRequest, HttpResponse
 
+# The encodings the bounded decoder handles. Advertising only these keeps
+# httpx from negotiating zstd or br.
+_ACCEPT_ENCODING = "gzip, deflate"
+
 
 class _BoundedZlibDecoder:
     """Incrementally decompresses gzip or deflate bytes with a hard output cap.
@@ -260,7 +264,10 @@ class HttpxTransport:
     def _create_client(self) -> httpx.Client:
         return httpx.Client(
             verify=self.config.verify_ssl,
-            headers={"User-Agent": self.config.user_agent},
+            headers={
+                "User-Agent": self.config.user_agent,
+                "Accept-Encoding": _ACCEPT_ENCODING,
+            },
             timeout=self.config.timeout,
         )
 
@@ -342,7 +349,10 @@ class HttpxAsyncTransport:
     def _create_client(self) -> httpx.AsyncClient:
         return httpx.AsyncClient(
             verify=self.config.verify_ssl,
-            headers={"User-Agent": self.config.user_agent},
+            headers={
+                "User-Agent": self.config.user_agent,
+                "Accept-Encoding": _ACCEPT_ENCODING,
+            },
             timeout=self.config.timeout,
         )
 

@@ -153,6 +153,37 @@ async def test_row_1_gzip_token_response_over_1mib_stops_reading_and_raises():
 
 
 @pytest.mark.asyncio
+async def test_transports_advertise_only_gzip_and_deflate():
+    seen: list[str | None] = []
+    body = b'{"access_token":"t","token_type":"Bearer"}'
+
+    def handle(req: BaseHTTPRequestHandler) -> None:
+        seen.append(req.headers.get("Accept-Encoding"))
+        req.send_response(200)
+        req.send_header("Content-Type", "application/json")
+        req.send_header("Content-Length", str(len(body)))
+        req.end_headers()
+        req.wfile.write(body)
+
+    with _LocalTestServer(handle) as server:
+        request = HttpRequest(method="GET", url=f"{server.url}/token", headers={})
+        sync_transport = HttpxTransport(config=ClientConfig())
+        async_transport = HttpxAsyncTransport(config=ClientConfig())
+        try:
+            sync_transport.request_raw(request)
+            await async_transport.request_raw(request)
+        finally:
+            sync_transport.close()
+            await async_transport.aclose()
+
+    assert len(seen) == 2
+    for header in seen:
+        assert header is not None
+        encodings = {part.strip().lower() for part in header.split(",")}
+        assert encodings == {"gzip", "deflate"}
+
+
+@pytest.mark.asyncio
 async def test_row_1_streaming_stops_before_reading_remaining_chunks():
     chunks_yielded = 0
 
@@ -459,6 +490,55 @@ async def test_row_1b_device_poll_oversized_429_and_5xx(status: int):
             assert wait_exc.value.cause.error == "invalid_response"
             assert wait_exc.value.cause.status_code == status
             assert wait_exc.value.cause.retryable is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [200, 400])
+async def test_row_36_wait_for_device_token_oversized_body_fails_directly(status: int):
+    oversized = b"x" * (MAX_RESPONSE_BODY_BYTES + 1)
+
+    def handle(req: BaseHTTPRequestHandler) -> None:
+        req.send_response(status)
+        req.send_header("Content-Type", "application/json")
+        req.send_header("Content-Length", str(len(oversized)))
+        req.end_headers()
+        try:
+            req.wfile.write(oversized)
+        except BrokenPipeError:
+            pass
+
+    with _LocalTestServer(handle) as server:
+        clock = _FakeClock()
+        auth = DeviceAuthorization(
+            device_code="dev-code",
+            user_code="ABCD-1234",
+            verification_uri=f"{server.url}/verify",
+            expires_in=600,
+            interval=5,
+            expires_at=clock.now() + timedelta(seconds=600),
+        )
+        meta = AuthorizationServerMetadata(
+            issuer=server.url,
+            token_endpoint=f"{server.url}/oauth/token",
+            device_authorization_endpoint=f"{server.url}/oauth/device",
+        )
+        async with AsyncClient(
+            server.url,
+            clock=clock,
+            config=ClientConfig(
+                enable_metadata_discovery=False, auto_register_client=False
+            ),
+        ) as client:
+            # DeviceAuthorizationError, not DevicePollError: the loop ends
+            # with the error itself and carries no interval to resume with.
+            with pytest.raises(DeviceAuthorizationError) as exc:
+                await client.wait_for_device_token(auth, client_id="cid", metadata=meta)
+
+        assert exc.value.error == "invalid_response"
+        assert exc.value.status_code == status
+        assert not hasattr(exc.value, "interval")
+        assert server.request_count == 1
+        assert clock.sleeps == [5]
 
 
 @pytest.mark.asyncio

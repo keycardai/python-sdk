@@ -117,7 +117,7 @@ class TestHttpxTransport:
         HttpxTransport(config=cfg).request_raw(REQ)
         assert created[0].init_kwargs == {
             "verify": False,
-            "headers": {"User-Agent": "ua/1"},
+            "headers": {"User-Agent": "ua/1", "Accept-Encoding": "gzip, deflate"},
             "timeout": 7.5,
         }
 
@@ -189,7 +189,7 @@ class TestHttpxAsyncTransport:
         await HttpxAsyncTransport(config=cfg).request_raw(REQ)
         assert created[0].init_kwargs == {
             "verify": False,
-            "headers": {"User-Agent": "ua/1"},
+            "headers": {"User-Agent": "ua/1", "Accept-Encoding": "gzip, deflate"},
             "timeout": 7.5,
         }
 
