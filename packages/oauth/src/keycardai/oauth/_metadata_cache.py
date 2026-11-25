@@ -10,7 +10,7 @@ from collections.abc import Sequence
 from datetime import datetime, timezone
 from typing import Generic, TypeVar
 
-from .exceptions import OAuthHttpError
+from .exceptions import OAuthError, OAuthHttpError
 
 DEFAULT_DISCOVERY_TTL = 3600.0
 DEFAULT_NEGATIVE_TTL = 60.0
@@ -102,11 +102,13 @@ class MetadataRetryDelay(Generic[E]):
 
     def record(self, error: E, cause: Exception | None) -> bool:
         delay = None
-        if isinstance(cause, OAuthHttpError):
-            if cause.status_code in (429, 503):
-                delay = _retry_after(cause)
-            if cause.status_code == 429 and delay is None:
-                return False
+        if isinstance(cause, OAuthHttpError) and cause.status_code in (429, 503):
+            delay = _retry_after(cause)
+        # An oversized 429 carries no readable Retry-After, so like any 429
+        # without a valid one it starts no delay.
+        status_code = getattr(cause, "status_code", None)
+        if isinstance(cause, OAuthError) and status_code == 429 and delay is None:
+            return False
         with self._lock:
             if delay is None:
                 delay = min(30.0, self._next * random.uniform(0.8, 1.2))

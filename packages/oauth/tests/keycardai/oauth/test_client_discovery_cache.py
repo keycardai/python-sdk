@@ -27,6 +27,7 @@ from keycardai.oauth.exceptions import (
     NetworkError,
     OAuthHttpError,
     OAuthProtocolError,
+    ResponseBodyTooLargeError,
 )
 from keycardai.oauth.http._wire import HttpResponse
 from keycardai.oauth.types.models import AuthorizationServerMetadata
@@ -214,6 +215,18 @@ class TestSyncClientDiscoveryCache:
         assert throttled.value.retryable is True
         assert client._get_current_endpoints().token == DISCOVERED_TOKEN_ENDPOINT
         assert discover.call_count == 3
+
+    def test_row_1a_base_oversized_429_starts_no_delay(self, clock):
+        oversized = ResponseBodyTooLargeError(status_code=429, operation="GET metadata")
+        client, discover = self._client([oversized, METADATA])
+
+        with pytest.raises(AuthorizationServerDiscoveryError) as exc_info:
+            client._get_current_endpoints()
+        assert exc_info.value.retryable is True
+        assert exc_info.value.cause is oversized
+
+        assert client._get_current_endpoints().token == DISCOVERED_TOKEN_ENDPOINT
+        assert discover.call_count == 2
 
     @pytest.mark.parametrize("status", [429, 503])
     @pytest.mark.parametrize("delay", [5, 120])
