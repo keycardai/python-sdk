@@ -1,6 +1,7 @@
 """Tests for the unified OAuth client implementation."""
 
 import asyncio
+import multiprocessing
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest.mock import AsyncMock, Mock, patch
@@ -190,6 +191,31 @@ def test_row_4b_sync_exchange_reuses_async_identity_source_connection():
                 asyncio.run_coroutine_threadsafe(source_http.aclose(), source_loop).result()
             server.shutdown()
             thread.join()
+
+
+@pytest.mark.skipif(
+    "fork" not in multiprocessing.get_all_start_methods(), reason="requires fork"
+)
+def test_sync_exchange_restarts_assertion_preparation_after_fork():
+    with TestExchangeCredential().client(
+        Client, WorkloadIdentity(lambda: "jwt")
+    ) as client:
+        client.exchange_token(subject_token="parent")
+
+        def exchange_in_child():
+            client.exchange_token(subject_token="child")
+            assert client.transport.request_raw.call_count == 2
+
+        child = multiprocessing.get_context("fork").Process(target=exchange_in_child)
+        child.start()
+        try:
+            child.join(timeout=5)
+            assert child.exitcode == 0
+        finally:
+            if child.is_alive():
+                child.kill()
+                child.join()
+            child.close()
 
 
 class TestSyncClientContextManager:

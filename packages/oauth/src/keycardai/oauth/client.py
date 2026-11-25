@@ -1,6 +1,7 @@
 """OAuth 2.0 client implementation"""
 
 import asyncio
+import os
 import threading
 import warnings
 from dataclasses import replace
@@ -103,6 +104,16 @@ if TYPE_CHECKING:
 
 _exchange_loop: asyncio.AbstractEventLoop | None = None
 _exchange_loop_lock = threading.Lock()
+
+
+def _reset_exchange_loop_after_fork() -> None:
+    global _exchange_loop, _exchange_loop_lock
+    _exchange_loop = None
+    _exchange_loop_lock = threading.Lock()
+
+
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(after_in_child=_reset_exchange_loop_after_fork)
 
 
 async def _prepare_exchange_assertion(
