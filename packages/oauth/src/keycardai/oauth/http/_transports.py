@@ -103,9 +103,15 @@ def _read_bounded_sync(
         decoder = _BoundedZlibDecoder(enc, limit, r.status_code, operation)
         try:
             for raw_chunk in r.iter_raw():
-                decoder.feed(raw_chunk)
                 if decoder.eof:
-                    break
+                    if raw_chunk:
+                        raise ResponseBodyTooLargeError(
+                            status_code=r.status_code,
+                            limit=limit,
+                            operation=operation,
+                        )
+                    continue
+                decoder.feed(raw_chunk)
             return decoder.finish()
         except (zlib.error, httpx.DecodingError) as e:
             cause = e if isinstance(e, httpx.DecodingError) else httpx.DecodingError(str(e))
@@ -146,9 +152,15 @@ async def _read_bounded_async(
         decoder = _BoundedZlibDecoder(enc, limit, r.status_code, operation)
         try:
             async for raw_chunk in r.aiter_raw():
-                decoder.feed(raw_chunk)
                 if decoder.eof:
-                    break
+                    if raw_chunk:
+                        raise ResponseBodyTooLargeError(
+                            status_code=r.status_code,
+                            limit=limit,
+                            operation=operation,
+                        )
+                    continue
+                decoder.feed(raw_chunk)
             return decoder.finish()
         except (zlib.error, httpx.DecodingError) as e:
             cause = e if isinstance(e, httpx.DecodingError) else httpx.DecodingError(str(e))
