@@ -1,10 +1,13 @@
 """Tests for AuthProvider, KeycardAuthBackend, @requires and @auth.grant."""
 
+import time
 import warnings
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import FastAPI
+from joserfc import jwt
+from joserfc.jwk import RSAKey
 from starlette.applications import Starlette
 from starlette.middleware.authentication import AuthenticationMiddleware
 from starlette.requests import HTTPConnection, Request
@@ -16,6 +19,7 @@ from keycardai.oauth.exceptions import (
     JWKSKeyNotFoundError,
 )
 from keycardai.oauth.server import AccessContext
+from keycardai.oauth.server._cache import JWKSKey
 from keycardai.oauth.server.credentials import (
     ClientSecret,
     WebIdentity,
@@ -26,6 +30,7 @@ from keycardai.oauth.server.exceptions import (
     JWKSDiscoveryError,
     MissingAccessContextError,
 )
+from keycardai.oauth.server.verifier import TokenVerifier
 from keycardai.starlette import (
     AuthProvider,
     KeycardAuthBackend,
@@ -431,6 +436,62 @@ class TestKeycardAuthBackend:
         assert user.keycard_app_id == "app-456"
         assert user.scopes == ["read"]
         assert "read" in credentials.scopes
+
+    @staticmethod
+    async def _authenticate_caller(monkeypatch, aud, act):
+        issuer = "https://issuer.example.com"
+        key = RSAKey.generate_key(2048)
+        verifier = TokenVerifier(
+            issuer=issuer, jwks_uri=f"{issuer}/jwks", audience="resource-a"
+        )
+        verification_key = JWKSKey(
+            key=key.as_pem().decode(), timestamp=time.time(), algorithm="RS256"
+        )
+        monkeypatch.setattr(
+            verifier, "_get_verification_key", AsyncMock(return_value=verification_key)
+        )
+        claims = {
+            "iss": issuer,
+            "aud": aud,
+            "sub": "caller",
+            "client_id": "client",
+            "iat": int(time.time()),
+            "exp": int(time.time()) + 300,
+        }
+        if act is not None:
+            claims["act"] = act
+        token = jwt.encode({"alg": "RS256", "kid": "caller-key"}, claims, key)
+        scope = {
+            "type": "http",
+            "headers": [(b"authorization", f"Bearer {token}".encode())],
+            "path": "/api/me",
+            "scheme": "https",
+            "server": ("api.example.com", 443),
+        }
+
+        result = await KeycardAuthBackend(verifier).authenticate(HTTPConnection(scope))
+
+        assert result is not None
+        _, caller = result
+        return caller
+
+    @pytest.mark.asyncio
+    async def test_row_4a_list_audience_and_nested_actor(self, monkeypatch):
+        act = {"sub": "actor", "act": {"sub": "previous-actor"}}
+
+        caller = await self._authenticate_caller(
+            monkeypatch, ["resource-a", "resource-b"], act
+        )
+
+        assert caller.aud == ["resource-a", "resource-b"]
+        assert caller.act == act
+
+    @pytest.mark.asyncio
+    async def test_row_4b_string_audience_without_actor(self, monkeypatch):
+        caller = await self._authenticate_caller(monkeypatch, "resource-a", None)
+
+        assert caller.aud == ["resource-a"]
+        assert caller.act is None
 
     @pytest.mark.asyncio
     async def test_token_without_keycard_claims_verifies_with_none_identity(self):

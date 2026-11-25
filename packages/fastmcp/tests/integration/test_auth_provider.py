@@ -5,12 +5,15 @@ in the fastmcp package. It tests the complete flow from initialization
 to JWT verifier creation and RemoteAuthProvider creation.
 """
 
-from unittest.mock import Mock
+import time
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from fastmcp.server.auth import RemoteAuthProvider
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fixtures.auth_provider import mock_custom_zone_url, mock_zone_id, mock_zone_url
+from joserfc import jwt
+from joserfc.jwk import RSAKey
 
 from keycardai.fastmcp import (
     AuthProvider,
@@ -124,6 +127,63 @@ class TestAuthProviderInitialization:
 class TestAuthProviderJWTVerifier:
     """Test AuthProvider JWT verifier creation."""
 
+    @staticmethod
+    async def _verify_caller(
+        monkeypatch, auth_provider_config, mock_client_factory, aud, act
+    ):
+        provider = AuthProvider(**auth_provider_config, client_factory=mock_client_factory)
+        remote_provider = provider.get_remote_auth_provider()
+        key = RSAKey.generate_key(2048)
+        monkeypatch.setattr(
+            JWTVerifier,
+            "_get_verification_key",
+            AsyncMock(return_value=key.as_pem()),
+        )
+        claims = {
+            "iss": provider.zone_url,
+            "aud": aud,
+            "sub": "caller",
+            "client_id": "client",
+            "exp": int(time.time()) + 300,
+        }
+        if act is not None:
+            claims["act"] = act
+        token = jwt.encode({"alg": "RS256"}, claims, key)
+
+        caller = await remote_provider.verify_token(token)
+
+        assert caller is not None
+        return caller
+
+    @pytest.mark.asyncio
+    async def test_row_4a_list_audience_and_nested_actor(
+        self, monkeypatch, auth_provider_config, mock_client_factory
+    ):
+        aud = ["http://localhost:8000/mcp", "resource-b"]
+        act = {"sub": "actor", "act": {"sub": "previous-actor"}}
+
+        caller = await self._verify_caller(
+            monkeypatch, auth_provider_config, mock_client_factory, aud, act
+        )
+
+        assert caller.claims["aud"] == aud
+        assert caller.claims["act"] == act
+
+    @pytest.mark.asyncio
+    async def test_row_4b_string_audience_without_actor(
+        self, monkeypatch, auth_provider_config, mock_client_factory
+    ):
+        caller = await self._verify_caller(
+            monkeypatch,
+            auth_provider_config,
+            mock_client_factory,
+            "http://localhost:8000/mcp",
+            None,
+        )
+
+        assert caller.claims["aud"] == ["http://localhost:8000/mcp"]
+        assert caller.claims.get("act") is None
+
     def test_get_jwt_token_verifier_success_with_client_factory(self, auth_provider_config, mock_client_factory):
         """Test successful JWT token verifier creation with client factory."""
         auth_provider = AuthProvider(
@@ -177,6 +237,4 @@ class TestAuthProviderRemoteAuthProvider:
 
         assert isinstance(remote_auth, RemoteAuthProvider)
         assert isinstance(remote_auth.token_verifier, JWTVerifier)
-
-
 

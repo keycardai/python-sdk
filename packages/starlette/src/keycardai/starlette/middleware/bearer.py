@@ -11,6 +11,7 @@ includes the ``resource_metadata=`` URL required by RFC 9728.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import Any
 
 from pydantic import AnyHttpUrl
 
@@ -24,6 +25,7 @@ from keycardai.oauth.server.exceptions import (
     JWKSUriValidationError,
 )
 from keycardai.oauth.server.verifier import TokenVerifier
+from keycardai.oauth.utils.jwt import get_claims
 from starlette.authentication import (
     AuthCredentials,
     AuthenticationBackend,
@@ -146,6 +148,8 @@ class KeycardUser(BaseUser):
         sub: str | None = None,
         sub_profile: str | None = None,
         keycard_app_id: str | None = None,
+        aud: Sequence[str] | None = None,
+        act: dict[str, Any] | None = None,
     ):
         self.access_token = access_token
         self.client_id = client_id
@@ -155,6 +159,8 @@ class KeycardUser(BaseUser):
         self.zone_id = zone_id
         self.resource_server_url = resource_server_url
         self.scopes = list(scopes or [])
+        self.aud = list(aud or [])
+        self.act = act
 
     @property
     def is_authenticated(self) -> bool:
@@ -289,6 +295,13 @@ class KeycardAuthBackend(AuthenticationBackend):
                 status_code=503,
             ) from e
 
+        try:
+            claims = get_claims(access_token.token)
+        except ValueError:
+            claims = {}
+        aud = claims.get("aud")
+        act = claims.get("act")
+
         resource_server_url = _get_oauth_protected_resource_url(conn)
         user = KeycardUser(
             access_token=token,
@@ -299,6 +312,8 @@ class KeycardAuthBackend(AuthenticationBackend):
             sub=access_token.sub,
             sub_profile=access_token.sub_profile,
             keycard_app_id=access_token.keycard_app_id,
+            aud=[aud] if isinstance(aud, str) else aud if isinstance(aud, list) else (),
+            act=act if isinstance(act, dict) else None,
         )
         credentials = KeycardAuthCredentials(scopes=access_token.scopes)
         return credentials, user
