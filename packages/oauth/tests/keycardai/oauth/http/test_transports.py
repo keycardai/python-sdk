@@ -27,11 +27,25 @@ class FakeResponse:
     headers = {"content-type": "application/json"}
     content = b"{}"
 
+    def iter_bytes(self):
+        if self.content:
+            yield self.content
+
+    async def aiter_bytes(self):
+        if self.content:
+            yield self.content
+
     async def aread(self) -> bytes:
         return self.content
 
     async def aclose(self) -> None:
         pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
 
 
 class FakeClient:
@@ -46,6 +60,9 @@ class FakeClient:
         if self.fail_with is not None:
             raise self.fail_with
         return FakeResponse()
+
+    def stream(self, **kwargs):
+        return self.request(**kwargs)
 
     def close(self):
         self.is_closed = True

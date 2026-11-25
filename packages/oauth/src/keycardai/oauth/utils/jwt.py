@@ -38,7 +38,12 @@ from joserfc import jwt as jose_jwt
 from joserfc.jwk import ECKey, OctKey, OKPKey, RSAKey, import_key
 from pydantic import BaseModel
 
-from ..exceptions import JWKSError, JWKSFetchError, JWKSKeyNotFoundError
+from ..exceptions import (
+    JWKSError,
+    JWKSFetchError,
+    JWKSKeyNotFoundError,
+    ResponseBodyTooLargeError,
+)
 from ..http._transports import HttpxAsyncTransport
 from ..http._wire import HttpRequest
 from ..types.models import ClientConfig
@@ -547,7 +552,10 @@ async def fetch_jwks(
         request = HttpRequest(method="GET", url=jwks_uri, headers={}, body=b"")
         response = await transport.request_raw(request, timeout=timeout)
         if response.status != 200:
-            raise JWKSFetchError(f"JWKS endpoint returned status {response.status}")
+            raise JWKSFetchError(
+                f"JWKS endpoint returned status {response.status}",
+                status_code=response.status,
+            )
         jwks_data = json.loads(response.body.decode("utf-8"))
         keys = jwks_data.get("keys", []) if isinstance(jwks_data, dict) else None
         if not isinstance(keys, list):
@@ -555,8 +563,14 @@ async def fetch_jwks(
         return keys
     except JWKSError:
         raise
+    except ResponseBodyTooLargeError as e:
+        raise JWKSFetchError(
+            f"Failed to fetch JWKS: {e}",
+            status_code=e.status_code,
+            cause=e,
+        ) from e
     except Exception as e:
-        raise JWKSFetchError(f"Failed to fetch JWKS: {e}") from e
+        raise JWKSFetchError(f"Failed to fetch JWKS: {e}", cause=e) from e
 
 
 def select_jwks_key(keys: list[dict[str, Any]], kid: str | None) -> str:

@@ -31,6 +31,7 @@ from keycardai.oauth import (
     MissingTokenEndpointError,
     NetworkError,
     OAuthHttpError,
+    ResponseBodyTooLargeError,
     TokenResponse,
 )
 from keycardai.oauth.http._transports import ResponseBodyDecodeError
@@ -1618,3 +1619,56 @@ async def test_row_35_metadata_for_another_zone_is_a_configuration_error(operati
 
     assert credential.calls == []
     assert transport.requests == []
+
+
+@pytest.mark.parametrize("status,retryable", [(200, True), (400, False), (429, True), (503, True)])
+async def test_row_36_poll_once_oversized_body(status, retryable):
+    transport = FakeTransport(
+        ResponseBodyTooLargeError(status_code=status, operation="POST /token")
+    )
+    client = make_client(transport)
+
+    with pytest.raises(DeviceAuthorizationError) as exc:
+        await client.poll_device_token(
+            authorization(), client_id="client-1", metadata=METADATA
+        )
+
+    assert exc.value.error == "invalid_response"
+    assert exc.value.status_code == status
+    assert exc.value.retryable is retryable
+
+
+@pytest.mark.parametrize("status,retryable", [(200, True), (400, False)])
+async def test_row_36_poll_until_done_oversized_body_direct(status, retryable):
+    transport = FakeTransport(
+        respond(400, SLOW_DOWN),
+        ResponseBodyTooLargeError(status_code=status, operation="POST /token"),
+    )
+    clock = FakeClock()
+
+    with pytest.raises(DeviceAuthorizationError) as exc:
+        await wait(make_client(transport, clock))
+
+    assert exc.value.error == "invalid_response"
+    assert exc.value.status_code == status
+    assert exc.value.retryable is retryable
+    assert not isinstance(exc.value, DevicePollError)
+
+
+@pytest.mark.parametrize("status", [429, 503])
+async def test_row_36_poll_until_done_oversized_body_transient_polling_error(status):
+    transport = FakeTransport(
+        respond(400, SLOW_DOWN),
+        ResponseBodyTooLargeError(status_code=status, operation="POST /token"),
+    )
+    clock = FakeClock()
+
+    with pytest.raises(DevicePollError) as exc:
+        await wait(make_client(transport, clock))
+
+    assert exc.value.retryable is True
+    assert exc.value.interval == 10
+    assert isinstance(exc.value.cause, DeviceAuthorizationError)
+    assert exc.value.cause.error == "invalid_response"
+    assert exc.value.cause.status_code == status
+    assert exc.value.cause.retryable is True

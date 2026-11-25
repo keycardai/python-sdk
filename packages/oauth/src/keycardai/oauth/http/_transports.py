@@ -16,9 +16,63 @@ from collections.abc import Mapping
 
 import httpx
 
-from ..exceptions import NetworkError
+from ..exceptions import (
+    MAX_RESPONSE_BODY_BYTES,
+    NetworkError,
+    ResponseBodyTooLargeError,
+)
 from ..types.models import ClientConfig
 from ._wire import HttpRequest, HttpResponse
+
+
+def _read_bounded_sync(
+    r: httpx.Response,
+    operation: str,
+    limit: int = MAX_RESPONSE_BODY_BYTES,
+) -> bytes:
+    buf = bytearray()
+    try:
+        for chunk in r.iter_bytes():
+            if len(buf) + len(chunk) > limit:
+                raise ResponseBodyTooLargeError(
+                    status_code=r.status_code,
+                    limit=limit,
+                    operation=operation,
+                )
+            buf.extend(chunk)
+    except httpx.DecodingError as e:
+        raise ResponseBodyDecodeError(
+            status=r.status_code,
+            headers=r.headers,
+            cause=e,
+            operation=operation,
+        ) from e
+    return bytes(buf)
+
+
+async def _read_bounded_async(
+    r: httpx.Response,
+    operation: str,
+    limit: int = MAX_RESPONSE_BODY_BYTES,
+) -> bytes:
+    buf = bytearray()
+    try:
+        async for chunk in r.aiter_bytes():
+            if len(buf) + len(chunk) > limit:
+                raise ResponseBodyTooLargeError(
+                    status_code=r.status_code,
+                    limit=limit,
+                    operation=operation,
+                )
+            buf.extend(chunk)
+    except httpx.DecodingError as e:
+        raise ResponseBodyDecodeError(
+            status=r.status_code,
+            headers=r.headers,
+            cause=e,
+            operation=operation,
+        ) from e
+    return bytes(buf)
 
 
 class ResponseBodyDecodeError(NetworkError):
@@ -89,20 +143,28 @@ class HttpxTransport:
             The HTTP response
 
         Raises:
+            ResponseBodyTooLargeError: The decoded body exceeded 1 MiB.
+            ResponseBodyDecodeError: The body did not decode.
             NetworkError: For network-level failures
         """
+        operation = f"{req.method} {req.url}"
         try:
             client = self._get_client()
-            r = client.request(
+            with client.stream(
                 method=req.method,
                 url=req.url,
                 headers=req.headers,
                 content=req.body,  # httpx uses 'content' for raw bytes
                 timeout=timeout if timeout is not None else self.config.timeout,
-            )
-            return HttpResponse(status=r.status_code, headers=dict(r.headers), body=r.content)
+            ) as r:
+                body = _read_bounded_sync(r, operation)
+                return HttpResponse(
+                    status=r.status_code, headers=dict(r.headers), body=body
+                )
+        except (ResponseBodyDecodeError, ResponseBodyTooLargeError):
+            raise
         except httpx.HTTPError as e:
-            raise NetworkError(cause=e, operation=f"{req.method} {req.url}", retriable=False) from e
+            raise NetworkError(cause=e, operation=operation, retriable=False) from e
 
     def close(self) -> None:
         """Close the pooled httpx client, if one was created.
@@ -168,6 +230,7 @@ class HttpxAsyncTransport:
             The HTTP response
 
         Raises:
+            ResponseBodyTooLargeError: The decoded body exceeded 1 MiB.
             ResponseBodyDecodeError: The body did not decode.
             NetworkError: For network-level failures
         """
@@ -183,17 +246,12 @@ class HttpxAsyncTransport:
             )
             r = await client.send(request, stream=True)
             try:
-                body = await r.aread()
-            except httpx.DecodingError as e:
-                raise ResponseBodyDecodeError(
-                    status=r.status_code,
-                    headers=r.headers,
-                    cause=e,
-                    operation=operation,
-                ) from e
+                body = await _read_bounded_async(r, operation)
             finally:
                 await r.aclose()
             return HttpResponse(status=r.status_code, headers=dict(r.headers), body=body)
+        except (ResponseBodyDecodeError, ResponseBodyTooLargeError):
+            raise
         except httpx.HTTPError as e:
             raise NetworkError(cause=e, operation=operation, retriable=False) from e
 

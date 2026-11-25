@@ -328,9 +328,13 @@ class TestRetryable:
         self, code, status, by_status
     ):
         error = DeviceAuthorizationError(error=code, status_code=status)
-        by_code = code != "invalid_grant" and code not in PERMANENT_ERROR_CODES
+        if code == "invalid_response" and status is not None:
+            expected = (200 <= status < 300) or by_status
+        else:
+            by_code = code != "invalid_grant" and code not in PERMANENT_ERROR_CODES
+            expected = by_status or by_code
         assert error.status_code == status
-        assert error.retryable is (by_status or by_code)
+        assert error.retryable is expected
 
     @pytest.mark.parametrize(
         "code", ["invalid_response", "server_error", "temporarily_unavailable"]
@@ -380,7 +384,7 @@ class TestRetryable:
             def __exit__(self, *exc):
                 return False
 
-            def request(self, *args, **kwargs):
+            def stream(self, *args, **kwargs):
                 raise httpx.ConnectError("connection refused")
 
         monkeypatch.setattr(httpx, "Client", FailingHttpxClient)
