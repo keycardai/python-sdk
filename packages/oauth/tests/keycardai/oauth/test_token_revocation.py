@@ -32,6 +32,7 @@ from keycardai.oauth.server.credentials import (
     WebIdentity,
     WorkloadIdentity,
 )
+from keycardai.oauth.types.oauth import TokenTypeHint
 
 ISSUER = "https://zone.example.com"
 DISCOVERY_URL = f"{ISSUER}/.well-known/oauth-authorization-server"
@@ -248,15 +249,23 @@ async def test_row_3_workload_identity_sends_its_token_unchanged():
     assert body["client_id"] == ["app-credential-id"]
 
 
-@pytest.mark.parametrize("hint", ["access_token", "refresh_token", "custom_hint"])
-async def test_row_4_explicit_hint_is_sent_unchanged(hint):
+@pytest.mark.parametrize(
+    ("hint", "sent"),
+    [
+        ("access_token", "access_token"),
+        ("refresh_token", "refresh_token"),
+        ("custom_hint", "custom_hint"),
+        (TokenTypeHint.ACCESS_TOKEN, "access_token"),
+    ],
+)
+async def test_row_4_explicit_hint_is_sent_unchanged(hint, sent):
     transport = FakeTransport(respond(200))
 
     await make_client(transport).revoke_token(
         "tok", token_type_hint=hint, client_id="public-app", metadata=METADATA
     )
 
-    assert form(transport.requests[0])["token_type_hint"] == [hint]
+    assert form(transport.requests[0])["token_type_hint"] == [sent]
 
 
 @pytest.mark.parametrize(

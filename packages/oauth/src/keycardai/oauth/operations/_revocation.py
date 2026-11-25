@@ -4,11 +4,13 @@ Request builder and response parser for the revocation request.
 """
 
 import json
+from enum import Enum
 from urllib.parse import urlencode
 
 from ..client_auth import ClientAuthentication
 from ..exceptions import OAuthHttpError, TokenRevocationError
 from ..http._wire import HttpRequest, HttpResponse
+from ..types.oauth import TokenTypeHint
 
 REVOCATION_OPERATION = "POST /revoke"
 
@@ -17,14 +19,17 @@ def build_revocation_http_request(
     *,
     endpoint: str,
     token: str,
-    token_type_hint: str,
+    token_type_hint: str | TokenTypeHint,
     client_auth: ClientAuthentication,
 ) -> HttpRequest:
     """Build the revocation request (RFC 7009 Section 2.1).
 
     Sends ``token``, ``token_type_hint``, and the client authentication.
-    It does not send grant or token exchange parameters.
+    It does not send grant or token exchange parameters. An enum hint, such
+    as ``TokenTypeHint.ACCESS_TOKEN``, is sent as its value.
     """
+    if isinstance(token_type_hint, Enum):
+        token_type_hint = token_type_hint.value
     payload = [("token", token), ("token_type_hint", token_type_hint)]
     payload.extend(client_auth.form_fields.items())
     return HttpRequest(

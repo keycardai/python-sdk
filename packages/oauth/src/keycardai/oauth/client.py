@@ -105,6 +105,7 @@ from .types.oauth import (
     ResponseType,
     TokenEndpointAuthMethod,
     TokenType,
+    TokenTypeHint,
 )
 from .utils.jwt import build_substitute_user_token
 
@@ -1731,7 +1732,7 @@ class AsyncClient:
         self,
         token: str,
         *,
-        token_type_hint: str = "refresh_token",
+        token_type_hint: str | TokenTypeHint = "refresh_token",
         client_id: str | None = None,
         client_secret: str | None = None,
         credential: "ClientAuthenticator | ApplicationCredential | None" = None,
