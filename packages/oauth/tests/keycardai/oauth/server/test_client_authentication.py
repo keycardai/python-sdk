@@ -136,13 +136,18 @@ async def test_require_client_authenticator_refuses(tmp_path, make, error_type, 
     assert isinstance(exc.value, ConfigError)
 
 
-async def test_client_authentication_repr_leaves_out_secrets():
+async def test_row_9_client_authentication_shows_names_not_values():
     auth = ClientAuthentication(
         headers={"Authorization": basic("cid", "secret")},
         form_fields={"client_assertion": "signed.jwt.value"},
     )
 
-    assert repr(auth) == "ClientAuthentication()"
+    for printed in (repr(auth), str(auth)):
+        assert "Authorization" in printed
+        assert "client_assertion" in printed
+        assert basic("cid", "secret") not in printed
+        assert "secret" not in printed
+        assert "signed.jwt.value" not in printed
 
 
 # ClientSecret

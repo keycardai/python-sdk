@@ -526,6 +526,9 @@ class AsyncClient:
         ] = MetadataCache(self.config.discovery_ttl, self.config.negative_ttl)
         self._discovery_task: asyncio.Task[AuthorizationServerMetadata] | None = None
 
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}(issuer={self.issuer!r}, client_id={self._client_id!r})"
+
     @property
     def base_url(self) -> str:
         """Deprecated alias for :attr:`issuer`. Use ``issuer`` instead."""
@@ -2048,6 +2051,9 @@ class Client:
             AuthorizationServerMetadata, AuthorizationServerDiscoveryError
         ] = MetadataCache(self.config.discovery_ttl, self.config.negative_ttl)
         self._discovery_lock = threading.Lock()
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}(issuer={self.issuer!r}, client_id={self._client_id!r})"
 
     @property
     def base_url(self) -> str:

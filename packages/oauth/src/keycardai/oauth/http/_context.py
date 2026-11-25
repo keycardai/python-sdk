@@ -6,7 +6,7 @@ concerns like endpoints, transport, auth, timeouts into immutable context
 objects, we create a more maintainable and scalable API.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Generic, TypeVar
 
 from .auth import AuthStrategy
@@ -41,8 +41,15 @@ class HTTPContext(Generic[TransportT]):
     auth: AuthStrategy
     timeout: float | None = None
     retries: int = 0
-    headers: dict[str, str] | None = None
+    headers: dict[str, str] | None = field(default=None, repr=False)
     issuer: str | None = None
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}(endpoint={self.endpoint!r}, "
+            f"transport={type(self.transport).__name__}, auth={type(self.auth).__name__}, "
+            f"timeout={self.timeout!r}, retries={self.retries!r}, issuer={self.issuer!r})"
+        )
 
 
 def build_http_context(

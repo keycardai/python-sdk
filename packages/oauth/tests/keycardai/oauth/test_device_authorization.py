@@ -696,11 +696,19 @@ async def test_row_5_interval_defaults_and_expires_at_from_clock():
     )
 
 
-async def test_device_code_is_left_out_of_repr_and_kept_in_the_dump():
+async def test_row_38_device_code_is_left_out_of_printed_forms_and_kept_in_json():
     value = authorization()
 
     assert "device_code" not in repr(value)
     assert "'dc'" not in repr(value)
+    for printed in (repr(value), str(value)):
+        assert "device_code" not in printed
+        assert "'dc'" not in printed
+        for name in (
+            "user_code", "verification_uri", "verification_uri_complete",
+            "expires_in", "interval", "expires_at",
+        ):
+            assert f"{name}=" in printed
     assert value.model_dump()["device_code"] == "dc"
     assert DeviceAuthorization.model_validate_json(value.model_dump_json()) == value
 

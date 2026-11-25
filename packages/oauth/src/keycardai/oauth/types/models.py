@@ -38,15 +38,15 @@ class TokenExchangeRequest(BaseModel):
     audience: str | None = None
     scope: str | None = None
     requested_token_type: TokenType | None = None
-    subject_token: str | None = Field(default=None, min_length=1, description="The token to exchange.")
+    subject_token: str | None = Field(default=None, min_length=1, repr=False, description="The token to exchange.")
     subject_token_type: TokenType | None = Field(default=TokenType.ACCESS_TOKEN, description="The type of the token to exchange.")
-    actor_token: str | None = None
+    actor_token: str | None = Field(default=None, repr=False)
     actor_token_type: TokenType | None = None
     timeout: float | None = None
     client_id: str | None = None
 
     client_assertion_type: str | None = None
-    client_assertion: str | None = None
+    client_assertion: str | None = Field(default=None, repr=False)
 
 
 # =============================================================================
@@ -62,7 +62,7 @@ class ClientCredentialsRequest(BaseModel):
     grant_type: str = "client_credentials"
     resource: str | None = Field(default=None, description="The target resource for the requested token.")
     scope: str | None = Field(default=None, description="Space-delimited scope of the access request.")
-    client_assertion: str | None = None
+    client_assertion: str | None = Field(default=None, repr=False)
     client_assertion_type: str | None = None
     client_id: str | None = Field(
         default=None,
@@ -85,22 +85,22 @@ class TokenResponse:
     """
 
     # Required fields
-    access_token: str
+    access_token: str = field(repr=False)
     token_type: TokenType = TokenType.BEARER
 
     # Optional RFC fields
     expires_in: int | None = None
-    refresh_token: str | None = None
+    refresh_token: str | None = field(default=None, repr=False)
     scope: list[str] | None = None
-    id_token: str | None = None
+    id_token: str | None = field(default=None, repr=False)
 
     # RFC 8693 specific fields
     issued_token_type: TokenType | None = None
     subject_issuer: str | None = None
 
     # Vendor extensions and debugging
-    raw: dict[str, Any] | None = None
-    headers: dict[str, str] | None = None
+    raw: dict[str, Any] | None = field(default=None, repr=False)
+    headers: dict[str, str] | None = field(default=None, repr=False)
 
 
 # =============================================================================
@@ -145,7 +145,7 @@ class RevocationRequest(BaseModel):
     Reference: https://datatracker.ietf.org/doc/html/rfc7009#section-2.1
     """
 
-    token: str
+    token: str = Field(repr=False)
     token_type_hint: TokenTypeHint | None = None
     timeout: float | None = None
 
@@ -196,7 +196,7 @@ class OAuthClientMetadataFull(OAuthClientMetadata):
     Reference: https://datatracker.ietf.org/doc/html/rfc7591#section-2
     """
     client_id: str
-    client_secret: str | None = None
+    client_secret: str | None = Field(default=None, repr=False)
     client_id_issued_at: int | None = None
     client_secret_expires_at: int | None = None
 
@@ -227,12 +227,12 @@ class ClientRegistrationResponse(OAuthClientMetadataFull):
     scope: list[str] | None = None
 
     # Additional server-provided metadata
-    registration_access_token: str | None = None
+    registration_access_token: str | None = Field(default=None, repr=False)
     registration_client_uri: str | None = None
 
     # Vendor extensions and debugging
-    raw: dict[str, Any] | None = None
-    headers: dict[str, str] | None = None
+    raw: dict[str, Any] | None = Field(default=None, repr=False)
+    headers: dict[str, str] | None = Field(default=None, repr=False)
 
 # =============================================================================
 # Pushed Authorization Requests (RFC 9126)
@@ -372,6 +372,7 @@ class UserInfoRequest(BaseModel):
     access_token: str = Field(
         ...,
         min_length=1,
+        repr=False,
         description="Access token presented as a Bearer credential at the UserInfo endpoint.",
     )
     timeout: float | None = None
@@ -423,7 +424,7 @@ class JsonWebKey(BaseModel):
     y: str | None = Field(None, description="Y coordinate for elliptic curve keys")
 
     # Symmetric key parameters
-    k: str | None = Field(None, description="Key value for symmetric keys")
+    k: str | None = Field(None, repr=False, description="Key value for symmetric keys")
 
     # Certificate chain
     x5c: list[str] | None = Field(None, description="X.509 certificate chain")
@@ -449,7 +450,7 @@ class JsonWebKeySet(BaseModel):
 class PKCE:
     """RFC 7636 PKCE Challenge with S256 method support."""
 
-    code_verifier: str
+    code_verifier: str = field(repr=False)
     code_challenge: str
     code_challenge_method: PKCECodeChallengeMethod = PKCECodeChallengeMethod.S256
 
@@ -498,7 +499,7 @@ class ClientConfig:
     max_retries: int = 3
     verify_ssl: bool = True
     user_agent: str = "Keycard-OAuth/0.0.1"
-    custom_headers: dict[str, str] | None = None
+    custom_headers: dict[str, str] | None = field(default=None, repr=False)
 
     enable_metadata_discovery: bool = True
     auto_register_client: bool = False
