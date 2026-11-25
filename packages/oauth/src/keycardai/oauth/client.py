@@ -1331,7 +1331,9 @@ class AsyncClient:
         """Return the issuer and the URL of the endpoint ``name``.
 
         Pre-discovered ``metadata`` is used as is, with no discovery request.
-        A token endpoint override wins over ``metadata`` and discovery alike.
+        Its issuer must match the client's issuer, ignoring a trailing slash;
+        the client's issuer is the one returned. A token endpoint override
+        wins over ``metadata`` and discovery alike.
         Otherwise the endpoint comes from discovered metadata. When that
         metadata fails the endpoint check, the client discovers again once
         the metadata is older than ``negative_ttl``, so a failed check is
@@ -1340,13 +1342,18 @@ class AsyncClient:
         other operations.
 
         Raises:
-            ConfigError: The endpoint is missing or is not an http or https
-                URL.
+            ConfigError: ``metadata`` names a different issuer, or the
+                endpoint is missing or is not an http or https URL.
             AuthorizationServerDiscoveryError: Discovery failed.
         """
         if metadata is not None:
+            if metadata.issuer.rstrip("/") != self.issuer.rstrip("/"):
+                raise ConfigError(
+                    f"issuer {self.issuer} does not match the metadata issuer "
+                    f"{metadata.issuer}"
+                )
             url = self._device_grant_endpoint(metadata, name)
-            return metadata.issuer, check_endpoint(metadata.issuer, name, url)
+            return self.issuer, check_endpoint(self.issuer, name, url)
 
         discovered = await self._resolve_metadata()
         try:
@@ -1418,7 +1425,9 @@ class AsyncClient:
             resources: RFC 8707 resource indicators, one ``resource``
                 parameter per entry.
             metadata: Pre-discovered authorization server metadata. No
-                discovery request is made.
+                discovery request is made. Its issuer must match the
+                client's issuer, ignoring a trailing slash, and the
+                credential gets the client's issuer.
             timeout: Request timeout. Defaults to the client's timeout.
 
         Returns:
@@ -1428,8 +1437,9 @@ class AsyncClient:
         Raises:
             ConfigError: Not exactly one of ``credential`` and ``client_id``
                 is set, the credential does not provide client
-                authentication, or ``device_authorization_endpoint`` is
-                missing or is not an http or https URL. No request is sent.
+                authentication, ``metadata`` names a different issuer, or
+                ``device_authorization_endpoint`` is missing or is not an
+                http or https URL. No request is sent.
             AuthorizationServerDiscoveryError: Discovery failed.
             DeviceAuthorizationError: An OAuth error response, or a
                 malformed response (``invalid_response``).
