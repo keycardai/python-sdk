@@ -514,6 +514,31 @@ class TestExchangeActor:
         send.assert_not_called()
 
 
+def test_sync_exchange_cancels_stalled_actor_source():
+    cancelled = threading.Event()
+
+    async def source():
+        try:
+            await asyncio.sleep(1)
+            return "late-token"
+        except asyncio.CancelledError:
+            cancelled.set()
+            raise
+
+    send = Mock()
+    client = Client(
+        "https://exchange.example.com",
+        actor=source,
+        transport=Mock(request_raw=send),
+    )
+    with pytest.raises(NetworkError, match="token exchange actor token lookup") as exc:
+        client.exchange_token(subject_token="subject", timeout=0.2)
+
+    assert isinstance(exc.value.cause, TimeoutError)
+    assert cancelled.wait(timeout=5)
+    send.assert_not_called()
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "auth",

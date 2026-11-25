@@ -165,9 +165,11 @@ async def _prepare_exchange_assertion(
     )
 
 
-def _submit_exchange_coroutine(
+def _run_exchange_coroutine(
     operation: Coroutine[Any, Any, _ExchangeResult],
-) -> concurrent.futures.Future[_ExchangeResult]:
+    timeout: float,
+    step: str,
+) -> _ExchangeResult:
     """Keep source- and credential-owned connections on one persistent loop."""
     global _exchange_loop
     with _exchange_loop_lock:
@@ -180,29 +182,14 @@ def _submit_exchange_coroutine(
                 daemon=True,
             ).start()
             _exchange_loop = loop
-    return asyncio.run_coroutine_threadsafe(operation, loop)
-
-
-def _prepare_exchange_assertion_sync(
-    credential: "ApplicationCredential",
-    request: TokenExchangeRequest,
-    client: "Client",
-    issuer: str,
-    endpoints: ResolvedEndpoints,
-    timeout: float,
-) -> TokenExchangeRequest:
-    future = _submit_exchange_coroutine(
-        _prepare_exchange_assertion(credential, request, client, issuer, endpoints)
-    )
+    future = asyncio.run_coroutine_threadsafe(operation, loop)
     try:
         return future.result(timeout=timeout)
     except concurrent.futures.TimeoutError as e:
-        # A hung preparation stays bounded by the exchange timeout instead of
-        # blocking the caller forever on the shared loop.
         future.cancel()
         raise NetworkError(
-            TimeoutError(f"assertion preparation exceeded {timeout} seconds"),
-            operation="token exchange assertion preparation",
+            TimeoutError(f"{step} exceeded {timeout} seconds"),
+            operation=f"token exchange {step}",
         ) from e
 
 
@@ -2385,9 +2372,11 @@ class Client:
         auth = self._exchange_auth
         auth_headers = resolve_token_exchange_auth_headers(request, auth, target_issuer)
         if self._exchange_actor is not None and request.actor_token is None:
-            request = _submit_exchange_coroutine(
-                _add_exchange_actor(request, self._exchange_actor)
-            ).result()
+            request = _run_exchange_coroutine(
+                _add_exchange_actor(request, self._exchange_actor),
+                timeout,
+                "actor token lookup",
+            )
         endpoints = self._get_current_endpoints()
 
         if (
@@ -2395,8 +2384,12 @@ class Client:
             and not request.client_assertion
             and not auth_headers
         ):
-            request = _prepare_exchange_assertion_sync(
-                self._exchange_credential, request, self, target_issuer, endpoints, timeout
+            request = _run_exchange_coroutine(
+                _prepare_exchange_assertion(
+                    self._exchange_credential, request, self, target_issuer, endpoints
+                ),
+                timeout,
+                "assertion preparation",
             )
             auth = NoneAuth()
             auth_headers = {}
