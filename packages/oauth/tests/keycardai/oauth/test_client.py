@@ -534,10 +534,12 @@ def test_sync_exchange_cancels_stalled_actor_source():
         actor=source,
         transport=Mock(request_raw=send),
     )
-    with pytest.raises(NetworkError, match="token exchange actor token lookup") as exc:
+    with pytest.raises(WorkloadIdentityRuntimeError, match="actor token lookup") as exc:
         client.exchange_token(subject_token="subject", timeout=0.2)
 
-    assert isinstance(exc.value.cause, TimeoutError)
+    assert exc.value.source == "custom"
+    assert isinstance(exc.value.__cause__, TimeoutError)
+    assert exc.value.retryable is True
     assert cancelled.wait(timeout=5)
     send.assert_not_called()
 

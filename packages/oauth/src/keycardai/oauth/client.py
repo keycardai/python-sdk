@@ -169,6 +169,8 @@ def _run_exchange_coroutine(
     operation: Coroutine[Any, Any, _ExchangeResult],
     timeout: float,
     step: str,
+    *,
+    timeout_error: Callable[[TimeoutError], Exception] | None = None,
 ) -> _ExchangeResult:
     """Keep source- and credential-owned connections on one persistent loop."""
     global _exchange_loop
@@ -187,8 +189,11 @@ def _run_exchange_coroutine(
         return future.result(timeout=timeout)
     except concurrent.futures.TimeoutError as e:
         future.cancel()
+        cause = TimeoutError(f"{step} exceeded {timeout} seconds")
+        if timeout_error is not None:
+            raise timeout_error(cause) from cause
         raise NetworkError(
-            TimeoutError(f"{step} exceeded {timeout} seconds"),
+            cause,
             operation=f"token exchange {step}",
         ) from e
 
@@ -211,6 +216,15 @@ async def _add_exchange_actor(
             "actor_token": await actor.identity_token(),
             "actor_token_type": TokenType.JWT,
         }
+    )
+
+
+def _actor_lookup_timeout(cause: TimeoutError) -> Exception:
+    from .server.credentials import WORKLOAD_IDENTITY_SOURCE_CUSTOM
+    from .server.exceptions import WorkloadIdentityRuntimeError
+
+    return WorkloadIdentityRuntimeError(
+        str(cause), source=WORKLOAD_IDENTITY_SOURCE_CUSTOM
     )
 
 
@@ -2376,6 +2390,7 @@ class Client:
                 _add_exchange_actor(request, self._exchange_actor),
                 timeout,
                 "actor token lookup",
+                timeout_error=_actor_lookup_timeout,
             )
         endpoints = self._get_current_endpoints()
 
