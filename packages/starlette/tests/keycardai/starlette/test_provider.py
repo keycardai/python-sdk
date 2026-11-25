@@ -437,20 +437,8 @@ class TestKeycardAuthBackend:
         assert user.scopes == ["read"]
         assert "read" in credentials.scopes
 
-    @pytest.mark.asyncio
-    @pytest.mark.parametrize(
-        ("aud", "act", "expected_aud"),
-        [
-            pytest.param(
-                ["resource-a", "resource-b"],
-                {"sub": "actor", "act": {"sub": "previous-actor"}},
-                ["resource-a", "resource-b"],
-                id="row-4a",
-            ),
-            pytest.param("resource-a", None, ["resource-a"], id="row-4b"),
-        ],
-    )
-    async def test_verified_caller_claims(self, monkeypatch, aud, act, expected_aud):
+    @staticmethod
+    async def _authenticate_caller(monkeypatch, aud, act):
         issuer = "https://issuer.example.com"
         key = RSAKey.generate_key(2048)
         verifier = TokenVerifier(
@@ -485,8 +473,25 @@ class TestKeycardAuthBackend:
 
         assert result is not None
         _, caller = result
-        assert caller.aud == expected_aud
+        return caller
+
+    @pytest.mark.asyncio
+    async def test_row_4a_list_audience_and_nested_actor(self, monkeypatch):
+        act = {"sub": "actor", "act": {"sub": "previous-actor"}}
+
+        caller = await self._authenticate_caller(
+            monkeypatch, ["resource-a", "resource-b"], act
+        )
+
+        assert caller.aud == ["resource-a", "resource-b"]
         assert caller.act == act
+
+    @pytest.mark.asyncio
+    async def test_row_4b_string_audience_without_actor(self, monkeypatch):
+        caller = await self._authenticate_caller(monkeypatch, "resource-a", None)
+
+        assert caller.aud == ["resource-a"]
+        assert caller.act is None
 
     @pytest.mark.asyncio
     async def test_token_without_keycard_claims_verifies_with_none_identity(self):

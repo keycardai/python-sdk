@@ -127,26 +127,9 @@ class TestAuthProviderInitialization:
 class TestAuthProviderJWTVerifier:
     """Test AuthProvider JWT verifier creation."""
 
-    @pytest.mark.asyncio
-    @pytest.mark.parametrize(
-        ("aud", "act", "expected_aud"),
-        [
-            pytest.param(
-                ["http://localhost:8000/mcp", "resource-b"],
-                {"sub": "actor", "act": {"sub": "previous-actor"}},
-                ["http://localhost:8000/mcp", "resource-b"],
-                id="row-4a",
-            ),
-            pytest.param(
-                "http://localhost:8000/mcp",
-                None,
-                ["http://localhost:8000/mcp"],
-                id="row-4b",
-            ),
-        ],
-    )
-    async def test_verified_caller_claims(
-        self, monkeypatch, auth_provider_config, mock_client_factory, aud, act, expected_aud,
+    @staticmethod
+    async def _verify_caller(
+        monkeypatch, auth_provider_config, mock_client_factory, aud, act
     ):
         provider = AuthProvider(**auth_provider_config, client_factory=mock_client_factory)
         remote_provider = provider.get_remote_auth_provider()
@@ -170,8 +153,36 @@ class TestAuthProviderJWTVerifier:
         caller = await remote_provider.verify_token(token)
 
         assert caller is not None
-        assert caller.claims["aud"] == expected_aud
-        assert caller.claims.get("act") == act
+        return caller
+
+    @pytest.mark.asyncio
+    async def test_row_4a_list_audience_and_nested_actor(
+        self, monkeypatch, auth_provider_config, mock_client_factory
+    ):
+        aud = ["http://localhost:8000/mcp", "resource-b"]
+        act = {"sub": "actor", "act": {"sub": "previous-actor"}}
+
+        caller = await self._verify_caller(
+            monkeypatch, auth_provider_config, mock_client_factory, aud, act
+        )
+
+        assert caller.claims["aud"] == aud
+        assert caller.claims["act"] == act
+
+    @pytest.mark.asyncio
+    async def test_row_4b_string_audience_without_actor(
+        self, monkeypatch, auth_provider_config, mock_client_factory
+    ):
+        caller = await self._verify_caller(
+            monkeypatch,
+            auth_provider_config,
+            mock_client_factory,
+            "http://localhost:8000/mcp",
+            None,
+        )
+
+        assert caller.claims["aud"] == ["http://localhost:8000/mcp"]
+        assert caller.claims.get("act") is None
 
     def test_get_jwt_token_verifier_success_with_client_factory(self, auth_provider_config, mock_client_factory):
         """Test successful JWT token verifier creation with client factory."""
