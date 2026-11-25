@@ -9,13 +9,19 @@ from urllib.parse import parse_qs
 
 import httpx
 import pytest
+from joserfc import jwt
+from joserfc.jwk import KeySet
 from pydantic import ValidationError
 
 from keycardai.oauth import AsyncClient, Client, ClientConfig
 from keycardai.oauth.exceptions import ConfigError
 from keycardai.oauth.http._wire import HttpResponse
 from keycardai.oauth.http.auth import NoneAuth
-from keycardai.oauth.server.credentials import ClientSecret, WorkloadIdentity
+from keycardai.oauth.server.credentials import (
+    ClientSecret,
+    WebIdentity,
+    WorkloadIdentity,
+)
 from keycardai.oauth.server.exceptions import WorkloadIdentityRuntimeError
 from keycardai.oauth.types.models import (
     AuthorizationServerMetadata,
@@ -172,6 +178,32 @@ class TestExchangeCredential:
             assert "client_id" not in form
         else:
             assert form["client_id"] == [prepared_id]
+
+
+@pytest.mark.asyncio
+async def test_row_4b_web_identity_audience_matches_updated_token_endpoint(tmp_path):
+    endpoints = Endpoints(token="https://tokens.example.com/original")
+    transport = AsyncMock()
+    transport.request_raw.return_value = HttpResponse(
+        200, {}, b'{"access_token":"exchanged","token_type":"Bearer"}'
+    )
+    credential = WebIdentity(storage_dir=str(tmp_path), client_id="client")
+    async with AsyncClient(
+        "https://test.example.com",
+        credential=credential,
+        endpoints=endpoints,
+        transport=transport,
+        config=ClientConfig(enable_metadata_discovery=False),
+    ) as client:
+        endpoints.token = "https://tokens.example.com/updated"
+        await client.exchange_token(subject_token="subject")
+
+    transport.request_raw.assert_awaited_once()
+    wire = transport.request_raw.call_args.args[0]
+    assert (wire.method, wire.url) == ("POST", endpoints.token)
+    assertion = parse_qs(wire.body.decode())["client_assertion"][0]
+    keys = KeySet.import_key_set(credential.identity_manager.get_public_jwks())
+    assert jwt.decode(assertion, keys).claims["aud"] == wire.url
 
 
 def test_row_4b_sync_exchange_reuses_async_identity_source_connection():

@@ -126,7 +126,11 @@ async def _prepare_exchange_assertion(
     subject_token = request.subject_token
     if subject_token is None:
         raise ConfigError("subject_token is required to prepare token exchange")
-    if isinstance(client, AsyncClient) and issuer == client.issuer:
+    if (
+        isinstance(client, AsyncClient)
+        and issuer == client.issuer
+        and endpoints == await client.get_endpoints()
+    ):
         prepared = await credential.prepare_token_exchange_request(
             client, subject_token, request.resource or ""
         )
