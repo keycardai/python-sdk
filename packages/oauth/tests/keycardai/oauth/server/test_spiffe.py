@@ -8,11 +8,6 @@ import pytest
 import pytest_asyncio
 
 from keycardai.oauth.server import SpiffeJwtSvidSource
-from keycardai.oauth.server._spiffe_workload_pb2 import (
-    JWTSVID,
-    JWTSVIDRequest,
-    JWTSVIDResponse,
-)
 from keycardai.oauth.server.exceptions import (
     WorkloadIdentityConfigurationError,
     WorkloadIdentityRuntimeError,
@@ -20,29 +15,42 @@ from keycardai.oauth.server.exceptions import (
 
 AUDIENCE = "https://zone.keycard.cloud"
 SPIFFE_ID = "spiffe://example.org/workload"
+AUDIENCE_FIELD = b"\x0a\x1ahttps://zone.keycard.cloud"
+
+
+def _short_field(tag, value):
+    return bytes([tag, len(value)]) + value
+
+
+def _identity_field(spiffe_id):
+    return _short_field(0x12, spiffe_id.encode()) if spiffe_id else b""
 
 
 @pytest_asyncio.fixture
 async def workload_api(tmp_path):
     requests = []
     svids = [
-        JWTSVID(spiffe_id=SPIFFE_ID, svid="opaque.header.signature"),
-        JWTSVID(spiffe_id="spiffe://example.org/other", svid="another.opaque.token"),
+        (SPIFFE_ID, "opaque.header.signature"),
+        ("spiffe://example.org/other", "another.opaque.token"),
     ]
 
     async def fetch(request, context):
         requests.append((request, dict(context.invocation_metadata())))
-        return JWTSVIDResponse(
-            svids=[svid for svid in svids if request.spiffe_id in ("", svid.spiffe_id)]
-        )
+        response = bytearray()
+        for spiffe_id, token in svids:
+            if request in (AUDIENCE_FIELD, AUDIENCE_FIELD + _identity_field(spiffe_id)):
+                svid = (
+                    _short_field(0x0A, spiffe_id.encode())
+                    + _short_field(0x12, token.encode())
+                    if isinstance(token, str)
+                    else token
+                )
+                response.extend(_short_field(0x0A, svid))
+        return bytes(response)
 
     socket = tmp_path / "agent.sock"
     server = grpc.aio.server()
-    handler = grpc.unary_unary_rpc_method_handler(
-        fetch,
-        request_deserializer=JWTSVIDRequest.FromString,
-        response_serializer=JWTSVIDResponse.SerializeToString,
-    )
+    handler = grpc.unary_unary_rpc_method_handler(fetch)
     server.add_generic_rpc_handlers(
         (grpc.method_handlers_generic_handler(
             "SpiffeWorkloadAPI", {"FetchJWTSVID": handler}
@@ -149,8 +157,7 @@ async def test_row_14_fetch_returns_opaque_jwt(
 
     assert await source.identity_token() == expected
     [(request, metadata)] = requests
-    assert list(request.audience) == [AUDIENCE]
-    assert request.spiffe_id == (spiffe_id or "")
+    assert request == AUDIENCE_FIELD + _identity_field(spiffe_id)
     assert metadata["workload.spiffe.io"] == "true"
 
 
@@ -184,7 +191,7 @@ async def test_row_15_no_svid_for_requested_identity_is_retryable(workload_api):
 @pytest.mark.asyncio
 async def test_empty_token_is_a_non_retryable_runtime_error(workload_api):
     socket, _, svids = workload_api
-    svids[0].svid = ""
+    svids[0] = (SPIFFE_ID, "")
     source = SpiffeJwtSvidSource(AUDIENCE, socket_path=socket)
     with pytest.raises(WorkloadIdentityRuntimeError, match="empty JWT-SVID") as error:
         await source.identity_token()
@@ -193,11 +200,23 @@ async def test_empty_token_is_a_non_retryable_runtime_error(workload_api):
 
 
 @pytest.mark.asyncio
+async def test_malformed_response_is_a_non_retryable_runtime_error(workload_api):
+    socket, _, svids = workload_api
+    svids[0] = (SPIFFE_ID, b"\x12\x02a")
+    source = SpiffeJwtSvidSource(AUDIENCE, socket_path=socket)
+    with pytest.raises(WorkloadIdentityRuntimeError, match="malformed") as error:
+        await source.identity_token()
+    assert error.value.source == "spiffe"
+    assert error.value.retryable is False
+    assert isinstance(error.value.__cause__, ValueError)
+
+
+@pytest.mark.asyncio
 async def test_row_16_returns_rotated_svid_on_next_fetch(workload_api):
     socket, requests, svids = workload_api
     source = SpiffeJwtSvidSource(AUDIENCE, socket_path=socket)
     assert await source.identity_token() == "opaque.header.signature"
-    svids[0].svid = "rotated.header.signature"
+    svids[0] = (SPIFFE_ID, "rotated.header.signature")
     assert await source.identity_token() == "rotated.header.signature"
     assert len(requests) == 2
 
@@ -205,14 +224,15 @@ async def test_row_16_returns_rotated_svid_on_next_fetch(workload_api):
 @pytest.mark.asyncio
 async def test_fetch_normalizes_scheme_and_trust_domain_but_preserves_path(workload_api):
     socket, requests, svids = workload_api
-    svids[0].spiffe_id = "spiffe://example_domain.org/Some.Path/-service_1"
+    normalized = "spiffe://example_domain.org/Some.Path/-service_1"
+    svids[0] = (normalized, "opaque.header.signature")
     source = SpiffeJwtSvidSource(
         AUDIENCE,
         socket_path=socket,
         spiffe_id="SpIfFe://Example_Domain.ORG/Some.Path/-service_1",
     )
     assert await source.identity_token() == "opaque.header.signature"
-    assert requests[0][0].spiffe_id == svids[0].spiffe_id
+    assert requests[0][0] == AUDIENCE_FIELD + _identity_field(normalized)
 
 
 def test_core_import_and_construction_do_not_import_spiffe_dependencies():

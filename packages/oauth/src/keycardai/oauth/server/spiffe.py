@@ -4,6 +4,7 @@ import math
 import os
 import re
 
+from ._spiffe_wire import deserialize_response, encode_request
 from .exceptions import WorkloadIdentityConfigurationError, WorkloadIdentityRuntimeError
 
 _SOURCE = "spiffe"
@@ -85,24 +86,21 @@ class SpiffeJwtSvidSource:
         target = self._socket_target()
         try:
             from grpc import RpcError, aio
-
-            from ._spiffe_workload_pb2 import JWTSVIDRequest, JWTSVIDResponse
         except ImportError as err:
             raise WorkloadIdentityConfigurationError(
                 "Install keycardai-oauth[spiffe] to use SpiffeJwtSvidSource",
                 source=_SOURCE,
             ) from err
 
-        request = JWTSVIDRequest(audience=[self.audience], spiffe_id=self.spiffe_id)
         try:
             async with aio.insecure_channel(target) as channel:
                 fetch = channel.unary_unary(
                     _FETCH_METHOD,
-                    request_serializer=JWTSVIDRequest.SerializeToString,
-                    response_deserializer=JWTSVIDResponse.FromString,
+                    request_serializer=encode_request,
+                    response_deserializer=deserialize_response,
                 )
                 response = await fetch(
-                    request,
+                    ((self.audience,), self.spiffe_id),
                     timeout=self.init_timeout,
                     wait_for_ready=True,
                     metadata=(("workload.spiffe.io", "true"),),
@@ -114,8 +112,14 @@ class SpiffeJwtSvidSource:
                 retryable=True,
             ) from err
 
+        if isinstance(response, ValueError):
+            raise WorkloadIdentityRuntimeError(
+                "The SPIFFE Workload API returned a malformed JWT-SVID response",
+                source=_SOURCE,
+                retryable=False,
+            ) from response
         try:
-            token = response.svids[0].svid
+            token = response[0]
         except IndexError as err:
             raise WorkloadIdentityRuntimeError(
                 "The SPIFFE Workload API returned no JWT-SVID",

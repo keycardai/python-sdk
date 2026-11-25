@@ -31,7 +31,7 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-spiffe = ["grpcio>=1.71.0", "protobuf>=5.29.0"]
+spiffe = ["grpcio>=1.71.0"]
 test = [
     "keycardai-oauth[spiffe]",
     "pytest>=8.4.1",
