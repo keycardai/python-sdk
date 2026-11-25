@@ -504,15 +504,17 @@ class ClientInitializationError(OAuthServerError):
 
 
 class WorkloadIdentityConfigurationError(OAuthServerError):
-    """Raised when a workload identity credential or token source is misconfigured.
+    """Indicates a non-retryable workload identity configuration error.
 
-    Raised at construction for invalid options, or at first fetch when the
-    SPIFFE Workload API socket cannot be resolved.
+    Invalid options raise this error at construction. An unresolved SPIFFE
+    socket or missing SPIFFE extra raises it on first fetch.
 
     Attributes:
         source: Identifies the token source ("file", "gcp-metadata", "fly", "spiffe");
             None when the fault is in the credential itself.
     """
+
+    retryable = False
 
     def __init__(
         self,
