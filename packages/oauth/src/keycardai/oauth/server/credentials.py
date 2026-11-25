@@ -648,7 +648,12 @@ class WorkloadIdentity:
             fetch = cast("Callable[[], Awaitable[str] | str]", source)
         self._fetch: Callable[[], Awaitable[str] | str] = fetch
         self._source = source
-        self.client_id = client_id
+        self._client_id = client_id
+
+    @property
+    def client_id(self) -> str | None:
+        """The configured client ID, if any."""
+        return self._client_id
 
     async def _fetch_identity_token(self) -> str:
         try:
