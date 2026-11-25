@@ -1555,3 +1555,66 @@ async def test_row_33_cancelled_when_the_wait_ends():
     assert clock.sleeps == [5]
     assert credential.calls == []
     assert transport.requests == []
+
+
+# Row 35: the client's issuer selects the zone when metadata is supplied.
+
+
+def success_response(operation) -> HttpResponse:
+    if operation is request_op:
+        return device_response()
+    return respond(200, TOKEN_BODY)
+
+
+@pytest.mark.parametrize("operation", OPERATIONS)
+@pytest.mark.parametrize(
+    ("client_issuer", "metadata_issuer"),
+    [
+        pytest.param(f"{ISSUER}/", ISSUER, id="slash-on-client-issuer"),
+        pytest.param(ISSUER, f"{ISSUER}/", id="slash-on-metadata-issuer"),
+    ],
+)
+async def test_row_35_matching_metadata_issuer_authenticates_with_client_issuer(
+    operation, client_issuer, metadata_issuer
+):
+    transport = FakeTransport(success_response(operation))
+    client = AsyncClient(
+        client_issuer,
+        transport=transport,
+        clock=FakeClock(),
+        config=ClientConfig(enable_metadata_discovery=False, auto_register_client=False),
+    )
+    credential = FakeCredential()
+
+    await operation(
+        client,
+        metadata=dataclasses.replace(METADATA, issuer=metadata_issuer),
+        credential=credential,
+    )
+
+    endpoint = DEVICE_ENDPOINT if operation is request_op else TOKEN_ENDPOINT
+    assert credential.calls == [(client.issuer, endpoint)]
+    assert client.issuer == ISSUER
+    assert [req.url for req in transport.requests] == [endpoint]
+
+
+@pytest.mark.parametrize("operation", OPERATIONS)
+async def test_row_35_metadata_for_another_zone_is_a_configuration_error(operation):
+    transport = FakeTransport()
+    credential = FakeCredential()
+
+    with pytest.raises(
+        ConfigError,
+        match=exactly(
+            f"issuer {ISSUER} does not match the metadata issuer "
+            "https://other.example.com"
+        ),
+    ):
+        await operation(
+            make_client(transport),
+            metadata=dataclasses.replace(METADATA, issuer="https://other.example.com"),
+            credential=credential,
+        )
+
+    assert credential.calls == []
+    assert transport.requests == []
