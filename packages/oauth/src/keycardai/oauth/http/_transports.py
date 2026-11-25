@@ -41,16 +41,55 @@ class _BoundedZlibDecoder:
         self._operation = operation
         self._buf = bytearray()
         self._first_chunk = True
+        self._trailing_bytes = 0
+        self._discarding_trailer = False
+        self._gzip_magic_buf = bytearray()
         wbits = zlib.MAX_WBITS | 16 if encoding in ("gzip", "x-gzip") else zlib.MAX_WBITS
         self._decompressor = zlib.decompressobj(wbits)
+
+    def _account_trailer(self, count: int) -> None:
+        self._trailing_bytes += count
+        if len(self._buf) + self._trailing_bytes > self._limit:
+            raise ResponseBodyTooLargeError(
+                status_code=self._status_code,
+                limit=self._limit,
+                operation=self._operation,
+            )
 
     def feed(self, chunk: bytes) -> None:
         data = chunk
         while data:
+            if self._discarding_trailer:
+                self._account_trailer(len(data))
+                return
             if self._decompressor.eof:
                 if self._encoding not in ("gzip", "x-gzip"):
-                    raise zlib.error("trailing bytes after deflate stream")
-                self._decompressor = zlib.decompressobj(zlib.MAX_WBITS | 16)
+                    self._discarding_trailer = True
+                    self._account_trailer(len(data))
+                    return
+                # Skip zero padding between gzip members (matches stdlib gzip);
+                # start a new member only on the gzip magic \x1f\x8b, otherwise
+                # discard trailing bytes while still bounding total trailer size.
+                if not self._gzip_magic_buf:
+                    stripped = data.lstrip(b"\x00")
+                    self._account_trailer(len(data) - len(stripped))
+                    data = stripped
+                    if not data:
+                        return
+                need = 2 - len(self._gzip_magic_buf)
+                self._gzip_magic_buf.extend(data[:need])
+                data = data[need:]
+                if len(self._gzip_magic_buf) < 2:
+                    return
+                if bytes(self._gzip_magic_buf) == b"\x1f\x8b":
+                    data = bytes(self._gzip_magic_buf) + data
+                    self._gzip_magic_buf.clear()
+                    self._decompressor = zlib.decompressobj(zlib.MAX_WBITS | 16)
+                else:
+                    self._discarding_trailer = True
+                    self._account_trailer(len(self._gzip_magic_buf) + len(data))
+                    self._gzip_magic_buf.clear()
+                    return
             remaining = self._limit - len(self._buf)
             try:
                 decoded = self._decompressor.decompress(data, remaining + 1)
