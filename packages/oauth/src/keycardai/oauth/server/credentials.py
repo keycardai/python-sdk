@@ -648,7 +648,12 @@ class WorkloadIdentity:
             fetch = cast("Callable[[], Awaitable[str] | str]", source)
         self._fetch: Callable[[], Awaitable[str] | str] = fetch
         self._source = source
-        self.client_id = client_id
+        self._client_id = client_id
+
+    @property
+    def client_id(self) -> str | None:
+        """The configured client ID, if any."""
+        return self._client_id
 
     async def _fetch_identity_token(self) -> str:
         try:
@@ -765,6 +770,7 @@ class EKSWorkloadIdentity(WorkloadIdentity):
         self,
         token_file_path: str | None = None,
         env_var_name: str | None = None,
+        client_id: str | None = None,
     ):
         if token_file_path is None:
             token_file_path, matched_env_var = self._get_token_file_path(env_var_name)
@@ -779,7 +785,7 @@ class EKSWorkloadIdentity(WorkloadIdentity):
         self.env_var_name = env_var_name
 
         self._validate_token_file()
-        super().__init__(source=self._read_token_async)
+        super().__init__(source=self._read_token_async, client_id=client_id)
 
     async def _read_token_async(self) -> str:
         return self._read_token()

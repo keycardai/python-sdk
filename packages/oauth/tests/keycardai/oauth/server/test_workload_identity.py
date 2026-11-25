@@ -43,6 +43,18 @@ class TestWorkloadIdentity:
         provider = WorkloadIdentity(async_token_source)
         assert isinstance(provider.get_http_client_auth(), NoneAuth)
 
+    def test_row_4f_client_id_is_read_only_and_does_not_fetch(self):
+        def unexpected_source():
+            pytest.fail("reading client_id must not call the token source")
+
+        configured = WorkloadIdentity(unexpected_source, client_id="acr_123")
+        unconfigured = WorkloadIdentity(unexpected_source)
+
+        assert configured.client_id == "acr_123"
+        assert unconfigured.client_id is None
+        with pytest.raises(AttributeError):
+            configured.client_id = "acr_other"
+
     @pytest.mark.asyncio
     async def test_prepares_request_from_source(self):
         provider = WorkloadIdentity(async_token_source)
@@ -241,6 +253,13 @@ class TestEKSWorkloadIdentityCompat:
         provider = EKSWorkloadIdentity(token_file_path=str(token_file))
 
         assert isinstance(provider, WorkloadIdentity)
+
+    def test_accepts_client_id(self, tmp_path, monkeypatch):
+        token_file = tmp_path / "token"
+        token_file.write_text("eks-token")
+        monkeypatch.setenv("KEYCARD_EKS_WORKLOAD_IDENTITY_TOKEN_FILE", str(token_file))
+
+        assert EKSWorkloadIdentity(client_id="acr_x").client_id == "acr_x"
 
     def test_does_not_discover_azure_var(self, tmp_path, monkeypatch):
         # The deprecated EKS provider keeps the EKS-only discovery list; the
