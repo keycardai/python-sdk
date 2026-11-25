@@ -1,3 +1,25 @@
+## 0.39.0-keycardai-oauth (2026-11-25)
+
+
+- feat(keycardai-oauth): prepare missing token exchange assertions (#464)
+- * fix(keycardai-oauth): prepare missing token exchange assertions
+- Co-Authored-By: Larry Osakwe <larry@keycard.ai>
+- * fix(keycardai-oauth): reuse the sync assertion preparation loop
+- Co-Authored-By: Larry Osakwe <larry@keycard.ai>
+- * fix(keycardai-oauth): restart the assertion preparation loop after fork
+- Co-Authored-By: Larry Osakwe <larry@keycard.ai>
+- * fix(keycardai-oauth): preserve caller settings during assertion preparation
+- Co-Authored-By: Larry Osakwe <larry@keycard.ai>
+- * fix(keycardai-oauth): pin assertion preparation to the exchange endpoint
+- Co-Authored-By: Larry Osakwe <larry@keycard.ai>
+- * fix(keycardai-oauth): bound sync assertion preparation by the client timeout
+- * fix(keycardai-oauth): honor the sync exchange timeout during assertion preparation
+- Co-Authored-By: Larry Osakwe <larry@keycard.ai>
+- ---------
+- Co-authored-by: devin-ai-keycard <devin-ai@keycard.ai>
+Co-authored-by: Larry Osakwe <larry@keycard.ai>
+Co-authored-by: Larry Osakwe <23560354+Larry-Osakwe@users.noreply.github.com>
+
 ## 0.38.0-keycardai-oauth (2026-11-25)
 
 
