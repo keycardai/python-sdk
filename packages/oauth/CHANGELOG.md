@@ -1,3 +1,12 @@
+## 0.41.1-keycardai-oauth (2026-11-25)
+
+
+- fix(keycardai-oauth): bind device client authentication to the client's issuer (#467)
+- With pre-discovered metadata, the device grant now compares metadata.issuer with the client's issuer, ignoring a trailing slash, and passes the client's issuer to the credential. A mismatch raises ConfigError before client authentication or any request.
+- Implements keycard-sdk-spec#140, specs/oauth-client/device-authorization.md unit row 35. SDK-124.
+- Co-authored-by: devin-ai-keycard <devin-ai@keycard.ai>
+Co-authored-by: Larry Osakwe <larry@keycard.ai>
+
 ## 0.41.0-keycardai-oauth (2026-11-25)
 
 
