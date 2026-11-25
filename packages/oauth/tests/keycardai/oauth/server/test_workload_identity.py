@@ -254,6 +254,13 @@ class TestEKSWorkloadIdentityCompat:
 
         assert isinstance(provider, WorkloadIdentity)
 
+    def test_accepts_client_id(self, tmp_path, monkeypatch):
+        token_file = tmp_path / "token"
+        token_file.write_text("eks-token")
+        monkeypatch.setenv("KEYCARD_EKS_WORKLOAD_IDENTITY_TOKEN_FILE", str(token_file))
+
+        assert EKSWorkloadIdentity(client_id="acr_x").client_id == "acr_x"
+
     def test_does_not_discover_azure_var(self, tmp_path, monkeypatch):
         # The deprecated EKS provider keeps the EKS-only discovery list; the
         # AKS variable is discovered only by FileTokenSource.
