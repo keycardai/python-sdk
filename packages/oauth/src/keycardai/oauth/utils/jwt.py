@@ -344,13 +344,16 @@ class JWTAccessToken(BaseModel):
         return claims
 
     def validate_audience(
-        self, expected_audience: str | dict[str, str] | None, zone_id: str | None = None
+        self,
+        expected_audience: str | list[str] | dict[str, str] | None,
+        zone_id: str | None = None,
     ) -> bool:
         """Validate the token's audience claim against expected values.
 
         Args:
             expected_audience: Expected audience configuration. Can be:
                 - str: Single audience value for all zones
+                - list[str]: Accepted audience values for all zones
                 - dict[str, str]: Zone-specific audience mapping (zone_id -> audience)
                 - None: Skip audience validation
             zone_id: Zone ID for multi-zone scenarios (required when expected_audience is dict)
@@ -365,30 +368,21 @@ class JWTAccessToken(BaseModel):
         if self.aud is None:
             return False
 
-        if isinstance(expected_audience, str):
-            # Single audience validation
-            if isinstance(self.aud, list):
-                return expected_audience in self.aud
-            else:
-                return self.aud == expected_audience
-
-        elif isinstance(expected_audience, dict):
-            # Zone-specific audience validation
+        if isinstance(expected_audience, dict):
             if not zone_id:
                 # Multi-zone dict audience requires zone_id
                 return False
 
-            expected_aud = expected_audience.get(zone_id)
-            if expected_aud is None:
+            zone_audience = expected_audience.get(zone_id)
+            if zone_audience is None:
                 # No audience configured for this zone
                 return False
 
-            if isinstance(self.aud, list):
-                return expected_aud in self.aud
-            else:
-                return self.aud == expected_aud
+            expected_audience = zone_audience
 
-        return False
+        accepted = [expected_audience] if isinstance(expected_audience, str) else expected_audience
+        claim = [self.aud] if isinstance(self.aud, str) else self.aud
+        return any(audience in accepted for audience in claim)
 
     def validate_scopes(self, required_scopes: list[str] | None) -> bool:
         """Validate the token's scope claim against required scopes.
