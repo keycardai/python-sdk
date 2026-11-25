@@ -390,6 +390,36 @@ async def test_row_4f_token_exchange_rejects_client_id_with_basic_before_discove
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("client_cls", [Client, AsyncClient], ids=["sync", "async"])
+@pytest.mark.parametrize(
+    "credential",
+    [
+        ClientSecret(("configured", "secret")),
+        ClientSecret({"https://exchange.example.com": ("configured", "secret")}),
+    ],
+    ids=["basic", "multi-zone-basic"],
+)
+async def test_row_4f_client_secret_credential_rejects_client_id_before_discovery(
+    client_cls, credential
+):
+    send = AsyncMock() if client_cls is AsyncClient else Mock()
+    client = client_cls(
+        "https://exchange.example.com",
+        credential=credential,
+        transport=Mock(request_raw=send),
+    )
+    request = TokenExchangeRequest(subject_token="subject", client_id="request-id")
+
+    with pytest.raises(ConfigError, match="client_id.*HTTP Basic"):
+        if client_cls is AsyncClient:
+            await client.exchange_token(request)
+        else:
+            client.exchange_token(request)
+
+    send.assert_not_called()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("client_id", [None, "request-id"])
 async def test_row_4g_token_exchange_uses_explicit_assertion_over_basic(
     token_exchange_client, client_id
