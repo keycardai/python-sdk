@@ -1,3 +1,10 @@
+## 0.38.0-keycardai-oauth (2026-11-25)
+
+
+- feat(keycardai-oauth): accept multiple bearer token audiences (#462)
+- Co-authored-by: devin-ai-keycard <devin-ai@keycard.ai>
+Co-authored-by: Larry Osakwe <larry@keycard.ai>
+
 ## 0.37.2-keycardai-oauth (2026-11-25)
 
 
