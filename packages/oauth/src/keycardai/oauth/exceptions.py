@@ -11,6 +11,9 @@ References:
 """
 
 from dataclasses import dataclass
+from ssl import SSLCertVerificationError
+
+import httpx
 
 # Maximum decoded bytes the default HTTP transports read from an
 # authorization-server response (1 MiB).
@@ -284,9 +287,17 @@ def classify_discovery_failure(cause: Exception | None) -> bool:
     if isinstance(cause, OAuthProtocolError):
         return False
     if isinstance(cause, NetworkError):
-        return True
+        cause = cause.cause
     if isinstance(cause, OAuthError):
         return cause.retryable
+    chain: BaseException | None = cause
+    while chain is not None:
+        if isinstance(
+            chain,
+            (SSLCertVerificationError, httpx.UnsupportedProtocol, httpx.TooManyRedirects),
+        ):
+            return False
+        chain = chain.__cause__
     return True
 
 

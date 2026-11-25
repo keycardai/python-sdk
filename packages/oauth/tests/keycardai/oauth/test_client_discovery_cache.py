@@ -11,12 +11,15 @@ import asyncio
 import dataclasses
 import json
 import threading
+import traceback
+from datetime import datetime, timezone
 from email.utils import formatdate
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
 from keycardai.oauth import AsyncClient, Client, ClientConfig
+from keycardai.oauth._metadata_cache import MetadataCache, MetadataRetryDelay
 from keycardai.oauth.exceptions import (
     AuthorizationServerDiscoveryError,
     ConfigError,
@@ -41,6 +44,88 @@ METADATA_WITHOUT_TOKEN_ENDPOINT = AuthorizationServerMetadata(
     issuer=ISSUER,
     authorization_endpoint=f"{ISSUER}/authorize",
 )
+
+
+@pytest.mark.parametrize("retryable", [True, False])
+def test_row_3_and_5_cached_error_traceback_does_not_grow(clock, retryable):
+    cache = MetadataCache()
+    error = AuthorizationServerDiscoveryError(ISSUER, cause=_transient())
+    cache.store_failure(error, retryable=retryable)
+    depths = []
+    for _ in range(4):
+        with pytest.raises(AuthorizationServerDiscoveryError) as caught:
+            cache.lookup()
+        assert caught.value is error
+        depths.append(len(traceback.extract_tb(caught.value.__traceback__)))
+    assert depths == [depths[0]] * 4
+
+
+def test_row_3_expired_reader_cannot_clear_new_delay(clock):
+    retry = MetadataRetryDelay()
+    retry.record(TimeoutError("old failure"), None)
+    clock.advance(2)
+    entered = threading.Event()
+    release = threading.Event()
+    recorded = threading.Event()
+    expired = clock.now
+    error = TimeoutError("new failure")
+
+    def now():
+        if threading.current_thread() is reader:
+            entered.set()
+            assert release.wait(5)
+            return expired
+        return clock.now
+
+    def record():
+        retry.record(error, None)
+        recorded.set()
+
+    reader = threading.Thread(target=retry.check)
+    writer = threading.Thread(target=record)
+    with patch("keycardai.oauth._metadata_cache._now", now):
+        reader.start()
+        assert entered.wait(5)
+        writer.start()
+        recorded.wait(0.1)
+        release.set()
+        reader.join(5)
+        writer.join(5)
+        assert not reader.is_alive() and not writer.is_alive()
+        with pytest.raises(TimeoutError) as caught:
+            retry.check()
+    assert caught.value is error
+
+
+@pytest.mark.parametrize(
+    ("header", "valid"),
+    [
+        ("Wed, 01 Jan 2025 00:00:05 GMT", True),
+        ("Wednesday, 01-Jan-25 00:00:05 GMT", True),
+        ("Wed Jan  1 00:00:05 2025", True),
+        ("Wed Jan 01 00:00:05 2025", True),
+        ("Wed, 01 Jan 2025 00:00:05 GMT trailing", False),
+        ("Wed, 01 Jan 2025 00:01 GMT", False),
+        ("Thu, 01 Jan 2025 00:00:05 GMT", False),
+    ],
+)
+def test_row_2_strict_http_dates_and_monotonic_delay(header, valid):
+    wall = datetime(2025, 1, 1, tzinfo=timezone.utc).timestamp()
+    ticks = FakeClock(0)
+    retry = MetadataRetryDelay()
+    error = OAuthHttpError(429, headers={"retry-after": header})
+    with (
+        patch("keycardai.oauth._metadata_cache.time.time", return_value=wall) as wall_time,
+        patch("keycardai.oauth._metadata_cache.time.monotonic", ticks),
+    ):
+        assert retry.record(error, error) == valid
+        if valid:
+            wall_time.return_value += 60
+            ticks.advance(4.9)
+            with pytest.raises(OAuthHttpError):
+                retry.check()
+            ticks.advance(0.1)
+        retry.check()
 METADATA_RESPONSE = HttpResponse(
     200,
     {},

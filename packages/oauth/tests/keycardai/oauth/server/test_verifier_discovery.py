@@ -401,3 +401,31 @@ async def test_row_10_network_backoff_and_row_20_key_set_scope(
         clock.advance(delay)
         assert "PUBLIC KEY" in await verifier._key_from_jwks(next_kid, uri)
         assert fetch.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_row_10_retry_cache_is_bounded_and_clear_skips_pending_failures(clock):
+    verifier, _ = _verifier_with([])
+    failure = JWKSFetchError("unavailable", cause=NetworkError(ConnectionError("reset")))
+    fetch = AsyncMock(side_effect=failure)
+    with patch("keycardai.oauth.server.verifier.fetch_jwks", fetch):
+        for index in range(129):
+            with pytest.raises(JWKSFetchError):
+                await verifier._fetch_and_store_jwks(f"https://example.com/{index}")
+        with pytest.raises(JWKSFetchError):
+            await verifier._fetch_and_store_jwks("https://example.com/128")
+        assert fetch.call_count == 129
+        with pytest.raises(JWKSFetchError):
+            await verifier._fetch_and_store_jwks("https://example.com/0")
+        assert fetch.call_count == 130
+
+        async def cleared_fetch(*args, **kwargs):
+            verifier.clear_cache()
+            raise failure
+
+        fetch.side_effect = cleared_fetch
+        with pytest.raises(JWKSFetchError):
+            await verifier._fetch_and_store_jwks("https://example.com/pending")
+        fetch.side_effect = None
+        fetch.return_value = []
+        assert await verifier._fetch_and_store_jwks("https://example.com/pending") == []

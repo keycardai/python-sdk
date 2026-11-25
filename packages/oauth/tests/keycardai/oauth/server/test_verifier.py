@@ -989,7 +989,7 @@ class TestTokenVerifierDiscoveryTtl:
 
     def test_rediscovers_after_ttl(self):
         verifier, client = self._verifier(discovery_ttl=100)
-        with patch("keycardai.oauth.server.verifier.time.time") as mock_time:
+        with patch("keycardai.oauth._metadata_cache._now") as mock_time:
             mock_time.return_value = 1000.0
             verifier._discover_jwks_uri()
             mock_time.return_value = 1101.0

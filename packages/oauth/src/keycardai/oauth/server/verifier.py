@@ -9,13 +9,18 @@ import asyncio
 import threading
 import time
 import warnings
+from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 from pydantic import AnyHttpUrl, BaseModel
 
-from keycardai.oauth._metadata_cache import MetadataCache, MetadataRetryDelay
+from keycardai.oauth._metadata_cache import (
+    MAX_RETRY_CACHE_ENTRIES,
+    MetadataCache,
+    MetadataRetryDelay,
+)
 from keycardai.oauth.exceptions import (
     InvalidTokenError,
     JWKSFetchError,
@@ -149,8 +154,13 @@ class TokenVerifier:
         # key lookup read the unsigned token, so a forged token can name any kid.
         self._jwks_sets: dict[str, _JwksSet] = {}
         self._jwks_set_inflight: dict[str, asyncio.Future] = {}
-        self._jwks_retry_delays: dict[str, MetadataRetryDelay[JWKSFetchError]] = {}
-        self._discovered_jwks_uris: dict[str, MetadataCache[str, OAuthServerError]] = {}
+        self._jwks_retry_delays: OrderedDict[
+            str, MetadataRetryDelay[JWKSFetchError]
+        ] = OrderedDict()
+        self._discovered_jwks_uris: OrderedDict[
+            str, MetadataCache[str, OAuthServerError]
+        ] = OrderedDict()
+        self._jwks_generation = 0
         # Discovery runs synchronously (off the event loop via to_thread); the
         # lock lets concurrent cold-cache callers share one request.
         self._discovery_lock = threading.Lock()
@@ -182,15 +192,14 @@ class TokenVerifier:
             if self.enable_multi_zone and zone_id:
                 discovery_issuer = self._create_zone_scoped_url(self.issuer, zone_id)
 
-        cache = self._discovered_jwks_uris.setdefault(
-            cache_key, MetadataCache(self.discovery_ttl, self.negative_ttl)
-        )
-
-        cached = cache.lookup()
-        if cached is not None:
-            return cached
-
         with self._discovery_lock:
+            cache = self._discovered_jwks_uris.get(cache_key)
+            if cache is None:
+                cache = MetadataCache(self.discovery_ttl, self.negative_ttl)
+                self._discovered_jwks_uris[cache_key] = cache
+                if len(self._discovered_jwks_uris) > MAX_RETRY_CACHE_ENTRIES:
+                    self._discovered_jwks_uris.popitem(last=False)
+            self._discovered_jwks_uris.move_to_end(cache_key)
             cached = cache.lookup()
             if cached is not None:
                 return cached
@@ -371,27 +380,32 @@ class TokenVerifier:
             future.exception()
 
     async def _fetch_and_store_jwks(self, jwks_uri: str) -> list[dict[str, Any]]:
+        generation = self._jwks_generation
         retry = self._jwks_retry_delays.get(jwks_uri)
         if retry is not None:
             retry.check()
         try:
             keys = await fetch_jwks(jwks_uri, timeout=self.fetch_timeout)
         except JWKSFetchError as error:
-            if error.retryable:
-                retry = self._jwks_retry_delays.setdefault(
-                    jwks_uri, MetadataRetryDelay()
-                )
-                retry.record(error, error.cause)
+            if error.retryable and generation == self._jwks_generation:
+                retry = self._jwks_retry_delays.get(jwks_uri) or MetadataRetryDelay()
+                if retry.record(error, error.cause):
+                    self._jwks_retry_delays[jwks_uri] = retry
+                    self._jwks_retry_delays.move_to_end(jwks_uri)
+                    if len(self._jwks_retry_delays) > MAX_RETRY_CACHE_ENTRIES:
+                        self._jwks_retry_delays.popitem(last=False)
             raise
-        self._jwks_retry_delays.pop(jwks_uri, None)
-        now = time.monotonic()
-        self._jwks_sets[jwks_uri] = _JwksSet(
-            keys=keys, fetched_at=now, expires_at=now + self.key_ttl
-        )
+        if generation == self._jwks_generation:
+            self._jwks_retry_delays.pop(jwks_uri, None)
+            now = time.monotonic()
+            self._jwks_sets[jwks_uri] = _JwksSet(
+                keys=keys, fetched_at=now, expires_at=now + self.key_ttl
+            )
         return keys
 
     def clear_cache(self) -> None:
         """Clear the JWKS key cache and the cached key sets."""
+        self._jwks_generation += 1
         self._jwks_cache.clear()
         self._jwks_sets.clear()
         self._jwks_set_inflight.clear()
