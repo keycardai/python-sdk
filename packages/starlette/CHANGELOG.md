@@ -1,3 +1,15 @@
+## 0.16.0-keycardai-starlette (2026-11-25)
+
+
+- feat(keycardai-starlette): accept multiple bearer token audiences (#463)
+- * feat(keycardai-starlette): accept multiple bearer token audiences
+- Co-Authored-By: Larry Osakwe <larry@keycard.ai>
+- * fix(keycardai-starlette): require the keycardai-oauth audience list release
+- ---------
+- Co-authored-by: devin-ai-keycard <devin-ai@keycard.ai>
+Co-authored-by: Larry Osakwe <larry@keycard.ai>
+Co-authored-by: Larry Osakwe <23560354+Larry-Osakwe@users.noreply.github.com>
+
 ## 0.15.0-keycardai-starlette (2026-11-25)
 
 
