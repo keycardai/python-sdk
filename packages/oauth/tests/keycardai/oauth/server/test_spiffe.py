@@ -81,6 +81,42 @@ def test_row_12_missing_audience(kwargs):
     assert error.value.source == "spiffe"
 
 
+@pytest.mark.parametrize(
+    "spiffe_id",
+    [
+        "",
+        "https://example.org/workload",
+        "spiffe:/example.org/workload",
+        "spiffe:///workload",
+        "spiffe://example.org:80/workload",
+        "spiffe://user@example.org/workload",
+        "spiffe://exa%6dple.org/workload",
+        "spiffe://[::1]/workload",
+        "spiffe://example.org/workload?",
+        "spiffe://example.org#fragment",
+        "spiffe://example.org/",
+        "spiffe://example.org/workload/",
+        "spiffe://example.org/workload//service",
+        "spiffe://example.org/./service",
+        "spiffe://example.org/../service",
+        "spiffe://example.org/%77orkload",
+        "spiffe://example.org/work load",
+        "spiffe://example.org/café",
+        f"spiffe://{'a' * 256}/workload",
+    ],
+)
+def test_invalid_spiffe_id_fails_at_construction(spiffe_id):
+    with pytest.raises(WorkloadIdentityConfigurationError) as error:
+        SpiffeJwtSvidSource(AUDIENCE, spiffe_id=spiffe_id)
+    assert str(error.value) == f"invalid SPIFFE ID: {spiffe_id}"
+    assert error.value.source == "spiffe"
+
+
+def test_spiffe_id_accepts_trust_domain_without_path():
+    source = SpiffeJwtSvidSource(AUDIENCE, spiffe_id="spiffe://1.2.3.4")
+    assert source.spiffe_id == "spiffe://1.2.3.4"
+
+
 @pytest.mark.asyncio
 async def test_row_13_socket_is_discovered_at_fetch(monkeypatch, workload_api):
     socket, _, _ = workload_api
@@ -164,6 +200,19 @@ async def test_row_16_returns_rotated_svid_on_next_fetch(workload_api):
     svids[0].svid = "rotated.header.signature"
     assert await source.identity_token() == "rotated.header.signature"
     assert len(requests) == 2
+
+
+@pytest.mark.asyncio
+async def test_fetch_normalizes_scheme_and_trust_domain_but_preserves_path(workload_api):
+    socket, requests, svids = workload_api
+    svids[0].spiffe_id = "spiffe://example_domain.org/Some.Path/-service_1"
+    source = SpiffeJwtSvidSource(
+        AUDIENCE,
+        socket_path=socket,
+        spiffe_id="SpIfFe://Example_Domain.ORG/Some.Path/-service_1",
+    )
+    assert await source.identity_token() == "opaque.header.signature"
+    assert requests[0][0].spiffe_id == svids[0].spiffe_id
 
 
 def test_core_import_and_construction_do_not_import_spiffe_dependencies():

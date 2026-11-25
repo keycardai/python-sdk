@@ -2,12 +2,34 @@
 
 import math
 import os
+import re
 
 from .exceptions import WorkloadIdentityConfigurationError, WorkloadIdentityRuntimeError
 
 _SOURCE = "spiffe"
 _SOCKET_ENV = "SPIFFE_ENDPOINT_SOCKET"
 _FETCH_METHOD = "/SpiffeWorkloadAPI/FetchJWTSVID"
+
+
+def _canonical_spiffe_id(value: str) -> str:
+    scheme, separator, remainder = value.partition("://")
+    domain, slash, path = remainder.partition("/")
+    if (
+        not separator
+        or scheme.lower() != "spiffe"
+        or not re.fullmatch(r"[a-zA-Z0-9._-]{1,255}", domain)
+        or (
+            slash
+            and any(
+                segment in {".", ".."} or not re.fullmatch(r"[a-zA-Z0-9._-]+", segment)
+                for segment in path.split("/")
+            )
+        )
+    ):
+        raise WorkloadIdentityConfigurationError(
+            f"invalid SPIFFE ID: {value}", source=_SOURCE
+        )
+    return f"spiffe://{domain.lower()}{slash}{path}"
 
 
 class SpiffeJwtSvidSource:
@@ -37,7 +59,9 @@ class SpiffeJwtSvidSource:
                 "init_timeout must be a positive duration in seconds", source=_SOURCE
             )
         self.audience = audience
-        self.spiffe_id = spiffe_id
+        self.spiffe_id = (
+            _canonical_spiffe_id(spiffe_id) if spiffe_id is not None else None
+        )
         self.socket_path = socket_path
         self.init_timeout = init_timeout
 
