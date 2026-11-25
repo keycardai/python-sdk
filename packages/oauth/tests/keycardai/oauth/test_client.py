@@ -1,6 +1,7 @@
 """Tests for the unified OAuth client implementation."""
 
 from unittest.mock import AsyncMock, Mock, patch
+from urllib.parse import parse_qs
 
 import pytest
 from pydantic import ValidationError
@@ -8,14 +9,138 @@ from pydantic import ValidationError
 from keycardai.oauth import AsyncClient, Client, ClientConfig
 from keycardai.oauth.exceptions import ConfigError
 from keycardai.oauth.http._wire import HttpResponse
+from keycardai.oauth.http.auth import NoneAuth
+from keycardai.oauth.server.credentials import ClientSecret, WorkloadIdentity
+from keycardai.oauth.server.exceptions import WorkloadIdentityRuntimeError
 from keycardai.oauth.types.models import (
     AuthorizationServerMetadata,
     ClientCredentialsRequest,
     ClientRegistrationRequest,
+    Endpoints,
     ServerMetadataRequest,
     TokenExchangeRequest,
 )
 from keycardai.oauth.types.oauth import GrantType, ResponseType, TokenEndpointAuthMethod
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("client_type", [Client, AsyncClient])
+class TestExchangeCredential:
+    issuer = "https://test.example.com"
+    endpoint = "https://tokens.example.com/exchange"
+    resource = "https://api.example.com"
+    assertion_type = GrantType.JWT_BEARER_CLIENT_ASSERTION
+
+    def client(self, client_type, credential):
+        transport = AsyncMock() if client_type is AsyncClient else Mock()
+        transport.request_raw.return_value = HttpResponse(
+            200, {}, b'{"access_token":"exchanged","token_type":"Bearer"}'
+        )
+        return client_type(
+            self.issuer,
+            credential=credential,
+            transport=transport,
+            endpoints=Endpoints(token=self.endpoint),
+            config=ClientConfig(enable_metadata_discovery=False, auto_register_client=False),
+        )
+
+    async def exchange(self, client, **kwargs):
+        if isinstance(client, AsyncClient):
+            return await client.exchange_token(subject_token="subject", **kwargs)
+        return client.exchange_token(subject_token="subject", **kwargs)
+
+    def post(self, client):
+        client.transport.request_raw.assert_called_once()
+        wire = client.transport.request_raw.call_args.args[0]
+        assert (wire.method, wire.url) == ("POST", self.endpoint)
+        return wire.headers, parse_qs(wire.body.decode())
+
+    async def test_row_3_basic_does_not_add_client_id(self, client_type):
+        credential = ClientSecret(("client", "secret"))
+        client = self.client(client_type, credential)
+
+        await self.exchange(client)
+
+        headers, form = self.post(client)
+        assert headers["Authorization"] == "Basic Y2xpZW50OnNlY3JldA=="
+        assert "client_id" not in form
+        assert "client_assertion" not in form
+
+    async def test_row_4b_only_prepared_auth_fields_are_used(self, client_type):
+        async def prepare(client, subject_token, resource):
+            assert client.issuer == "https://override.example.com"
+            assert (await client.get_endpoints()).token == self.endpoint
+            assert (subject_token, resource) == ("subject", self.resource)
+            return TokenExchangeRequest(
+                subject_token="ignored",
+                resource="https://ignored.example.com",
+                scope="ignored",
+                client_assertion="prepared-jwt",
+                client_assertion_type=self.assertion_type,
+                client_id="prepared-client",
+            )
+
+        credential = Mock(get_http_client_auth=Mock(return_value=NoneAuth()))
+        credential.prepare_token_exchange_request = AsyncMock(side_effect=prepare)
+        client = self.client(client_type, credential)
+
+        await self.exchange(
+            client, scope="read", resource=self.resource,
+            issuer="https://override.example.com",
+        )
+
+        credential.prepare_token_exchange_request.assert_awaited_once()
+        headers, form = self.post(client)
+        assert "Authorization" not in headers
+        assert form == {
+            "grant_type": [GrantType.TOKEN_EXCHANGE],
+            "subject_token": ["subject"],
+            "subject_token_type": ["urn:ietf:params:oauth:token-type:access_token"],
+            "scope": ["read"],
+            "resource": [self.resource],
+            "client_assertion": ["prepared-jwt"],
+            "client_assertion_type": [self.assertion_type],
+            "client_id": ["prepared-client"],
+        }
+
+    async def test_row_4c_explicit_assertion_skips_preparation(self, client_type):
+        fetch = Mock(spec=lambda: None, side_effect=AssertionError("should not fetch"))
+        client = self.client(client_type, WorkloadIdentity(fetch))
+
+        await self.exchange(
+            client, client_assertion="caller-jwt",
+            client_assertion_type=self.assertion_type, client_id="caller-client",
+        )
+
+        fetch.assert_not_called()
+        headers, form = self.post(client)
+        assert "Authorization" not in headers
+        assert form["client_assertion"] == ["caller-jwt"]
+        assert form["client_assertion_type"] == [self.assertion_type]
+        assert form["client_id"] == ["caller-client"]
+
+    async def test_row_4d_source_failure_sends_no_token_post(self, client_type):
+        failure = RuntimeError("metadata down")
+        fetch = Mock(spec=lambda: None, side_effect=failure)
+        client = self.client(client_type, WorkloadIdentity(fetch))
+
+        with pytest.raises(WorkloadIdentityRuntimeError) as exc_info:
+            await self.exchange(client)
+
+        assert exc_info.value.__cause__ is failure
+        client.transport.request_raw.assert_not_called()
+
+    @pytest.mark.parametrize("prepared_id", ["prepared-client", None])
+    async def test_row_4e_only_prepared_client_id_is_sent(self, client_type, prepared_id):
+        client = self.client(client_type, WorkloadIdentity(lambda: "jwt", prepared_id))
+
+        await self.exchange(client, client_id="caller-client")
+
+        _, form = self.post(client)
+        if prepared_id is None:
+            assert "client_id" not in form
+        else:
+            assert form["client_id"] == [prepared_id]
 
 
 class TestSyncClientContextManager:
