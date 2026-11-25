@@ -117,7 +117,7 @@ class AuthProvider:
         zone_url: str | None = None,
         server_name: str | None = None,
         required_scopes: list[str] | None = None,
-        audience: str | dict[str, str] | None = None,
+        audience: str | list[str] | dict[str, str] | None = None,
         server_url: str | None = None,
         enable_multi_zone: bool | None = None,
         base_url: str | None = None,
@@ -133,9 +133,12 @@ class AuthProvider:
                      this should be the top-level domain.
             server_name: Human-readable name for the server.
             required_scopes: Required scopes for token validation.
-            audience: Expected token audience for verification. When left
-                unset (None), the audience check is disabled and tokens
-                verify regardless of their ``aud`` claim.
+            audience: Expected token audience for verification. A list
+                accepts a token whose ``aud`` matches any of its entries, and
+                a dict maps each zone ID to its audience in multi-zone mode.
+                An empty list is rejected. When left unset (None), the
+                audience check is disabled and tokens verify regardless of
+                their ``aud`` claim.
             server_url: Resource server URL.
             enable_multi_zone: Enable multi-zone support where zone_url is the
                 top-level domain and the zone is extracted from request
@@ -179,6 +182,8 @@ class AuthProvider:
 
         self._clients: dict[str, AsyncClient | None] = {}
         self._init_lock = asyncio.Lock()
+        if isinstance(audience, list) and not audience:
+            raise AuthProviderConfigurationError(message="audience must not be an empty list")
         self.audience = audience
 
         self.application_credential = self._discover_application_credential(
