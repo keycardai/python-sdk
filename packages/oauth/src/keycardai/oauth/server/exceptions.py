@@ -9,6 +9,7 @@ MCP, Starlette, or any other framework.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import httpx
@@ -563,6 +564,7 @@ class WorkloadIdentityRuntimeError(OAuthServerError):
             (
                 ConnectionError,
                 TimeoutError,
+                asyncio.TimeoutError,
                 NetworkError,
                 httpx.NetworkError,
                 httpx.TimeoutException,

@@ -466,6 +466,9 @@ class TestExchangeActor:
             pytest.param(ValueError("source failed"), False, id="plain"),
             pytest.param(TimeoutError("source timed out"), True, id="timeout"),
             pytest.param(
+                asyncio.TimeoutError("source timed out"), True, id="asyncio-timeout"
+            ),
+            pytest.param(
                 httpx.HTTPStatusError(
                     "source unavailable",
                     request=httpx.Request("GET", "https://source.example"),
