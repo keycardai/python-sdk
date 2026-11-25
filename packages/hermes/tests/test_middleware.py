@@ -502,6 +502,26 @@ def test_agrant_timeout_still_saves_the_refresh_and_raises_timeout(harness: Harn
     assert saved is not None and saved.refresh_token == "refresh-2"
 
 
+def test_cancelled_agrant_stays_cancelled_when_the_refresh_fails(harness: Harness) -> None:
+    harness.store_sign_in("owner", "old", expires_in=10)
+    harness.client.refresh_delay = 0.2
+    harness.client.refresh_error = server_error()
+
+    async def one() -> None:
+        async with agrant(tool_name="calendar"):
+            pass
+
+    async def body() -> None:
+        task = asyncio.create_task(one())
+        while not harness.client.refresh_calls:
+            await asyncio.sleep(0.005)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(body())
+
+
 def _on_daemon_thread(fn: Any, timeout: float = 5) -> Any:
     """``fn()`` on a daemon thread, failing rather than hanging the run."""
     out: dict[str, Any] = {}

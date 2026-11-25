@@ -268,7 +268,10 @@ async def _uncancellable(coro: Coroutine[Any, Any, SignIn]) -> SignIn:
     cancelled = False
     while not task.done():
         try:
-            await asyncio.shield(task)
+            # wait() returns when the task finishes, whether it succeeded or
+            # failed, and a cancelled waiter leaves the task running, so the
+            # only exception here is the caller's own cancellation.
+            await asyncio.wait({task})
         except asyncio.CancelledError:
             cancelled = True
     if cancelled:
