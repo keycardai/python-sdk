@@ -208,12 +208,10 @@ def _actor_fetcher(
     return _IdentityTokenFetcher(actor)
 
 
-async def _add_exchange_actor(
-    request: TokenExchangeRequest, actor: "_IdentityTokenFetcher"
-) -> TokenExchangeRequest:
+def _add_exchange_actor(request: TokenExchangeRequest, token: str) -> TokenExchangeRequest:
     return request.model_copy(
         update={
-            "actor_token": await actor.identity_token(),
+            "actor_token": token,
             "actor_token_type": TokenType.JWT,
         }
     )
@@ -1083,7 +1081,9 @@ class AsyncClient:
         auth = self._exchange_auth
         auth_headers = resolve_token_exchange_auth_headers(request, auth, target_issuer)
         if self._exchange_actor is not None and request.actor_token is None:
-            request = await _add_exchange_actor(request, self._exchange_actor)
+            request = _add_exchange_actor(
+                request, await self._exchange_actor.identity_token()
+            )
         endpoints = await self._get_current_endpoints()
 
         if (
@@ -1870,7 +1870,8 @@ class Client:
                 auth strategy takes precedence over the credential's headers.
             actor: Identity token source or callable for delegation. It supplies
                 a fresh actor token per exchange unless the request sets one.
-                Impersonation does not use it. A sync callable must not block.
+                Impersonation does not use it. A sync callable runs on the
+                calling thread and must enforce its own timeout if it blocks.
             endpoints: Endpoint overrides for multi-server deployments
             transport: Custom synchronous HTTP transport
             config: Client configuration with timeouts, retries, etc.
@@ -2386,12 +2387,15 @@ class Client:
         auth = self._exchange_auth
         auth_headers = resolve_token_exchange_auth_headers(request, auth, target_issuer)
         if self._exchange_actor is not None and request.actor_token is None:
-            request = _run_exchange_coroutine(
-                _add_exchange_actor(request, self._exchange_actor),
-                timeout,
-                "actor token lookup",
-                timeout_error=_actor_lookup_timeout,
-            )
+            token = self._exchange_actor.fetch()
+            if not isinstance(token, str):
+                token = _run_exchange_coroutine(
+                    token,
+                    timeout,
+                    "actor token lookup",
+                    timeout_error=_actor_lookup_timeout,
+                )
+            request = _add_exchange_actor(request, token)
         endpoints = self._get_current_endpoints()
 
         if (

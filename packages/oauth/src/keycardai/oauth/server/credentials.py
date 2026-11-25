@@ -19,8 +19,9 @@ import inspect
 import os
 import uuid
 import warnings
-from collections.abc import Awaitable, Callable, Mapping
-from typing import Protocol, cast, runtime_checkable
+from collections.abc import Awaitable, Callable, Coroutine, Iterator, Mapping
+from contextlib import contextmanager
+from typing import Any, Protocol, cast, runtime_checkable
 
 import httpx
 
@@ -430,9 +431,26 @@ class _IdentityTokenFetcher:
         self._fetch: Callable[[], Awaitable[str] | str] = fetch
 
     async def identity_token(self) -> str:
-        try:
+        result = self.fetch()
+        return result if isinstance(result, str) else await result
+
+    def fetch(self) -> str | Coroutine[Any, Any, str]:
+        with self._wrap_source_error():
             result = self._fetch()
-            token = await result if inspect.isawaitable(result) else result
+        if inspect.isawaitable(result):
+            return self._await_token(result)
+        return self._validate_token(result)
+
+    async def _await_token(self, result: Awaitable[str]) -> str:
+        with self._wrap_source_error():
+            token = await result
+        return self._validate_token(token)
+
+    @staticmethod
+    @contextmanager
+    def _wrap_source_error() -> Iterator[None]:
+        try:
+            yield
         except (WorkloadIdentityConfigurationError, WorkloadIdentityRuntimeError):
             raise
         except Exception as err:
@@ -440,6 +458,9 @@ class _IdentityTokenFetcher:
                 "Error fetching identity token",
                 source=WORKLOAD_IDENTITY_SOURCE_CUSTOM,
             ) from err
+
+    @staticmethod
+    def _validate_token(token: str) -> str:
         if not isinstance(token, str) or not token.strip():
             raise WorkloadIdentityRuntimeError(
                 "Identity token source returned an empty token",

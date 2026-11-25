@@ -517,6 +517,43 @@ class TestExchangeActor:
         send.assert_not_called()
 
 
+@pytest.mark.parametrize("returns_awaitable", [False, True])
+def test_sync_exchange_calls_actor_source_on_the_calling_thread(returns_awaitable):
+    caller = threading.get_ident()
+    threads = []
+
+    async def await_token():
+        threads.append(threading.get_ident())
+        return "actor-jwt"
+
+    def source():
+        threads.append(threading.get_ident())
+        return await_token() if returns_awaitable else "actor-jwt"
+
+    transport = Mock()
+    transport.request_raw.return_value = HttpResponse(
+        200, {}, b'{"access_token":"issued"}'
+    )
+    client = Client(
+        "https://exchange.example.com",
+        actor=source,
+        transport=transport,
+        endpoints=Endpoints(token="https://exchange.example.com/token"),
+        config=ClientConfig(enable_metadata_discovery=False, auto_register_client=False),
+    )
+
+    client.exchange_token(subject_token="subject")
+
+    assert threads[0] == caller
+    if returns_awaitable:
+        assert len(threads) == 2
+        assert threads[1] != caller
+    else:
+        assert threads == [caller]
+    body = transport.request_raw.call_args.args[0].body
+    assert parse_qs(body.decode())["actor_token"] == ["actor-jwt"]
+
+
 def test_sync_exchange_cancels_stalled_actor_source():
     cancelled = threading.Event()
 
