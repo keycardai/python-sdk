@@ -219,6 +219,15 @@ async def test_error_dict_carries_retryable_from_the_exception(error, expected):
 
 
 @pytest.mark.asyncio
+async def test_row_5a_error_dict_carries_the_reason():
+    recorded = await _capture_failure(
+        OAuthProtocolError(error="access_denied", reason="policy_denied")
+    )
+    assert recorded["code"] == "access_denied"
+    assert recorded["reason"] == "policy_denied"
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("status", [400, 401, 403, 404])
 async def test_http_4xx_with_non_oauth_body_is_permanent(status):
     # Historically consumers retried these; the typed property classifies them

@@ -137,20 +137,29 @@ class TestTokenExchangeOperations:
 
         assert exc_info.value.reason is None
 
-    @pytest.mark.parametrize(
-        "reason",
-        [pytest.param("custom_denial", id="row_6a"), pytest.param(None, id="row_6b")],
-    )
-    def test_denial_preserves_optional_reason(self, reason):
-        body = {"error": "access_denied", "error_description": "Denied"}
-        if reason is not None:
-            body["reason"] = reason
+    def test_row_6a_denial_preserves_reason(self):
+        body = {
+            "error": "access_denied",
+            "error_description": "Denied",
+            "reason": "custom_denial",
+        }
         response = HttpResponse(status=400, headers={}, body=json.dumps(body).encode())
 
         with pytest.raises(OAuthProtocolError) as exc_info:
             parse_token_exchange_http_response(response)
 
-        assert exc_info.value.reason == reason
+        assert exc_info.value.reason == "custom_denial"
+        assert exc_info.value.error_description == "Denied"
+        assert exc_info.value.retryable is False
+
+    def test_row_6b_denial_without_reason_leaves_it_none(self):
+        body = {"error": "access_denied", "error_description": "Denied"}
+        response = HttpResponse(status=400, headers={}, body=json.dumps(body).encode())
+
+        with pytest.raises(OAuthProtocolError) as exc_info:
+            parse_token_exchange_http_response(response)
+
+        assert exc_info.value.reason is None
         assert exc_info.value.error_description == "Denied"
         assert exc_info.value.retryable is False
 
