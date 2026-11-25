@@ -1,3 +1,16 @@
+## 0.41.0-keycardai-oauth (2026-11-25)
+
+
+- feat(keycardai-oauth)!: expose a read-only WorkloadIdentity.client_id (SDK-146) (#466)
+- * feat(keycardai-oauth): expose the workload identity client ID
+- Co-Authored-By: Larry Osakwe <larry@keycard.ai>
+- * feat(keycardai-oauth)!: let EKSWorkloadIdentity take client_id now that client_id is read-only
+- BREAKING CHANGE(keycardai-oauth): WorkloadIdentity.client_id is read-only; pass client_id to the constructor.
+- Co-Authored-By: Larry Osakwe <larry@keycard.ai>
+- ---------
+- Co-authored-by: devin-ai-keycard <devin-ai@keycard.ai>
+Co-authored-by: Larry Osakwe <larry@keycard.ai>
+
 ## 0.40.0-keycardai-oauth (2026-11-25)
 
 
