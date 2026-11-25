@@ -1,21 +1,339 @@
 """Tests for the unified OAuth client implementation."""
 
+import asyncio
+import multiprocessing
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest.mock import AsyncMock, Mock, patch
+from urllib.parse import parse_qs
 
+import httpx
 import pytest
+from joserfc import jwt
+from joserfc.jwk import KeySet
 from pydantic import ValidationError
 
 from keycardai.oauth import AsyncClient, Client, ClientConfig
-from keycardai.oauth.exceptions import ConfigError
+from keycardai.oauth.exceptions import ConfigError, NetworkError
 from keycardai.oauth.http._wire import HttpResponse
+from keycardai.oauth.http.auth import NoneAuth
+from keycardai.oauth.server.credentials import (
+    ClientSecret,
+    GCPMetadataTokenSource,
+    WebIdentity,
+    WorkloadIdentity,
+)
+from keycardai.oauth.server.exceptions import WorkloadIdentityRuntimeError
 from keycardai.oauth.types.models import (
     AuthorizationServerMetadata,
     ClientCredentialsRequest,
     ClientRegistrationRequest,
+    Endpoints,
     ServerMetadataRequest,
     TokenExchangeRequest,
 )
 from keycardai.oauth.types.oauth import GrantType, ResponseType, TokenEndpointAuthMethod
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("client_type", [Client, AsyncClient])
+class TestExchangeCredential:
+    issuer = "https://test.example.com"
+    endpoint = "https://tokens.example.com/exchange"
+    resource = "https://api.example.com"
+    assertion_type = GrantType.JWT_BEARER_CLIENT_ASSERTION
+
+    def client(self, client_type, credential):
+        transport = AsyncMock() if client_type is AsyncClient else Mock()
+        transport.request_raw.return_value = HttpResponse(
+            200, {}, b'{"access_token":"exchanged","token_type":"Bearer"}'
+        )
+        return client_type(
+            self.issuer,
+            credential=credential,
+            transport=transport,
+            endpoints=Endpoints(token=self.endpoint),
+            config=ClientConfig(enable_metadata_discovery=False, auto_register_client=False),
+        )
+
+    async def exchange(self, client, **kwargs):
+        if isinstance(client, AsyncClient):
+            return await client.exchange_token(subject_token="subject", **kwargs)
+        return client.exchange_token(subject_token="subject", **kwargs)
+
+    def post(self, client):
+        client.transport.request_raw.assert_called_once()
+        wire = client.transport.request_raw.call_args.args[0]
+        assert (wire.method, wire.url) == ("POST", self.endpoint)
+        return wire.headers, parse_qs(wire.body.decode())
+
+    async def test_row_3_basic_does_not_add_client_id(self, client_type):
+        credential = ClientSecret(("client", "secret"))
+        client = self.client(client_type, credential)
+
+        await self.exchange(client)
+
+        headers, form = self.post(client)
+        assert headers["Authorization"] == "Basic Y2xpZW50OnNlY3JldA=="
+        assert "client_id" not in form
+        assert "client_assertion" not in form
+
+    async def test_row_4b_only_prepared_auth_fields_are_used(self, client_type):
+        async def prepare(client, subject_token, resource):
+            assert client.issuer == "https://override.example.com"
+            assert (await client.get_endpoints()).token == self.endpoint
+            assert (subject_token, resource) == ("subject", self.resource)
+            return TokenExchangeRequest(
+                subject_token="ignored",
+                resource="https://ignored.example.com",
+                scope="ignored",
+                client_assertion="prepared-jwt",
+                client_assertion_type=self.assertion_type,
+                client_id="prepared-client",
+            )
+
+        credential = Mock(get_http_client_auth=Mock(return_value=NoneAuth()))
+        credential.prepare_token_exchange_request = AsyncMock(side_effect=prepare)
+        client = self.client(client_type, credential)
+
+        await self.exchange(
+            client, scope="read", resource=self.resource,
+            issuer="https://override.example.com",
+        )
+
+        credential.prepare_token_exchange_request.assert_awaited_once()
+        headers, form = self.post(client)
+        assert "Authorization" not in headers
+        assert form == {
+            "grant_type": [GrantType.TOKEN_EXCHANGE],
+            "subject_token": ["subject"],
+            "subject_token_type": ["urn:ietf:params:oauth:token-type:access_token"],
+            "scope": ["read"],
+            "resource": [self.resource],
+            "client_assertion": ["prepared-jwt"],
+            "client_assertion_type": [self.assertion_type],
+            "client_id": ["prepared-client"],
+        }
+
+    async def test_row_4c_explicit_assertion_skips_preparation(self, client_type):
+        fetch = Mock(spec=lambda: None, side_effect=AssertionError("should not fetch"))
+        client = self.client(client_type, WorkloadIdentity(fetch))
+
+        await self.exchange(
+            client, client_assertion="caller-jwt",
+            client_assertion_type=self.assertion_type, client_id="caller-client",
+        )
+
+        fetch.assert_not_called()
+        headers, form = self.post(client)
+        assert "Authorization" not in headers
+        assert form["client_assertion"] == ["caller-jwt"]
+        assert form["client_assertion_type"] == [self.assertion_type]
+        assert form["client_id"] == ["caller-client"]
+
+    async def test_row_4b_preparation_receives_configured_client(self, client_type):
+        async def prepare(preparation_client, subject_token, resource):
+            assert isinstance(preparation_client, AsyncClient)
+            if isinstance(client, AsyncClient):
+                assert preparation_client is client
+            assert preparation_client.config.custom_headers == {"X-Custom": "custom"}
+            assert preparation_client.config.user_agent == "test-agent"
+            assert preparation_client.config.timeout == 12
+            assert preparation_client.config.verify_ssl is False
+            return TokenExchangeRequest(
+                subject_token=subject_token, client_assertion="prepared-jwt"
+            )
+
+        credential = Mock(get_http_client_auth=Mock(return_value=NoneAuth()))
+        credential.prepare_token_exchange_request = AsyncMock(side_effect=prepare)
+        client = self.client(client_type, credential)
+        client.config.custom_headers = {"X-Custom": "custom"}
+        client.config.user_agent = "test-agent"
+        client.config.timeout = 12
+        client.config.verify_ssl = False
+
+        await self.exchange(client)
+
+        _, form = self.post(client)
+        assert form["client_assertion"] == ["prepared-jwt"]
+
+    async def test_row_4d_source_failure_sends_no_token_post(self, client_type):
+        failure = RuntimeError("metadata down")
+        fetch = Mock(spec=lambda: None, side_effect=failure)
+        client = self.client(client_type, WorkloadIdentity(fetch))
+
+        with pytest.raises(WorkloadIdentityRuntimeError) as exc_info:
+            await self.exchange(client)
+
+        assert exc_info.value.__cause__ is failure
+        client.transport.request_raw.assert_not_called()
+
+    @pytest.mark.parametrize("prepared_id", ["prepared-client", None])
+    async def test_row_4e_only_prepared_client_id_is_sent(self, client_type, prepared_id):
+        client = self.client(client_type, WorkloadIdentity(lambda: "jwt", prepared_id))
+
+        await self.exchange(client, client_id="caller-client")
+
+        _, form = self.post(client)
+        if prepared_id is None:
+            assert "client_id" not in form
+        else:
+            assert form["client_id"] == [prepared_id]
+
+
+@pytest.mark.asyncio
+async def test_row_4b_web_identity_audience_matches_updated_token_endpoint(tmp_path):
+    endpoints = Endpoints(token="https://tokens.example.com/original")
+    transport = AsyncMock()
+    transport.request_raw.return_value = HttpResponse(
+        200, {}, b'{"access_token":"exchanged","token_type":"Bearer"}'
+    )
+    credential = WebIdentity(storage_dir=str(tmp_path), client_id="client")
+    async with AsyncClient(
+        "https://test.example.com",
+        credential=credential,
+        endpoints=endpoints,
+        transport=transport,
+        config=ClientConfig(enable_metadata_discovery=False),
+    ) as client:
+        endpoints.token = "https://tokens.example.com/updated"
+        await client.exchange_token(subject_token="subject")
+
+    transport.request_raw.assert_awaited_once()
+    wire = transport.request_raw.call_args.args[0]
+    assert (wire.method, wire.url) == ("POST", endpoints.token)
+    assertion = parse_qs(wire.body.decode())["client_assertion"][0]
+    keys = KeySet.import_key_set(credential.identity_manager.get_public_jwks())
+    assert jwt.decode(assertion, keys).claims["aud"] == wire.url
+
+
+def test_row_4b_sync_exchange_reuses_async_identity_source_connection():
+    peers = []
+
+    class IdentityHandler(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def do_GET(self):
+            peers.append(self.client_address)
+            assertion = b"workload-jwt"
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(assertion)))
+            self.end_headers()
+            self.wfile.write(assertion)
+
+    with ThreadingHTTPServer(("127.0.0.1", 0), IdentityHandler) as server:
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        source_http = httpx.AsyncClient(trust_env=False)
+        source_loop = None
+
+        async def fetch_identity():
+            nonlocal source_loop
+            source_loop = asyncio.get_running_loop()
+            response = await source_http.get(f"http://127.0.0.1:{server.server_port}")
+            return response.text
+
+        fixture = TestExchangeCredential()
+        try:
+            with fixture.client(Client, WorkloadIdentity(fetch_identity)) as client:
+                client.exchange_token(subject_token="first")
+                client.exchange_token(subject_token="second")
+
+            wires = [call.args[0] for call in client.transport.request_raw.call_args_list]
+            assert len(wires) == 2
+            for wire in wires:
+                assert (wire.method, wire.url) == ("POST", fixture.endpoint)
+                assert parse_qs(wire.body.decode())["client_assertion"] == ["workload-jwt"]
+            assert len(peers) == 2 and peers[0] == peers[1]
+        finally:
+            if source_loop is not None and source_loop.is_running():
+                asyncio.run_coroutine_threadsafe(source_http.aclose(), source_loop).result()
+            server.shutdown()
+            thread.join()
+
+
+@pytest.mark.parametrize("use_request_model", [False, True])
+def test_sync_exchange_uses_per_request_timeout_for_assertion_preparation(
+    use_request_model,
+):
+    async def metadata_handler(request):
+        assert request.headers["Metadata-Flavor"] == "Google"
+        assert request.extensions["timeout"]["read"] == 5.0
+        await asyncio.sleep(0.2)
+        return httpx.Response(200, text="gcp-identity-token")
+
+    fixture = TestExchangeCredential()
+    source = GCPMetadataTokenSource(
+        fixture.issuer, _transport=httpx.MockTransport(metadata_handler)
+    )
+    with fixture.client(Client, WorkloadIdentity(source)) as client:
+        client.config.timeout = 0.05
+        if use_request_model:
+            response = client.exchange_token(
+                TokenExchangeRequest(subject_token="subject", timeout=2.0)
+            )
+        else:
+            response = client.exchange_token(subject_token="subject", timeout=2.0)
+
+    assert response.access_token == "exchanged"
+    _, form = fixture.post(client)
+    assert form["client_assertion"] == ["gcp-identity-token"]
+    assert "timeout" not in form
+    assert client.transport.request_raw.call_args.kwargs["timeout"] == 2.0
+
+
+def test_sync_exchange_hung_assertion_preparation_raises_after_timeout():
+    started = threading.Event()
+
+    async def hang():
+        started.set()
+        await asyncio.sleep(3600)
+
+    with TestExchangeCredential().client(Client, WorkloadIdentity(hang)) as client:
+        client.config.timeout = 0.2
+        result: dict[str, BaseException] = {}
+
+        def exchange():
+            try:
+                client.exchange_token(subject_token="subject")
+            except BaseException as e:  # noqa: BLE001
+                result["error"] = e
+
+        caller = threading.Thread(target=exchange, daemon=True)
+        caller.start()
+        caller.join(timeout=5)
+
+        assert started.is_set()
+        assert not caller.is_alive()
+        error = result.get("error")
+        assert isinstance(error, NetworkError)
+        assert isinstance(error.cause, TimeoutError)
+        client.transport.request_raw.assert_not_called()
+
+
+@pytest.mark.skipif(
+    "fork" not in multiprocessing.get_all_start_methods(), reason="requires fork"
+)
+def test_sync_exchange_restarts_assertion_preparation_after_fork():
+    with TestExchangeCredential().client(
+        Client, WorkloadIdentity(lambda: "jwt")
+    ) as client:
+        client.exchange_token(subject_token="parent")
+
+        def exchange_in_child():
+            client.exchange_token(subject_token="child")
+            assert client.transport.request_raw.call_count == 2
+
+        child = multiprocessing.get_context("fork").Process(target=exchange_in_child)
+        child.start()
+        try:
+            child.join(timeout=5)
+            assert child.exitcode == 0
+        finally:
+            if child.is_alive():
+                child.kill()
+                child.join()
+            child.close()
 
 
 class TestSyncClientContextManager:

@@ -1,6 +1,8 @@
 """OAuth 2.0 client implementation"""
 
 import asyncio
+import concurrent.futures
+import os
 import threading
 import warnings
 from dataclasses import replace
@@ -99,6 +101,95 @@ from .utils.jwt import build_substitute_user_token
 
 if TYPE_CHECKING:
     from .server.credentials import ApplicationCredential
+
+
+_exchange_loop: asyncio.AbstractEventLoop | None = None
+_exchange_loop_lock = threading.Lock()
+
+
+def _reset_exchange_loop_after_fork() -> None:
+    global _exchange_loop, _exchange_loop_lock
+    _exchange_loop = None
+    _exchange_loop_lock = threading.Lock()
+
+
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(after_in_child=_reset_exchange_loop_after_fork)
+
+
+async def _prepare_exchange_assertion(
+    credential: "ApplicationCredential",
+    request: TokenExchangeRequest,
+    client: "Client | AsyncClient",
+    issuer: str,
+    endpoints: ResolvedEndpoints,
+) -> TokenExchangeRequest:
+    subject_token = request.subject_token
+    if subject_token is None:
+        raise ConfigError("subject_token is required to prepare token exchange")
+    if (
+        isinstance(client, AsyncClient)
+        and issuer == client.issuer
+        and endpoints == await client.get_endpoints()
+    ):
+        prepared = await credential.prepare_token_exchange_request(
+            client, subject_token, request.resource or ""
+        )
+    else:
+        async with AsyncClient(
+            issuer,
+            endpoints=endpoints,
+            auth=client.auth_strategy,
+            transport=client.transport if isinstance(client, AsyncClient) else None,
+            config=replace(
+                client.config, enable_metadata_discovery=False, auto_register_client=False
+            ),
+        ) as preparation_client:
+            prepared = await credential.prepare_token_exchange_request(
+                preparation_client, subject_token, request.resource or ""
+            )
+    return request.model_copy(
+        update={
+            "client_assertion": prepared.client_assertion,
+            "client_assertion_type": prepared.client_assertion_type,
+            "client_id": prepared.client_id,
+        }
+    )
+
+
+def _prepare_exchange_assertion_sync(
+    credential: "ApplicationCredential",
+    request: TokenExchangeRequest,
+    client: "Client",
+    issuer: str,
+    endpoints: ResolvedEndpoints,
+    timeout: float,
+) -> TokenExchangeRequest:
+    """Keep credential-owned async connections on one persistent loop."""
+    global _exchange_loop
+    with _exchange_loop_lock:
+        loop = _exchange_loop
+        if loop is None:
+            loop = asyncio.new_event_loop()
+            threading.Thread(
+                target=loop.run_forever,
+                name="keycard-token-exchange",
+                daemon=True,
+            ).start()
+            _exchange_loop = loop
+    future = asyncio.run_coroutine_threadsafe(
+        _prepare_exchange_assertion(credential, request, client, issuer, endpoints), loop
+    )
+    try:
+        return future.result(timeout=timeout)
+    except concurrent.futures.TimeoutError as e:
+        # A hung preparation stays bounded by the exchange timeout instead of
+        # blocking the caller forever on the shared loop.
+        future.cancel()
+        raise NetworkError(
+            TimeoutError(f"assertion preparation exceeded {timeout} seconds"),
+            operation="token exchange assertion preparation",
+        ) from e
 
 
 class _PublicClient:
@@ -356,6 +447,7 @@ class AsyncClient:
         *,
         base_url: str | None = None,
         auth: AuthStrategy | None = None,
+        credential: "ApplicationCredential | None" = None,
         endpoints: Endpoints | None = None,
         transport: AsyncHTTPTransport | None = None,
         config: ClientConfig | None = None,
@@ -367,6 +459,8 @@ class AsyncClient:
             issuer: Issuer URL of the OAuth 2.0 authorization server (RFC 8414).
             base_url: Deprecated alias for ``issuer``.
             auth: Authentication strategy (BasicAuth, BearerAuth, NoneAuth)
+            credential: Application credential for token exchange. An explicit
+                auth strategy takes precedence over the credential's headers.
             endpoints: Endpoint overrides for multi-server deployments
             transport: Custom asynchronous HTTP transport
             config: Client configuration with timeouts, retries, etc.
@@ -380,6 +474,12 @@ class AsyncClient:
         self.clock: Clock = clock or SystemClock()
 
         self.auth_strategy = auth or NoneAuth()
+        self._exchange_credential = credential
+        self._exchange_auth = (
+            credential.get_http_client_auth()
+            if auth is None and credential is not None
+            else self.auth_strategy
+        )
 
         if transport is not None:
             self.transport = transport
@@ -938,11 +1038,23 @@ class AsyncClient:
 
         endpoints = await self._get_current_endpoints()
 
+        target_issuer = self.issuer if issuer is None else issuer
+        auth = self._exchange_auth
+        if (
+            self._exchange_credential is not None
+            and not request.client_assertion
+            and not auth.apply_headers(target_issuer)
+        ):
+            request = await _prepare_exchange_assertion(
+                self._exchange_credential, request, self, target_issuer, endpoints
+            )
+            auth = NoneAuth()
+
         ctx = build_http_context(
             endpoint=endpoints.token,
             transport=self.transport,
-            auth=self.auth_strategy,
-            issuer=issuer if issuer is not None else self.issuer,
+            auth=auth,
+            issuer=target_issuer,
             user_agent=self.config.user_agent,
             custom_headers=self.config.custom_headers,
             timeout=token_exchange_args.get("timeout", self.config.timeout),
@@ -1678,6 +1790,7 @@ class Client:
         *,
         base_url: str | None = None,
         auth: AuthStrategy | None = None,
+        credential: "ApplicationCredential | None" = None,
         endpoints: Endpoints | None = None,
         transport: HTTPTransport | None = None,
         config: ClientConfig | None = None,
@@ -1688,6 +1801,8 @@ class Client:
             issuer: Issuer URL of the OAuth 2.0 authorization server (RFC 8414).
             base_url: Deprecated alias for ``issuer``.
             auth: Authentication strategy (BasicAuth, BearerAuth, NoneAuth)
+            credential: Application credential for token exchange. An explicit
+                auth strategy takes precedence over the credential's headers.
             endpoints: Endpoint overrides for multi-server deployments
             transport: Custom synchronous HTTP transport
             config: Client configuration with timeouts, retries, etc.
@@ -1696,6 +1811,12 @@ class Client:
         self.config = config or ClientConfig()
 
         self.auth_strategy = auth or NoneAuth()
+        self._exchange_credential = credential
+        self._exchange_auth = (
+            credential.get_http_client_auth()
+            if auth is None and credential is not None
+            else self.auth_strategy
+        )
 
         if transport is not None:
             self.transport = transport
@@ -2190,14 +2311,27 @@ class Client:
 
         endpoints = self._get_current_endpoints()
 
+        target_issuer = self.issuer if issuer is None else issuer
+        timeout = self.config.timeout if request.timeout is None else request.timeout
+        auth = self._exchange_auth
+        if (
+            self._exchange_credential is not None
+            and not request.client_assertion
+            and not auth.apply_headers(target_issuer)
+        ):
+            request = _prepare_exchange_assertion_sync(
+                self._exchange_credential, request, self, target_issuer, endpoints, timeout
+            )
+            auth = NoneAuth()
+
         ctx = build_http_context(
             endpoint=endpoints.token,
             transport=self.transport,
-            auth=self.auth_strategy,
-            issuer=issuer if issuer is not None else self.issuer,
+            auth=auth,
+            issuer=target_issuer,
             user_agent=self.config.user_agent,
             custom_headers=self.config.custom_headers,
-            timeout=token_exchange_args.get("timeout", self.config.timeout),
+            timeout=timeout,
         )
 
         return exchange_token(request, ctx)
