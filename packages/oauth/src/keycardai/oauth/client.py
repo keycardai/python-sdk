@@ -3,7 +3,6 @@
 import asyncio
 import threading
 import warnings
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from typing import TYPE_CHECKING, Any, overload
 
@@ -102,6 +101,10 @@ if TYPE_CHECKING:
     from .server.credentials import ApplicationCredential
 
 
+_exchange_loop: asyncio.AbstractEventLoop | None = None
+_exchange_loop_lock = threading.Lock()
+
+
 async def _prepare_exchange_assertion(
     credential: "ApplicationCredential",
     request: TokenExchangeRequest,
@@ -134,17 +137,21 @@ def _prepare_exchange_assertion_sync(
     issuer: str,
     endpoint: str,
 ) -> TokenExchangeRequest:
-    def prepare() -> TokenExchangeRequest:
-        return asyncio.run(
-            _prepare_exchange_assertion(credential, request, issuer, endpoint)
-        )
-
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        return prepare()
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        return executor.submit(prepare).result()
+    """Keep credential-owned async connections on one persistent loop."""
+    global _exchange_loop
+    with _exchange_loop_lock:
+        loop = _exchange_loop
+        if loop is None:
+            loop = asyncio.new_event_loop()
+            threading.Thread(
+                target=loop.run_forever,
+                name="keycard-token-exchange",
+                daemon=True,
+            ).start()
+            _exchange_loop = loop
+    return asyncio.run_coroutine_threadsafe(
+        _prepare_exchange_assertion(credential, request, issuer, endpoint), loop
+    ).result()
 
 
 class _PublicClient:

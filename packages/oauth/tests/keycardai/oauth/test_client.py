@@ -1,8 +1,12 @@
 """Tests for the unified OAuth client implementation."""
 
+import asyncio
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest.mock import AsyncMock, Mock, patch
 from urllib.parse import parse_qs
 
+import httpx
 import pytest
 from pydantic import ValidationError
 
@@ -141,6 +145,51 @@ class TestExchangeCredential:
             assert "client_id" not in form
         else:
             assert form["client_id"] == [prepared_id]
+
+
+def test_row_4b_sync_exchange_reuses_async_identity_source_connection():
+    peers = []
+
+    class IdentityHandler(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def do_GET(self):
+            peers.append(self.client_address)
+            assertion = b"workload-jwt"
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(assertion)))
+            self.end_headers()
+            self.wfile.write(assertion)
+
+    with ThreadingHTTPServer(("127.0.0.1", 0), IdentityHandler) as server:
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        source_http = httpx.AsyncClient(trust_env=False)
+        source_loop = None
+
+        async def fetch_identity():
+            nonlocal source_loop
+            source_loop = asyncio.get_running_loop()
+            response = await source_http.get(f"http://127.0.0.1:{server.server_port}")
+            return response.text
+
+        fixture = TestExchangeCredential()
+        try:
+            with fixture.client(Client, WorkloadIdentity(fetch_identity)) as client:
+                client.exchange_token(subject_token="first")
+                client.exchange_token(subject_token="second")
+
+            wires = [call.args[0] for call in client.transport.request_raw.call_args_list]
+            assert len(wires) == 2
+            for wire in wires:
+                assert (wire.method, wire.url) == ("POST", fixture.endpoint)
+                assert parse_qs(wire.body.decode())["client_assertion"] == ["workload-jwt"]
+            assert len(peers) == 2 and peers[0] == peers[1]
+        finally:
+            if source_loop is not None and source_loop.is_running():
+                asyncio.run_coroutine_threadsafe(source_http.aclose(), source_loop).result()
+            server.shutdown()
+            thread.join()
 
 
 class TestSyncClientContextManager:
