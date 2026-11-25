@@ -35,7 +35,7 @@ from pydantic import AnyHttpUrl
 
 from fastmcp import Context
 from fastmcp.dependencies import Dependency
-from fastmcp.server.auth import RemoteAuthProvider
+from fastmcp.server.auth import AccessToken, RemoteAuthProvider
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.server.dependencies import get_access_token, get_context
 from keycardai.oauth import AsyncClient, Client
@@ -64,6 +64,18 @@ from keycardai.oauth.types.models import TokenExchangeRequest, TokenResponse
 from keycardai.oauth.utils.jwt import extract_scopes, get_claims
 
 from .exceptions import MissingContextError
+
+
+class _KeycardJWTVerifier(JWTVerifier):
+    async def load_access_token(self, token: str) -> AccessToken | None:
+        access_token = await super().load_access_token(token)
+        if access_token is not None and isinstance(
+            aud := access_token.claims.get("aud"), str
+        ):
+            return access_token.model_copy(
+                update={"claims": {**access_token.claims, "aud": [aud]}}
+            )
+        return access_token
 
 __all__ = [
     "INTROSPECT",
@@ -917,7 +929,7 @@ class AuthProvider:
         Returns:
             JWTVerifier: Configured JWT token verifier for the Keycard zone
         """
-        return JWTVerifier(
+        return _KeycardJWTVerifier(
             jwks_uri=self.jwks_uri,
             issuer=self.zone_url,
             required_scopes=self.required_scopes,
