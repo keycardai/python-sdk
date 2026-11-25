@@ -133,9 +133,12 @@ class AuthProvider:
                      this should be the top-level domain.
             server_name: Human-readable name for the server.
             required_scopes: Required scopes for token validation.
-            audience: Expected token audience for verification. When left
-                unset (None), the audience check is disabled and tokens
-                verify regardless of their ``aud`` claim.
+            audience: Expected token audience for verification. A list
+                accepts a token whose ``aud`` matches any of its entries, and
+                a dict maps each zone ID to its audience in multi-zone mode.
+                An empty list is rejected. When left unset (None), the
+                audience check is disabled and tokens verify regardless of
+                their ``aud`` claim.
             server_url: Resource server URL.
             enable_multi_zone: Enable multi-zone support where zone_url is the
                 top-level domain and the zone is extracted from request
