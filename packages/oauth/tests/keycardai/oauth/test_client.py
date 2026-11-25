@@ -19,6 +19,7 @@ from keycardai.oauth.http._wire import HttpResponse
 from keycardai.oauth.http.auth import NoneAuth
 from keycardai.oauth.server.credentials import (
     ClientSecret,
+    GCPMetadataTokenSource,
     WebIdentity,
     WorkloadIdentity,
 )
@@ -249,6 +250,36 @@ def test_row_4b_sync_exchange_reuses_async_identity_source_connection():
                 asyncio.run_coroutine_threadsafe(source_http.aclose(), source_loop).result()
             server.shutdown()
             thread.join()
+
+
+@pytest.mark.parametrize("use_request_model", [False, True])
+def test_sync_exchange_uses_per_request_timeout_for_assertion_preparation(
+    use_request_model,
+):
+    async def metadata_handler(request):
+        assert request.headers["Metadata-Flavor"] == "Google"
+        assert request.extensions["timeout"]["read"] == 5.0
+        await asyncio.sleep(0.2)
+        return httpx.Response(200, text="gcp-identity-token")
+
+    fixture = TestExchangeCredential()
+    source = GCPMetadataTokenSource(
+        fixture.issuer, _transport=httpx.MockTransport(metadata_handler)
+    )
+    with fixture.client(Client, WorkloadIdentity(source)) as client:
+        client.config.timeout = 0.05
+        if use_request_model:
+            response = client.exchange_token(
+                TokenExchangeRequest(subject_token="subject", timeout=2.0)
+            )
+        else:
+            response = client.exchange_token(subject_token="subject", timeout=2.0)
+
+    assert response.access_token == "exchanged"
+    _, form = fixture.post(client)
+    assert form["client_assertion"] == ["gcp-identity-token"]
+    assert "timeout" not in form
+    assert client.transport.request_raw.call_args.kwargs["timeout"] == 2.0
 
 
 def test_sync_exchange_hung_assertion_preparation_raises_after_timeout():

@@ -163,6 +163,7 @@ def _prepare_exchange_assertion_sync(
     client: "Client",
     issuer: str,
     endpoints: ResolvedEndpoints,
+    timeout: float,
 ) -> TokenExchangeRequest:
     """Keep credential-owned async connections on one persistent loop."""
     global _exchange_loop
@@ -179,11 +180,10 @@ def _prepare_exchange_assertion_sync(
     future = asyncio.run_coroutine_threadsafe(
         _prepare_exchange_assertion(credential, request, client, issuer, endpoints), loop
     )
-    timeout = client.config.timeout
     try:
         return future.result(timeout=timeout)
     except concurrent.futures.TimeoutError as e:
-        # A hung preparation stays bounded by the client's timeout instead of
+        # A hung preparation stays bounded by the exchange timeout instead of
         # blocking the caller forever on the shared loop.
         future.cancel()
         raise NetworkError(
@@ -2312,6 +2312,7 @@ class Client:
         endpoints = self._get_current_endpoints()
 
         target_issuer = self.issuer if issuer is None else issuer
+        timeout = self.config.timeout if request.timeout is None else request.timeout
         auth = self._exchange_auth
         if (
             self._exchange_credential is not None
@@ -2319,7 +2320,7 @@ class Client:
             and not auth.apply_headers(target_issuer)
         ):
             request = _prepare_exchange_assertion_sync(
-                self._exchange_credential, request, self, target_issuer, endpoints
+                self._exchange_credential, request, self, target_issuer, endpoints, timeout
             )
             auth = NoneAuth()
 
@@ -2330,7 +2331,7 @@ class Client:
             issuer=target_issuer,
             user_agent=self.config.user_agent,
             custom_headers=self.config.custom_headers,
-            timeout=token_exchange_args.get("timeout", self.config.timeout),
+            timeout=timeout,
         )
 
         return exchange_token(request, ctx)
