@@ -1,3 +1,17 @@
+## 0.15.0-keycardai-starlette (2026-11-25)
+
+
+- feat(keycardai-starlette): expose verified audience and actor claims (#461)
+- * feat(keycardai-starlette): expose verified audience and actor claims
+- Co-Authored-By: Devin AI <158243242+devin-ai-integration[bot]@users.noreply.github.com>
+- * fix(keycardai-fastmcp): normalize the verified caller audience
+- Co-Authored-By: Devin AI <158243242+devin-ai-integration[bot]@users.noreply.github.com>
+- * test(keycardai-starlette): name spec row tests for verified caller claims
+- ---------
+- Co-authored-by: devin-ai-keycard <devin-ai@keycard.ai>
+Co-authored-by: Devin AI <158243242+devin-ai-integration[bot]@users.noreply.github.com>
+Co-authored-by: Larry Osakwe <23560354+Larry-Osakwe@users.noreply.github.com>
+
 ## 0.14.3-keycardai-starlette (2026-11-04)
 
 ## 0.14.2-keycardai-starlette (2026-09-16)
