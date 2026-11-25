@@ -1,3 +1,19 @@
+## 0.41.3-keycardai-oauth (2026-11-25)
+
+
+- fix(keycardai-oauth): pace retries for cached metadata fetches (#469)
+- * fix(keycardai-oauth): pace retries for cached metadata fetches
+- Co-Authored-By: Larry Osakwe <larry@keycard.ai>
+- * fix(keycardai-oauth): synchronize and bound metadata retry pacing
+- Co-Authored-By: Larry Osakwe <larry@keycard.ai>
+- * fix(keycardai-oauth): keep fresh issuer discovery off the fetch lock
+- Co-Authored-By: Larry Osakwe <larry@keycard.ai>
+- * fix(keycardai-oauth): start no retry delay after an oversized 429
+- ---------
+- Co-authored-by: devin-ai-keycard <devin-ai@keycard.ai>
+Co-authored-by: Larry Osakwe <larry@keycard.ai>
+Co-authored-by: Larry Osakwe <23560354+Larry-Osakwe@users.noreply.github.com>
+
 ## 0.41.2-keycardai-oauth (2026-11-25)
 
 
