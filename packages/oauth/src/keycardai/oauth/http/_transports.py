@@ -25,8 +25,6 @@ from ..exceptions import (
 from ..types.models import ClientConfig
 from ._wire import HttpRequest, HttpResponse
 
-_RAW_CHUNK_SIZE = 16_384
-
 
 class _BoundedZlibDecoder:
     """Incrementally decompresses gzip or deflate bytes with a hard output cap.
@@ -46,9 +44,15 @@ class _BoundedZlibDecoder:
         wbits = zlib.MAX_WBITS | 16 if encoding in ("gzip", "x-gzip") else zlib.MAX_WBITS
         self._decompressor = zlib.decompressobj(wbits)
 
+    @property
+    def eof(self) -> bool:
+        return self._decompressor.eof
+
     def feed(self, chunk: bytes) -> None:
+        if self._decompressor.eof:
+            return
         data = chunk
-        while data:
+        while data and not self._decompressor.eof:
             remaining = self._limit - len(self._buf)
             try:
                 decoded = self._decompressor.decompress(data, remaining + 1)
@@ -98,8 +102,10 @@ def _read_bounded_sync(
     if enc is not None and hasattr(r, "iter_raw"):
         decoder = _BoundedZlibDecoder(enc, limit, r.status_code, operation)
         try:
-            for raw_chunk in r.iter_raw(chunk_size=_RAW_CHUNK_SIZE):
+            for raw_chunk in r.iter_raw():
                 decoder.feed(raw_chunk)
+                if decoder.eof:
+                    break
             return decoder.finish()
         except (zlib.error, httpx.DecodingError) as e:
             cause = e if isinstance(e, httpx.DecodingError) else httpx.DecodingError(str(e))
@@ -139,8 +145,10 @@ async def _read_bounded_async(
     if enc is not None and hasattr(r, "aiter_raw"):
         decoder = _BoundedZlibDecoder(enc, limit, r.status_code, operation)
         try:
-            async for raw_chunk in r.aiter_raw(chunk_size=_RAW_CHUNK_SIZE):
+            async for raw_chunk in r.aiter_raw():
                 decoder.feed(raw_chunk)
+                if decoder.eof:
+                    break
             return decoder.finish()
         except (zlib.error, httpx.DecodingError) as e:
             cause = e if isinstance(e, httpx.DecodingError) else httpx.DecodingError(str(e))
