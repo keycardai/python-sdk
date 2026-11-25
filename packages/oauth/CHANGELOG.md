@@ -1,3 +1,15 @@
+## 0.41.4-keycardai-oauth (2026-11-25)
+
+
+- fix(keycardai-oauth): classify a 429 or 5xx OAuth error as retryable whatever its code (SDK-109) (#485)
+- * fix(keycardai-oauth): classify a 429 or 5xx OAuth error as retryable whatever its code (SDK-109)
+- Co-Authored-By: Larry Osakwe <larry@keycard.ai>
+- * docs(keycardai-oauth): state status-first retryability in the README
+- Co-Authored-By: Larry Osakwe <larry@keycard.ai>
+- ---------
+- Co-authored-by: devin-ai-keycard <devin-ai@keycard.ai>
+Co-authored-by: Larry Osakwe <larry@keycard.ai>
+
 ## 0.41.3-keycardai-oauth (2026-11-25)
 
 
