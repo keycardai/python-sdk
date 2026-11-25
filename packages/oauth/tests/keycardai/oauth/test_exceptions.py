@@ -238,6 +238,15 @@ class TestRetryable:
     def test_permanent_codes_are_not_retryable(self, error_cls, code):
         assert error_cls(error=code, operation="POST /token").retryable is False
 
+    @pytest.mark.parametrize(
+        "error_cls", [OAuthProtocolError, TokenExchangeError, AuthorizationDeniedError]
+    )
+    def test_row_22_http_503_takes_precedence_over_access_denied(self, error_cls):
+        error = error_cls(error="access_denied", status_code=503)
+
+        assert error.retryable is True
+        assert error.retriable is False
+
     def test_permanent_code_set(self):
         assert PERMANENT_ERROR_CODES == {
             "access_denied",

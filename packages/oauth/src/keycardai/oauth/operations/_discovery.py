@@ -87,7 +87,8 @@ def parse_discovery_http_response(
         raise OAuthProtocolError(
             error="invalid_response",
             error_description="Invalid JSON in discovery response",
-            operation="GET /.well-known/oauth-authorization-server"
+            operation="GET /.well-known/oauth-authorization-server",
+            status_code=res.status,
         ) from e
 
     if isinstance(data, dict) and "error" in data:
@@ -95,7 +96,8 @@ def parse_discovery_http_response(
             error=data["error"],
             error_description=data.get("error_description"),
             error_uri=data.get("error_uri"),
-            operation="GET /.well-known/oauth-authorization-server"
+            operation="GET /.well-known/oauth-authorization-server",
+            status_code=res.status,
         )
 
     if "issuer" not in data:
@@ -103,6 +105,7 @@ def parse_discovery_http_response(
             error="invalid_response",
             error_description="Authorization server metadata must include 'issuer' field",
             operation="GET /.well-known/oauth-authorization-server",
+            status_code=res.status,
         )
 
     if expected_issuer is not None and data["issuer"].rstrip("/") != expected_issuer.rstrip("/"):
@@ -113,6 +116,7 @@ def parse_discovery_http_response(
                 f"the requested issuer '{expected_issuer}'"
             ),
             operation="GET /.well-known/oauth-authorization-server",
+            status_code=res.status,
         )
 
     def normalize_array_field(field_name: str) -> list[str] | None:

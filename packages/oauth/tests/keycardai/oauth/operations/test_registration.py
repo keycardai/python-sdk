@@ -203,8 +203,10 @@ class TestRegistrationOperations:
             body=b"invalid json {"
         )
 
-        with pytest.raises(OAuthProtocolError, match="Invalid JSON"):
+        with pytest.raises(OAuthProtocolError, match="Invalid JSON") as exc:
             parse_client_registration_http_response(http_response)
+
+        assert exc.value.status_code == 201
 
     def test_register_client_sync(self):
         """Test synchronous client registration."""
