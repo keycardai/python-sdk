@@ -499,8 +499,7 @@ async def fail_device_check_then_rediscover(monkeypatch, rediscovery, *later):
 
 
 async def test_transient_rediscovery_failure_keeps_cached_metadata(monkeypatch):
-    """Base spec: a transient failure is not recorded. The metadata cached
-    before it still serves the token endpoint, with no new discovery."""
+    """A transient failure doesn't replace still-fresh metadata."""
     client, transport, error = await fail_device_check_then_rediscover(
         monkeypatch, respond(503, {}), respond(200, TOKEN_BODY)
     )
@@ -510,6 +509,41 @@ async def test_transient_rediscovery_failure_keeps_cached_metadata(monkeypatch):
     assert error.retryable is True
     assert token.access_token == "at"
     assert [(r.method, r.url) for r in transport.requests][2:] == [("POST", TOKEN_ENDPOINT)]
+
+
+async def test_row_37_discovery_retry_after(monkeypatch):
+    now = [1000.0]
+    monkeypatch.setattr("keycardai.oauth._metadata_cache._now", lambda: now[0])
+    transport = FakeTransport(
+        HttpResponse(503, {"Retry-After": "5"}, b""),
+        respond(200, {
+            "issuer": ISSUER,
+            "token_endpoint": TOKEN_ENDPOINT,
+            "device_authorization_endpoint": DEVICE_ENDPOINT,
+        }),
+        respond(200, {
+            "device_code": "device",
+            "user_code": "user",
+            "verification_uri": f"{ISSUER}/verify",
+            "expires_in": 60,
+        }),
+    )
+    client = AsyncClient(ISSUER, transport=transport, clock=FakeClock())
+    with pytest.raises(AuthorizationServerDiscoveryError) as first:
+        await client.request_device_authorization(client_id="public-app")
+    now[0] += 4.9
+    with pytest.raises(AuthorizationServerDiscoveryError) as gated:
+        await client.request_device_authorization(client_id="public-app")
+    assert gated.value is first.value
+    assert len(transport.requests) == 1
+    now[0] += 0.11
+    result = await client.request_device_authorization(client_id="public-app")
+    assert result.device_code == "device"
+    assert [(r.method, r.url) for r in transport.requests] == [
+        ("GET", DISCOVERY_URL),
+        ("GET", DISCOVERY_URL),
+        ("POST", DEVICE_ENDPOINT),
+    ]
 
 
 async def test_deterministic_rediscovery_failure_replaces_cached_metadata(monkeypatch):

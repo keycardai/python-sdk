@@ -11,6 +11,9 @@ References:
 """
 
 from dataclasses import dataclass
+from ssl import SSLCertVerificationError
+
+import httpx
 
 # Maximum decoded bytes the default HTTP transports read from an
 # authorization-server response (1 MiB).
@@ -269,7 +272,7 @@ def classify_discovery_failure(cause: Exception | None) -> bool:
     """Return the ``retryable`` classification of a metadata discovery failure.
 
     Transient failures (network, timeout, HTTP 5xx, HTTP 429) are retryable
-    and must never be cached. Everything else, including a malformed
+    and aren't eligible for negative caching. Everything else, including a malformed
     discovery document, an issuer mismatch, and a document missing a required
     field (``cause`` is None), is deterministic and not retryable. A malformed
     metadata document is deterministic here even though a malformed token
@@ -284,9 +287,17 @@ def classify_discovery_failure(cause: Exception | None) -> bool:
     if isinstance(cause, OAuthProtocolError):
         return False
     if isinstance(cause, NetworkError):
-        return True
+        cause = cause.cause
     if isinstance(cause, OAuthError):
         return cause.retryable
+    chain: BaseException | None = cause
+    while chain is not None:
+        if isinstance(
+            chain,
+            (SSLCertVerificationError, httpx.UnsupportedProtocol, httpx.TooManyRedirects),
+        ):
+            return False
+        chain = chain.__cause__
     return True
 
 
@@ -501,12 +512,14 @@ class JWKSFetchError(JWKSError):
 
     @property
     def retryable(self) -> bool:
-        if isinstance(self.cause, ResponseBodyTooLargeError):
-            return self.cause.retryable
+        """True for network failures, timeouts, HTTP 429 and HTTP 5xx."""
+        if isinstance(
+            self.cause,
+            (OAuthError, TimeoutError, ConnectionError),
+        ):
+            return classify_discovery_failure(self.cause)
         if self.status_code is not None:
             return _is_transient_status(self.status_code)
-        if isinstance(self.cause, OAuthError):
-            return self.cause.retryable
         return False
 
 

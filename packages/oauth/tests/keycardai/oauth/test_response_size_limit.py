@@ -7,11 +7,14 @@ device authorization, dynamic client registration, and UserInfo operations.
 
 from __future__ import annotations
 
+import contextlib
 import gzip
 import json
 import threading
+import time
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from unittest.mock import patch
 
 import httpx
 import pytest
@@ -92,6 +95,18 @@ class _LocalTestServer:
 
     def __exit__(self, *args):
         self.close()
+
+
+def _past_retry_delay(status: int):
+    """Move the metadata clock past any retry delay the failure started.
+
+    An oversized 429 starts no delay (base row 1a), so its retry runs at once.
+    Other transient failures pace the next fetch with backoff.
+    """
+    if status == 429:
+        return contextlib.nullcontext()
+    later = time.monotonic() + 60
+    return patch("keycardai.oauth._metadata_cache._now", return_value=later)
 
 
 def _oversized_json_bytes(extra: int = 1) -> bytes:
@@ -322,7 +337,8 @@ async def test_row_1a_cached_discovery_oversized_body(
                 assert exc2.value.retryable is False
                 assert attempts == 1
             else:
-                meta = await client._resolve_metadata()
+                with _past_retry_delay(status):
+                    meta = await client._resolve_metadata()
                 assert meta.issuer == server.url
                 assert attempts == 2
         finally:
@@ -405,7 +421,8 @@ async def test_row_1a_jwks_discovery_and_fetch_oversized_body(
             assert disc_exc2.value.status_code == status
             assert discovery_attempts == 1
         else:
-            jwks_uri = verifier._discover_jwks_uri(issuer=server.url)
+            with _past_retry_delay(status):
+                jwks_uri = verifier._discover_jwks_uri(issuer=server.url)
             assert jwks_uri == f"{server.url}/jwks.json"
             assert discovery_attempts == 2
 
