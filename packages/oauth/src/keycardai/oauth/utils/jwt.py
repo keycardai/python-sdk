@@ -42,6 +42,7 @@ from ..exceptions import (
     JWKSError,
     JWKSFetchError,
     JWKSKeyNotFoundError,
+    OAuthHttpError,
     ResponseBodyTooLargeError,
 )
 from ..http._transports import HttpxAsyncTransport
@@ -552,10 +553,15 @@ async def fetch_jwks(
         request = HttpRequest(method="GET", url=jwks_uri, headers={}, body=b"")
         response = await transport.request_raw(request, timeout=timeout)
         if response.status != 200:
+            cause = OAuthHttpError(
+                response.status,
+                headers=dict(response.headers) if response.status in (429, 503) else None,
+            )
             raise JWKSFetchError(
                 f"JWKS endpoint returned status {response.status}",
+                cause,
                 status_code=response.status,
-            )
+            ) from cause
         jwks_data = json.loads(response.body.decode("utf-8"))
         keys = jwks_data.get("keys", []) if isinstance(jwks_data, dict) else None
         if not isinstance(keys, list):

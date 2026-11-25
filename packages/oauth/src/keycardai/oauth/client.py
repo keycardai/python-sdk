@@ -519,8 +519,8 @@ class AsyncClient:
         """Return discovered metadata, or None when discovery is disabled.
 
         Success is cached for ``discovery_ttl``; a deterministic failure is
-        remembered for at most ``negative_ttl``; a transient failure caches
-        nothing. Concurrent cold-cache callers share one in-flight discovery
+        remembered for at most ``negative_ttl``; transient failures can pace
+        new fetches. Concurrent cold-cache callers share one in-flight discovery
         task that no single caller's cancellation can cancel.
 
         ``refresh`` discovers even when the cache is fresh. A transient
@@ -534,10 +534,9 @@ class AsyncClient:
         if not self.config.enable_metadata_discovery:
             return None
 
-        if not refresh:
-            cached = self._metadata_cache.lookup()
-            if cached is not None:
-                return cached
+        cached = self._metadata_cache.lookup(refresh=refresh)
+        if cached is not None:
+            return cached
 
         task = self._discovery_task
         if task is None:
@@ -564,7 +563,9 @@ class AsyncClient:
     def _store_discovery_failure(
         self, error: AuthorizationServerDiscoveryError
     ) -> AuthorizationServerDiscoveryError:
-        return self._metadata_cache.store_failure(error, retryable=error.retryable)
+        return self._metadata_cache.store_failure(
+            error, retryable=error.retryable, cause=error.cause
+        )
 
     def _store_discovered_metadata(
         self, metadata: AuthorizationServerMetadata
@@ -1876,8 +1877,8 @@ class Client:
         """Return discovered metadata, or None when discovery is disabled.
 
         Success is cached for ``discovery_ttl``; a deterministic failure is
-        remembered for at most ``negative_ttl``; a transient failure caches
-        nothing. Concurrent cold-cache threads serialize on one lock so a
+        remembered for at most ``negative_ttl``; transient failures can pace
+        new fetches. Concurrent cold-cache threads serialize on one lock so a
         single discovery request serves all of them.
 
         Raises:
@@ -1907,7 +1908,9 @@ class Client:
     def _store_discovery_failure(
         self, error: AuthorizationServerDiscoveryError
     ) -> AuthorizationServerDiscoveryError:
-        return self._metadata_cache.store_failure(error, retryable=error.retryable)
+        return self._metadata_cache.store_failure(
+            error, retryable=error.retryable, cause=error.cause
+        )
 
     def _store_discovered_metadata(
         self, metadata: AuthorizationServerMetadata

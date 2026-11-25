@@ -2,14 +2,16 @@
 client-credentials unit rows on discovery caching).
 
 The client never substitutes a convention-derived token endpoint for a failed
-discovery. Success is cached for discovery_ttl, a transient failure caches
-nothing, a deterministic failure is remembered for at most negative_ttl, and
+discovery. Success is cached for discovery_ttl, transient failures can pace
+new fetches, a deterministic failure is remembered for at most negative_ttl, and
 concurrent cold-cache callers share one fetch.
 """
 
 import asyncio
 import dataclasses
+import json
 import threading
+from email.utils import formatdate
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -23,6 +25,7 @@ from keycardai.oauth.exceptions import (
     OAuthHttpError,
     OAuthProtocolError,
 )
+from keycardai.oauth.http._wire import HttpResponse
 from keycardai.oauth.types.models import AuthorizationServerMetadata
 
 ISSUER = "https://test.example.com"
@@ -37,6 +40,11 @@ METADATA = AuthorizationServerMetadata(
 METADATA_WITHOUT_TOKEN_ENDPOINT = AuthorizationServerMetadata(
     issuer=ISSUER,
     authorization_endpoint=f"{ISSUER}/authorize",
+)
+METADATA_RESPONSE = HttpResponse(
+    200,
+    {},
+    json.dumps({"issuer": ISSUER, "token_endpoint": DISCOVERED_TOKEN_ENDPOINT}).encode(),
 )
 
 
@@ -92,14 +100,19 @@ class TestSyncClientDiscoveryCache:
         client.discover_server_metadata = discover
         return client, discover
 
-    def test_transient_failure_surfaces_typed_and_is_not_cached(self, clock):
+    def test_transient_failure_surfaces_typed_and_paces_retry(self, clock):
         client, discover = self._client([_transient(), METADATA])
 
         with pytest.raises(AuthorizationServerDiscoveryError) as exc_info:
             client._get_current_endpoints()
         assert exc_info.value.retryable is True
         assert isinstance(exc_info.value.cause, NetworkError)
+        with pytest.raises(AuthorizationServerDiscoveryError) as gated:
+            client._get_current_endpoints()
+        assert gated.value is exc_info.value
+        assert discover.call_count == 1
 
+        clock.advance(1.2)
         assert client._get_current_endpoints().token == DISCOVERED_TOKEN_ENDPOINT
         assert discover.call_count == 2
 
@@ -107,12 +120,68 @@ class TestSyncClientDiscoveryCache:
         client, discover = self._client(
             [_server_error(), OAuthHttpError(429), METADATA]
         )
-        for _ in range(2):
-            with pytest.raises(AuthorizationServerDiscoveryError) as exc_info:
-                client._get_current_endpoints()
-            assert exc_info.value.retryable is True
+        with pytest.raises(AuthorizationServerDiscoveryError) as unavailable:
+            client._get_current_endpoints()
+        assert unavailable.value.retryable is True
+        clock.advance(1.2)
+        with pytest.raises(AuthorizationServerDiscoveryError) as throttled:
+            client._get_current_endpoints()
+        assert throttled.value.retryable is True
         assert client._get_current_endpoints().token == DISCOVERED_TOKEN_ENDPOINT
         assert discover.call_count == 3
+
+    @pytest.mark.parametrize("status", [429, 503])
+    @pytest.mark.parametrize("delay", [5, 120])
+    @pytest.mark.parametrize("http_date", [False, True])
+    def test_row_2_base_retry_after(self, clock, status, delay, http_date):
+        header = formatdate(1_000_000 + delay, usegmt=True) if http_date else str(delay)
+        failure = OAuthHttpError(status, headers={"rEtRy-AfTeR": header})
+        client, discover = self._client([failure, METADATA])
+        with patch("keycardai.oauth._metadata_cache.time.time", return_value=1_000_000):
+            with pytest.raises(AuthorizationServerDiscoveryError) as first:
+                client._get_current_endpoints()
+        clock.advance(min(delay, 60) - 0.01)
+        with pytest.raises(AuthorizationServerDiscoveryError) as second:
+            client._get_current_endpoints()
+        assert first.value is second.value
+        assert second.value.retryable
+        assert discover.call_count == 1
+        clock.advance(0.011)
+        assert client._get_current_endpoints().token == DISCOVERED_TOKEN_ENDPOINT
+
+    @pytest.mark.parametrize("failure", [_transient(), _server_error()])
+    @pytest.mark.parametrize("jitter", [0.8, 1.2])
+    def test_row_3_base_increasing_capped_delays(self, clock, failure, jitter):
+        client, discover = self._client([failure] * 8 + [METADATA])
+        with patch("random.uniform", return_value=jitter):
+            for count in range(1, 9):
+                with pytest.raises(AuthorizationServerDiscoveryError):
+                    client._get_current_endpoints()
+                delay = min(30.0, min(32.0, 2 ** (count - 1)) * jitter)
+                clock.advance(delay - 0.0001)
+                with pytest.raises(AuthorizationServerDiscoveryError):
+                    client._get_current_endpoints()
+                assert discover.call_count == count
+                clock.advance(0.001)
+        assert client._get_current_endpoints().token == DISCOVERED_TOKEN_ENDPOINT
+
+    def test_row_4_base_success_resets_backoff(self, clock):
+        client, discover = self._client(
+            [_transient(), _transient(), METADATA, _transient(), METADATA],
+            discovery_ttl=10.0,
+        )
+        with patch("random.uniform", return_value=1.0):
+            for delay in (1.0, 2.0):
+                with pytest.raises(AuthorizationServerDiscoveryError):
+                    client._get_current_endpoints()
+                clock.advance(delay)
+            assert client._get_current_endpoints().token == DISCOVERED_TOKEN_ENDPOINT
+            clock.advance(10.0)
+            with pytest.raises(AuthorizationServerDiscoveryError):
+                client._get_current_endpoints()
+            clock.advance(1.0)
+            assert client._get_current_endpoints().token == DISCOVERED_TOKEN_ENDPOINT
+        assert discover.call_count == 5
 
     def test_failed_discovery_never_yields_convention_endpoint(self, clock):
         client, _ = self._client([_transient()])
@@ -154,7 +223,7 @@ class TestSyncClientDiscoveryCache:
         assert client._get_current_endpoints().token == DISCOVERED_TOKEN_ENDPOINT
         assert discover.call_count == 2
 
-    def test_missing_token_endpoint_is_typed_and_remembered(self, clock):
+    def test_row_5_base_missing_token_endpoint_is_typed_and_remembered(self, clock):
         client, discover = self._client(
             [METADATA_WITHOUT_TOKEN_ENDPOINT, METADATA], negative_ttl=60
         )
@@ -224,13 +293,17 @@ class TestAsyncClientDiscoveryCache:
         return client, discover
 
     @pytest.mark.asyncio
-    async def test_transient_failure_surfaces_typed_and_is_not_cached(self, clock):
+    async def test_transient_failure_surfaces_typed_and_paces_retry(self, clock):
         client, discover = self._client([_transient(), METADATA])
 
         with pytest.raises(AuthorizationServerDiscoveryError) as exc_info:
             await client._get_current_endpoints()
         assert exc_info.value.retryable is True
 
+        with pytest.raises(AuthorizationServerDiscoveryError):
+            await client._get_current_endpoints()
+        assert discover.call_count == 1
+        clock.advance(1.2)
         endpoints = await client._get_current_endpoints()
         assert endpoints.token == DISCOVERED_TOKEN_ENDPOINT
         assert discover.call_count == 2
@@ -342,6 +415,25 @@ class TestAsyncClientDiscoveryCache:
         assert discover.call_count == 1
 
     @pytest.mark.asyncio
+    async def test_row_6_base_caller_deadline_does_not_start_backoff(self, clock):
+        started, release = asyncio.Event(), asyncio.Event()
+
+        async def slow_discover():
+            started.set()
+            await release.wait()
+            return METADATA
+
+        client, discover = self._client(slow_discover)
+        waiter = asyncio.create_task(client._get_current_endpoints())
+        await started.wait()
+        with pytest.raises(TimeoutError):
+            await asyncio.wait_for(waiter, timeout=0)
+        survivor = asyncio.create_task(client._get_current_endpoints())
+        release.set()
+        assert (await survivor).token == DISCOVERED_TOKEN_ENDPOINT
+        assert discover.call_count == 1
+
+    @pytest.mark.asyncio
     async def test_discovery_disabled_uses_convention_endpoint(self):
         client = AsyncClient(
             ISSUER, config=ClientConfig(enable_metadata_discovery=False)
@@ -361,3 +453,55 @@ class TestClientConfigDiscoveryKnobs:
         client.discover_server_metadata = Mock(side_effect=_not_found())
         with pytest.raises(AuthorizationServerDiscoveryError):
             client.client_credentials_grant(client_id="id", client_secret="secret")
+
+
+class TestCachedDiscoveryConformance:
+    @pytest.mark.parametrize(
+        "operation",
+        [
+            pytest.param(
+                lambda client: client.client_credentials_grant(
+                    client_id="id", client_secret="secret"
+                ),
+                id="client-credentials-row-7",
+            ),
+            pytest.param(
+                lambda client: client.exchange_token(subject_token="subject"),
+                id="token-exchange-row-8",
+            ),
+        ],
+    )
+    def test_row_7_client_credentials_row_8_token_exchange(self, clock, operation):
+        transport = Mock()
+        transport.request_raw.side_effect = [
+            _transient(),
+            METADATA_RESPONSE,
+            HttpResponse(200, {}, b'{"access_token":"ok","token_type":"Bearer"}'),
+        ]
+        client = Client(ISSUER, config=_config(), transport=transport)
+        for _ in range(2):
+            with pytest.raises(AuthorizationServerDiscoveryError):
+                operation(client)
+        assert transport.request_raw.call_count == 1
+        clock.advance(1.2)
+        assert operation(client).access_token == "ok"
+        assert transport.request_raw.call_count == 3
+
+    def test_row_11_authorization_server_discovery_cached_only(self, clock):
+        transport = Mock()
+        transport.request_raw.side_effect = [
+            HttpResponse(503, {"retry-after": "5"}, b""),
+            METADATA_RESPONSE,
+            METADATA_RESPONSE,
+        ]
+        client = Client(ISSUER, config=_config(), transport=transport)
+        with pytest.raises(AuthorizationServerDiscoveryError):
+            client._get_current_endpoints()
+        clock.advance(4.9)
+        with pytest.raises(AuthorizationServerDiscoveryError):
+            client._get_current_endpoints()
+        assert transport.request_raw.call_count == 1
+        assert client.discover_server_metadata().token_endpoint == DISCOVERED_TOKEN_ENDPOINT
+        clock.advance(0.11)
+        assert client._get_current_endpoints().token == DISCOVERED_TOKEN_ENDPOINT
+        assert transport.request_raw.call_count == 3

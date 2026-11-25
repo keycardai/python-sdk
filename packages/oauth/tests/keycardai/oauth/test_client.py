@@ -1115,6 +1115,11 @@ class TestClientValidation:
                 assert call_kwargs['user_agent'] == "Keycard-OAuth/0.0.1"
 
         # Test 2: Client registration request
+        client.discover_server_metadata = Mock(
+            return_value=AuthorizationServerMetadata(
+                issuer=client.issuer, token_endpoint=f"{client.issuer}/token"
+            )
+        )
         with patch('keycardai.oauth.client.build_http_context') as mock_build_context:
             with patch('keycardai.oauth.client.register_client') as mock_register:
                 mock_register.return_value = Mock()
@@ -1166,6 +1171,12 @@ class TestClientValidation:
                 assert call_kwargs['user_agent'] == "Keycard-OAuth/0.0.1"
 
         # Test 2: Async client registration request
+        async_client.discover_server_metadata = AsyncMock(
+            return_value=AuthorizationServerMetadata(
+                issuer=async_client.issuer,
+                token_endpoint=f"{async_client.issuer}/token",
+            )
+        )
         with patch('keycardai.oauth.client.build_http_context') as mock_build_context:
             with patch('keycardai.oauth.client.register_client_async') as mock_register:
                 mock_register.return_value = Mock()

@@ -15,8 +15,12 @@ from urllib.parse import urlsplit, urlunsplit
 
 from pydantic import AnyHttpUrl, BaseModel
 
-from keycardai.oauth._metadata_cache import MetadataCache
-from keycardai.oauth.exceptions import InvalidTokenError, JWKSKeyNotFoundError
+from keycardai.oauth._metadata_cache import MetadataCache, MetadataRetryDelay
+from keycardai.oauth.exceptions import (
+    InvalidTokenError,
+    JWKSFetchError,
+    JWKSKeyNotFoundError,
+)
 from keycardai.oauth.types.models import ClientConfig
 from keycardai.oauth.utils.jwt import (
     fetch_jwks,
@@ -145,8 +149,7 @@ class TokenVerifier:
         # key lookup read the unsigned token, so a forged token can name any kid.
         self._jwks_sets: dict[str, _JwksSet] = {}
         self._jwks_set_inflight: dict[str, asyncio.Future] = {}
-        # Discovered jwks_uri per zone: success for discovery_ttl, a deterministic
-        # failure for at most negative_ttl, a transient failure not at all.
+        self._jwks_retry_delays: dict[str, MetadataRetryDelay[JWKSFetchError]] = {}
         self._discovered_jwks_uris: dict[str, MetadataCache[str, OAuthServerError]] = {}
         # Discovery runs synchronously (off the event loop via to_thread); the
         # lock lets concurrent cold-cache callers share one request.
@@ -205,7 +208,7 @@ class TokenVerifier:
                 discovered_uri = server_metadata.jwks_uri
             except Exception as e:
                 error = JWKSDiscoveryError(discovery_issuer, zone_id, cause=e)
-                raise cache.store_failure(error, retryable=error.retryable) from e
+                raise cache.store_failure(error, retryable=error.retryable, cause=e) from e
 
             if not discovered_uri:
                 error = JWKSDiscoveryError(discovery_issuer, zone_id)
@@ -368,7 +371,19 @@ class TokenVerifier:
             future.exception()
 
     async def _fetch_and_store_jwks(self, jwks_uri: str) -> list[dict[str, Any]]:
-        keys = await fetch_jwks(jwks_uri, timeout=self.fetch_timeout)
+        retry = self._jwks_retry_delays.get(jwks_uri)
+        if retry is not None:
+            retry.check()
+        try:
+            keys = await fetch_jwks(jwks_uri, timeout=self.fetch_timeout)
+        except JWKSFetchError as error:
+            if error.retryable:
+                retry = self._jwks_retry_delays.setdefault(
+                    jwks_uri, MetadataRetryDelay()
+                )
+                retry.record(error, error.cause)
+            raise
+        self._jwks_retry_delays.pop(jwks_uri, None)
         now = time.monotonic()
         self._jwks_sets[jwks_uri] = _JwksSet(
             keys=keys, fetched_at=now, expires_at=now + self.key_ttl
@@ -380,6 +395,7 @@ class TokenVerifier:
         self._jwks_cache.clear()
         self._jwks_sets.clear()
         self._jwks_set_inflight.clear()
+        self._jwks_retry_delays.clear()
 
     def get_cache_stats(self) -> dict[str, Any]:
         """Get cache statistics for debugging."""

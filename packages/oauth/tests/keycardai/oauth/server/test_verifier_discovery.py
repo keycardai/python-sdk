@@ -2,8 +2,8 @@
 (spec base.md, "Metadata failures are not sticky").
 
 ``verify_token`` is async; jwks_uri discovery uses the synchronous client, so it
-must run off the loop. Success is cached for discovery_ttl, a transient failure
-caches nothing, a deterministic failure is remembered for at most negative_ttl,
+must run off the loop. Success is cached for discovery_ttl, transient failures
+can pace new fetches, deterministic failures are remembered for at most negative_ttl,
 and concurrent cold-cache callers share one fetch that no single caller's
 cancellation can poison.
 """
@@ -13,7 +13,7 @@ import json
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from unittest.mock import Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from blockbuster import blockbuster_ctx
@@ -23,7 +23,13 @@ from joserfc import jwt as jose_jwt
 from joserfc.jwk import RSAKey
 
 import keycardai.oauth
-from keycardai.oauth.exceptions import NetworkError, OAuthHttpError, OAuthProtocolError
+from keycardai.oauth.exceptions import (
+    JWKSFetchError,
+    NetworkError,
+    OAuthHttpError,
+    OAuthProtocolError,
+)
+from keycardai.oauth.http._wire import HttpResponse
 from keycardai.oauth.server.exceptions import JWKSDiscoveryError
 from keycardai.oauth.server.verifier import TokenVerifier
 
@@ -176,7 +182,7 @@ def clock():
 
 
 class TestJwksDiscoveryFailureCaching:
-    def test_transient_failure_not_cached(self, clock):
+    def test_row_11_discovery_is_paced_after_network_failure(self, clock):
         verifier, discover = _verifier_with(
             [NetworkError(ConnectionError("refused")), _metadata()]
         )
@@ -184,6 +190,11 @@ class TestJwksDiscoveryFailureCaching:
             verifier._discover_jwks_uri()
         assert exc_info.value.retryable is True
 
+        with pytest.raises(JWKSDiscoveryError) as gated:
+            verifier._discover_jwks_uri()
+        assert gated.value is exc_info.value
+        assert discover.call_count == 1
+        clock.advance(1.2)
         assert verifier._discover_jwks_uri() == "https://example.com/.well-known/jwks.json"
         assert discover.call_count == 2
 
@@ -193,6 +204,8 @@ class TestJwksDiscoveryFailureCaching:
         with pytest.raises(JWKSDiscoveryError) as exc_info:
             verifier._discover_jwks_uri()
         assert exc_info.value.retryable is True
+        if status != 429:
+            clock.advance(1.2)
         verifier._discover_jwks_uri()
         assert discover.call_count == 2
 
@@ -333,7 +346,7 @@ class TestJwksDiscoveryConcurrency:
         assert verifier._key_inflight == {}
 
     @pytest.mark.asyncio
-    async def test_failed_resolution_clears_inflight_so_the_next_call_retries(self):
+    async def test_failed_resolution_clears_inflight_so_the_next_call_retries(self, clock):
         verifier, discover = _verifier_with(
             [NetworkError(ConnectionError("refused")), _metadata()]
         )
@@ -349,7 +362,42 @@ class TestJwksDiscoveryConcurrency:
             with pytest.raises(JWKSDiscoveryError):
                 await verifier._get_verification_key("t1")
             assert verifier._key_inflight == {}
+            clock.advance(1.2)
             result = await verifier._get_verification_key("t1")
 
         assert result.key == "pem"
         assert discover.call_count == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("failure", "delay", "next_kid"),
+    [
+        pytest.param(NetworkError(ConnectionError("refused")), 1.2, KID, id="jwks-row-10"),
+        pytest.param(
+            HttpResponse(429, {"Retry-After": "120"}, b""), 60, "other", id="jwks-row-20"
+        ),
+    ],
+)
+async def test_row_10_network_backoff_and_row_20_key_set_scope(
+    clock, failure, delay, next_kid
+):
+    verifier, _ = _verifier_with([])
+    uri = "https://example.com/jwks"
+    key = dict(RSAKey.import_key(rsa.generate_private_key(
+        public_exponent=65537, key_size=2048
+    ).public_key()).as_dict(), kid=next_kid)
+    fetch = AsyncMock(side_effect=[failure, HttpResponse(200, {}, json.dumps(
+        {"keys": [key]}
+    ).encode())])
+    with patch("keycardai.oauth.utils.jwt.HttpxAsyncTransport.request_raw", fetch):
+        with pytest.raises(JWKSFetchError) as first:
+            await verifier._key_from_jwks(KID, uri)
+        with pytest.raises(JWKSFetchError) as gated:
+            await verifier._key_from_jwks(next_kid, uri)
+        assert gated.value is first.value
+        assert gated.value.retryable is True
+        assert fetch.call_count == 1
+        clock.advance(delay)
+        assert "PUBLIC KEY" in await verifier._key_from_jwks(next_kid, uri)
+        assert fetch.call_count == 2
