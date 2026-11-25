@@ -11,9 +11,12 @@ from __future__ import annotations
 
 from typing import Any
 
+import httpx
+
 from keycardai.oauth.exceptions import (
     AuthorizationServerDiscoveryError,
     ConfigError,
+    NetworkError,
     OAuthHttpError,
     OAuthProtocolError,
     classify_discovery_failure,
@@ -545,9 +548,33 @@ class WorkloadIdentityRuntimeError(OAuthServerError):
         *,
         source: str | None = None,
         details: dict | None = None,
+        status_code: int | None = None,
     ):
         self.source = source
+        self._status_code = status_code
         super().__init__(message, details=details)
+
+    @property
+    def retryable(self) -> bool:
+        """Whether the source fails with a connection error, timeout, or 5xx."""
+        cause = self.__cause__
+        if isinstance(
+            cause,
+            (
+                ConnectionError,
+                TimeoutError,
+                NetworkError,
+                httpx.NetworkError,
+                httpx.TimeoutException,
+            ),
+        ):
+            return True
+        status_code = self._status_code
+        if isinstance(cause, OAuthHttpError):
+            status_code = cause.status_code
+        elif isinstance(cause, httpx.HTTPStatusError):
+            status_code = cause.response.status_code
+        return status_code is not None and 500 <= status_code < 600
 
 
 class EKSWorkloadIdentityConfigurationError(WorkloadIdentityConfigurationError):

@@ -5,8 +5,9 @@ import concurrent.futures
 import os
 import threading
 import warnings
+from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import replace
-from typing import TYPE_CHECKING, Any, overload
+from typing import TYPE_CHECKING, Any, TypeVar, overload
 
 from ._metadata_cache import MetadataCache
 from .client_auth import (
@@ -102,9 +103,14 @@ from .types.oauth import (
 from .utils.jwt import build_substitute_user_token
 
 if TYPE_CHECKING:
-    from .server.credentials import ApplicationCredential
+    from .server.credentials import (
+        ApplicationCredential,
+        IdentityTokenSource,
+        _IdentityTokenFetcher,
+    )
 
 
+_ExchangeResult = TypeVar("_ExchangeResult")
 _exchange_loop: asyncio.AbstractEventLoop | None = None
 _exchange_loop_lock = threading.Lock()
 
@@ -159,15 +165,10 @@ async def _prepare_exchange_assertion(
     )
 
 
-def _prepare_exchange_assertion_sync(
-    credential: "ApplicationCredential",
-    request: TokenExchangeRequest,
-    client: "Client",
-    issuer: str,
-    endpoints: ResolvedEndpoints,
-    timeout: float,
-) -> TokenExchangeRequest:
-    """Keep credential-owned async connections on one persistent loop."""
+def _submit_exchange_coroutine(
+    operation: Coroutine[Any, Any, _ExchangeResult],
+) -> concurrent.futures.Future[_ExchangeResult]:
+    """Keep source- and credential-owned connections on one persistent loop."""
     global _exchange_loop
     with _exchange_loop_lock:
         loop = _exchange_loop
@@ -179,8 +180,19 @@ def _prepare_exchange_assertion_sync(
                 daemon=True,
             ).start()
             _exchange_loop = loop
-    future = asyncio.run_coroutine_threadsafe(
-        _prepare_exchange_assertion(credential, request, client, issuer, endpoints), loop
+    return asyncio.run_coroutine_threadsafe(operation, loop)
+
+
+def _prepare_exchange_assertion_sync(
+    credential: "ApplicationCredential",
+    request: TokenExchangeRequest,
+    client: "Client",
+    issuer: str,
+    endpoints: ResolvedEndpoints,
+    timeout: float,
+) -> TokenExchangeRequest:
+    future = _submit_exchange_coroutine(
+        _prepare_exchange_assertion(credential, request, client, issuer, endpoints)
     )
     try:
         return future.result(timeout=timeout)
@@ -192,6 +204,27 @@ def _prepare_exchange_assertion_sync(
             TimeoutError(f"assertion preparation exceeded {timeout} seconds"),
             operation="token exchange assertion preparation",
         ) from e
+
+
+def _actor_fetcher(
+    actor: "IdentityTokenSource | Callable[[], Awaitable[str] | str] | None",
+) -> "_IdentityTokenFetcher | None":
+    if actor is None:
+        return None
+    from .server.credentials import _IdentityTokenFetcher
+
+    return _IdentityTokenFetcher(actor)
+
+
+async def _add_exchange_actor(
+    request: TokenExchangeRequest, actor: "_IdentityTokenFetcher"
+) -> TokenExchangeRequest:
+    return request.model_copy(
+        update={
+            "actor_token": await actor.identity_token(),
+            "actor_token_type": TokenType.JWT,
+        }
+    )
 
 
 class _PublicClient:
@@ -450,6 +483,7 @@ class AsyncClient:
         base_url: str | None = None,
         auth: AuthStrategy | None = None,
         credential: "ApplicationCredential | None" = None,
+        actor: "IdentityTokenSource | Callable[[], Awaitable[str] | str] | None" = None,
         endpoints: Endpoints | None = None,
         transport: AsyncHTTPTransport | None = None,
         config: ClientConfig | None = None,
@@ -463,6 +497,9 @@ class AsyncClient:
             auth: Authentication strategy (BasicAuth, BearerAuth, NoneAuth)
             credential: Application credential for token exchange. An explicit
                 auth strategy takes precedence over the credential's headers.
+            actor: Identity token source or callable for delegation. It supplies
+                a fresh actor token per exchange unless the request sets one.
+                Impersonation does not use it. A sync callable must not block.
             endpoints: Endpoint overrides for multi-server deployments
             transport: Custom asynchronous HTTP transport
             config: Client configuration with timeouts, retries, etc.
@@ -477,6 +514,7 @@ class AsyncClient:
 
         self.auth_strategy = auth or NoneAuth()
         self._exchange_credential = credential
+        self._exchange_actor = _actor_fetcher(actor)
         self._exchange_auth = (
             credential.get_http_client_auth()
             if auth is None and credential is not None
@@ -1043,6 +1081,8 @@ class AsyncClient:
         target_issuer = self.issuer if issuer is None else issuer
         auth = self._exchange_auth
         auth_headers = resolve_token_exchange_auth_headers(request, auth, target_issuer)
+        if self._exchange_actor is not None and request.actor_token is None:
+            request = await _add_exchange_actor(request, self._exchange_actor)
         endpoints = await self._get_current_endpoints()
 
         if (
@@ -1814,6 +1854,7 @@ class Client:
         base_url: str | None = None,
         auth: AuthStrategy | None = None,
         credential: "ApplicationCredential | None" = None,
+        actor: "IdentityTokenSource | Callable[[], Awaitable[str] | str] | None" = None,
         endpoints: Endpoints | None = None,
         transport: HTTPTransport | None = None,
         config: ClientConfig | None = None,
@@ -1826,6 +1867,9 @@ class Client:
             auth: Authentication strategy (BasicAuth, BearerAuth, NoneAuth)
             credential: Application credential for token exchange. An explicit
                 auth strategy takes precedence over the credential's headers.
+            actor: Identity token source or callable for delegation. It supplies
+                a fresh actor token per exchange unless the request sets one.
+                Impersonation does not use it. A sync callable must not block.
             endpoints: Endpoint overrides for multi-server deployments
             transport: Custom synchronous HTTP transport
             config: Client configuration with timeouts, retries, etc.
@@ -1835,6 +1879,7 @@ class Client:
 
         self.auth_strategy = auth or NoneAuth()
         self._exchange_credential = credential
+        self._exchange_actor = _actor_fetcher(actor)
         self._exchange_auth = (
             credential.get_http_client_auth()
             if auth is None and credential is not None
@@ -2339,6 +2384,10 @@ class Client:
         timeout = self.config.timeout if request.timeout is None else request.timeout
         auth = self._exchange_auth
         auth_headers = resolve_token_exchange_auth_headers(request, auth, target_issuer)
+        if self._exchange_actor is not None and request.actor_token is None:
+            request = _submit_exchange_coroutine(
+                _add_exchange_actor(request, self._exchange_actor)
+            ).result()
         endpoints = self._get_current_endpoints()
 
         if (

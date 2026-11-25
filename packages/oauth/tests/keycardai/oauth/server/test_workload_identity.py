@@ -315,9 +315,10 @@ class TestGCPMetadataTokenSource:
         "response",
         [
             httpx.Response(404, text="not found"),
+            httpx.Response(503, text="unavailable"),
             httpx.Response(200, text="  \n"),
         ],
-        ids=["non-200 status", "empty body"],
+        ids=["non-200 status", "server error", "empty body"],
     )
     async def test_runtime_error_on_failure(self, response):
         source = GCPMetadataTokenSource(
@@ -328,6 +329,7 @@ class TestGCPMetadataTokenSource:
         with pytest.raises(WorkloadIdentityRuntimeError) as exc_info:
             await source.identity_token()
         assert exc_info.value.source == "gcp-metadata"
+        assert exc_info.value.retryable is (response.status_code == 503)
 
     @pytest.mark.asyncio
     async def test_runtime_error_when_unreachable(self):
@@ -342,6 +344,7 @@ class TestGCPMetadataTokenSource:
         with pytest.raises(WorkloadIdentityRuntimeError) as exc_info:
             await source.identity_token()
         assert exc_info.value.__cause__ is not None
+        assert exc_info.value.retryable is True
 
 
 class TestFlyTokenSource:
@@ -394,6 +397,7 @@ class TestFlyTokenSource:
         with pytest.raises(WorkloadIdentityRuntimeError) as exc_info:
             await source.identity_token()
         assert exc_info.value.source == "fly"
+        assert exc_info.value.retryable is False
 
     @pytest.mark.asyncio
     async def test_runtime_error_when_socket_missing(self, tmp_path):
