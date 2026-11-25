@@ -37,6 +37,123 @@ from keycardai.oauth.types.oauth import GrantType, ResponseType, TokenEndpointAu
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("client_type", [Client, AsyncClient])
+class TestGrantCredential:
+    issuer = "https://zone.example.com"
+    endpoint = "https://zone.example.com/oauth/token"
+    assertion_type = GrantType.JWT_BEARER_CLIENT_ASSERTION
+
+    def client(self, client_type, credential=None, **kwargs):
+        send = AsyncMock() if client_type is AsyncClient else Mock()
+        send.return_value = HttpResponse(
+            200, {}, b'{"access_token":"at","token_type":"Bearer","refresh_token":"rt"}'
+        )
+        return client_type(
+            self.issuer,
+            credential=credential,
+            endpoints=Endpoints(token=self.endpoint),
+            transport=Mock(request_raw=send),
+            config=ClientConfig(enable_metadata_discovery=False),
+            **kwargs,
+        )
+
+    async def call(self, client, method, **kwargs):
+        response = getattr(client, method)(**kwargs)
+        return await response if isinstance(client, AsyncClient) else response
+
+    async def test_row_4b_configured_workload_identity(self, client_type):
+        credential = WorkloadIdentity(lambda: "workload-jwt", "workload")
+        with patch.object(
+            credential, "client_authentication", wraps=credential.client_authentication
+        ) as authenticate:
+            client = self.client(client_type, credential)
+
+            await self.call(client, "client_credentials_grant", scope="read")
+
+        authenticate.assert_awaited_once_with(
+            issuer=self.issuer, endpoint=self.endpoint
+        )
+        wire = client.transport.request_raw.call_args.args[0]
+        assert "Authorization" not in wire.headers
+        assert parse_qs(wire.body.decode()) == {
+            "grant_type": ["client_credentials"],
+            "scope": ["read"],
+            "client_assertion": ["workload-jwt"],
+            "client_assertion_type": [self.assertion_type],
+            "client_id": ["workload"],
+        }
+
+    async def test_row_4c_credential_and_basic_shorthand_conflict(self, client_type):
+        with pytest.raises(ConfigError, match="cannot be combined"):
+            self.client(
+                client_type,
+                ClientSecret(("configured", "secret")),
+                client_id="raw",
+                client_secret="secret",
+            )
+
+    @pytest.mark.parametrize("request_id", [None, "caller"])
+    @pytest.mark.parametrize(
+        "credential",
+        [
+            ClientSecret(("basic", "secret")),
+            WorkloadIdentity(lambda: "jwt", "workload"),
+        ],
+    )
+    async def test_row_4d_explicit_assertion_wins(
+        self, client_type, credential, request_id
+    ):
+        client = self.client(client_type, credential)
+        with patch.object(credential, "client_authentication") as authenticate:
+            await self.call(
+                client,
+                "client_credentials_grant",
+                client_assertion="caller-jwt",
+                client_assertion_type=self.assertion_type,
+                client_id=request_id,
+            )
+
+        authenticate.assert_not_called()
+        wire = client.transport.request_raw.call_args.args[0]
+        assert "Authorization" not in wire.headers
+        expected = {
+            "grant_type": ["client_credentials"],
+            "client_assertion": ["caller-jwt"],
+            "client_assertion_type": [self.assertion_type],
+        }
+        if request_id is not None:
+            expected["client_id"] = [request_id]
+        assert parse_qs(wire.body.decode()) == expected
+
+    async def test_row_35_exchange_and_refresh_with_one_credential(self, client_type):
+        credential = WorkloadIdentity(lambda: "workload-jwt", "workload")
+        client = self.client(client_type, credential)
+
+        token = await self.call(
+            client,
+            "exchange_authorization_code",
+            code="code",
+            code_verifier="verifier",
+            redirect_uri="https://app.example.com/callback",
+        )
+        await self.call(
+            client, "refresh_token_grant", refresh_token=token.refresh_token
+        )
+
+        wires = [call.args[0] for call in client.transport.request_raw.call_args_list]
+        assert [wire.url for wire in wires] == [self.endpoint, self.endpoint]
+        forms = [parse_qs(wire.body.decode()) for wire in wires]
+        assert [form["grant_type"] for form in forms] == [
+            ["authorization_code"], ["refresh_token"]
+        ]
+        assert forms[1]["refresh_token"] == ["rt"]
+        for form in forms:
+            assert form["client_assertion"] == ["workload-jwt"]
+            assert form["client_assertion_type"] == [self.assertion_type]
+            assert form["client_id"] == ["workload"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("client_type", [Client, AsyncClient])
 class TestExchangeCredential:
     issuer = "https://test.example.com"
     endpoint = "https://tokens.example.com/exchange"

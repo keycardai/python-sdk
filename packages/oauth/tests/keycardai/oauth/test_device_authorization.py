@@ -1133,6 +1133,33 @@ async def test_row_22_web_identity_signs_a_new_assertion_per_request(tmp_path):
     assert len({c["jti"] for c in claims}) == 3
 
 
+@pytest.mark.parametrize("wait_for_token", [True, False])
+async def test_row_22_client_binds_web_identity(tmp_path, wait_for_token):
+    credential = WebIdentity(
+        server_name="device", storage_dir=str(tmp_path), client_id="registered-client"
+    )
+    transport = FakeTransport(
+        device_response(), respond(400, PENDING), respond(200, TOKEN_BODY)
+    )
+    client = AsyncClient(
+        ISSUER, credential=credential, transport=transport, clock=FakeClock()
+    )
+
+    auth = await client.request_device_authorization(metadata=METADATA)
+    if wait_for_token:
+        await client.wait_for_device_token(auth, metadata=METADATA)
+    else:
+        with pytest.raises(DeviceAuthorizationError):
+            await client.poll_device_token(auth, metadata=METADATA)
+        await client.poll_device_token(auth, metadata=METADATA)
+
+    claims = [jwt_claims(form(r)["client_assertion"][0]) for r in transport.requests]
+    assert [c["aud"] for c in claims] == [
+        DEVICE_ENDPOINT, TOKEN_ENDPOINT, TOKEN_ENDPOINT
+    ]
+    assert len({c["jti"] for c in claims}) == 3
+
+
 async def test_row_24_multi_resource_token_is_not_associated_with_a_resource():
     body = {**TOKEN_BODY, "resource": "https://a.example.com"}
     transport = FakeTransport(device_response(), respond(200, body))

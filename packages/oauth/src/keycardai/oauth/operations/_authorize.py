@@ -242,6 +242,7 @@ def exchange_authorization_code(
     client_id: str | None = None,
     context: HTTPContext[HTTPTransport],
     resource: str | None = None,
+    client_auth: ClientAuthentication | None = None,
 ) -> TokenResponse:
     """Exchange an authorization code for tokens (sync).
 
@@ -267,6 +268,7 @@ def exchange_authorization_code(
         client_id=client_id,
         context=context,
         resource=resource,
+        client_auth=client_auth,
     )
     http_res = context.transport.request_raw(http_req, timeout=context.timeout)
     return parse_authorization_code_http_response(http_res)
@@ -402,6 +404,7 @@ def refresh_token_grant(
     context: HTTPContext[HTTPTransport],
     resources: list[str] | None = None,
     scope: str | None = None,
+    client_auth: ClientAuthentication | None = None,
 ) -> TokenResponse:
     """Redeem a refresh token for a new access token (sync).
 
@@ -420,6 +423,7 @@ def refresh_token_grant(
         context=context,
         resources=resources,
         scope=scope,
+        client_auth=client_auth,
     )
     http_res = context.transport.request_raw(http_req, timeout=context.timeout)
     return parse_refresh_token_http_response(http_res)

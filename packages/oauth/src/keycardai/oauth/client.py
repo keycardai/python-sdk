@@ -117,6 +117,7 @@ if TYPE_CHECKING:
 
 _exchange_loop: asyncio.AbstractEventLoop | None = None
 _exchange_loop_lock = threading.Lock()
+_T = TypeVar("_T")
 
 
 def _reset_exchange_loop_after_fork() -> None:
@@ -177,6 +178,16 @@ def _prepare_exchange_assertion_sync(
     endpoints: ResolvedEndpoints,
     timeout: float,
 ) -> TokenExchangeRequest:
+    return _run_credential_operation(
+        _prepare_exchange_assertion(credential, request, client, issuer, endpoints),
+        timeout,
+        "token exchange assertion preparation",
+    )
+
+
+def _run_credential_operation(
+    operation: Coroutine[Any, Any, _T], timeout: float, name: str
+) -> _T:
     """Keep credential-owned async connections on one persistent loop."""
     global _exchange_loop
     with _exchange_loop_lock:
@@ -189,18 +200,14 @@ def _prepare_exchange_assertion_sync(
                 daemon=True,
             ).start()
             _exchange_loop = loop
-    future = asyncio.run_coroutine_threadsafe(
-        _prepare_exchange_assertion(credential, request, client, issuer, endpoints), loop
-    )
+    future = asyncio.run_coroutine_threadsafe(operation, loop)
     try:
         return future.result(timeout=timeout)
     except concurrent.futures.TimeoutError as e:
-        # A hung preparation stays bounded by the exchange timeout instead of
-        # blocking the caller forever on the shared loop.
         future.cancel()
         raise NetworkError(
-            TimeoutError(f"assertion preparation exceeded {timeout} seconds"),
-            operation="token exchange assertion preparation",
+            TimeoutError(f"{name} exceeded {timeout} seconds"),
+            operation=name,
         ) from e
 
 
@@ -226,9 +233,6 @@ class _StaticClientAuthentication:
         self, *, issuer: str, endpoint: str
     ) -> ClientAuthentication:
         return ClientAuthentication(headers=dict(self._headers))
-
-
-_T = TypeVar("_T")
 
 
 async def _run_with_timeout(coro: Coroutine[Any, Any, _T], limit: float) -> _T:
@@ -274,7 +278,7 @@ class _ClientAuthenticationFailure:
 
 
 def _device_client_authenticator(
-    credential: object | None, client_id: str | None
+    credential: object | None, client_id: str | None, configured: object | None
 ) -> ClientAuthenticator:
     """Return the client authentication for one device authorization flow.
 
@@ -282,6 +286,8 @@ def _device_client_authenticator(
         ConfigError: Not exactly one of ``credential`` and ``client_id`` is
             set, or the credential does not provide client authentication.
     """
+    if credential is None and client_id is None:
+        credential = configured
     if (credential is None) == (client_id is None):
         raise ConfigError("Pass exactly one of `credential` and `client_id`.")
     if credential is not None:
@@ -298,6 +304,38 @@ def _client_repr(client: "AsyncClient | Client") -> str:
         if isinstance(auth_client_id, str):
             client_id = auth_client_id
     return f"{type(client).__name__}(issuer={client.issuer!r}, client_id={client_id!r})"
+
+
+def _grant_authenticator(
+    configured: object | None,
+    credential: object | None = None,
+    client_id: str | None = None,
+) -> ClientAuthenticator | None:
+    if client_id is not None:
+        if credential is not None:
+            raise ConfigError("Pass either `credential` or `client_id`, not both.")
+        return None
+    selected = credential if credential is not None else configured
+    return require_client_authenticator(selected) if selected is not None else None
+
+
+def _resolve_grant_credential(
+    credential: "ApplicationCredential | None",
+    client_id: str | None,
+    client_secret: str | None,
+    auth: AuthStrategy | None,
+) -> "ApplicationCredential | None":
+    if client_id is None and client_secret is None:
+        return credential
+    if credential is not None or auth is not None:
+        raise ConfigError(
+            "Client ID and secret cannot be combined with credential or auth."
+        )
+    if not client_id or not client_secret:
+        raise ConfigError("Pass both a client ID and client secret.")
+    from .server.credentials import ClientSecret
+
+    return ClientSecret((client_id, client_secret))
 
 
 def _resolve_issuer_arg(issuer: str | None, base_url: str | None) -> str:
@@ -524,6 +562,8 @@ class AsyncClient:
         base_url: str | None = None,
         auth: AuthStrategy | None = None,
         credential: "ApplicationCredential | None" = None,
+        client_id: str | None = None,
+        client_secret: str | None = None,
         endpoints: Endpoints | None = None,
         transport: AsyncHTTPTransport | None = None,
         config: ClientConfig | None = None,
@@ -535,8 +575,10 @@ class AsyncClient:
             issuer: Issuer URL of the OAuth 2.0 authorization server (RFC 8414).
             base_url: Deprecated alias for ``issuer``.
             auth: Authentication strategy (BasicAuth, BearerAuth, NoneAuth)
-            credential: Application credential for token exchange. An explicit
-                auth strategy takes precedence over the credential's headers.
+            credential: Application credential for grant operations. An explicit
+                auth strategy takes precedence for token exchange.
+            client_id: Client ID for shared-secret credential shorthand.
+            client_secret: Client secret for shared-secret credential shorthand.
             endpoints: Endpoint overrides for multi-server deployments
             transport: Custom asynchronous HTTP transport
             config: Client configuration with timeouts, retries, etc.
@@ -550,7 +592,10 @@ class AsyncClient:
         self.clock: Clock = clock or SystemClock()
 
         self.auth_strategy = auth or NoneAuth()
-        self._exchange_credential = credential
+        credential = _resolve_grant_credential(
+            credential, client_id, client_secret, auth
+        )
+        self._credential = credential
         self._exchange_auth = (
             credential.get_http_client_auth()
             if auth is None and credential is not None
@@ -1123,12 +1168,12 @@ class AsyncClient:
         endpoints = await self._get_current_endpoints()
 
         if (
-            self._exchange_credential is not None
+            self._credential is not None
             and not request.client_assertion
             and not auth_headers
         ):
             request = await _prepare_exchange_assertion(
-                self._exchange_credential, request, self, target_issuer, endpoints
+                self._credential, request, self, target_issuer, endpoints
             )
             auth = NoneAuth()
             auth_headers = {}
@@ -1212,19 +1257,32 @@ class AsyncClient:
         if request is None:
             request = ClientCredentialsRequest(**client_credentials_args)
 
+        authenticator = (
+            _grant_authenticator(self._credential)
+            if request.client_assertion is None
+            else None
+        )
         endpoints = await self._get_current_endpoints()
+        target_issuer = issuer if issuer is not None else self.issuer
+        client_auth = (
+            await authenticator.client_authentication(
+                issuer=target_issuer, endpoint=endpoints.token
+            )
+            if authenticator is not None
+            else None
+        )
 
         ctx = build_http_context(
             endpoint=endpoints.token,
             transport=self.transport,
             auth=self.auth_strategy,
-            issuer=issuer if issuer is not None else self.issuer,
+            issuer=target_issuer,
             user_agent=self.config.user_agent,
             custom_headers=self.config.custom_headers,
             timeout=client_credentials_args.get("timeout", self.config.timeout),
         )
 
-        return await client_credentials_grant_async(request, ctx)
+        return await client_credentials_grant_async(request, ctx, client_auth)
 
     async def exchange_authorization_code(
         self,
@@ -1272,11 +1330,7 @@ class AsyncClient:
                 error propagates as is. A multi-zone ClientSecret raises
                 ConfigError for an unknown zone.
         """
-        authenticator: ClientAuthenticator | None = None
-        if credential is not None:
-            if client_id is not None:
-                raise ConfigError("Pass either `credential` or `client_id`, not both.")
-            authenticator = require_client_authenticator(credential)
+        authenticator = _grant_authenticator(self._credential, credential, client_id)
 
         endpoints = await self._get_current_endpoints()
 
@@ -1354,11 +1408,7 @@ class AsyncClient:
                 error propagates as is. A multi-zone ClientSecret raises
                 ConfigError for an unknown zone.
         """
-        authenticator: ClientAuthenticator | None = None
-        if credential is not None:
-            if client_id is not None:
-                raise ConfigError("Pass either `credential` or `client_id`, not both.")
-            authenticator = require_client_authenticator(credential)
+        authenticator = _grant_authenticator(self._credential, credential, client_id)
 
         endpoints = await self._get_current_endpoints()
 
@@ -1537,9 +1587,9 @@ class AsyncClient:
     ) -> DeviceAuthorization:
         """Ask the zone for a device code and a user code (RFC 8628 Section 3.1).
 
-        Set exactly one of ``credential`` and ``client_id``, and use the same
-        one for every poll of this flow. The client's auth strategy is not
-        used.
+        Use the client's configured credential, or pass ``credential`` or a
+        public ``client_id`` explicitly. Use the same authentication for
+        every poll of this flow. The client's auth strategy is not used.
 
         The SDK does not deliver the user code. Show the person
         ``verification_uri_complete`` when it is set, and
@@ -1567,8 +1617,8 @@ class AsyncClient:
             clock.
 
         Raises:
-            ConfigError: Not exactly one of ``credential`` and ``client_id``
-                is set, the credential does not provide client
+            ConfigError: The client has no authentication for this flow,
+                both per-call inputs are set, the credential does not provide client
                 authentication, ``metadata`` names a different issuer, or
                 ``device_authorization_endpoint`` is missing or is not an
                 http or https URL. No request is sent.
@@ -1580,7 +1630,9 @@ class AsyncClient:
             NetworkError: The request failed, or the credential's client
                 authentication and the request ran out of time.
         """
-        authenticator = _device_client_authenticator(credential, client_id)
+        authenticator = _device_client_authenticator(
+            credential, client_id, self._credential
+        )
         issuer, endpoint = await self._resolve_advertised_endpoint(
             metadata, "device_authorization_endpoint"
         )
@@ -1667,7 +1719,9 @@ class AsyncClient:
             NetworkError: The request failed, or the credential's client
                 authentication and the request ran out of time.
         """
-        authenticator = _device_client_authenticator(credential, client_id)
+        authenticator = _device_client_authenticator(
+            credential, client_id, self._credential
+        )
         if not authorization.device_code:
             raise ConfigError("authorization.device_code is empty")
         issuer, endpoint = await self._resolve_advertised_endpoint(
@@ -1751,7 +1805,9 @@ class AsyncClient:
                 it is a NetworkError or a TimeoutError.
             asyncio.CancelledError: The task was cancelled.
         """
-        authenticator = _device_client_authenticator(credential, client_id)
+        authenticator = _device_client_authenticator(
+            credential, client_id, self._credential
+        )
         if not authorization.device_code:
             raise ConfigError("authorization.device_code is empty")
         if authorization.interval < 1:
@@ -2116,6 +2172,8 @@ class Client:
         base_url: str | None = None,
         auth: AuthStrategy | None = None,
         credential: "ApplicationCredential | None" = None,
+        client_id: str | None = None,
+        client_secret: str | None = None,
         endpoints: Endpoints | None = None,
         transport: HTTPTransport | None = None,
         config: ClientConfig | None = None,
@@ -2126,8 +2184,10 @@ class Client:
             issuer: Issuer URL of the OAuth 2.0 authorization server (RFC 8414).
             base_url: Deprecated alias for ``issuer``.
             auth: Authentication strategy (BasicAuth, BearerAuth, NoneAuth)
-            credential: Application credential for token exchange. An explicit
-                auth strategy takes precedence over the credential's headers.
+            credential: Application credential for grant operations. An explicit
+                auth strategy takes precedence for token exchange.
+            client_id: Client ID for shared-secret credential shorthand.
+            client_secret: Client secret for shared-secret credential shorthand.
             endpoints: Endpoint overrides for multi-server deployments
             transport: Custom synchronous HTTP transport
             config: Client configuration with timeouts, retries, etc.
@@ -2136,7 +2196,10 @@ class Client:
         self.config = config or ClientConfig()
 
         self.auth_strategy = auth or NoneAuth()
-        self._exchange_credential = credential
+        credential = _resolve_grant_credential(
+            credential, client_id, client_secret, auth
+        )
+        self._credential = credential
         self._exchange_auth = (
             credential.get_http_client_auth()
             if auth is None and credential is not None
@@ -2647,12 +2710,12 @@ class Client:
         endpoints = self._get_current_endpoints()
 
         if (
-            self._exchange_credential is not None
+            self._credential is not None
             and not request.client_assertion
             and not auth_headers
         ):
             request = _prepare_exchange_assertion_sync(
-                self._exchange_credential, request, self, target_issuer, endpoints, timeout
+                self._credential, request, self, target_issuer, endpoints, timeout
             )
             auth = NoneAuth()
             auth_headers = {}
@@ -2736,19 +2799,43 @@ class Client:
         if request is None:
             request = ClientCredentialsRequest(**client_credentials_args)
 
+        authenticator = (
+            _grant_authenticator(self._credential)
+            if request.client_assertion is None
+            else None
+        )
         endpoints = self._get_current_endpoints()
+        target_issuer = issuer if issuer is not None else self.issuer
+        client_auth = self._authenticate_grant(
+            authenticator, target_issuer, endpoints.token, self.config.timeout
+        )
 
         ctx = build_http_context(
             endpoint=endpoints.token,
             transport=self.transport,
             auth=self.auth_strategy,
-            issuer=issuer if issuer is not None else self.issuer,
+            issuer=target_issuer,
             user_agent=self.config.user_agent,
             custom_headers=self.config.custom_headers,
             timeout=client_credentials_args.get("timeout", self.config.timeout),
         )
 
-        return client_credentials_grant(request, ctx)
+        return client_credentials_grant(request, ctx, client_auth)
+
+    def _authenticate_grant(
+        self,
+        authenticator: ClientAuthenticator | None,
+        issuer: str,
+        endpoint: str,
+        timeout: float,
+    ) -> ClientAuthentication | None:
+        if authenticator is None:
+            return None
+        return _run_credential_operation(
+            authenticator.client_authentication(issuer=issuer, endpoint=endpoint),
+            timeout,
+            "grant client authentication",
+        )
 
     def exchange_authorization_code(
         self,
@@ -2783,16 +2870,21 @@ class Client:
             OAuthHttpError: If the token endpoint returns an HTTP error.
             OAuthProtocolError: If the response contains an OAuth error.
         """
+        authenticator = _grant_authenticator(self._credential, client_id=client_id)
         endpoints = self._get_current_endpoints()
+        request_timeout = timeout or self.config.timeout
+        client_auth = self._authenticate_grant(
+            authenticator, self.issuer, endpoints.token, request_timeout
+        )
 
         ctx = build_http_context(
             endpoint=endpoints.token,
             transport=self.transport,
-            auth=self.auth_strategy,
+            auth=NoneAuth() if client_auth is not None else self.auth_strategy,
             issuer=self.issuer,
             user_agent=self.config.user_agent,
             custom_headers=self.config.custom_headers,
-            timeout=timeout or self.config.timeout,
+            timeout=request_timeout,
         )
 
         return _exchange_authorization_code(
@@ -2802,6 +2894,7 @@ class Client:
             client_id=client_id,
             context=ctx,
             resource=resource,
+            client_auth=client_auth,
         )
 
     def refresh_token_grant(
@@ -2839,16 +2932,21 @@ class Client:
                 is not, and the user must authorize again.
             OAuthHttpError: If the token endpoint returns an HTTP error.
         """
+        authenticator = _grant_authenticator(self._credential, client_id=client_id)
         endpoints = self._get_current_endpoints()
+        request_timeout = timeout or self.config.timeout
+        client_auth = self._authenticate_grant(
+            authenticator, self.issuer, endpoints.token, request_timeout
+        )
 
         ctx = build_http_context(
             endpoint=endpoints.token,
             transport=self.transport,
-            auth=self.auth_strategy,
+            auth=NoneAuth() if client_auth is not None else self.auth_strategy,
             issuer=self.issuer,
             user_agent=self.config.user_agent,
             custom_headers=self.config.custom_headers,
-            timeout=timeout or self.config.timeout,
+            timeout=request_timeout,
         )
 
         return _refresh_token_grant(
@@ -2857,6 +2955,7 @@ class Client:
             context=ctx,
             resources=resources,
             scope=" ".join(scopes) if scopes else None,
+            client_auth=client_auth,
         )
 
     def impersonate(
