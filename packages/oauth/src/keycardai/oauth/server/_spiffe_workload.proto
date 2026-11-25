@@ -1,0 +1,20 @@
+// Wire definitions for FetchJWTSVID from the SPIFFE Workload API:
+// https://github.com/spiffe/spiffe/blob/main/standards/workloadapi.proto
+syntax = "proto3";
+
+package keycardai.oauth.spiffe;
+
+message JWTSVIDRequest {
+  repeated string audience = 1;
+  string spiffe_id = 2;
+}
+
+message JWTSVIDResponse {
+  repeated JWTSVID svids = 1;
+}
+
+message JWTSVID {
+  string spiffe_id = 1;
+  string svid = 2;
+  string hint = 3;
+}

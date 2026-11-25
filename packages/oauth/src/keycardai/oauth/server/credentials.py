@@ -51,6 +51,7 @@ from .private_key import (
     PrivateKeyManager,
     PrivateKeyStorageProtocol,
 )
+from .spiffe import SpiffeJwtSvidSource as SpiffeJwtSvidSource
 
 
 async def _get_token_exchange_audience(client: AsyncClient) -> str:
@@ -399,8 +400,9 @@ class IdentityTokenSource(Protocol):
     FileTokenSource covers platforms that project the token to a file (EKS,
     AKS, Kubernetes projected service-account tokens), GCPMetadataTokenSource
     covers platforms that serve it from the GCP metadata endpoint (GKE, GCE,
-    Cloud Run), FlyTokenSource covers Fly Machines, and any bare callable
-    returning the token (sync or async) is accepted as a source.
+    Cloud Run), FlyTokenSource covers Fly Machines, and SpiffeJwtSvidSource
+    covers the SPIFFE Workload API. A bare callable returning the token (sync
+    or async) is also accepted as a source.
 
     identity_token is called on every token exchange. Implementations must
     return the current token; platforms rotate these tokens, so returning a
