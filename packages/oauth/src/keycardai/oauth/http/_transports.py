@@ -44,15 +44,13 @@ class _BoundedZlibDecoder:
         wbits = zlib.MAX_WBITS | 16 if encoding in ("gzip", "x-gzip") else zlib.MAX_WBITS
         self._decompressor = zlib.decompressobj(wbits)
 
-    @property
-    def eof(self) -> bool:
-        return self._decompressor.eof
-
     def feed(self, chunk: bytes) -> None:
-        if self._decompressor.eof:
-            return
         data = chunk
-        while data and not self._decompressor.eof:
+        while data:
+            if self._decompressor.eof:
+                if self._encoding not in ("gzip", "x-gzip"):
+                    raise zlib.error("trailing bytes after deflate stream")
+                self._decompressor = zlib.decompressobj(zlib.MAX_WBITS | 16)
             remaining = self._limit - len(self._buf)
             try:
                 decoded = self._decompressor.decompress(data, remaining + 1)
@@ -71,7 +69,11 @@ class _BoundedZlibDecoder:
                     operation=self._operation,
                 )
             self._buf.extend(decoded)
-            data = self._decompressor.unconsumed_tail
+            data = (
+                self._decompressor.unused_data
+                if self._decompressor.eof
+                else self._decompressor.unconsumed_tail
+            )
 
     def finish(self) -> bytes:
         remaining = self._limit - len(self._buf)
@@ -103,14 +105,6 @@ def _read_bounded_sync(
         decoder = _BoundedZlibDecoder(enc, limit, r.status_code, operation)
         try:
             for raw_chunk in r.iter_raw():
-                if decoder.eof:
-                    if raw_chunk:
-                        raise ResponseBodyTooLargeError(
-                            status_code=r.status_code,
-                            limit=limit,
-                            operation=operation,
-                        )
-                    continue
                 decoder.feed(raw_chunk)
             return decoder.finish()
         except (zlib.error, httpx.DecodingError) as e:
@@ -152,14 +146,6 @@ async def _read_bounded_async(
         decoder = _BoundedZlibDecoder(enc, limit, r.status_code, operation)
         try:
             async for raw_chunk in r.aiter_raw():
-                if decoder.eof:
-                    if raw_chunk:
-                        raise ResponseBodyTooLargeError(
-                            status_code=r.status_code,
-                            limit=limit,
-                            operation=operation,
-                        )
-                    continue
                 decoder.feed(raw_chunk)
             return decoder.finish()
         except (zlib.error, httpx.DecodingError) as e:
