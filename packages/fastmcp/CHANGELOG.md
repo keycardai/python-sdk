@@ -1,3 +1,5 @@
+## 0.7.5-keycardai-fastmcp (2026-11-25)
+
 ## 0.7.4-keycardai-fastmcp (2026-11-06)
 
 
