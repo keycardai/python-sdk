@@ -1,6 +1,7 @@
 """OAuth 2.0 client implementation"""
 
 import asyncio
+import concurrent.futures
 import os
 import threading
 import warnings
@@ -175,9 +176,20 @@ def _prepare_exchange_assertion_sync(
                 daemon=True,
             ).start()
             _exchange_loop = loop
-    return asyncio.run_coroutine_threadsafe(
+    future = asyncio.run_coroutine_threadsafe(
         _prepare_exchange_assertion(credential, request, client, issuer, endpoints), loop
-    ).result()
+    )
+    timeout = client.config.timeout
+    try:
+        return future.result(timeout=timeout)
+    except concurrent.futures.TimeoutError as e:
+        # A hung preparation stays bounded by the client's timeout instead of
+        # blocking the caller forever on the shared loop.
+        future.cancel()
+        raise NetworkError(
+            TimeoutError(f"assertion preparation exceeded {timeout} seconds"),
+            operation="token exchange assertion preparation",
+        ) from e
 
 
 class _PublicClient:

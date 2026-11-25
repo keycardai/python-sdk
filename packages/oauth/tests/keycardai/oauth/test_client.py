@@ -14,7 +14,7 @@ from joserfc.jwk import KeySet
 from pydantic import ValidationError
 
 from keycardai.oauth import AsyncClient, Client, ClientConfig
-from keycardai.oauth.exceptions import ConfigError
+from keycardai.oauth.exceptions import ConfigError, NetworkError
 from keycardai.oauth.http._wire import HttpResponse
 from keycardai.oauth.http.auth import NoneAuth
 from keycardai.oauth.server.credentials import (
@@ -249,6 +249,35 @@ def test_row_4b_sync_exchange_reuses_async_identity_source_connection():
                 asyncio.run_coroutine_threadsafe(source_http.aclose(), source_loop).result()
             server.shutdown()
             thread.join()
+
+
+def test_sync_exchange_hung_assertion_preparation_raises_after_timeout():
+    started = threading.Event()
+
+    async def hang():
+        started.set()
+        await asyncio.sleep(3600)
+
+    with TestExchangeCredential().client(Client, WorkloadIdentity(hang)) as client:
+        client.config.timeout = 0.2
+        result: dict[str, BaseException] = {}
+
+        def exchange():
+            try:
+                client.exchange_token(subject_token="subject")
+            except BaseException as e:  # noqa: BLE001
+                result["error"] = e
+
+        caller = threading.Thread(target=exchange, daemon=True)
+        caller.start()
+        caller.join(timeout=5)
+
+        assert started.is_set()
+        assert not caller.is_alive()
+        error = result.get("error")
+        assert isinstance(error, NetworkError)
+        assert isinstance(error.cause, TimeoutError)
+        client.transport.request_raw.assert_not_called()
 
 
 @pytest.mark.skipif(
