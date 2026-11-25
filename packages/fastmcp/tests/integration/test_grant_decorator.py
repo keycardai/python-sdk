@@ -17,6 +17,7 @@ from keycardai.fastmcp import (
     MissingContextError,
     ResourceAccessError,
 )
+from keycardai.oauth.exceptions import OAuthProtocolError
 from keycardai.oauth.types.models import TokenExchangeRequest, TokenResponse
 
 
@@ -109,13 +110,22 @@ class TestGrantDecoratorExecution:
 
     @pytest.mark.asyncio
     @patch('keycardai.fastmcp.provider.get_access_token')
-    async def test_grant_decorator_token_exchange_failure_with_injected_client(self, mock_get_token, auth_provider_config, mock_client_factory):
+    @pytest.mark.parametrize(
+        "reason", [None, pytest.param("policy_denied", id="row_5a")],
+    )
+    async def test_grant_decorator_token_exchange_failure_with_injected_client(
+        self, mock_get_token, auth_provider_config, mock_client_factory, reason
+    ):
         """Test grant decorator handles token exchange failure with injected client."""
         mock_get_token.return_value = AccessToken(token="test_token", client_id="test_client", scopes=["test_scope"])
 
         # Mock client with failing exchange_token
         mock_client = AsyncMock()
         mock_client.exchange_token.side_effect = Exception("Exchange failed")
+        if reason is not None:
+            error = OAuthProtocolError(error="access_denied")
+            error.reason = reason
+            mock_client.exchange_token.side_effect = error
 
         auth_provider = AuthProvider(
             **auth_provider_config,
@@ -130,7 +140,11 @@ class TestGrantDecoratorExecution:
             access_ctx = await ctx.get_state("keycardai")
             if access_ctx.has_resource_error("https://api.example.com"):
                 error = access_ctx.get_resource_error("https://api.example.com")
-                return {"error": error["message"], "isError": True}
+                return {
+                    "error": error["message"],
+                    "isError": True,
+                    "reason": error.get("reason"),
+                }
             return {"error": "No error", "isError": False, "access_ctx": access_ctx}
 
         mock_context = create_mock_context()
@@ -139,6 +153,7 @@ class TestGrantDecoratorExecution:
 
         assert result["error"] == "Token exchange failed for https://api.example.com"
         assert result["isError"] is True
+        assert result["reason"] == reason
 
     @pytest.mark.asyncio
     @patch('keycardai.fastmcp.provider.get_access_token')

@@ -13,6 +13,7 @@ import json
 import threading
 import time
 from types import MappingProxyType
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -265,6 +266,24 @@ def test_as_self_failure_dict_carries_retryable(error, expected) -> None:
     assert recorded is not None
     assert recorded["retryable"] is expected
     assert "Client credentials grant failed" in recorded["message"]
+
+
+@pytest.mark.parametrize("reason", ["policy_denied", None])
+@pytest.mark.parametrize("as_self", [False, True])
+def test_row_5a_resource_failure_preserves_optional_reason(as_self, reason) -> None:
+    stub = StubExchangeClient()
+    error = OAuthProtocolError(error="access_denied", reason=reason)
+    stub.self_error = error
+    stub.exchange_token = AsyncMock(side_effect=error)
+    mode = Access.as_self() if as_self else Access.on_behalf_of("caller-token")
+
+    recorded = build(engine(stub), mode).get_resource_error(RESOURCE)
+
+    assert recorded is not None
+    if reason is None:
+        assert "reason" not in recorded
+    else:
+        assert recorded["reason"] == reason
 
 
 # Configuration and credentials

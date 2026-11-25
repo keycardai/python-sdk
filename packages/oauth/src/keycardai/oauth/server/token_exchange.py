@@ -123,6 +123,8 @@ async def exchange_tokens_for_resources(
             }
             if isinstance(e, OAuthProtocolError):
                 error_dict["code"] = e.error
+                if e.reason is not None:
+                    error_dict["reason"] = e.reason
                 if e.error_description:
                     error_dict["description"] = e.error_description
             else:
