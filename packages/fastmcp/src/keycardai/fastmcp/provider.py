@@ -1148,6 +1148,9 @@ class AuthProvider:
                 }
                 if isinstance(e, OAuthProtocolError):
                     _error_dict["code"] = e.error
+                    reason = getattr(e, "reason", None)
+                    if reason is not None:
+                        _error_dict["reason"] = reason
                     if e.error_description:
                         _error_dict["description"] = e.error_description
                 else:
