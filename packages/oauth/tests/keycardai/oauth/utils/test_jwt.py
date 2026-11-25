@@ -27,6 +27,32 @@ from keycardai.oauth.utils.jwt import (
 )
 
 
+class TestAudienceList:
+    @pytest.mark.parametrize(
+        ("aud", "accepted"),
+        [
+            pytest.param("resource-b", True, id="test_row_8a_scalar_match"),
+            pytest.param("resource-c", False, id="test_row_8b_scalar_mismatch"),
+            pytest.param(
+                ["resource-c", "resource-b"], True, id="test_row_8c_array_match"
+            ),
+            pytest.param(
+                ["resource-c", "resource-d"], False, id="test_row_8d_array_mismatch"
+            ),
+        ],
+    )
+    def test_audience_intersection(self, aud, accepted):
+        token = JWTAccessToken(
+            iss="https://example.com",
+            sub="user",
+            aud=aud,
+            exp=2_000_000_000,
+            iat=1_900_000_000,
+            client_id="client",
+        )
+        assert token.validate_audience(["resource-a", "resource-b"]) is accepted
+
+
 class TestJWTTokenSplitting:
     """Test JWT token splitting functionality."""
 

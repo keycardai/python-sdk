@@ -90,7 +90,7 @@ class TokenVerifier:
         allowed_algorithms: list[str] | None = None,
         key_ttl: int = 300,
         enable_multi_zone: bool = False,
-        audience: str | dict[str, str] | None = None,
+        audience: str | list[str] | dict[str, str] | None = None,
         client_factory: ClientFactory | None = None,
         *,
         discovery_ttl: int = 3600,
@@ -101,6 +101,8 @@ class TokenVerifier:
     ):
         if not issuer:
             raise VerifierConfigError("Issuer is required for token verification")
+        if isinstance(audience, list) and not audience:
+            raise VerifierConfigError("audience must not be an empty list")
         if allowed_algorithms is None:
             allowed_algorithms = ["RS256"]
         if cache_ttl is not None:

@@ -931,6 +931,10 @@ class TestTokenVerifierCacheKnobs:
 class TestTokenVerifierMissingAudienceWarning:
     """Construction without an audience warns exactly once; with one, not at all."""
 
+    def test_row_8e_explicit_empty_audience_raises_at_construction(self):
+        with pytest.raises(VerifierConfigError, match="audience"):
+            TokenVerifier(issuer="https://example.com", audience=[])
+
     def test_no_audience_warns_once_naming_the_option(self):
         with pytest.warns(MissingAudienceWarning, match="pass audience=") as record:
             TokenVerifier(issuer="https://example.com")
