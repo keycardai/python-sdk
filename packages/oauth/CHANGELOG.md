@@ -1,3 +1,39 @@
+## 0.37.2-keycardai-oauth (2026-11-25)
+
+
+- fix(keycardai-oauth): preserve reasons in resource errors (#459)
+- * fix(keycardai-oauth): preserve reasons in resource errors
+- Co-Authored-By: Devin AI <158243242+devin-ai-integration[bot]@users.noreply.github.com>
+- * fix(keycardai-mcp): preserve reasons in grant errors
+- Co-Authored-By: Devin AI <158243242+devin-ai-integration[bot]@users.noreply.github.com>
+- * fix(keycardai-fastmcp): preserve reasons in grant errors
+- Co-Authored-By: Devin AI <158243242+devin-ai-integration[bot]@users.noreply.github.com>
+- * test(keycardai-oauth): name spec row tests for denial reasons
+- ---------
+- Co-authored-by: devin-ai-keycard <devin-ai@keycard.ai>
+Co-authored-by: Devin AI <158243242+devin-ai-integration[bot]@users.noreply.github.com>
+Co-authored-by: Larry Osakwe <23560354+Larry-Osakwe@users.noreply.github.com>
+- fix(keycardai-oauth): preserve reasons in resource errors (#459)
+- * fix(keycardai-oauth): preserve reasons in resource errors
+- Co-Authored-By: Devin AI <158243242+devin-ai-integration[bot]@users.noreply.github.com>
+- * fix(keycardai-mcp): preserve reasons in grant errors
+- Co-Authored-By: Devin AI <158243242+devin-ai-integration[bot]@users.noreply.github.com>
+- * fix(keycardai-fastmcp): preserve reasons in grant errors
+- Co-Authored-By: Devin AI <158243242+devin-ai-integration[bot]@users.noreply.github.com>
+- * test(keycardai-oauth): name spec row tests for denial reasons
+- ---------
+- Co-authored-by: devin-ai-keycard <devin-ai@keycard.ai>
+Co-authored-by: Devin AI <158243242+devin-ai-integration[bot]@users.noreply.github.com>
+Co-authored-by: Larry Osakwe <23560354+Larry-Osakwe@users.noreply.github.com>
+- fix(keycardai-oauth): merge and deduplicate authorize URL queries (#455)
+- * fix(keycardai-oauth): merge and deduplicate authorize URL queries
+- Co-Authored-By: Devin AI <158243242+devin-ai-integration[bot]@users.noreply.github.com>
+- * fix(keycardai-mcp): merge OAuth authorization endpoint queries
+- Co-Authored-By: Devin AI <158243242+devin-ai-integration[bot]@users.noreply.github.com>
+- ---------
+- Co-authored-by: devin-ai-keycard <devin-ai@keycard.ai>
+Co-authored-by: Devin AI <158243242+devin-ai-integration[bot]@users.noreply.github.com>
+
 ## 0.37.1-keycardai-oauth (2026-11-22)
 
 
