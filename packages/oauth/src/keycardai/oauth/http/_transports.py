@@ -12,6 +12,7 @@ handshake per request.
 
 import asyncio
 import threading
+import zlib
 from collections.abc import Mapping
 
 import httpx
@@ -24,12 +25,91 @@ from ..exceptions import (
 from ..types.models import ClientConfig
 from ._wire import HttpRequest, HttpResponse
 
+_RAW_CHUNK_SIZE = 16_384
+
+
+class _BoundedZlibDecoder:
+    """Incrementally decompresses gzip or deflate bytes with a hard output cap.
+
+    Uses ``zlib.decompressobj().decompress(chunk, max_length=...)`` so a
+    compressed response (e.g. a gzip bomb) never allocates more than
+    ``limit + 1`` decoded bytes before raising ``ResponseBodyTooLargeError``.
+    """
+
+    def __init__(self, encoding: str, limit: int, status_code: int, operation: str):
+        self._encoding = encoding
+        self._limit = limit
+        self._status_code = status_code
+        self._operation = operation
+        self._buf = bytearray()
+        self._first_chunk = True
+        wbits = zlib.MAX_WBITS | 16 if encoding in ("gzip", "x-gzip") else zlib.MAX_WBITS
+        self._decompressor = zlib.decompressobj(wbits)
+
+    def feed(self, chunk: bytes) -> None:
+        data = chunk
+        while data:
+            remaining = self._limit - len(self._buf)
+            try:
+                decoded = self._decompressor.decompress(data, remaining + 1)
+            except zlib.error:
+                if self._first_chunk and self._encoding == "deflate":
+                    self._first_chunk = False
+                    self._decompressor = zlib.decompressobj(-zlib.MAX_WBITS)
+                    decoded = self._decompressor.decompress(data, remaining + 1)
+                else:
+                    raise
+            self._first_chunk = False
+            if len(self._buf) + len(decoded) > self._limit:
+                raise ResponseBodyTooLargeError(
+                    status_code=self._status_code,
+                    limit=self._limit,
+                    operation=self._operation,
+                )
+            self._buf.extend(decoded)
+            data = self._decompressor.unconsumed_tail
+
+    def finish(self) -> bytes:
+        remaining = self._limit - len(self._buf)
+        tail = self._decompressor.flush(remaining + 1)
+        if len(self._buf) + len(tail) > self._limit:
+            raise ResponseBodyTooLargeError(
+                status_code=self._status_code,
+                limit=self._limit,
+                operation=self._operation,
+            )
+        self._buf.extend(tail)
+        return bytes(self._buf)
+
+
+def _zlib_encoding(r: httpx.Response) -> str | None:
+    enc = r.headers.get("content-encoding", "").strip().lower()
+    if enc in ("gzip", "x-gzip", "deflate"):
+        return enc
+    return None
+
 
 def _read_bounded_sync(
     r: httpx.Response,
     operation: str,
     limit: int = MAX_RESPONSE_BODY_BYTES,
 ) -> bytes:
+    enc = _zlib_encoding(r)
+    if enc is not None and hasattr(r, "iter_raw"):
+        decoder = _BoundedZlibDecoder(enc, limit, r.status_code, operation)
+        try:
+            for raw_chunk in r.iter_raw(chunk_size=_RAW_CHUNK_SIZE):
+                decoder.feed(raw_chunk)
+            return decoder.finish()
+        except (zlib.error, httpx.DecodingError) as e:
+            cause = e if isinstance(e, httpx.DecodingError) else httpx.DecodingError(str(e))
+            raise ResponseBodyDecodeError(
+                status=r.status_code,
+                headers=r.headers,
+                cause=cause,
+                operation=operation,
+            ) from e
+
     buf = bytearray()
     try:
         for chunk in r.iter_bytes():
@@ -55,6 +135,22 @@ async def _read_bounded_async(
     operation: str,
     limit: int = MAX_RESPONSE_BODY_BYTES,
 ) -> bytes:
+    enc = _zlib_encoding(r)
+    if enc is not None and hasattr(r, "aiter_raw"):
+        decoder = _BoundedZlibDecoder(enc, limit, r.status_code, operation)
+        try:
+            async for raw_chunk in r.aiter_raw(chunk_size=_RAW_CHUNK_SIZE):
+                decoder.feed(raw_chunk)
+            return decoder.finish()
+        except (zlib.error, httpx.DecodingError) as e:
+            cause = e if isinstance(e, httpx.DecodingError) else httpx.DecodingError(str(e))
+            raise ResponseBodyDecodeError(
+                status=r.status_code,
+                headers=r.headers,
+                cause=cause,
+                operation=operation,
+            ) from e
+
     buf = bytearray()
     try:
         async for chunk in r.aiter_bytes():
