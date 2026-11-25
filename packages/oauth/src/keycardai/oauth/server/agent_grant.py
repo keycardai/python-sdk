@@ -394,6 +394,8 @@ class AgentGrantEngine:
                 }
                 if isinstance(e, OAuthProtocolError):
                     error["code"] = e.error
+                    if e.reason is not None:
+                        error["reason"] = e.reason
                     if e.error_description:
                         error["description"] = e.error_description
                 else:

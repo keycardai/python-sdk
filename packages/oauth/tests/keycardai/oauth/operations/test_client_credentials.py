@@ -1,5 +1,6 @@
 """Unit tests for OAuth 2.0 Client Credentials Grant operations (RFC 6749 Section 4.4)."""
 
+import json
 from unittest.mock import AsyncMock, Mock
 from urllib.parse import parse_qs
 
@@ -151,6 +152,23 @@ class TestClientCredentialsOperations:
             parse_client_credentials_http_response(http_response)
 
         assert exc_info.value.reason == "policy_denied"
+
+    @pytest.mark.parametrize(
+        "reason",
+        [pytest.param("custom_denial", id="row_6a"), pytest.param(None, id="row_6b")],
+    )
+    def test_denial_preserves_optional_reason(self, reason):
+        body = {"error": "access_denied", "error_description": "Denied"}
+        if reason is not None:
+            body["reason"] = reason
+        response = HttpResponse(status=400, headers={}, body=json.dumps(body).encode())
+
+        with pytest.raises(OAuthProtocolError) as exc_info:
+            parse_client_credentials_http_response(response)
+
+        assert exc_info.value.reason == reason
+        assert exc_info.value.error_description == "Denied"
+        assert exc_info.value.retryable is False
 
     def test_parse_client_credentials_http_response_http_error_non_json(self):
         """Test parsing HTTP error response with non-JSON body."""
