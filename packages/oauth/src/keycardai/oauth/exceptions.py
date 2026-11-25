@@ -12,6 +12,11 @@ References:
 
 from dataclasses import dataclass
 
+# Maximum decoded bytes the default HTTP transports read from an
+# authorization-server response (1 MiB).
+MAX_RESPONSE_BODY_BYTES = 1_048_576
+
+
 # OAuth error codes where a retry cannot help: the authorization server said
 # no on policy grounds, the device code expired or was already used, the
 # caller lacks the delegated authorization it asked for, or the client
@@ -116,6 +121,7 @@ class OAuthProtocolError(OAuthError):
     operation: str = ""
     retriable: bool = False  # Protocol errors are never retriable
     reason: str | None = None
+    status_code: int | None = None
 
     def __init__(
         self,
@@ -124,12 +130,14 @@ class OAuthProtocolError(OAuthError):
         error_uri: str | None = None,
         operation: str = "",
         reason: str | None = None,
+        status_code: int | None = None,
     ):
         self.error = error
         self.error_description = error_description
         self.error_uri = error_uri
         self.operation = operation
         self.reason = reason
+        self.status_code = status_code
         self.retriable = False
 
         message = f"OAuth error: {error}"
@@ -151,12 +159,42 @@ class OAuthProtocolError(OAuthError):
           authorization the exchange requires.
         - ``invalid_client``: client authentication failed.
 
-        True for every other code, including ``invalid_response`` for
-        malformed server responses, so transport-shaped failures stay
-        retryable. Independent of the legacy ``retriable`` attribute, which
-        is always False for protocol errors.
+        For ``invalid_response`` with an HTTP status code, ``2xx``, ``429``,
+        and ``5xx`` are retryable and other statuses are not. Independent of
+        the legacy ``retriable`` attribute, which is always False for protocol
+        errors.
         """
+        if self.error == "invalid_response" and self.status_code is not None:
+            return (200 <= self.status_code < 300) or _is_transient_status(
+                self.status_code
+            )
         return self.error not in PERMANENT_ERROR_CODES
+
+
+class ResponseBodyTooLargeError(OAuthProtocolError):
+    """The decoded response body exceeded the 1 MiB transport limit.
+
+    Carries ``error="invalid_response"`` and the HTTP ``status_code``.
+    ``retryable`` is True on ``2xx``, ``429``, and ``5xx``, and False on
+    other statuses.
+    """
+
+    def __init__(
+        self,
+        *,
+        status_code: int,
+        limit: int = MAX_RESPONSE_BODY_BYTES,
+        operation: str = "",
+    ):
+        self.limit = limit
+        super().__init__(
+            error="invalid_response",
+            error_description=(
+                f"Response body exceeded the {limit}-byte decoded size limit"
+            ),
+            operation=operation,
+            status_code=status_code,
+        )
 
 
 class AuthorizationDeniedError(OAuthProtocolError):
@@ -239,6 +277,8 @@ def classify_discovery_failure(cause: Exception | None) -> bool:
     """
     if cause is None:
         return False
+    if isinstance(cause, ResponseBodyTooLargeError):
+        return cause.retryable
     if isinstance(cause, OAuthHttpError):
         return cause.retryable
     if isinstance(cause, OAuthProtocolError):
@@ -278,6 +318,12 @@ class AuthorizationServerDiscoveryError(OAuthError):
     @property
     def retryable(self) -> bool:
         return classify_discovery_failure(self.cause)
+
+    @property
+    def status_code(self) -> int | None:
+        if isinstance(self.cause, (OAuthHttpError, OAuthProtocolError)):
+            return self.cause.status_code
+        return None
 
 
 class ConfigError(OAuthError):
@@ -442,6 +488,26 @@ class JWKSError(OAuthError):
 
 class JWKSFetchError(JWKSError):
     """The JWKS endpoint could not be fetched or returned a non-2xx response."""
+
+    def __init__(
+        self,
+        message: str,
+        cause: Exception | None = None,
+        *,
+        status_code: int | None = None,
+    ):
+        super().__init__(message, cause)
+        self.status_code = status_code
+
+    @property
+    def retryable(self) -> bool:
+        if isinstance(self.cause, ResponseBodyTooLargeError):
+            return self.cause.retryable
+        if self.status_code is not None:
+            return _is_transient_status(self.status_code)
+        if isinstance(self.cause, OAuthError):
+            return self.cause.retryable
+        return False
 
 
 class JWKSKeyNotFoundError(JWKSError):

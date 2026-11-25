@@ -11,7 +11,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from keycardai.oauth.exceptions import ConfigError, classify_discovery_failure
+from keycardai.oauth.exceptions import (
+    AuthorizationServerDiscoveryError,
+    ConfigError,
+    OAuthHttpError,
+    OAuthProtocolError,
+    classify_discovery_failure,
+)
 
 
 class OAuthServerError(Exception):
@@ -225,6 +231,15 @@ class JWKSDiscoveryError(OAuthServerError):
     @property
     def retryable(self) -> bool:
         return classify_discovery_failure(self.cause)
+
+    @property
+    def status_code(self) -> int | None:
+        if isinstance(
+            self.cause,
+            (AuthorizationServerDiscoveryError, OAuthHttpError, OAuthProtocolError),
+        ):
+            return self.cause.status_code
+        return None
 
 
 class JWKSUriValidationError(OAuthServerError):

@@ -23,6 +23,7 @@ from .exceptions import (
     MissingTokenEndpointError,
     NetworkError,
     OAuthHttpError,
+    ResponseBodyTooLargeError,
     _is_transient_status,
 )
 from .http._context import build_http_context
@@ -1392,6 +1393,13 @@ class AsyncClient:
                 replace(request, headers=headers),
                 timeout=timeout or self.config.timeout,
             )
+        except ResponseBodyTooLargeError as e:
+            raise DeviceAuthorizationError(
+                error="invalid_response",
+                error_description=e.error_description,
+                operation=operation,
+                status_code=e.status_code,
+            ) from e
         except ResponseBodyDecodeError as e:
             raise undecodable_body_error(e, operation) from e
 

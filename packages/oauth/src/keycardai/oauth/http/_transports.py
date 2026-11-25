@@ -12,13 +12,212 @@ handshake per request.
 
 import asyncio
 import threading
+import zlib
 from collections.abc import Mapping
 
 import httpx
 
-from ..exceptions import NetworkError
+from ..exceptions import (
+    MAX_RESPONSE_BODY_BYTES,
+    NetworkError,
+    ResponseBodyTooLargeError,
+)
 from ..types.models import ClientConfig
 from ._wire import HttpRequest, HttpResponse
+
+# The encodings the bounded decoder handles. Advertising only these keeps
+# httpx from negotiating zstd or br.
+_ACCEPT_ENCODING = "gzip, deflate"
+
+
+class _BoundedZlibDecoder:
+    """Incrementally decompresses gzip or deflate bytes with a hard output cap.
+
+    Uses ``zlib.decompressobj().decompress(chunk, max_length=...)`` so a
+    compressed response (e.g. a gzip bomb) never allocates more than
+    ``limit + 1`` decoded bytes before raising ``ResponseBodyTooLargeError``.
+    """
+
+    def __init__(self, encoding: str, limit: int, status_code: int, operation: str):
+        self._encoding = encoding
+        self._limit = limit
+        self._status_code = status_code
+        self._operation = operation
+        self._buf = bytearray()
+        self._first_chunk = True
+        self._trailing_bytes = 0
+        self._discarding_trailer = False
+        self._gzip_magic_buf = bytearray()
+        wbits = zlib.MAX_WBITS | 16 if encoding in ("gzip", "x-gzip") else zlib.MAX_WBITS
+        self._decompressor = zlib.decompressobj(wbits)
+
+    def _account_trailer(self, count: int) -> None:
+        self._trailing_bytes += count
+        if len(self._buf) + self._trailing_bytes > self._limit:
+            raise ResponseBodyTooLargeError(
+                status_code=self._status_code,
+                limit=self._limit,
+                operation=self._operation,
+            )
+
+    def feed(self, chunk: bytes) -> None:
+        data = chunk
+        while data:
+            if self._discarding_trailer:
+                self._account_trailer(len(data))
+                return
+            if self._decompressor.eof:
+                if self._encoding not in ("gzip", "x-gzip"):
+                    self._discarding_trailer = True
+                    self._account_trailer(len(data))
+                    return
+                # Skip zero padding between gzip members (matches stdlib gzip);
+                # start a new member only on the gzip magic \x1f\x8b, otherwise
+                # discard trailing bytes while still bounding total trailer size.
+                if not self._gzip_magic_buf:
+                    stripped = data.lstrip(b"\x00")
+                    self._account_trailer(len(data) - len(stripped))
+                    data = stripped
+                    if not data:
+                        return
+                need = 2 - len(self._gzip_magic_buf)
+                self._gzip_magic_buf.extend(data[:need])
+                data = data[need:]
+                if len(self._gzip_magic_buf) < 2:
+                    return
+                if bytes(self._gzip_magic_buf) == b"\x1f\x8b":
+                    data = bytes(self._gzip_magic_buf) + data
+                    self._gzip_magic_buf.clear()
+                    self._decompressor = zlib.decompressobj(zlib.MAX_WBITS | 16)
+                else:
+                    self._discarding_trailer = True
+                    self._account_trailer(len(self._gzip_magic_buf) + len(data))
+                    self._gzip_magic_buf.clear()
+                    return
+            remaining = self._limit - len(self._buf)
+            try:
+                decoded = self._decompressor.decompress(data, remaining + 1)
+            except zlib.error:
+                if self._first_chunk and self._encoding == "deflate":
+                    self._first_chunk = False
+                    self._decompressor = zlib.decompressobj(-zlib.MAX_WBITS)
+                    decoded = self._decompressor.decompress(data, remaining + 1)
+                else:
+                    raise
+            self._first_chunk = False
+            if len(self._buf) + len(decoded) > self._limit:
+                raise ResponseBodyTooLargeError(
+                    status_code=self._status_code,
+                    limit=self._limit,
+                    operation=self._operation,
+                )
+            self._buf.extend(decoded)
+            data = (
+                self._decompressor.unused_data
+                if self._decompressor.eof
+                else self._decompressor.unconsumed_tail
+            )
+
+    def finish(self) -> bytes:
+        remaining = self._limit - len(self._buf)
+        tail = self._decompressor.flush(remaining + 1)
+        if len(self._buf) + len(tail) > self._limit:
+            raise ResponseBodyTooLargeError(
+                status_code=self._status_code,
+                limit=self._limit,
+                operation=self._operation,
+            )
+        self._buf.extend(tail)
+        return bytes(self._buf)
+
+
+def _zlib_encoding(r: httpx.Response) -> str | None:
+    enc = r.headers.get("content-encoding", "").strip().lower()
+    if enc in ("gzip", "x-gzip", "deflate"):
+        return enc
+    return None
+
+
+def _read_bounded_sync(
+    r: httpx.Response,
+    operation: str,
+    limit: int = MAX_RESPONSE_BODY_BYTES,
+) -> bytes:
+    enc = _zlib_encoding(r)
+    if enc is not None and hasattr(r, "iter_raw"):
+        decoder = _BoundedZlibDecoder(enc, limit, r.status_code, operation)
+        try:
+            for raw_chunk in r.iter_raw():
+                decoder.feed(raw_chunk)
+            return decoder.finish()
+        except (zlib.error, httpx.DecodingError) as e:
+            cause = e if isinstance(e, httpx.DecodingError) else httpx.DecodingError(str(e))
+            raise ResponseBodyDecodeError(
+                status=r.status_code,
+                headers=r.headers,
+                cause=cause,
+                operation=operation,
+            ) from e
+
+    buf = bytearray()
+    try:
+        for chunk in r.iter_bytes():
+            if len(buf) + len(chunk) > limit:
+                raise ResponseBodyTooLargeError(
+                    status_code=r.status_code,
+                    limit=limit,
+                    operation=operation,
+                )
+            buf.extend(chunk)
+    except httpx.DecodingError as e:
+        raise ResponseBodyDecodeError(
+            status=r.status_code,
+            headers=r.headers,
+            cause=e,
+            operation=operation,
+        ) from e
+    return bytes(buf)
+
+
+async def _read_bounded_async(
+    r: httpx.Response,
+    operation: str,
+    limit: int = MAX_RESPONSE_BODY_BYTES,
+) -> bytes:
+    enc = _zlib_encoding(r)
+    if enc is not None and hasattr(r, "aiter_raw"):
+        decoder = _BoundedZlibDecoder(enc, limit, r.status_code, operation)
+        try:
+            async for raw_chunk in r.aiter_raw():
+                decoder.feed(raw_chunk)
+            return decoder.finish()
+        except (zlib.error, httpx.DecodingError) as e:
+            cause = e if isinstance(e, httpx.DecodingError) else httpx.DecodingError(str(e))
+            raise ResponseBodyDecodeError(
+                status=r.status_code,
+                headers=r.headers,
+                cause=cause,
+                operation=operation,
+            ) from e
+
+    buf = bytearray()
+    try:
+        async for chunk in r.aiter_bytes():
+            if len(buf) + len(chunk) > limit:
+                raise ResponseBodyTooLargeError(
+                    status_code=r.status_code,
+                    limit=limit,
+                    operation=operation,
+                )
+            buf.extend(chunk)
+    except httpx.DecodingError as e:
+        raise ResponseBodyDecodeError(
+            status=r.status_code,
+            headers=r.headers,
+            cause=e,
+            operation=operation,
+        ) from e
+    return bytes(buf)
 
 
 class ResponseBodyDecodeError(NetworkError):
@@ -65,7 +264,10 @@ class HttpxTransport:
     def _create_client(self) -> httpx.Client:
         return httpx.Client(
             verify=self.config.verify_ssl,
-            headers={"User-Agent": self.config.user_agent},
+            headers={
+                "User-Agent": self.config.user_agent,
+                "Accept-Encoding": _ACCEPT_ENCODING,
+            },
             timeout=self.config.timeout,
         )
 
@@ -89,20 +291,28 @@ class HttpxTransport:
             The HTTP response
 
         Raises:
+            ResponseBodyTooLargeError: The decoded body exceeded 1 MiB.
+            ResponseBodyDecodeError: The body did not decode.
             NetworkError: For network-level failures
         """
+        operation = f"{req.method} {req.url}"
         try:
             client = self._get_client()
-            r = client.request(
+            with client.stream(
                 method=req.method,
                 url=req.url,
                 headers=req.headers,
                 content=req.body,  # httpx uses 'content' for raw bytes
                 timeout=timeout if timeout is not None else self.config.timeout,
-            )
-            return HttpResponse(status=r.status_code, headers=dict(r.headers), body=r.content)
+            ) as r:
+                body = _read_bounded_sync(r, operation)
+                return HttpResponse(
+                    status=r.status_code, headers=dict(r.headers), body=body
+                )
+        except (ResponseBodyDecodeError, ResponseBodyTooLargeError):
+            raise
         except httpx.HTTPError as e:
-            raise NetworkError(cause=e, operation=f"{req.method} {req.url}", retriable=False) from e
+            raise NetworkError(cause=e, operation=operation, retriable=False) from e
 
     def close(self) -> None:
         """Close the pooled httpx client, if one was created.
@@ -139,7 +349,10 @@ class HttpxAsyncTransport:
     def _create_client(self) -> httpx.AsyncClient:
         return httpx.AsyncClient(
             verify=self.config.verify_ssl,
-            headers={"User-Agent": self.config.user_agent},
+            headers={
+                "User-Agent": self.config.user_agent,
+                "Accept-Encoding": _ACCEPT_ENCODING,
+            },
             timeout=self.config.timeout,
         )
 
@@ -168,6 +381,7 @@ class HttpxAsyncTransport:
             The HTTP response
 
         Raises:
+            ResponseBodyTooLargeError: The decoded body exceeded 1 MiB.
             ResponseBodyDecodeError: The body did not decode.
             NetworkError: For network-level failures
         """
@@ -183,17 +397,12 @@ class HttpxAsyncTransport:
             )
             r = await client.send(request, stream=True)
             try:
-                body = await r.aread()
-            except httpx.DecodingError as e:
-                raise ResponseBodyDecodeError(
-                    status=r.status_code,
-                    headers=r.headers,
-                    cause=e,
-                    operation=operation,
-                ) from e
+                body = await _read_bounded_async(r, operation)
             finally:
                 await r.aclose()
             return HttpResponse(status=r.status_code, headers=dict(r.headers), body=body)
+        except (ResponseBodyDecodeError, ResponseBodyTooLargeError):
+            raise
         except httpx.HTTPError as e:
             raise NetworkError(cause=e, operation=operation, retriable=False) from e
 
