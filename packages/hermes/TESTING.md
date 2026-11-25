@@ -77,3 +77,14 @@ warnings, and the relay's SSE line splitting, session replay and inline
 notifications. Rows 44 (an API server turn with an empty actor uses
 `owner_actor`) and 45 (an unknown surface with an empty actor is
 `missing_identity`) are in `tests/test_middleware.py`.
+
+`tests/test_middleware.py` also covers `agrant()` on the caller's loop
+([SDK-142](https://linear.app/keycardlabs/issue/SDK-142)): another task keeps
+running while it refreshes and while it waits on another holder's sign-in
+lock, two `agrant()` calls on one loop share one refresh, refresh failures
+route as on the sync path, and a cancelled `alock` waiter leaves the lock
+free. A cancelled or timed out `agrant()` still saves a rotated refresh
+token before the cancellation reaches it, a sync `grant()` on the loop
+thread of an in-flight `agrant()` refresh returns a retryable
+`refresh_failed` instead of hanging the loop, and a caller loop's refresh
+client is closed and does not keep the loop alive.

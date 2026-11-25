@@ -332,6 +332,310 @@ def test_row_20_two_processes_share_one_refresh(harness: Harness) -> None:
     assert result == f"obo-access-other-for-{RESOURCE}"
 
 
+async def _ticking(ticks: list[float], until: asyncio.Event) -> None:
+    while not until.is_set():
+        ticks.append(time.monotonic())
+        await asyncio.sleep(0.01)
+
+
+def test_agrant_refresh_leaves_the_loop_running(harness: Harness) -> None:
+    harness.store_sign_in("owner", "old", expires_in=10)
+    harness.client.refresh_delay = 0.3
+
+    async def body() -> tuple[str, int]:
+        ticks: list[float] = []
+        done = asyncio.Event()
+        ticker = asyncio.create_task(_ticking(ticks, done))
+        await asyncio.sleep(0)
+        async with agrant(tool_name="calendar"):
+            token = get_access_context().access(RESOURCE).access_token
+        done.set()
+        await ticker
+        return token, len(ticks)
+
+    token, ticks = asyncio.run(body())
+    assert token == f"obo-access-1-for-{RESOURCE}"
+    assert len(harness.client.refresh_calls) == 1
+    # A 0.3s refresh at a 0.01s tick: a blocked loop ticks once.
+    assert ticks >= 10
+
+
+def test_agrant_waits_on_another_holders_refresh_without_blocking_the_loop(harness: Harness) -> None:
+    harness.store_sign_in("owner", "old", expires_in=10)
+    store = harness.plugin.grants.store
+    locked = threading.Event()
+
+    def other_holder() -> None:
+        with store.lock("owner"):
+            locked.set()
+            time.sleep(0.3)
+            harness.store_sign_in("owner", "access-other", expires_in=3600)
+
+    holder = threading.Thread(target=other_holder)
+    holder.start()
+    assert locked.wait(timeout=5)
+
+    async def body() -> tuple[str, int]:
+        ticks: list[float] = []
+        done = asyncio.Event()
+        ticker = asyncio.create_task(_ticking(ticks, done))
+        await asyncio.sleep(0)
+        async with agrant(tool_name="calendar"):
+            token = get_access_context().access(RESOURCE).access_token
+        done.set()
+        await ticker
+        return token, len(ticks)
+
+    token, ticks = asyncio.run(body())
+    holder.join(timeout=5)
+    assert harness.client.refresh_calls == []
+    assert token == f"obo-access-other-for-{RESOURCE}"
+    assert ticks >= 10
+
+
+def test_two_agrants_on_one_loop_share_one_refresh(harness: Harness) -> None:
+    harness.store_sign_in("owner", "old", expires_in=10)
+    harness.client.refresh_delay = 0.2
+
+    async def one() -> str:
+        async with agrant(tool_name="calendar"):
+            return get_access_context().access(RESOURCE).access_token
+
+    async def body() -> list[str]:
+        return list(await asyncio.gather(one(), one()))
+
+    assert asyncio.run(body()) == [f"obo-access-1-for-{RESOURCE}"] * 2
+    assert len(harness.client.refresh_calls) == 1
+
+
+@pytest.mark.parametrize(
+    ("error", "expected"),
+    [(invalid_grant(), "subject_token_expired"), (network_error(), "refresh_failed")],
+)
+def test_agrant_routes_refresh_failures_like_the_sync_path(harness: Harness, error, expected) -> None:
+    harness.store_sign_in("owner", "old", expires_in=10)
+    before = harness.plugin.grants.store.path("owner").read_text()
+    harness.client.refresh_error = error
+
+    async def body() -> Any:
+        async with agrant(tool_name="calendar") as access:
+            return access
+
+    access = asyncio.run(body())
+    if expected == "subject_token_expired":
+        assert access.get_error()["code"] == expected
+    else:
+        assert access.get_resource_error(RESOURCE)["code"] == expected
+    assert harness.plugin.grants.store.path("owner").read_text() == before
+    assert harness.client.exchange_calls == []
+
+
+def test_cancelled_alock_waiter_leaves_the_lock_free(harness: Harness) -> None:
+    store = harness.plugin.grants.store
+    harness.store_sign_in("owner")
+
+    async def body() -> None:
+        async with store.alock("owner"):
+            waiter = asyncio.create_task(_take(store))
+            await asyncio.sleep(0.05)
+            waiter.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await waiter
+        async with asyncio.timeout(1):
+            async with store.alock("owner"):
+                pass
+
+    asyncio.run(body())
+    with store.lock("owner"):
+        pass
+
+
+async def _take(store: Any) -> None:
+    async with store.alock("owner"):
+        pass
+
+
+def test_cancelled_agrant_still_saves_the_rotated_refresh_token(harness: Harness) -> None:
+    harness.store_sign_in("owner", "old", expires_in=10)
+    harness.client.refresh_delay = 0.2
+    store = harness.plugin.grants.store
+
+    async def one() -> None:
+        async with agrant(tool_name="calendar"):
+            pass
+
+    async def body() -> Any:
+        task = asyncio.create_task(one())
+        # The zone has the request (and rotates refresh-1 to refresh-2) before
+        # the caller is cancelled.
+        while not harness.client.refresh_calls:
+            await asyncio.sleep(0.005)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        # Cancellation reaches the caller only once the replacement is saved.
+        return store.load("owner")
+
+    saved = asyncio.run(body())
+    assert saved is not None
+    assert (saved.refresh_token, saved.access_token) == ("refresh-2", "access-1")
+
+    harness.now += 600
+    with grant(tool_name="calendar") as access:
+        token = access.access(RESOURCE).access_token
+    assert [call["refresh_token"] for call in harness.client.refresh_calls] == ["refresh-1", "refresh-2"]
+    assert token == f"obo-access-2-for-{RESOURCE}"
+
+
+def test_agrant_timeout_still_saves_the_refresh_and_raises_timeout(harness: Harness) -> None:
+    harness.store_sign_in("owner", "old", expires_in=10)
+    harness.client.refresh_delay = 0.2
+
+    async def body() -> None:
+        async with asyncio.timeout(0.05):
+            async with agrant(tool_name="calendar"):
+                pass
+
+    with pytest.raises(TimeoutError):
+        asyncio.run(body())
+    saved = harness.plugin.grants.store.load("owner")
+    assert saved is not None and saved.refresh_token == "refresh-2"
+
+
+def test_cancelled_agrant_stays_cancelled_when_the_refresh_fails(harness: Harness) -> None:
+    harness.store_sign_in("owner", "old", expires_in=10)
+    harness.client.refresh_delay = 0.2
+    harness.client.refresh_error = server_error()
+
+    async def one() -> None:
+        async with agrant(tool_name="calendar"):
+            pass
+
+    async def body() -> None:
+        task = asyncio.create_task(one())
+        while not harness.client.refresh_calls:
+            await asyncio.sleep(0.005)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(body())
+
+
+def _on_daemon_thread(fn: Any, timeout: float = 5) -> Any:
+    """``fn()`` on a daemon thread, failing rather than hanging the run."""
+    out: dict[str, Any] = {}
+
+    def target() -> None:
+        try:
+            out["value"] = fn()
+        except BaseException as exc:
+            out["error"] = exc
+
+    thread = threading.Thread(target=target, daemon=True)
+    thread.start()
+    thread.join(timeout=timeout)
+    assert not thread.is_alive(), "deadlocked"
+    if "error" in out:
+        raise out["error"]
+    return out["value"]
+
+
+def test_sync_grant_on_the_loop_of_an_agrant_refresh_fails_fast(harness: Harness) -> None:
+    harness.store_sign_in("owner", "old", expires_in=10)
+    harness.client.refresh_delay = 0.3
+
+    async def one() -> str:
+        async with agrant(tool_name="calendar"):
+            return get_access_context().access(RESOURCE).access_token
+
+    async def body() -> tuple[Any, str]:
+        task = asyncio.create_task(one())
+        while not harness.client.refresh_calls:
+            await asyncio.sleep(0.005)
+        # A blocking grant() on the holder's own loop thread.
+        with grant(tool_name="calendar") as access:
+            error = access.get_resource_error(RESOURCE)
+        return error, await task
+
+    error, token = _on_daemon_thread(lambda: asyncio.run(body()))
+    assert error["code"] == "refresh_failed"
+    assert error["retryable"] is True
+    assert token == f"obo-access-1-for-{RESOURCE}"
+    assert len(harness.client.refresh_calls) == 1
+
+
+def test_lock_raises_on_the_thread_whose_loop_holds_alock(harness: Harness) -> None:
+    from keycardai.hermes.store import LockHeldByThisLoop
+
+    store = harness.plugin.grants.store
+    released = threading.Event()
+
+    def other_thread_waits() -> None:
+        with store.lock("owner"):
+            released.set()
+
+    async def body() -> None:
+        async with store.alock("owner"):
+            with pytest.raises(LockHeldByThisLoop):
+                with store.lock("owner"):
+                    pass
+            waiter = threading.Thread(target=other_thread_waits, daemon=True)
+            waiter.start()
+            await asyncio.sleep(0.1)
+            # Another thread still waits for the holder as before.
+            assert not released.is_set()
+        await asyncio.to_thread(waiter.join, 5)
+        assert released.is_set()
+        # Once released, this thread takes it normally.
+        with store.lock("owner"):
+            pass
+
+    _on_daemon_thread(lambda: asyncio.run(body()))
+
+
+def test_agrant_refresh_client_does_not_outlive_its_loop(harness: Harness, monkeypatch: pytest.MonkeyPatch) -> None:
+    import gc
+    import weakref
+
+    from keycardai.hermes import grants as grants_module
+
+    closed: list[bool] = []
+    stub = harness.client
+
+    class LoopHoldingClient:
+        """Holds the loop strongly once used, as the httpx transport does."""
+
+        def __init__(self, issuer: str) -> None:
+            self.loop: Any = None
+            self.index = len(closed)
+            closed.append(False)
+
+        async def refresh_token_grant(self, **kwargs: Any) -> Any:
+            self.loop = asyncio.get_running_loop()
+            return await stub.refresh_token_grant(**kwargs)
+
+        async def aclose(self) -> None:
+            closed[self.index] = True
+
+    monkeypatch.setattr(grants_module, "AsyncClient", LoopHoldingClient)
+    harness.plugin.grants.public_client = None
+    loops: list[weakref.ref[asyncio.AbstractEventLoop]] = []
+
+    async def body() -> str:
+        loops.append(weakref.ref(asyncio.get_running_loop()))
+        async with agrant(tool_name="calendar"):
+            return get_access_context().access(RESOURCE).access_token
+
+    for _ in range(2):
+        harness.store_sign_in("owner", "old", expires_in=10)
+        assert asyncio.run(body()).startswith("obo-access-")
+    gc.collect()
+    assert closed == [True, True]
+    assert [ref() for ref in loops] == [None, None]
+    assert harness.plugin.grants._engine_public is None
+
+
 # row 21
 @pytest.mark.parametrize("error", [network_error(), server_error()])
 def test_row_21_other_refresh_failures_are_per_resource_and_leave_the_store(harness: Harness, error) -> None:

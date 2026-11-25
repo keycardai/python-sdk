@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import shlex
 import time
 from collections.abc import Callable, Coroutine
-from dataclasses import dataclass
-from typing import Any
+from dataclasses import dataclass, field
+from typing import Any, cast
 
 from keycardai.oauth import AsyncClient
 from keycardai.oauth.exceptions import OAuthProtocolError
@@ -18,7 +19,7 @@ from keycardai.oauth.server import (
 )
 
 from .settings import HermesSettings
-from .store import EXPIRY_SKEW_SECONDS, SignIn, SignInStore
+from .store import EXPIRY_SKEW_SECONDS, LockHeldByThisLoop, SignIn, SignInStore
 
 LOGIN_COMMAND = "hermes keycard login --actor {actor}"
 
@@ -66,9 +67,22 @@ class Grants:
     store: SignInStore
     clock: Callable[[], float] = time.time
     public_client: AsyncClient | None = None
+    _engine_public: AsyncClient | None = field(default=None, init=False, repr=False)
 
     def run(self, coro: Coroutine[Any, Any, Any]) -> Any:
         return self.engine.run_sync(coro)
+
+    def _checked(self, actor: str, sign_in: SignIn | None) -> tuple[SignIn, bool]:
+        """``sign_in`` and whether it needs a refresh first. Raises
+        ``SignInRequired`` for no sign-in, or for one near expiry with no
+        refresh token."""
+        if sign_in is None:
+            raise SignInRequired("missing_identity", actor)
+        if not sign_in.near_expiry(EXPIRY_SKEW_SECONDS, self.clock()):
+            return sign_in, False
+        if not sign_in.refresh_token:
+            raise SignInRequired("subject_token_expired", actor)
+        return sign_in, True
 
     def fresh_sign_in(self, actor: str) -> SignIn:
         """The stored sign-in, refreshed when within the skew of its expiry.
@@ -78,35 +92,81 @@ class Grants:
         refresh failure. At most one refresh per sign-in runs at a time across
         threads and processes; a waiter re-reads the store and uses the
         other's result.
+
+        Called on a thread whose running loop has an ``agrant`` refresh of
+        the same sign-in in flight, waiting for its lock would hang that
+        loop, so the call raises ``RefreshFailed`` (a retryable per-resource
+        error) instead of waiting.
         """
-        sign_in = self.store.load(actor)
-        if sign_in is None:
-            raise SignInRequired("missing_identity", actor)
-        if not sign_in.near_expiry(EXPIRY_SKEW_SECONDS, self.clock()):
+        sign_in, stale = self._checked(actor, self.store.load(actor))
+        if not stale:
             return sign_in
-        if not sign_in.refresh_token:
-            raise SignInRequired("subject_token_expired", actor)
-        with self.store.lock(actor):
-            current = self.store.load(actor)
-            if current is None:
-                raise SignInRequired("missing_identity", actor)
-            if not current.near_expiry(EXPIRY_SKEW_SECONDS, self.clock()):
+        try:
+            with self.store.lock(actor):
+                current, stale = self._checked(actor, self.store.load(actor))
+                if not stale:
+                    return current
+                try:
+                    response = self.run(self._refresh_coro(current, self._engine_client()))
+                except Exception as exc:
+                    raise _refresh_error(actor, exc) from exc
+                return self._store_refreshed(actor, current, response)
+        except LockHeldByThisLoop as exc:
+            raise RefreshFailed(str(exc)) from exc
+
+    async def afresh_sign_in(self, actor: str) -> SignIn:
+        """``fresh_sign_in`` on the running loop: the sign-in lock is taken
+        with ``SignInStore.alock`` and the refresh is awaited here, so other
+        tasks on the loop keep running while it is in flight. The lock is the
+        same one ``fresh_sign_in`` takes, so sync and async callers still
+        share one refresh per sign-in.
+
+        The refresh and the save run as their own task, shielded from the
+        caller: the zone may rotate the refresh token as soon as it gets the
+        request, so a caller cancelled mid refresh still waits, holding the
+        lock, until the replacement is saved, and then raises
+        ``CancelledError``."""
+        sign_in, stale = self._checked(actor, self.store.load(actor))
+        if not stale:
+            return sign_in
+        async with self.store.alock(actor):
+            current, stale = self._checked(actor, self.store.load(actor))
+            if not stale:
                 return current
-            if not current.refresh_token:
-                raise SignInRequired("subject_token_expired", actor)
-            return self._refresh(actor, current)
+            return await _uncancellable(self._arefresh_and_store(actor, current))
 
-    def _public(self) -> AsyncClient:
-        """The unauthenticated client the public sign-in client's requests go
-        through: the engine's client carries the application's own client
-        authentication, which must not be sent with a public client_id.
-        Built on the running loop (the engine's persistent loop)."""
-        if self.public_client is None:
-            self.public_client = AsyncClient(issuer=self.settings.zone_url)
-        return self.public_client
+    async def _arefresh_and_store(self, actor: str, sign_in: SignIn) -> SignIn:
+        if self.public_client is not None:
+            client = self.public_client
+            owned = False
+        else:
+            # One client per refresh on the caller's loop: a refresh runs once
+            # per access token lifetime, and a client kept past this loop
+            # would hold the loop through its transport after it closes.
+            client = AsyncClient(issuer=self.settings.zone_url)
+            owned = True
+        try:
+            response = await self._refresh_coro(sign_in, client)
+        except Exception as exc:
+            raise _refresh_error(actor, exc) from exc
+        finally:
+            if owned:
+                await client.aclose()
+        return self._store_refreshed(actor, sign_in, response)
 
-    async def _refresh_coro(self, sign_in: SignIn) -> Any:
-        client = self._public()
+    def _engine_client(self) -> AsyncClient:
+        """The unauthenticated client for refreshes on the engine's persistent
+        loop: the engine's client carries the application's own client
+        authentication, which must not be sent with a public client_id. An
+        injected ``public_client`` is used as is; otherwise one client is
+        kept for the life of the profile, as that loop is."""
+        if self.public_client is not None:
+            return self.public_client
+        if self._engine_public is None:
+            self._engine_public = AsyncClient(issuer=self.settings.zone_url)
+        return self._engine_public
+
+    async def _refresh_coro(self, sign_in: SignIn, client: AsyncClient) -> Any:
         resources = [self.settings.sign_in_resource] if self.settings.sign_in_resource else None
         return await client.refresh_token_grant(
             refresh_token=sign_in.refresh_token or "",
@@ -114,15 +174,7 @@ class Grants:
             resources=resources,
         )
 
-    def _refresh(self, actor: str, sign_in: SignIn) -> SignIn:
-        try:
-            response = self.run(self._refresh_coro(sign_in))
-        except OAuthProtocolError as exc:
-            if exc.error == "invalid_grant":
-                raise SignInRequired("subject_token_expired", actor) from exc
-            raise RefreshFailed(str(exc)) from exc
-        except Exception as exc:
-            raise RefreshFailed(str(exc)) from exc
+    def _store_refreshed(self, actor: str, sign_in: SignIn, response: Any) -> SignIn:
         expires_in = response.expires_in if response.expires_in is not None else 300
         refreshed = SignIn(
             client_id=sign_in.client_id,
@@ -133,10 +185,10 @@ class Grants:
         self.store.save(actor, refreshed)
         return refreshed
 
-    def identity_for(self, actor: str | None, pattern: str | None = None) -> KeycardIdentity:
-        """The identity for ``actor`` under ``pattern`` (default
-        ``default_pattern``); raises ``SignInRequired`` or ``RefreshFailed``."""
-        pattern = pattern or self.settings.default_pattern
+    def _identity_without_sign_in(self, actor: str | None, pattern: str) -> KeycardIdentity | None:
+        """The identity for a ``pattern`` that needs no stored sign-in, or
+        None for ``on_behalf_of`` with an actor. Raises ``SignInRequired``
+        when there is no actor or no ``actors`` entry to impersonate."""
         if pattern == "as_self":
             return Access.as_self()
         if actor is None:
@@ -146,7 +198,25 @@ class Grants:
             if not user:
                 raise SignInRequired("missing_identity", actor)
             return Access.impersonate(user)
-        return Access.on_behalf_of(self.fresh_sign_in(actor).access_token)
+        return None
+
+    def identity_for(self, actor: str | None, pattern: str | None = None) -> KeycardIdentity:
+        """The identity for ``actor`` under ``pattern`` (default
+        ``default_pattern``); raises ``SignInRequired`` or ``RefreshFailed``."""
+        pattern = pattern or self.settings.default_pattern
+        identity = self._identity_without_sign_in(actor, pattern)
+        if identity is not None:
+            return identity
+        return Access.on_behalf_of(self.fresh_sign_in(cast(str, actor)).access_token)
+
+    async def aidentity_for(self, actor: str | None, pattern: str | None = None) -> KeycardIdentity:
+        """``identity_for`` with the refresh awaited on the running loop."""
+        pattern = pattern or self.settings.default_pattern
+        identity = self._identity_without_sign_in(actor, pattern)
+        if identity is not None:
+            return identity
+        sign_in = await self.afresh_sign_in(cast(str, actor))
+        return Access.on_behalf_of(sign_in.access_token)
 
     def resolve(
         self, actor: str | None, resources: list[str], pattern: str | None = None
@@ -154,30 +224,19 @@ class Grants:
         """The identity for ``actor``, or the AccessContext that records why
         there is none. Never raises: a missing or expired sign-in is a
         context error, a failed refresh a per-resource error."""
-        pattern = pattern or self.settings.default_pattern
         try:
             return self.identity_for(actor, pattern), None, None
-        except SignInRequired as needed:
-            access = AccessContext()
-            access.set_error(
-                {
-                    "message": sign_in_message(needed.reason, needed.actor),
-                    "code": needed.reason,
-                }
-            )
-            return None, access, needed
-        except RefreshFailed as exc:
-            access = AccessContext()
-            for resource in resources:
-                access.set_resource_error(
-                    resource,
-                    {
-                        "message": f"The stored sign-in could not be refreshed: {exc}",
-                        "code": "refresh_failed",
-                        "retryable": True,
-                    },
-                )
-            return None, access, None
+        except (SignInRequired, RefreshFailed) as exc:
+            return _unresolved(exc, resources)
+
+    async def aresolve(
+        self, actor: str | None, resources: list[str], pattern: str | None = None
+    ) -> tuple[KeycardIdentity | None, AccessContext | None, SignInRequired | None]:
+        """``resolve`` with the refresh awaited on the running loop."""
+        try:
+            return await self.aidentity_for(actor, pattern), None, None
+        except (SignInRequired, RefreshFailed) as exc:
+            return _unresolved(exc, resources)
 
     def acquire(
         self, actor: str | None, resources: list[str], pattern: str | None = None
@@ -192,11 +251,70 @@ class Grants:
     async def aacquire(
         self, actor: str | None, resources: list[str], pattern: str | None = None
     ) -> AccessContext:
-        """``acquire`` on the running loop, for ``agrant``."""
-        identity, access, _ = self.resolve(actor, resources, pattern)
+        """``acquire`` on the running loop, for ``agrant``: the refresh and
+        the sign-in lock are awaited, so the loop is never blocked."""
+        identity, access, _ = await self.aresolve(actor, resources, pattern)
         if access is not None:
             return access
         return await self.engine.build_access(identity, resources)
+
+
+async def _uncancellable(coro: Coroutine[Any, Any, SignIn]) -> SignIn:
+    """Await ``coro`` as a task the caller's cancellation cannot interrupt.
+    A cancelled caller waits for the task to finish, then raises
+    ``CancelledError``, so the cancellation still reaches it (and an
+    ``asyncio.timeout`` around it still turns into ``TimeoutError``)."""
+    task = asyncio.ensure_future(coro)
+    cancelled = False
+    while not task.done():
+        try:
+            # wait() returns when the task finishes, whether it succeeded or
+            # failed, and a cancelled waiter leaves the task running, so the
+            # only exception here is the caller's own cancellation.
+            await asyncio.wait({task})
+        except asyncio.CancelledError:
+            cancelled = True
+    if cancelled:
+        if not task.cancelled():
+            # Retrieved so a failed refresh is not logged as never retrieved.
+            task.exception()
+        raise asyncio.CancelledError
+    return task.result()
+
+
+def _refresh_error(actor: str, exc: Exception) -> SignInRequired | RefreshFailed:
+    """A refresh failure routed by the spec: ``invalid_grant`` needs a new
+    sign-in, anything else is ``RefreshFailed``."""
+    if isinstance(exc, OAuthProtocolError) and exc.error == "invalid_grant":
+        return SignInRequired("subject_token_expired", actor)
+    return RefreshFailed(str(exc))
+
+
+def _unresolved(
+    exc: SignInRequired | RefreshFailed, resources: list[str]
+) -> tuple[None, AccessContext, SignInRequired | None]:
+    """The AccessContext recording why there is no identity: a context error
+    for a missing or expired sign-in, a per-resource error for a failed
+    refresh."""
+    access = AccessContext()
+    if isinstance(exc, SignInRequired):
+        access.set_error(
+            {
+                "message": sign_in_message(exc.reason, exc.actor),
+                "code": exc.reason,
+            }
+        )
+        return None, access, exc
+    for resource in resources:
+        access.set_resource_error(
+            resource,
+            {
+                "message": f"The stored sign-in could not be refreshed: {exc}",
+                "code": "refresh_failed",
+                "retryable": True,
+            },
+        )
+    return None, access, None
 
 
 def login_command(actor: str | None) -> str:
