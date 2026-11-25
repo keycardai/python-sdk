@@ -3,7 +3,7 @@
 import secrets
 from datetime import timedelta
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import unquote_plus, urlencode, urlsplit, urlunsplit
 
 from mcp.client.auth import PKCEParameters
 
@@ -185,8 +185,14 @@ class OAuthFlowInitiatorService:
         if scopes:
             params["scope"] = " ".join(scopes)
 
-        query_string = urlencode(params)
-        authorization_url = f"{auth_endpoint}?{query_string}"
+        endpoint = urlsplit(auth_endpoint)
+        query = [
+            entry
+            for entry in endpoint.query.split("&")
+            if entry and unquote_plus(entry.partition("=")[0]) not in params
+        ]
+        query.append(urlencode(params))
+        authorization_url = urlunsplit(endpoint._replace(query="&".join(query)))
 
         return authorization_url
 

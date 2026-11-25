@@ -112,6 +112,27 @@ async def test_authorization_url_parameters(oauth_storage, auth_server_metadata,
 
 
 @pytest.mark.asyncio
+async def test_row_3a_merges_authorization_endpoint_query(
+    oauth_storage, auth_server_metadata, client_info, resource_url
+):
+    auth_server_metadata["authorization_endpoint"] += (
+        "?tenant=acme&client_id=x&client%5Fid=y&resource=https://old"
+    )
+    service = OAuthFlowInitiatorService(storage=oauth_storage)
+    flow = await service.initiate_flow(
+        auth_server_metadata=auth_server_metadata,
+        client_info=client_info,
+        resource_url=resource_url,
+        server_name="test",
+    )
+    params = parse_qs(urlparse(flow.authorization_url).query)
+    assert params["tenant"] == ["acme"]
+    assert params["client_id"] == [client_info["client_id"]]
+    assert params["resource"] == [resource_url]
+    assert all(len(values) == 1 for values in params.values())
+
+
+@pytest.mark.asyncio
 async def test_initiate_flow_with_scopes(oauth_storage, auth_server_metadata, client_info, resource_url):
     """Test flow initiation with custom scopes."""
     service = OAuthFlowInitiatorService(storage=oauth_storage)
