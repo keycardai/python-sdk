@@ -619,20 +619,22 @@ operation unchanged could succeed.
 |-----------|-------------|-----------|
 | `OAuthHttpError` | Yes | HTTP 429 (rate limit) or 5xx (server error) |
 | `OAuthHttpError` | No | HTTP 4xx (client error, except 429) |
-| `OAuthProtocolError` / `TokenExchangeError` | No | Error code in `PERMANENT_ERROR_CODES` (`access_denied`, `expired_token`, `insufficient_authorization`, `invalid_client`) |
-| `RefreshGrantError` | No | `invalid_grant`, or a code in `PERMANENT_ERROR_CODES` |
+| `OAuthProtocolError` / `TokenExchangeError` / `RefreshGrantError` | Yes | HTTP 429 or 5xx, whatever the code |
+| `OAuthProtocolError` / `TokenExchangeError` | No | Otherwise, a code in `PERMANENT_ERROR_CODES` (`access_denied`, `expired_token`, `insufficient_authorization`, `invalid_client`) |
+| `RefreshGrantError` | No | Not 429 or 5xx, and the code is `invalid_grant` or in `PERMANENT_ERROR_CODES` |
 | `DeviceAuthorizationError` | Yes | HTTP 429 or 5xx, whatever the code |
 | `DeviceAuthorizationError` | No | Not 429 or 5xx, and the code is `invalid_grant` or in `PERMANENT_ERROR_CODES` |
 | `DevicePollError` | Yes | Always: a network error, a 429, or a 5xx stopped device polling |
-| `OAuthProtocolError` / `TokenExchangeError` | Yes | Any other OAuth error code |
+| `OAuthProtocolError` / `TokenExchangeError` | Yes | Any other OAuth error code, except `invalid_response` with a known non-2xx status other than 429 or 5xx |
 | `NetworkError` | Yes | Always: transport faults are transient, permanent failures surface as protocol or HTTP errors |
 | `ConfigError` | No | Invalid configuration (requires code fix) |
 | `AuthenticationError` | No | Invalid credentials |
 
 If you use the older `retriable` attribute: it is a legacy constructor flag,
-while `retryable` is the classification derived from the failure (the OAuth
-error code for protocol errors, the status code for HTTP errors, and always
-True on `NetworkError`). Prefer `retryable` for retry decisions.
+while `retryable` is the classification derived from the failure. Protocol
+errors check the HTTP status first: a 429 or 5xx is retryable whatever the
+OAuth error code. HTTP errors use the status code, and `NetworkError` is
+always retryable. Prefer `retryable` for retry decisions.
 
 ### Error Handling Patterns
 

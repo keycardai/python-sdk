@@ -81,8 +81,10 @@ class TestDiscoveryOperations:
             body=b"invalid json {"
         )
 
-        with pytest.raises(OAuthProtocolError, match="Invalid JSON"):
+        with pytest.raises(OAuthProtocolError, match="Invalid JSON") as exc:
             parse_discovery_http_response(http_response)
+
+        assert exc.value.status_code == 200
 
     def test_parse_discovery_http_response_missing_issuer(self):
         """Missing issuer raises the typed protocol error, not a bare ValueError."""

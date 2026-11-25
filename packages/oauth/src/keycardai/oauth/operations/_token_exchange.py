@@ -105,6 +105,7 @@ def parse_token_exchange_http_response(res: HttpResponse) -> TokenResponse:
                     error_uri=data.get("error_uri"),
                     reason=data.get("reason"),
                     operation="POST /token (exchange)",
+                    status_code=res.status,
                 )
         except (json.JSONDecodeError, ValueError):
             pass
@@ -121,7 +122,8 @@ def parse_token_exchange_http_response(res: HttpResponse) -> TokenResponse:
         raise OAuthProtocolError(
             error="invalid_response",
             error_description="Invalid JSON in token exchange response",
-            operation="POST /token (exchange)"
+            operation="POST /token (exchange)",
+            status_code=res.status,
         ) from e
 
     if isinstance(data, dict) and "error" in data:
@@ -130,14 +132,16 @@ def parse_token_exchange_http_response(res: HttpResponse) -> TokenResponse:
             error_description=data.get("error_description"),
             error_uri=data.get("error_uri"),
             reason=data.get("reason"),
-            operation="POST /token (exchange)"
+            operation="POST /token (exchange)",
+            status_code=res.status,
         )
 
     if not isinstance(data, dict) or "access_token" not in data:
         raise OAuthProtocolError(
             error="invalid_response",
             error_description="Missing required 'access_token' in token exchange response",
-            operation="POST /token (exchange)"
+            operation="POST /token (exchange)",
+            status_code=res.status,
         )
 
     scope = data.get("scope")

@@ -106,12 +106,9 @@ class OAuthHttpError(OAuthError):
 class OAuthProtocolError(OAuthError):
     """RFC 6749 error responses from OAuth servers.
 
-    Represents structured error responses as defined in OAuth 2.0 specifications.
-    Protocol errors are never retriable as they indicate client-side issues.
-
     The ``retriable`` attribute is a legacy constructor flag, always False
-    here; prefer the ``retryable`` property, which classifies by the OAuth
-    error code.
+    here; prefer the ``retryable`` property, which checks the HTTP status
+    before the OAuth error code.
 
     ``reason`` is Keycard's machine-readable cause, when the server sends one
     (e.g. ``no_policy_matched`` or ``policy_denied`` for ``access_denied``).
@@ -122,7 +119,7 @@ class OAuthProtocolError(OAuthError):
     error_description: str | None = None
     error_uri: str | None = None
     operation: str = ""
-    retriable: bool = False  # Protocol errors are never retriable
+    retriable: bool = False
     reason: str | None = None
     status_code: int | None = None
 
@@ -151,10 +148,12 @@ class OAuthProtocolError(OAuthError):
 
     @property
     def retryable(self) -> bool:
-        """Whether the OAuth error code leaves room for a retry to succeed.
+        """Whether repeating the failed operation unchanged could succeed.
 
-        False for the permanent denials in PERMANENT_ERROR_CODES, where no
-        retry can change the outcome:
+        A 429 or 5xx is retryable regardless of the OAuth error code.
+
+        Otherwise, the permanent denials in PERMANENT_ERROR_CODES are not
+        retryable:
 
         - ``access_denied``: zone policy denied the request.
         - ``expired_token``: the device code expired or was already used.
@@ -167,10 +166,10 @@ class OAuthProtocolError(OAuthError):
         the legacy ``retriable`` attribute, which is always False for protocol
         errors.
         """
+        if _is_transient_status(self.status_code):
+            return True
         if self.error == "invalid_response" and self.status_code is not None:
-            return (200 <= self.status_code < 300) or _is_transient_status(
-                self.status_code
-            )
+            return 200 <= self.status_code < 300
         return self.error not in PERMANENT_ERROR_CODES
 
 
@@ -213,8 +212,12 @@ class AuthorizationDeniedError(OAuthProtocolError):
         error_description: str | None = None,
         error_uri: str | None = None,
         operation: str = "",
+        *,
+        status_code: int | None = None,
     ):
-        super().__init__(error, error_description, error_uri, operation)
+        super().__init__(
+            error, error_description, error_uri, operation, status_code=status_code
+        )
 
 
 class StateMismatchError(OAuthError):
@@ -379,16 +382,6 @@ class TokenExchangeError(OAuthProtocolError):
     Raised for token exchange protocol violations and error responses.
     Inherits from OAuthProtocolError with token exchange semantics.
     """
-
-    def __init__(
-        self,
-        error: str,
-        error_description: str | None = None,
-        error_uri: str | None = None,
-        operation: str = "",
-        reason: str | None = None,
-    ):
-        super().__init__(error, error_description, error_uri, operation, reason)
 
 
 def _is_transient_status(status: int | None) -> bool:
