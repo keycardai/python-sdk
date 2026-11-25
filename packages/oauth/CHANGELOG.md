@@ -1,3 +1,25 @@
+## 0.41.2-keycardai-oauth (2026-11-25)
+
+
+- fix(keycardai-oauth): cap decoded authorization-server responses at 1 MiB (#468)
+- * fix(keycardai-oauth): cap decoded authorization-server responses at 1 MiB
+- Co-Authored-By: Larry Osakwe <larry@keycard.ai>
+- * fix(keycardai-oauth): bound gzip/deflate decompression output via zlib max_length
+- Co-Authored-By: Larry Osakwe <larry@keycard.ai>
+- * fix(keycardai-oauth): stop reading after gzip EOF and yield raw chunks immediately
+- Co-Authored-By: Larry Osakwe <larry@keycard.ai>
+- * fix(keycardai-oauth): drain empty EOF framing to preserve keep-alive connections
+- Co-Authored-By: Larry Osakwe <larry@keycard.ai>
+- * fix(keycardai-oauth): support multi-member gzip streams in bounded decoder
+- Co-Authored-By: Larry Osakwe <larry@keycard.ai>
+- * fix(keycardai-oauth): ignore harmless gzip/deflate trailers while keeping them bounded
+- Co-Authored-By: Larry Osakwe <larry@keycard.ai>
+- * fix(keycardai-oauth): advertise only bounded encodings and cover device row 36
+- ---------
+- Co-authored-by: devin-ai-keycard <devin-ai@keycard.ai>
+Co-authored-by: Larry Osakwe <larry@keycard.ai>
+Co-authored-by: Larry Osakwe <23560354+Larry-Osakwe@users.noreply.github.com>
+
 ## 0.41.1-keycardai-oauth (2026-11-25)
 
 
