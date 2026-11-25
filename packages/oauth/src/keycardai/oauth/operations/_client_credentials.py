@@ -77,6 +77,7 @@ def parse_client_credentials_http_response(res: HttpResponse) -> TokenResponse:
                     error_uri=data.get("error_uri"),
                     reason=data.get("reason"),
                     operation="POST /token (client_credentials)",
+                    status_code=res.status,
                 )
         except (json.JSONDecodeError, ValueError):
             pass
@@ -102,7 +103,8 @@ def parse_client_credentials_http_response(res: HttpResponse) -> TokenResponse:
             error_description=data.get("error_description"),
             error_uri=data.get("error_uri"),
             reason=data.get("reason"),
-            operation="POST /token (client_credentials)"
+            operation="POST /token (client_credentials)",
+            status_code=res.status,
         )
 
     if not isinstance(data, dict) or "access_token" not in data:

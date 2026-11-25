@@ -44,6 +44,7 @@ def parse_client_registration_http_response(res: HttpResponse) -> ClientRegistra
                 error_description=error_data.get("error_description"),
                 error_uri=error_data.get("error_uri"),
                 operation="POST /register",
+                status_code=res.status,
             )
         response_body = res.body[:512].decode("utf-8", "ignore")
         raise OAuthHttpError(

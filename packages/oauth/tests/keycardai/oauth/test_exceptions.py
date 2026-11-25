@@ -238,6 +238,43 @@ class TestRetryable:
     def test_permanent_codes_are_not_retryable(self, error_cls, code):
         assert error_cls(error=code, operation="POST /token").retryable is False
 
+    # Token exchange unit row 22: the HTTP status decides before the code.
+    @pytest.mark.parametrize("status", [429, 500, 503, 599])
+    @pytest.mark.parametrize("code", sorted(PERMANENT_ERROR_CODES))
+    @pytest.mark.parametrize(
+        "error_cls",
+        [
+            OAuthProtocolError,
+            TokenExchangeError,
+            AuthorizationDeniedError,
+            RefreshGrantError,
+            DeviceAuthorizationError,
+        ],
+    )
+    def test_permanent_codes_on_429_or_5xx_are_retryable(self, error_cls, code, status):
+        error = error_cls(error=code, operation="POST /token", status_code=status)
+        assert error.status_code == status
+        assert error.retryable is True
+
+    @pytest.mark.parametrize("status", [None, 200, 400, 401, 403, 404])
+    @pytest.mark.parametrize("code", sorted(PERMANENT_ERROR_CODES))
+    @pytest.mark.parametrize(
+        "error_cls", [OAuthProtocolError, TokenExchangeError, AuthorizationDeniedError]
+    )
+    def test_permanent_codes_on_other_statuses_are_not_retryable(
+        self, error_cls, code, status
+    ):
+        error = error_cls(error=code, operation="POST /token", status_code=status)
+        assert error.retryable is False
+
+    @pytest.mark.parametrize(
+        ("status", "retryable"),
+        [(None, True), (200, True), (400, False), (404, False), (429, True), (503, True)],
+    )
+    def test_invalid_response_classifies_by_status(self, status, retryable):
+        error = OAuthProtocolError(error="invalid_response", status_code=status)
+        assert error.retryable is retryable
+
     def test_permanent_code_set(self):
         assert PERMANENT_ERROR_CODES == {
             "access_denied",

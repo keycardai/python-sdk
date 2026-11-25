@@ -5,7 +5,6 @@ code exchange for OAuth 2.0 authorization code flows (RFC 6749 Section 4.1)
 with PKCE support (RFC 7636).
 """
 
-import functools
 import json
 from collections.abc import Callable, Mapping
 from typing import Any
@@ -178,6 +177,7 @@ def _parse_token_http_response(
                     error_uri=data.get("error_uri"),
                     reason=data.get("reason"),
                     operation=operation,
+                    status_code=res.status,
                 )
         except (json.JSONDecodeError, ValueError):
             pass
@@ -389,7 +389,7 @@ def parse_refresh_token_http_response(res: HttpResponse) -> TokenResponse:
     return _parse_token_http_response(
         res,
         operation=REFRESH_OPERATION,
-        error_cls=functools.partial(RefreshGrantError, status_code=res.status),
+        error_cls=RefreshGrantError,
     )
 
 
