@@ -8,7 +8,7 @@ license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "Keycard", email = "support@keycard.ai" }]
 dependencies = [
-    "keycardai-oauth>=0.16.0",
+    "keycardai-oauth>=0.41.2",
     "keycardai-starlette>=0.9.0",
     "uvicorn[standard]>=0.32.0",
     "pydantic>=2.11.7",
