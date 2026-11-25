@@ -20,6 +20,7 @@ from keycardai.oauth import (
     ClientConfig,
     ConfigError,
     Endpoints,
+    MultiZoneBasicAuth,
     NetworkError,
     OAuthHttpError,
     TokenRevocationError,
@@ -413,6 +414,7 @@ async def test_row_8_5xx_is_retryable_without_hidden_retry(status):
         ),
         pytest.param({"credential": ExchangeOnlyCredential()}, id="no-client-auth"),
         pytest.param({"client_secret": "s"}, id="secret-without-id"),
+        pytest.param({"client_id": "a", "client_secret": ""}, id="empty-secret"),
         pytest.param({}, id="no-client-authentication"),
     ],
 )
@@ -421,6 +423,16 @@ async def test_row_9_invalid_client_authentication_fails_before_request(kwargs):
 
     with pytest.raises(ConfigError):
         await make_client(transport).revoke_token("rt", metadata=METADATA, **kwargs)
+
+    assert transport.requests == []
+
+
+async def test_row_9_auth_strategy_without_issuer_credentials_fails_before_request():
+    transport = FakeTransport()
+    auth = MultiZoneBasicAuth({"https://other.example.com": ("app", "s3cret")})
+
+    with pytest.raises(ConfigError):
+        await make_client(transport, auth=auth).revoke_token("rt", metadata=METADATA)
 
     assert transport.requests == []
 

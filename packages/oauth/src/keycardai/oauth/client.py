@@ -1716,11 +1716,18 @@ class AsyncClient:
             if not client_id:
                 raise ConfigError("`client_id` is empty.")
             if client_secret is not None:
+                if not client_secret:
+                    raise ConfigError("`client_secret` is empty.")
                 return _StaticClientAuthentication(
                     BasicAuth(client_id, client_secret).apply_headers()
                 )
             return _PublicClient(client_id)
-        headers = dict(self.auth_strategy.apply_headers(self.issuer))
+        try:
+            headers = dict(self.auth_strategy.apply_headers(self.issuer))
+        except KeyError as e:
+            raise ConfigError(
+                f"The client's auth strategy has no credentials for {self.issuer}."
+            ) from e
         if not headers:
             raise ConfigError(
                 "Pass `client_id` or `credential`, or create the client with an "
