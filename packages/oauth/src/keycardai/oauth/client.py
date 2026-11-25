@@ -1746,8 +1746,10 @@ class AsyncClient:
         for an unknown, expired, already revoked, or unparseable token, so
         success does not mean a session was revoked.
 
-        The endpoint is ``revocation_endpoint`` from ``metadata``, discovery,
-        or an ``Endpoints.revoke`` override. There is no conventional path.
+        The endpoint is an ``Endpoints.revoke`` override, or else
+        ``revocation_endpoint`` from ``metadata`` or discovery. With an
+        override and no ``metadata``, no discovery request is made. There is
+        no conventional path.
 
         Client authentication, in order of precedence:
 
@@ -1792,9 +1794,14 @@ class AsyncClient:
         authenticator = self._revocation_client_authenticator(
             client_id, client_secret, credential
         )
-        issuer, endpoint = await self._resolve_advertised_endpoint(
-            metadata, "revocation_endpoint"
-        )
+        override = self._endpoint_overrides.revoke if self._endpoint_overrides else None
+        if metadata is None and override:
+            issuer = self.issuer
+            endpoint = check_endpoint(issuer, "revocation_endpoint", override)
+        else:
+            issuer, endpoint = await self._resolve_advertised_endpoint(
+                metadata, "revocation_endpoint"
+            )
         client_auth = await authenticator.client_authentication(
             issuer=issuer, endpoint=issuer
         )

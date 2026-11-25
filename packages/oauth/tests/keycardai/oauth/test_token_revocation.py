@@ -333,6 +333,21 @@ async def test_row_6_endpoint_override_wins_over_metadata():
     assert transport.requests[0].url == override
 
 
+async def test_row_6_endpoint_override_without_metadata_skips_discovery():
+    override = "https://zone.example.com/custom/revoke"
+    transport = FakeTransport(respond(200))
+    client = AsyncClient(
+        ISSUER,
+        transport=transport,
+        endpoints=Endpoints(revoke=override),
+        config=ClientConfig(auto_register_client=False, timeout=7.0),
+    )
+
+    await client.revoke_token("rt", client_id="public-app")
+
+    assert [r.url for r in transport.requests] == [override]
+
+
 ERROR_CASES = [
     pytest.param(400, "invalid_request", True, id="invalid_request"),
     pytest.param(401, "invalid_client", False, id="invalid_client"),
