@@ -12,6 +12,7 @@ import asyncio
 import json
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -182,6 +183,34 @@ def clock():
 
 
 class TestJwksDiscoveryFailureCaching:
+    def test_row_11_cached_issuer_does_not_wait_for_other_issuer_discovery(self, clock):
+        warm_uri = "https://example.com/.well-known/jwks.json"
+        cold_issuer = "https://other.example.com"
+        cold_uri = f"{cold_issuer}/.well-known/jwks.json"
+        verifier, discover = _verifier_with([_metadata(warm_uri)])
+        assert verifier._discover_jwks_uri(issuer="https://example.com") == warm_uri
+        entered = threading.Event()
+        release = threading.Event()
+
+        def slow_discovery():
+            entered.set()
+            assert release.wait(5)
+            return _metadata(cold_uri)
+
+        discover.side_effect = slow_discovery
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            cold = executor.submit(verifier._discover_jwks_uri, issuer=cold_issuer)
+            try:
+                assert entered.wait(5)
+                warm = executor.submit(
+                    verifier._discover_jwks_uri, issuer="https://example.com"
+                )
+                assert warm.result(timeout=1) == warm_uri
+            finally:
+                release.set()
+            assert cold.result(timeout=5) == cold_uri
+        assert discover.call_count == 2
+
     def test_row_11_discovery_is_paced_after_network_failure(self, clock):
         verifier, discover = _verifier_with(
             [NetworkError(ConnectionError("refused")), _metadata()]

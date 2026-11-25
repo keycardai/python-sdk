@@ -161,6 +161,7 @@ class TokenVerifier:
             str, MetadataCache[str, OAuthServerError]
         ] = OrderedDict()
         self._jwks_generation = 0
+        self._discovery_cache_lock = threading.Lock()
         # Discovery runs synchronously (off the event loop via to_thread); the
         # lock lets concurrent cold-cache callers share one request.
         self._discovery_lock = threading.Lock()
@@ -192,14 +193,24 @@ class TokenVerifier:
             if self.enable_multi_zone and zone_id:
                 discovery_issuer = self._create_zone_scoped_url(self.issuer, zone_id)
 
-        with self._discovery_lock:
+        with self._discovery_cache_lock:
             cache = self._discovered_jwks_uris.get(cache_key)
-            if cache is None:
-                cache = MetadataCache(self.discovery_ttl, self.negative_ttl)
-                self._discovered_jwks_uris[cache_key] = cache
-                if len(self._discovered_jwks_uris) > MAX_RETRY_CACHE_ENTRIES:
-                    self._discovered_jwks_uris.popitem(last=False)
-            self._discovered_jwks_uris.move_to_end(cache_key)
+            if cache is not None:
+                self._discovered_jwks_uris.move_to_end(cache_key)
+        if cache is not None:
+            cached = cache.lookup()
+            if cached is not None:
+                return cached
+
+        with self._discovery_lock:
+            with self._discovery_cache_lock:
+                cache = self._discovered_jwks_uris.get(cache_key)
+                if cache is None:
+                    cache = MetadataCache(self.discovery_ttl, self.negative_ttl)
+                    self._discovered_jwks_uris[cache_key] = cache
+                    if len(self._discovered_jwks_uris) > MAX_RETRY_CACHE_ENTRIES:
+                        self._discovered_jwks_uris.popitem(last=False)
+                self._discovered_jwks_uris.move_to_end(cache_key)
             cached = cache.lookup()
             if cached is not None:
                 return cached
