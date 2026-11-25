@@ -465,16 +465,10 @@ class TokenRevocationError(OAuthProtocolError):
     (``invalid_response``).
 
     ``status_code`` is the HTTP status of the response. ``retryable`` is
-    True for a 429 or a 5xx, whatever the code. Every other code follows
-    OAuthProtocolError, so ``invalid_grant`` and ``unsupported_token_type``
-    are retryable and ``invalid_client`` is not.
+    inherited from OAuthProtocolError: True for a 429 or a 5xx, whatever the
+    code. Otherwise ``invalid_grant`` and ``unsupported_token_type`` are
+    retryable and ``invalid_client`` is not.
     """
-
-    @property
-    def retryable(self) -> bool:
-        if _is_transient_status(self.status_code):
-            return True
-        return super().retryable
 
 
 class DevicePollError(OAuthError):
