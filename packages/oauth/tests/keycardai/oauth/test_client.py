@@ -16,7 +16,7 @@ from pydantic import ValidationError
 from keycardai.oauth import AsyncClient, Client, ClientConfig
 from keycardai.oauth.exceptions import ConfigError, NetworkError
 from keycardai.oauth.http._wire import HttpResponse
-from keycardai.oauth.http.auth import NoneAuth
+from keycardai.oauth.http.auth import BasicAuth, MultiZoneBasicAuth, NoneAuth
 from keycardai.oauth.server.credentials import (
     ClientSecret,
     GCPMetadataTokenSource,
@@ -334,6 +334,85 @@ def test_sync_exchange_restarts_assertion_preparation_after_fork():
                 child.kill()
                 child.join()
             child.close()
+
+
+@pytest.fixture(params=[Client, AsyncClient], ids=["sync", "async"])
+def token_exchange_client(request):
+    issuer = "https://exchange.example.com"
+    endpoint = f"{issuer}/token"
+
+    def respond(http_request, **_kwargs):
+        if http_request.method == "GET":
+            return HttpResponse(
+                status=200,
+                headers={},
+                body=(
+                    f'{{"issuer":"{issuer}","token_endpoint":"{endpoint}"}}'.encode()
+                ),
+            )
+        assert http_request.method == "POST"
+        assert http_request.url == endpoint
+        return HttpResponse(status=200, headers={}, body=b'{"access_token":"issued"}')
+
+    client_cls = request.param
+    send = AsyncMock(side_effect=respond) if client_cls is AsyncClient else Mock(
+        side_effect=respond
+    )
+
+    async def exchange(token_request, auth):
+        client = client_cls(issuer, auth=auth, transport=Mock(request_raw=send))
+        if client_cls is AsyncClient:
+            return await client.exchange_token(token_request)
+        return client.exchange_token(token_request)
+
+    return exchange, send
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "auth",
+    [
+        BasicAuth("configured", "secret"),
+        MultiZoneBasicAuth({"https://exchange.example.com": ("configured", "secret")}),
+    ],
+    ids=["basic", "multi-zone-basic"],
+)
+async def test_row_4f_token_exchange_rejects_client_id_with_basic_before_discovery(
+    token_exchange_client, auth
+):
+    exchange, send = token_exchange_client
+    request = TokenExchangeRequest(subject_token="subject", client_id="request-id")
+
+    with pytest.raises(ConfigError, match="client_id.*HTTP Basic"):
+        await exchange(request, auth)
+
+    send.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("client_id", [None, "request-id"])
+async def test_row_4g_token_exchange_uses_explicit_assertion_over_basic(
+    token_exchange_client, client_id
+):
+    exchange, send = token_exchange_client
+    assertion_type = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
+    request = TokenExchangeRequest(
+        subject_token="subject",
+        client_assertion="assertion",
+        client_assertion_type=assertion_type,
+        client_id=client_id,
+    )
+
+    await exchange(request, BasicAuth("configured", "secret"))
+
+    post = send.call_args.args[0]
+    assert post.method == "POST"
+    assert "authorization" not in {name.lower() for name in post.headers}
+    assert post.body is not None
+    form = parse_qs(post.body.decode(), keep_blank_values=True)
+    assert form["client_assertion"] == ["assertion"]
+    assert form["client_assertion_type"] == [assertion_type]
+    assert form.get("client_id") == ([client_id] if client_id is not None else None)
 
 
 class TestSyncClientContextManager:

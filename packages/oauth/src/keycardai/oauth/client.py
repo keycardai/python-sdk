@@ -69,6 +69,7 @@ from .operations._registration import (
 from .operations._token_exchange import (
     exchange_token,
     exchange_token_async,
+    resolve_token_exchange_auth_headers,
 )
 from .operations._userinfo import (
     fetch_userinfo,
@@ -1028,6 +1029,7 @@ class AsyncClient:
 
         Raises:
             TypeError: If both request and token_exchange_args are provided
+            ConfigError: If the request sets client_id with HTTP Basic
         """
         issuer = token_exchange_args.pop("issuer", None)
         if request is not None and token_exchange_args:
@@ -1036,19 +1038,21 @@ class AsyncClient:
         if request is None:
             request = TokenExchangeRequest(**token_exchange_args)
 
-        endpoints = await self._get_current_endpoints()
-
         target_issuer = self.issuer if issuer is None else issuer
         auth = self._exchange_auth
+        auth_headers = resolve_token_exchange_auth_headers(request, auth, target_issuer)
+        endpoints = await self._get_current_endpoints()
+
         if (
             self._exchange_credential is not None
             and not request.client_assertion
-            and not auth.apply_headers(target_issuer)
+            and not auth_headers
         ):
             request = await _prepare_exchange_assertion(
                 self._exchange_credential, request, self, target_issuer, endpoints
             )
             auth = NoneAuth()
+            auth_headers = {}
 
         ctx = build_http_context(
             endpoint=endpoints.token,
@@ -1060,7 +1064,7 @@ class AsyncClient:
             timeout=token_exchange_args.get("timeout", self.config.timeout),
         )
 
-        return await exchange_token_async(request, ctx)
+        return await exchange_token_async(request, ctx, auth_headers=auth_headers)
 
     @overload
     async def client_credentials_grant(
@@ -2301,6 +2305,7 @@ class Client:
 
         Raises:
             TypeError: If both request and token_exchange_args are provided
+            ConfigError: If the request sets client_id with HTTP Basic
         """
         issuer = token_exchange_args.pop("issuer", None)
         if request is not None and token_exchange_args:
@@ -2309,20 +2314,22 @@ class Client:
         if request is None:
             request = TokenExchangeRequest(**token_exchange_args)
 
-        endpoints = self._get_current_endpoints()
-
         target_issuer = self.issuer if issuer is None else issuer
         timeout = self.config.timeout if request.timeout is None else request.timeout
         auth = self._exchange_auth
+        auth_headers = resolve_token_exchange_auth_headers(request, auth, target_issuer)
+        endpoints = self._get_current_endpoints()
+
         if (
             self._exchange_credential is not None
             and not request.client_assertion
-            and not auth.apply_headers(target_issuer)
+            and not auth_headers
         ):
             request = _prepare_exchange_assertion_sync(
                 self._exchange_credential, request, self, target_issuer, endpoints, timeout
             )
             auth = NoneAuth()
+            auth_headers = {}
 
         ctx = build_http_context(
             endpoint=endpoints.token,
@@ -2334,7 +2341,7 @@ class Client:
             timeout=timeout,
         )
 
-        return exchange_token(request, ctx)
+        return exchange_token(request, ctx, auth_headers=auth_headers)
 
     @overload
     def client_credentials_grant(

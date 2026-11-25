@@ -7,15 +7,39 @@ using the new HTTP transport layer with byte-level operations.
 import json
 from urllib.parse import urlencode
 
-from ..exceptions import OAuthHttpError, OAuthProtocolError
+from ..exceptions import ConfigError, OAuthHttpError, OAuthProtocolError
 from ..http._context import HTTPContext
 from ..http._wire import HttpRequest, HttpResponse
+from ..http.auth import AuthStrategy, BasicAuth, MultiZoneBasicAuth
 from ..http.transport import AsyncHTTPTransport, HTTPTransport
 from ..types.models import TokenExchangeRequest, TokenResponse
 
 
+def resolve_token_exchange_auth_headers(
+    request: TokenExchangeRequest, auth: AuthStrategy, issuer: str | None
+) -> dict[str, str]:
+    """Resolve authentication before any discovery or token request."""
+    if request.client_assertion is not None and isinstance(
+        auth, (BasicAuth, MultiZoneBasicAuth)
+    ):
+        return {}
+
+    headers = dict(auth.apply_headers(issuer))
+    for name, value in tuple(headers.items()):
+        if name.lower() != "authorization" or not value.lower().startswith("basic "):
+            continue
+        if request.client_assertion is not None:
+            del headers[name]
+        elif request.client_id is not None:
+            raise ConfigError("Token exchange client_id cannot be sent with HTTP Basic.")
+    return headers
+
+
 def build_token_exchange_http_request(
-    request: TokenExchangeRequest, context: HTTPContext
+    request: TokenExchangeRequest,
+    context: HTTPContext,
+    *,
+    auth_headers: dict[str, str] | None = None,
 ) -> HttpRequest:
     """Build HTTP request for token exchange.
 
@@ -24,6 +48,7 @@ def build_token_exchange_http_request(
         context: HTTP context with endpoint, auth strategy, and optional
             issuer selector. The issuer is passed to the auth strategy so
             zone-aware strategies apply the credentials for that issuer.
+        auth_headers: Authentication headers already resolved before discovery.
 
     Returns:
         HttpRequest for the token exchange endpoint
@@ -39,8 +64,11 @@ def build_token_exchange_http_request(
         "Content-Type": "application/x-www-form-urlencoded",
     }
 
-    if context.auth:
-        headers.update(dict(context.auth.apply_headers(context.issuer)))
+    if auth_headers is None:
+        auth_headers = resolve_token_exchange_auth_headers(
+            request, context.auth, context.issuer
+        )
+    headers.update(auth_headers)
 
     # Convert to properly URL-encoded form data as required by OAuth 2.0 RFC 8693
     form_data = urlencode(payload).encode("utf-8")
@@ -134,6 +162,8 @@ def parse_token_exchange_http_response(res: HttpResponse) -> TokenResponse:
 def exchange_token(
     request: TokenExchangeRequest,
     context: HTTPContext[HTTPTransport],
+    *,
+    auth_headers: dict[str, str] | None = None,
 ) -> TokenResponse:
     """Perform OAuth 2.0 Token Exchange (sync version).
 
@@ -155,7 +185,9 @@ def exchange_token(
 
     Reference: https://datatracker.ietf.org/doc/html/rfc8693#section-2.1
     """
-    http_req = build_token_exchange_http_request(request, context)
+    http_req = build_token_exchange_http_request(
+        request, context, auth_headers=auth_headers
+    )
 
     # Execute HTTP request using transport
     http_res = context.transport.request_raw(http_req, timeout=context.timeout)
@@ -167,6 +199,8 @@ def exchange_token(
 async def exchange_token_async(
     request: TokenExchangeRequest,
     context: HTTPContext[AsyncHTTPTransport],
+    *,
+    auth_headers: dict[str, str] | None = None,
 ) -> TokenResponse:
     """Perform OAuth 2.0 Token Exchange (async version).
 
@@ -188,7 +222,9 @@ async def exchange_token_async(
 
     Reference: https://datatracker.ietf.org/doc/html/rfc8693#section-2.1
     """
-    http_req = build_token_exchange_http_request(request, context)
+    http_req = build_token_exchange_http_request(
+        request, context, auth_headers=auth_headers
+    )
 
     # Execute HTTP request using async transport
     http_res = await context.transport.request_raw(http_req, timeout=context.timeout)
