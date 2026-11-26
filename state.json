@@ -15,8 +15,8 @@
     "version": "2.3.0"
   },
   "pydantic-ai:pydantic-ai-slim": {
-    "run": "https://github.com/keycardai/python-sdk/actions/runs/45563379373",
-    "version": "2.74.0"
+    "run": "https://github.com/keycardai/python-sdk/actions/runs/45770752288",
+    "version": "2.75.0"
   },
   "temporal:openai-agents": {
     "run": "https://github.com/keycardai/python-sdk/actions/runs/45770752288",
