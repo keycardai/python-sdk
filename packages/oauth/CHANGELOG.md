@@ -1,3 +1,17 @@
+## 0.45.0-keycardai-oauth (2026-11-26)
+
+
+- feat(keycardai-oauth)!: bind credentials to grant clients (#491)
+- Client and AsyncClient take the application credential at construction and
+use it for client credentials, device authorization, code exchange, refresh
+and impersonation (keycard-sdk-spec#154, SDK-118). A client constructed with
+client_id and no client_secret is a public client. Per-call credential on the
+client methods, and per-call client_id on the device operations, emit
+LegacyGrantCredentialWarning.
+- BREAKING CHANGE(keycardai-oauth): Client and AsyncClient reject credential=
+together with auth=, and a configured credential now authenticates client
+credentials, code exchange, refresh and impersonation.
+
 ## 0.44.0-keycardai-oauth (2026-11-26)
 
 
