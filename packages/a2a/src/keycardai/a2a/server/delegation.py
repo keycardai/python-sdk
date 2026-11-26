@@ -7,6 +7,7 @@ agent services while maintaining the user context.
 import json
 import logging
 import uuid
+from collections.abc import Sequence
 from typing import Any
 
 import httpx
@@ -14,6 +15,7 @@ from a2a.utils import constants
 
 from keycardai.oauth import AsyncClient as AsyncOAuthClient
 from keycardai.oauth import Client as SyncOAuthClient
+from keycardai.oauth.exceptions import ConfigError
 from keycardai.oauth.http.auth import BasicAuth
 from keycardai.oauth.types.models import TokenExchangeRequest
 from keycardai.oauth.types.oauth import TokenType
@@ -22,6 +24,50 @@ from .._peer_http import DEFAULT_PEER_RESPONSE_BYTES, AsyncPeerClient, PeerClien
 from ..config import AgentServiceConfig
 
 logger = logging.getLogger(__name__)
+
+
+def _http_origin(url: httpx.URL) -> tuple[str, str, int]:
+    if url.scheme not in ("http", "https") or not url.host:
+        raise ConfigError("expected an absolute HTTP or HTTPS URL")
+    port = url.port if url.port is not None else (443 if url.scheme == "https" else 80)
+    return url.scheme, url.host, port
+
+
+def _trusted_origins(origins: Sequence[str]) -> frozenset[tuple[str, str, int]]:
+    trusted = set()
+    for value in origins:
+        try:
+            url = httpx.URL(value)
+            if url.raw_path != b"/" or url.fragment or url.userinfo:
+                raise ConfigError("expected a bare origin")
+            trusted.add(_http_origin(url))
+        except (ConfigError, httpx.InvalidURL) as error:
+            raise ConfigError(
+                "invalid trusted endpoint origin: expected a bare HTTP or HTTPS origin"
+            ) from error
+    return frozenset(trusted)
+
+
+def _check_invocation_redirect(
+    response: httpx.Response, target: str, trusted: frozenset[tuple[str, str, int]]
+) -> None:
+    if response.status_code not in (301, 302, 303, 307, 308):
+        return
+    location = response.headers.get("location")
+    if not location:
+        return
+    try:
+        origin = _http_origin(response.request.url.join(location))
+        target_origin = _http_origin(httpx.URL(target))
+    except (ConfigError, httpx.InvalidURL):
+        return
+    if origin != target_origin and origin not in trusted:
+        scheme, host, port = origin
+        if ":" in host:
+            host = f"[{host}]"
+        raise ConfigError(
+            f"redirect origin {scheme}://{host}:{port} is not trusted for target {target!r}"
+        )
 
 
 def _build_jsonrpc_send_message(task: dict[str, Any] | str) -> dict[str, Any]:
@@ -143,14 +189,17 @@ class DelegationClient:
         service_config: AgentServiceConfig,
         *,
         max_peer_response_bytes: int = DEFAULT_PEER_RESPONSE_BYTES,
+        trusted_endpoint_origins: Sequence[str] = (),
     ):
         """Initialize delegation client with service configuration.
 
         Args:
             service_config: Configuration of the calling service
             max_peer_response_bytes: Decoded peer reply limit (default: 64 MiB)
+            trusted_endpoint_origins: Additional origins trusted for invocation.
         """
         self.config = service_config
+        self._trusted_origins = _trusted_origins(trusted_endpoint_origins)
 
         # Initialize OAuth client for token exchange
         # Use configured authorization server URL (defaults to zone URL)
@@ -325,11 +374,18 @@ class DelegationClient:
             response = await self.http_client.post(
                 jsonrpc_url,
                 json=envelope,
+                follow_redirects=False,
+                extensions={
+                    "keycard_a2a_check_response": lambda response: _check_invocation_redirect(
+                        response, service_url, self._trusted_origins
+                    )
+                },
                 headers={
                     "Authorization": f"Bearer {token}",
                     constants.VERSION_HEADER: constants.PROTOCOL_VERSION_1_0,
                 },
             )
+            _check_invocation_redirect(response, service_url, self._trusted_origins)
             response.raise_for_status()
             unwrapped = _unwrap_jsonrpc_response(response.json())
             logger.info(f"Service invocation successful: {service_url}")
@@ -397,14 +453,17 @@ class DelegationClientSync:
         service_config: AgentServiceConfig,
         *,
         max_peer_response_bytes: int = DEFAULT_PEER_RESPONSE_BYTES,
+        trusted_endpoint_origins: Sequence[str] = (),
     ):
         """Initialize synchronous delegation client with service configuration.
 
         Args:
             service_config: Configuration of the calling service
             max_peer_response_bytes: Decoded peer reply limit (default: 64 MiB)
+            trusted_endpoint_origins: Additional origins trusted for invocation.
         """
         self.config = service_config
+        self._trusted_origins = _trusted_origins(trusted_endpoint_origins)
 
         # Initialize OAuth client for token exchange
         # Use configured authorization server URL (defaults to zone URL)
@@ -571,11 +630,18 @@ class DelegationClientSync:
             response = self.http_client.post(
                 jsonrpc_url,
                 json=envelope,
+                follow_redirects=False,
+                extensions={
+                    "keycard_a2a_check_response": lambda response: _check_invocation_redirect(
+                        response, service_url, self._trusted_origins
+                    )
+                },
                 headers={
                     "Authorization": f"Bearer {token}",
                     constants.VERSION_HEADER: constants.PROTOCOL_VERSION_1_0,
                 },
             )
+            _check_invocation_redirect(response, service_url, self._trusted_origins)
             response.raise_for_status()
             unwrapped = _unwrap_jsonrpc_response(response.json())
             logger.info(f"Service invocation successful: {service_url}")

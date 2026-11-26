@@ -136,6 +136,7 @@ class TestWorkloadIdentity:
             )
         assert exc_info.value.source == "custom"
         assert exc_info.value.__cause__ is cause
+        assert exc_info.value.retryable is False
 
     @pytest.mark.asyncio
     async def test_passes_through_typed_source_error(self):
@@ -243,6 +244,20 @@ class TestFileTokenSource:
         with pytest.raises(WorkloadIdentityRuntimeError) as exc_info:
             await source.identity_token()
         assert exc_info.value.source == "file"
+        assert exc_info.value.retryable is True
+
+    @pytest.mark.asyncio
+    async def test_retryable_runtime_error_on_emptied_file(self, tmp_path):
+        token_file = tmp_path / "token"
+        token_file.write_text("initial-token")
+        source = FileTokenSource(token_file_path=str(token_file))
+
+        token_file.write_text("")
+
+        with pytest.raises(WorkloadIdentityRuntimeError) as exc_info:
+            await source.identity_token()
+        assert exc_info.value.source == "file"
+        assert exc_info.value.retryable is True
 
 
 class TestEKSWorkloadIdentityCompat:
@@ -315,9 +330,18 @@ class TestGCPMetadataTokenSource:
         "response",
         [
             httpx.Response(404, text="not found"),
+            httpx.Response(503, text="unavailable"),
+            httpx.Response(429, text="slow down"),
+            httpx.Response(429, json={"error": "invalid_client"}),
             httpx.Response(200, text="  \n"),
         ],
-        ids=["non-200 status", "empty body"],
+        ids=[
+            "non-200 status",
+            "server error",
+            "rate limited",
+            "rate limited with oauth error",
+            "empty body",
+        ],
     )
     async def test_runtime_error_on_failure(self, response):
         source = GCPMetadataTokenSource(
@@ -328,6 +352,7 @@ class TestGCPMetadataTokenSource:
         with pytest.raises(WorkloadIdentityRuntimeError) as exc_info:
             await source.identity_token()
         assert exc_info.value.source == "gcp-metadata"
+        assert exc_info.value.retryable is (response.status_code in (429, 503))
 
     @pytest.mark.asyncio
     async def test_runtime_error_when_unreachable(self):
@@ -342,6 +367,7 @@ class TestGCPMetadataTokenSource:
         with pytest.raises(WorkloadIdentityRuntimeError) as exc_info:
             await source.identity_token()
         assert exc_info.value.__cause__ is not None
+        assert exc_info.value.retryable is True
 
 
 class TestFlyTokenSource:
@@ -394,6 +420,20 @@ class TestFlyTokenSource:
         with pytest.raises(WorkloadIdentityRuntimeError) as exc_info:
             await source.identity_token()
         assert exc_info.value.source == "fly"
+        assert exc_info.value.retryable is False
+
+    @pytest.mark.asyncio
+    async def test_retryable_runtime_error_on_429(self):
+        source = FlyTokenSource(
+            _transport=httpx.MockTransport(
+                lambda request: httpx.Response(429, json={"error": "invalid_client"})
+            ),
+        )
+
+        with pytest.raises(WorkloadIdentityRuntimeError) as exc_info:
+            await source.identity_token()
+        assert exc_info.value.source == "fly"
+        assert exc_info.value.retryable is True
 
     @pytest.mark.asyncio
     async def test_runtime_error_when_socket_missing(self, tmp_path):

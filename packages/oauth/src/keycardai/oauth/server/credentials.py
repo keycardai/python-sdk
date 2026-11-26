@@ -15,12 +15,14 @@ Use discover_credential() to build the credential described by the standard
 KEYCARD_* environment variables.
 """
 
+import asyncio
 import inspect
 import os
 import uuid
 import warnings
-from collections.abc import Awaitable, Callable, Mapping
-from typing import Protocol, cast, runtime_checkable
+from collections.abc import Awaitable, Callable, Coroutine, Iterator, Mapping
+from contextlib import contextmanager
+from typing import Any, Protocol, cast, runtime_checkable
 
 import httpx
 
@@ -34,6 +36,7 @@ from keycardai.oauth import (
     NoneAuth,
 )
 from keycardai.oauth.client_auth import ClientAuthentication
+from keycardai.oauth.exceptions import NetworkError, OAuthHttpError
 from keycardai.oauth.types.models import JsonWebKeySet, TokenExchangeRequest
 from keycardai.oauth.types.oauth import GrantType, TokenEndpointAuthMethod
 
@@ -410,7 +413,7 @@ WORKLOAD_IDENTITY_SOURCE_CUSTOM = "custom"
 
 @runtime_checkable
 class IdentityTokenSource(Protocol):
-    """Supplies a platform-signed OIDC token for use as a client assertion.
+    """Supplies a platform-signed OIDC token as a client assertion or actor token.
 
     The only per-platform piece of a workload identity credential:
     FileTokenSource covers platforms that project the token to a file (EKS,
@@ -428,6 +431,89 @@ class IdentityTokenSource(Protocol):
     async def identity_token(self) -> str:
         """Return the current platform-signed OIDC token."""
         ...
+
+
+def _retryable_status(status_code: int) -> bool:
+    return status_code == 429 or 500 <= status_code < 600
+
+
+def _source_error_retryable(error: Exception) -> bool:
+    if isinstance(
+        error,
+        (
+            ConnectionError,
+            TimeoutError,
+            asyncio.TimeoutError,
+            NetworkError,
+            httpx.NetworkError,
+            httpx.RemoteProtocolError,
+            httpx.TimeoutException,
+        ),
+    ):
+        return True
+    if isinstance(error, OAuthHttpError):
+        return _retryable_status(error.status_code)
+    if isinstance(error, httpx.HTTPStatusError):
+        return _retryable_status(error.response.status_code)
+    return False
+
+
+class _IdentityTokenFetcher:
+    def __init__(self, source: "IdentityTokenSource | Callable[[], Awaitable[str] | str]"):
+        if source is None:
+            raise WorkloadIdentityConfigurationError(
+                "identity token source must not be None"
+            )
+        fetch: Callable[[], Awaitable[str] | str] | None = getattr(
+            source, "identity_token", None
+        )
+        if not callable(fetch):
+            if not callable(source):
+                raise WorkloadIdentityConfigurationError(
+                    "identity token source must provide identity_token() or be callable"
+                )
+            fetch = cast("Callable[[], Awaitable[str] | str]", source)
+        self._fetch: Callable[[], Awaitable[str] | str] = fetch
+
+    async def identity_token(self) -> str:
+        result = self.fetch()
+        return result if isinstance(result, str) else await result
+
+    def fetch(self) -> str | Coroutine[Any, Any, str]:
+        with self._wrap_source_error():
+            result = self._fetch()
+        if inspect.isawaitable(result):
+            return self._await_token(result)
+        return self._validate_token(result)
+
+    async def _await_token(self, result: Awaitable[str]) -> str:
+        with self._wrap_source_error():
+            token = await result
+        return self._validate_token(token)
+
+    @staticmethod
+    @contextmanager
+    def _wrap_source_error() -> Iterator[None]:
+        try:
+            yield
+        except (WorkloadIdentityConfigurationError, WorkloadIdentityRuntimeError):
+            raise
+        except Exception as err:
+            raise WorkloadIdentityRuntimeError(
+                "Error fetching identity token",
+                source=WORKLOAD_IDENTITY_SOURCE_CUSTOM,
+                retryable=False,
+            ) from err
+
+    @staticmethod
+    def _validate_token(token: str) -> str:
+        if not isinstance(token, str) or not token.strip():
+            raise WorkloadIdentityRuntimeError(
+                "Identity token source returned an empty token",
+                source=WORKLOAD_IDENTITY_SOURCE_CUSTOM,
+                retryable=False,
+            )
+        return token
 
 
 class FileTokenSource:
@@ -478,6 +564,9 @@ class FileTokenSource:
         self._read(WorkloadIdentityConfigurationError)
 
     def _read(self, error_cls: type) -> str:
+        # A read-time failure is retryable: the file can be missing or empty
+        # for a moment while the platform rotates a projected token.
+        extra = {"retryable": True} if error_cls is WorkloadIdentityRuntimeError else {}
         try:
             with open(self.token_file_path) as f:
                 token = f.read().strip()
@@ -485,11 +574,13 @@ class FileTokenSource:
             raise error_cls(
                 f"Error reading token file: {self.token_file_path}",
                 source=WORKLOAD_IDENTITY_SOURCE_FILE,
+                **extra,
             ) from err
         if not token:
             raise error_cls(
                 f"Token file is empty: {self.token_file_path}",
                 source=WORKLOAD_IDENTITY_SOURCE_FILE,
+                **extra,
             )
         return token
 
@@ -540,18 +631,21 @@ class GCPMetadataTokenSource:
                 f"Error calling metadata server at {self.metadata_url} "
                 "(is this running on GCP?)",
                 source=WORKLOAD_IDENTITY_SOURCE_GCP_METADATA,
+                retryable=_source_error_retryable(err),
             ) from err
 
         if response.status_code != 200:
             raise WorkloadIdentityRuntimeError(
                 f"Metadata server returned status {response.status_code}",
                 source=WORKLOAD_IDENTITY_SOURCE_GCP_METADATA,
+                retryable=_retryable_status(response.status_code),
             )
         token = response.text.strip()
         if not token:
             raise WorkloadIdentityRuntimeError(
                 "Metadata server returned an empty token",
                 source=WORKLOAD_IDENTITY_SOURCE_GCP_METADATA,
+                retryable=False,
             )
         return token
 
@@ -591,18 +685,21 @@ class FlyTokenSource:
                 f"Error calling Machines API socket {self.socket_path} "
                 "(is this running on a Fly Machine?)",
                 source=WORKLOAD_IDENTITY_SOURCE_FLY,
+                retryable=_source_error_retryable(err),
             ) from err
 
         if response.status_code != 200:
             raise WorkloadIdentityRuntimeError(
                 f"Machines API returned status {response.status_code}",
                 source=WORKLOAD_IDENTITY_SOURCE_FLY,
+                retryable=_retryable_status(response.status_code),
             )
         token = response.text.strip()
         if not token:
             raise WorkloadIdentityRuntimeError(
                 "Machines API returned an empty token",
                 source=WORKLOAD_IDENTITY_SOURCE_FLY,
+                retryable=False,
             )
         return token
 
@@ -646,25 +743,7 @@ class WorkloadIdentity:
         source: "IdentityTokenSource | Callable[[], Awaitable[str] | str]",
         client_id: str | None = None,
     ):
-        if source is None:
-            raise WorkloadIdentityConfigurationError(
-                "identity token source must not be None"
-            )
-        # Resolve the fetch callable once, here, so construction and every
-        # later exchange agree on what counts as a source: an object exposing
-        # a callable identity_token (including __getattr__ proxies), or a
-        # bare callable.
-        fetch: Callable[[], Awaitable[str] | str] | None = getattr(
-            source, "identity_token", None
-        )
-        if not callable(fetch):
-            if not callable(source):
-                raise WorkloadIdentityConfigurationError(
-                    "identity token source must provide identity_token() or be callable"
-                )
-            # callable() just proved it; ty cannot narrow a Protocol union on that.
-            fetch = cast("Callable[[], Awaitable[str] | str]", source)
-        self._fetch: Callable[[], Awaitable[str] | str] = fetch
+        self._token_fetcher = _IdentityTokenFetcher(source)
         self._source = source
         self._client_id = client_id
 
@@ -680,22 +759,7 @@ class WorkloadIdentity:
         return self._client_id
 
     async def _fetch_identity_token(self) -> str:
-        try:
-            result = self._fetch()
-            token = await result if inspect.isawaitable(result) else result
-        except (WorkloadIdentityConfigurationError, WorkloadIdentityRuntimeError):
-            raise
-        except Exception as err:
-            raise WorkloadIdentityRuntimeError(
-                "Error fetching identity token",
-                source=WORKLOAD_IDENTITY_SOURCE_CUSTOM,
-            ) from err
-        if not isinstance(token, str) or not token.strip():
-            raise WorkloadIdentityRuntimeError(
-                "Identity token source returned an empty token",
-                source=WORKLOAD_IDENTITY_SOURCE_CUSTOM,
-            )
-        return token
+        return await self._token_fetcher.identity_token()
 
     def get_http_client_auth(self) -> AuthStrategy:
         return NoneAuth()
