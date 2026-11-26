@@ -1,3 +1,10 @@
+## 0.47.0-keycardai-oauth (2026-11-26)
+
+
+- feat(keycardai-oauth)!: add token introspection (ID-881) (#541)
+- Adds introspect_token to Client and AsyncClient per keycard-sdk-spec token-introspection v1 (spec#100). The endpoint comes only from the introspection_endpoint in supplied or discovered metadata, and must be HTTPS.
+- BREAKING CHANGE(keycardai-oauth): ResolvedEndpoints.introspect is Optional and has no {issuer}/oauth2/introspect default; it is None when metadata does not advertise introspection_endpoint and no override is set.
+
 ## 0.46.3-keycardai-oauth (2026-11-26)
 
 
