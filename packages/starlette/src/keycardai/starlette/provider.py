@@ -218,6 +218,7 @@ class AuthProvider:
             audience=audience,
             allow_any_audience=allow_any_audience,
         )
+        self.resource_binding._validate_multi_zone(enable_multi_zone)
         if self.resource_binding.mode == "per_zone" and not enable_multi_zone:
             raise ResourceBindingConfigError("Per-zone binding requires enable_multi_zone")
         if self.resource_binding.mode == "shared" and enable_multi_zone:
@@ -341,6 +342,7 @@ class AuthProvider:
         if enable_multi_zone is None:
             enable_multi_zone = self.enable_multi_zone
         binding = self.resource_binding
+        binding._validate_multi_zone(enable_multi_zone)
         issuer: str | list[str] = self.issuer
         if binding.mode == "per_zone" and not enable_multi_zone:
             raise ResourceBindingConfigError("Per-zone binding requires request zone selection")

@@ -497,6 +497,7 @@ def protected_router(
         issuer=issuer,
     )
     binding = backend.resource_binding
+    binding._validate_multi_zone(enable_multi_zone)
     if binding.mode == "per_zone" and not enable_multi_zone:
         raise ResourceBindingConfigError("Per-zone binding requires a zone mount")
     if binding.mode == "shared" and enable_multi_zone:

@@ -15,7 +15,7 @@ from starlette.responses import PlainTextResponse
 from starlette.routing import Mount, Route
 from starlette.testclient import TestClient
 
-from keycardai.oauth.server import AccessContext
+from keycardai.oauth.server import AccessContext, ClientSecret
 from keycardai.oauth.server._cache import JWKSKey
 from keycardai.oauth.server.exceptions import AuthProviderConfigurationError
 from keycardai.oauth.server.verifier import TokenVerifier
@@ -360,6 +360,44 @@ async def test_review_finding_2_grant_rejects_missing_or_unknown_zone(zone_id):
     with pytest.raises(AuthProviderConfigurationError, match="trusted zone"):
         await provider._get_or_create_client({"zone_id": zone_id})
     factory.create_async_client.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"resource_identifier": IDENTIFIER},
+        {"multi_resource": True, "audience": AUDIENCES},
+        {"allow_any_audience": True},
+    ],
+)
+def test_review_4703017818_requires_zone_map_for_explicit_request_zone_modes(options):
+    expected = "resource_identifiers_by_zone"
+    with pytest.raises(ResourceBindingConfigError, match=expected):
+        AuthProvider(enable_multi_zone=True, **options)
+    with pytest.raises(ResourceBindingConfigError, match=expected):
+        AuthProvider(
+            application_credential=ClientSecret({
+                "https://a.keycard.cloud": ("a", "secret-a"),
+                "https://b.keycard.cloud": ("b", "secret-b"),
+            }),
+            **options,
+        )
+
+    provider = AuthProvider(zone_id="a", **options)
+    with pytest.raises(ResourceBindingConfigError, match=expected):
+        provider.get_token_verifier(enable_multi_zone=True)
+    verifier = provider.get_token_verifier()
+    verifier.enable_multi_zone = True
+    with pytest.raises(ResourceBindingConfigError, match=expected):
+        KeycardAuthBackend(verifier, resource_binding=provider.resource_binding)
+    with pytest.raises(ResourceBindingConfigError, match=expected):
+        protected_router(
+            provider.issuer,
+            Starlette(),
+            provider.get_token_verifier(),
+            enable_multi_zone=True,
+            resource_binding=provider.resource_binding,
+        )
 
 
 def test_bearer_prebuilt_verifier_mismatch_is_detectable():

@@ -290,6 +290,7 @@ class KeycardAuthBackend(AuthenticationBackend):
             allow_any_audience=allow_any_audience,
         )
         binding = self.resource_binding
+        binding._validate_multi_zone(verifier.enable_multi_zone)
         if binding.mode == "per_zone" and not verifier.enable_multi_zone:
             raise ResourceBindingConfigError("Per-zone binding requires request zone selection")
         if binding.mode == "shared" and verifier.enable_multi_zone:
