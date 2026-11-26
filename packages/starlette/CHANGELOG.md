@@ -1,3 +1,9 @@
+## 0.18.0-keycardai-starlette (2026-11-26)
+
+
+- feat(keycardai-starlette): token introspection in the bearer middleware (#543)
+- Adds the opt-in introspect option and application credential to the keycardai-starlette bearer middleware per bearer-token-verification-middleware spec-version 8 (spec#101, ID-882).
+
 ## 0.17.3-keycardai-starlette (2026-11-26)
 
 
