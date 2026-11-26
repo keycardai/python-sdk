@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
+from contextlib import nullcontext
 from typing import TYPE_CHECKING, Any
 
 from keycardai.oauth import AsyncClient
@@ -67,36 +68,35 @@ def login(plugin: KeycardPlugin, actor: str | None, *, client: Any = None) -> st
         raise LoginError("missing_actor", "Pass --actor, or set owner_actor in the profile settings.")
     if not settings.sign_in_resource:
         raise LoginError("missing_sign_in_resource", "sign_in_resource is required to sign in.")
-    if client is None:
-        return asyncio.run(_login_with_new_client(plugin, resolved))
     return asyncio.run(_login(plugin, resolved, client))
 
 
-async def _login_with_new_client(plugin: KeycardPlugin, actor: str) -> str:
-    async with AsyncClient(plugin.settings.zone_url) as client:
-        return await _login(plugin, actor, client)
-
-
 async def _login(plugin: KeycardPlugin, actor: str, client: Any) -> str:
-    settings = plugin.settings
+    issuer = plugin.settings.zone_url
     store = plugin.grants.store
     client_id = store.client_id()
     if client_id is None:
-        registered = await client.register_client(
-            ClientRegistrationRequest(
-                client_name=f"Hermes Agent ({PLUGIN_ID})",
-                grant_types=[GrantType.DEVICE_CODE, GrantType.REFRESH_TOKEN],
-                token_endpoint_auth_method=TokenEndpointAuthMethod.NONE,
+        async with (AsyncClient(issuer) if client is None else nullcontext(client)) as registrar:
+            registered = await registrar.register_client(
+                ClientRegistrationRequest(
+                    client_name=f"Hermes Agent ({PLUGIN_ID})",
+                    grant_types=[GrantType.DEVICE_CODE, GrantType.REFRESH_TOKEN],
+                    token_endpoint_auth_method=TokenEndpointAuthMethod.NONE,
+                )
             )
-        )
-        client_id = str(registered.client_id)
-        store.save_client_id(client_id)
-    authorization = await client.request_device_authorization(
-        client_id=client_id, resources=[settings.sign_in_resource]
-    )
+            client_id = str(registered.client_id)
+            store.save_client_id(client_id)
+    async with (AsyncClient(issuer, client_id=client_id) if client is None else nullcontext(client)) as public_client:
+        return await _device_login(plugin, actor, client_id, public_client)
+
+
+async def _device_login(plugin: KeycardPlugin, actor: str, client_id: str, client: Any) -> str:
+    settings = plugin.settings
+    store = plugin.grants.store
+    authorization = await client.request_device_authorization(resources=[settings.sign_in_resource])
     url = authorization.verification_uri_complete or authorization.verification_uri
     print(f"Open {url} and enter the code {authorization.user_code}", file=sys.stderr)
-    response = await client.wait_for_device_token(authorization, client_id=client_id)
+    response = await client.wait_for_device_token(authorization)
     if not response.refresh_token:
         raise LoginError(
             "refresh_token_missing",

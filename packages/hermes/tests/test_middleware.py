@@ -261,7 +261,7 @@ def test_row_18_near_expiry_refreshes_as_the_public_client_then_exchanges(harnes
     result = harness.call("calendar", tool_reading())
     assert len(harness.client.refresh_calls) == 1
     call = harness.client.refresh_calls[0]
-    assert call["client_id"] == "public-7" and call["refresh_token"] == "refresh-1"
+    assert "client_id" not in call and call["refresh_token"] == "refresh-1"
     assert call["resources"] == [SIGN_IN_RESOURCE]
     assert result == f"obo-access-1-for-{RESOURCE}"
     assert harness.client.exchange_calls[0].subject_token == "access-1"
@@ -606,7 +606,7 @@ def test_agrant_refresh_client_does_not_outlive_its_loop(harness: Harness, monke
     class LoopHoldingClient:
         """Holds the loop strongly once used, as the httpx transport does."""
 
-        def __init__(self, issuer: str) -> None:
+        def __init__(self, issuer: str, *, client_id: str) -> None:
             self.loop: Any = None
             self.index = len(closed)
             closed.append(False)
@@ -633,7 +633,7 @@ def test_agrant_refresh_client_does_not_outlive_its_loop(harness: Harness, monke
     gc.collect()
     assert closed == [True, True]
     assert [ref() for ref in loops] == [None, None]
-    assert harness.plugin.grants._engine_public is None
+    assert not harness.plugin.grants._engine_public
 
 
 # row 21
