@@ -71,11 +71,13 @@ def _get_request_zone_id(
     raw_path = request.scope.get("raw_path")
     path = request.scope["path"]
     if raw_path is not None:
-        # Keep encoded slashes inside their original path segments.
-        path = "/".join(
-            unquote(segment).replace("/", "%2F")
-            for segment in raw_path.decode(errors="replace").split("/")
-        )
+        encoded_path = raw_path.decode(errors="replace")
+        if "%2f" in encoded_path.lower() and unquote(encoded_path) == path:
+            # Keep encoded slashes inside their original path segments.
+            path = "/".join(
+                unquote(segment).replace("/", "%2F")
+                for segment in encoded_path.split("/")
+            )
     return _get_zone_id_from_path(remove_prefix(path))
 
 

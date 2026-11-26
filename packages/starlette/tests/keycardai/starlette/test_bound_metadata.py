@@ -151,7 +151,14 @@ def zone_metadata_client(monkeypatch):
         f"/configured{AS_PATH}/{{zone_id:path}}",
         authorization_server_metadata(ISSUER, zone_issuers=configured_issuers),
     )
-    with TestClient(Starlette(routes=[legacy, configured])) as client:
+    app = Starlette(routes=[legacy, configured])
+
+    async def strip_prefix(scope, receive, send):
+        if scope["type"] == "http" and scope["path"].startswith("/gateway/edge/"):
+            scope["path"] = scope["path"].removeprefix("/gateway/edge")
+        await app(scope, receive, send)
+
+    with TestClient(strip_prefix) as client:
         yield client, requests
 
 
@@ -183,6 +190,17 @@ def test_row_4b_8c_valid_zone_id_publishes_and_proxies_metadata(zone_metadata_cl
         assert response.status_code == 200
         assert response.json() == {"issuer": ZONE_ISSUER}
     assert [str(request.url) for request in requests] == [f"{ZONE_ISSUER}{AS_PATH}"] * 2
+
+
+def test_row_8c_uses_zone_from_rewritten_path(zone_metadata_client):
+    client, requests = zone_metadata_client
+    resource = client.get(f"/gateway%2Fedge{RESOURCE_PATH}/{VALID_ZONE}/mcp")
+    assert resource.status_code == 200
+    assert resource.json()["authorization_servers"] == [f"{ZONE_ISSUER}/"]
+
+    authorization_server = client.get(f"/gateway%2Fedge{AS_PATH}/{VALID_ZONE}")
+    assert authorization_server.status_code == 200
+    assert [str(request.url) for request in requests] == [f"{ZONE_ISSUER}{AS_PATH}"]
 
 
 @pytest.mark.parametrize(
