@@ -1,9 +1,18 @@
 """Bounded default HTTP clients for peer replies."""
 
+import zlib
+from collections.abc import Iterator
+from contextlib import contextmanager
+
 import httpx
 
 from keycardai.oauth.exceptions import ResponseBodyTooLargeError
-from keycardai.oauth.http._transports import _read_bounded_async, _read_bounded_sync
+from keycardai.oauth.http._transports import (
+    ResponseBodyDecodeError,
+    _BoundedZlibDecoder,
+    _read_bounded_async,
+    _read_bounded_sync,
+)
 
 DEFAULT_PEER_RESPONSE_BYTES = 64 * 1024 * 1024
 _ACCEPT_ENCODING = {"Accept-Encoding": "gzip, deflate"}
@@ -13,6 +22,20 @@ class _InvocationResponseTooLargeError(ResponseBodyTooLargeError):
     @property
     def retryable(self) -> bool:
         return False
+
+
+class _PeerZlibDecoder(_BoundedZlibDecoder):
+    def finish(self) -> bytes:
+        remaining = self._limit - len(self._buf)
+        tail = self._decompressor.decompress(b"", remaining + 1)
+        if len(tail) > remaining:
+            raise ResponseBodyTooLargeError(
+                status_code=self._status_code,
+                limit=self._limit,
+                operation=self._operation,
+            )
+        self._buf.extend(tail)
+        return bytes(self._buf)
 
 
 def _validate_limit(limit: int) -> int:
@@ -36,10 +59,26 @@ def _decoded_response(response: httpx.Response, content: bytes) -> httpx.Respons
     )
 
 
-def _check_encoding(response: httpx.Response) -> None:
+@contextmanager
+def _peer_decoder(
+    response: httpx.Response, operation: str, limit: int
+) -> Iterator[_PeerZlibDecoder | None]:
     encoding = response.headers.get("content-encoding", "").strip().lower()
-    if encoding not in ("", "identity", "gzip", "x-gzip", "deflate"):
+    if encoding in ("", "identity"):
+        yield None
+        return
+    if encoding not in ("gzip", "x-gzip", "deflate"):
         raise httpx.DecodingError(f"Unsupported peer content encoding: {encoding}", request=response.request)
+    try:
+        yield _PeerZlibDecoder(encoding, limit, response.status_code, operation)
+    except (zlib.error, httpx.DecodingError) as error:
+        cause = error if isinstance(error, httpx.DecodingError) else httpx.DecodingError(str(error))
+        raise ResponseBodyDecodeError(
+            status=response.status_code,
+            headers=response.headers,
+            cause=cause,
+            operation=operation,
+        ) from error
 
 
 class PeerClient(httpx.Client):
@@ -51,8 +90,13 @@ class PeerClient(httpx.Client):
         response = super().send(request, stream=True, **kwargs)
         operation = "a2a_invocation" if request.method == "POST" else "a2a_discovery"
         try:
-            _check_encoding(response)
-            content = _read_bounded_sync(response, operation, self._limit)
+            with _peer_decoder(response, operation, self._limit) as decoder:
+                if decoder is None:
+                    content = _read_bounded_sync(response, operation, self._limit)
+                else:
+                    for chunk in response.iter_raw():
+                        decoder.feed(chunk)
+                    content = decoder.finish()
             return _decoded_response(response, content)
         except ResponseBodyTooLargeError as error:
             if request.method == "POST" and response.is_success:
@@ -75,8 +119,13 @@ class AsyncPeerClient(httpx.AsyncClient):
         response = await super().send(request, stream=True, **kwargs)
         operation = "a2a_invocation" if request.method == "POST" else "a2a_discovery"
         try:
-            _check_encoding(response)
-            content = await _read_bounded_async(response, operation, self._limit)
+            with _peer_decoder(response, operation, self._limit) as decoder:
+                if decoder is None:
+                    content = await _read_bounded_async(response, operation, self._limit)
+                else:
+                    async for chunk in response.aiter_raw():
+                        decoder.feed(chunk)
+                    content = decoder.finish()
             return _decoded_response(response, content)
         except ResponseBodyTooLargeError as error:
             if request.method == "POST" and response.is_success:

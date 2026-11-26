@@ -2,6 +2,8 @@
 
 import gzip
 import json
+import tracemalloc
+import zlib
 from inspect import isawaitable
 
 import httpx
@@ -68,6 +70,23 @@ def peer(request, service_config, monkeypatch):
 async def test_row_9_default_accepts_more_than_one_mib(peer):
     call, body, expected, _ = peer
     assert await call(lambda: httpx.Response(200, stream=_Chunks(body, b" " * _MIB))) == expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("encoding,compress", [("gzip", gzip.compress), ("deflate", zlib.compress)])
+async def test_tiny_compressed_reply_does_not_allocate_the_default_limit(peer, encoding, compress):
+    call, body, expected, _ = peer
+    encoded = compress(body)
+    tracemalloc.start()
+    try:
+        result = await call(
+            lambda: httpx.Response(200, headers={"Content-Encoding": encoding}, stream=_Chunks(encoded))
+        )
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert result == expected
+    assert peak < 8 * _MIB
 
 
 @pytest.mark.asyncio
