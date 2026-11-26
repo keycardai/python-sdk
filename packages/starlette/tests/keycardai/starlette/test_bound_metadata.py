@@ -180,6 +180,19 @@ def test_metadata_rows_8a_and_8c_application_managed_handler():
         assert client.get(f"{RESOURCE_PATH}/mcp").json()["resource"] == IDENTIFIER
 
 
+def test_review_finding_4_explicit_handler_preserves_configured_issuers():
+    metadata = ProtectedResourceMetadata(
+        authorization_servers=[ISSUER, "https://another.example/issuer"],
+    )
+    path = f"{RESOURCE_PATH}/mcp"
+    handler = protected_resource_metadata(metadata, resource_identifier=IDENTIFIER)
+    with TestClient(Starlette(routes=[Route(path, handler)])) as client:
+        assert client.get(path).json()["authorization_servers"] == [
+            f"{ISSUER}/",
+            "https://another.example/issuer",
+        ]
+
+
 def test_metadata_row_9_distinct_single_resource_routes():
     routes = []
     for path in ("/mcp", "/tools"):

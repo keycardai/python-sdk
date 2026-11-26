@@ -148,7 +148,7 @@ def protected_resource_metadata(
             metadata,
             include_jwks_uri=include_jwks_uri,
             resource_identifier=identifier,
-            authorization_servers=issuers,
+            authorization_servers=None if binding.mode == "single" else issuers,
         )
         handlers.append((url.path.encode(), url.query.encode(), handler))
 
