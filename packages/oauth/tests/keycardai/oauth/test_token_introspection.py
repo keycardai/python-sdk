@@ -1,9 +1,9 @@
 """Unit rows from specs/oauth-client/token-introspection.md (version 1)."""
 
+import base64
 import json
 from urllib.parse import parse_qs
 
-import jwt
 import pytest
 
 from keycardai.oauth import (
@@ -142,7 +142,8 @@ async def test_row_2_private_jwt_authenticates_with_issuer_as_audience(
     assert post.headers["X-Client-Auth"] == "credential-header"
     fields = form(post)
     (assertion,) = fields.pop("client_assertion")
-    claims = jwt.decode(assertion, options={"verify_signature": False})
+    payload = assertion.split(".")[1]
+    claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
     assert claims["aud"] == f"{ISSUER}/"
     assert claims["iss"] == claims["sub"] == "client"
     assert fields == {"token": ["token"], "client_assertion_type": [JWT_BEARER]}
