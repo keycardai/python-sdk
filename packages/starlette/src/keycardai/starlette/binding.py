@@ -37,6 +37,11 @@ def _validate_identifier(identifier: str) -> None:
     ):
         return
     url = http_identifier(identifier)
+    if url is not None and not identifier.isascii():
+        raise ResourceBindingConfigError(
+            "HTTP(S) resource identifiers must use ASCII; encode the host with IDNA "
+            "and percent-encode non-ASCII path and query characters"
+        )
     try:
         if (
             url is not None

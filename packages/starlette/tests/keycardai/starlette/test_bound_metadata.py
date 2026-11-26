@@ -193,6 +193,15 @@ def test_review_finding_4_explicit_handler_preserves_configured_issuers():
         ]
 
 
+@pytest.mark.parametrize(
+    "identifier",
+    ["https://例.example/mcp", "https://api.example.com/例"],
+)
+def test_review_finding_5_rejects_non_ascii_resource_identifiers(identifier):
+    with pytest.raises(ResourceBindingConfigError, match="ASCII"):
+        metadata_app(resource_identifier=identifier)
+
+
 def test_metadata_row_9_distinct_single_resource_routes():
     routes = []
     for path in ("/mcp", "/tools"):
