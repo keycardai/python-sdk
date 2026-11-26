@@ -32,7 +32,6 @@ from typing import (
 from urllib.parse import urlparse
 
 from pydantic import AnyHttpUrl
-from starlette.middleware import Middleware
 
 from fastmcp import Context
 from fastmcp.dependencies import Dependency
@@ -67,8 +66,8 @@ from keycardai.oauth.utils.jwt import extract_scopes, get_claims
 
 from ._introspection import (
     InsufficientScope,
-    IntrospectionErrorMiddleware,
     TokenIntrospector,
+    introspection_middleware,
 )
 from .exceptions import MissingContextError
 
@@ -121,12 +120,12 @@ class _IntrospectingJWTVerifier(_KeycardJWTVerifier):
         return access_token
 
     def get_middleware(self) -> list:
-        return [Middleware(IntrospectionErrorMiddleware), *super().get_middleware()]
+        return introspection_middleware(self)
 
 
 class _IntrospectingRemoteAuthProvider(RemoteAuthProvider):
     def get_middleware(self) -> list:
-        return [Middleware(IntrospectionErrorMiddleware), *super().get_middleware()]
+        return introspection_middleware(self)
 
 __all__ = [
     "INTROSPECT",
@@ -1013,6 +1012,11 @@ class AuthProvider:
 
         Returns:
             JWTVerifier: Configured JWT token verifier for the Keycard zone
+
+        With introspection enabled, use this verifier directly as the FastMCP
+        auth provider, or use `get_remote_auth_provider()`, to get HTTP error
+        responses. Direct token verification can raise on insufficient scopes
+        or when introspection fails.
         """
         if self._introspector is not None:
             return _IntrospectingJWTVerifier(

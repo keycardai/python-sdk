@@ -43,13 +43,18 @@ def http_request(monkeypatch, signing_key, mock_client_factory):
 
     monkeypatch.setattr(StreamableHTTPASGIApp, "__call__", handle)
 
-    def setup(*, issuer=mock_zone_url, audience=RESOURCE, **options):
+    def setup(*, issuer=mock_zone_url, audience=RESOURCE, transport="streamable-http", **options):
         provider = AuthProvider(
             zone_url=mock_zone_url, mcp_server_url=RESOURCE,
             application_credential=CREDENTIAL, client_factory=mock_client_factory,
             **options,
         )
         server = FastMCP("test", auth=provider.get_remote_auth_provider())
+
+        @server.custom_route("/health", methods=["GET"])
+        async def health(request):
+            return PlainTextResponse("authenticated" if request.user.is_authenticated else "ok")
+
         token = jwt.encode(
             {"alg": "RS256", "kid": "signing-key", "typ": "at+jwt"},
             {
@@ -58,8 +63,12 @@ def http_request(monkeypatch, signing_key, mock_client_factory):
             },
             signing_key,
         )
-        client = TestClient(server.http_app(transport="streamable-http", path="/mcp"))
-        return lambda: client.post("/mcp", headers={"Authorization": f"Bearer {token}"}), token, handled
+        client = TestClient(server.http_app(transport=transport, path="/mcp"))
+
+        def request(path="/mcp", method="POST"):
+            return client.request(method, path, headers={"Authorization": f"Bearer {token}"})
+
+        return request, token, handled
 
     return setup
 
@@ -155,6 +164,32 @@ def test_invalid_local_token_is_not_introspected(http_request, mock_async_client
     assert_inactive(request())
     assert handled == []
     mock_async_client.introspect_token.assert_not_called()
+
+
+@pytest.mark.parametrize("required_scopes", [[], ["write"]])
+def test_auth_failure_does_not_block_public_routes(
+    http_request, mock_async_client, required_scopes
+):
+    mock_async_client.introspect_token.side_effect = TimeoutError()
+    request, _, handled = http_request(introspect=True, required_scopes=required_scopes)
+    metadata = request("/.well-known/oauth-protected-resource/mcp", "GET")
+    assert metadata.status_code == 200
+    health = request("/health", "GET")
+    assert health.status_code == 200
+    assert health.text == "ok"
+    if required_scopes:
+        assert request().status_code == 403
+        mock_async_client.introspect_token.assert_not_called()
+    else:
+        assert_unavailable(request())
+    assert handled == []
+
+
+def test_sse_message_mount_reports_introspection_failure(http_request, mock_async_client):
+    mock_async_client.introspect_token.side_effect = TimeoutError()
+    request, _, handled = http_request(introspect=True, transport="sse")
+    assert_unavailable(request("/messages/"))
+    assert handled == []
 
 
 def test_introspection_never_discovers_metadata_over_plaintext(mock_client_factory):

@@ -3,9 +3,16 @@ from __future__ import annotations
 import logging
 
 from anyio import fail_after
-from starlette.responses import JSONResponse
-from starlette.routing import Match, Route
-from starlette.types import ASGIApp, Receive, Scope, Send
+from mcp.server.auth.middleware.auth_context import AuthContextMiddleware
+from mcp.server.auth.middleware.bearer_auth import BearerAuthBackend
+from mcp.server.auth.provider import TokenVerifier
+from starlette.authentication import AuthenticationError
+from starlette.middleware import Middleware
+from starlette.middleware.authentication import AuthenticationMiddleware
+from starlette.requests import HTTPConnection
+from starlette.responses import JSONResponse, Response
+from starlette.routing import Match, Mount, Route
+from starlette.types import Scope
 
 from fastmcp.server.auth.middleware import RequireAuthMiddleware
 from keycardai.oauth import AsyncClient
@@ -23,16 +30,23 @@ class InsufficientScope(Exception):
     pass
 
 
-def _scope_error(scope: Scope) -> JSONResponse:
-    challenge = 'Bearer error="insufficient_scope", error_description="Insufficient scope"'
+def _required_auth(scope: Scope) -> RequireAuthMiddleware | None:
     for route in getattr(scope.get("app"), "routes", ()):
-        if isinstance(route, Route) and route.matches(scope)[0] == Match.FULL:
-            if (
-                isinstance(route.endpoint, RequireAuthMiddleware)
-                and route.endpoint.resource_metadata_url is not None
-            ):
-                challenge += f', resource_metadata="{route.endpoint.resource_metadata_url}"'
-            break
+        if route.matches(scope)[0] != Match.FULL:
+            continue
+        guard = (
+            route.endpoint if isinstance(route, Route)
+            else route.app if isinstance(route, Mount)
+            else None
+        )
+        return guard if isinstance(guard, RequireAuthMiddleware) else None
+    return None
+
+
+def _scope_error(guard: RequireAuthMiddleware) -> JSONResponse:
+    challenge = 'Bearer error="insufficient_scope", error_description="Insufficient scope"'
+    if guard.resource_metadata_url is not None:
+        challenge += f', resource_metadata="{guard.resource_metadata_url}"'
     return JSONResponse(
         {"error": "insufficient_scope"},
         status_code=403,
@@ -76,18 +90,40 @@ class TokenIntrospector:
             raise IntrospectionUnavailable("Token introspection unavailable", exc) from exc
 
 
-class IntrospectionErrorMiddleware:
-    def __init__(self, app: ASGIApp):
-        self.app = app
-
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http":
-            await self.app(scope, receive, send)
-            return
+class _IntrospectionAuthBackend(BearerAuthBackend):
+    async def authenticate(self, conn: HTTPConnection):
         try:
-            await self.app(scope, receive, send)
-        except IntrospectionUnavailable:
-            response = JSONResponse({"error": "temporarily_unavailable"}, status_code=503)
-            await response(scope, receive, send)
-        except InsufficientScope:
-            await _scope_error(scope)(scope, receive, send)
+            return await super().authenticate(conn)
+        except (IntrospectionUnavailable, InsufficientScope) as exc:
+            guard = _required_auth(conn.scope)
+            if guard is None:
+                return None
+            raise _RequestAuthFailure(guard, exc) from exc
+
+
+class _RequestAuthFailure(AuthenticationError):
+    def __init__(
+        self, guard: RequireAuthMiddleware, error: IntrospectionUnavailable | InsufficientScope
+    ):
+        super().__init__(str(error))
+        self.response = (
+            _scope_error(guard) if isinstance(error, InsufficientScope)
+            else JSONResponse({"error": "temporarily_unavailable"}, status_code=503)
+        )
+
+
+def _on_auth_error(conn: HTTPConnection, exc: AuthenticationError) -> Response:
+    if isinstance(exc, _RequestAuthFailure):
+        return exc.response
+    return AuthenticationMiddleware.default_on_error(conn, exc)
+
+
+def introspection_middleware(verifier: TokenVerifier) -> list[Middleware]:
+    return [
+        Middleware(
+            AuthenticationMiddleware,
+            backend=_IntrospectionAuthBackend(verifier),
+            on_error=_on_auth_error,
+        ),
+        Middleware(AuthContextMiddleware),
+    ]
