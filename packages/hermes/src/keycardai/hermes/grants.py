@@ -67,7 +67,7 @@ class Grants:
     store: SignInStore
     clock: Callable[[], float] = time.time
     public_client: AsyncClient | None = None
-    _engine_public: AsyncClient | None = field(default=None, init=False, repr=False)
+    _engine_public: dict[str, AsyncClient] = field(default_factory=dict, init=False, repr=False)
 
     def run(self, coro: Coroutine[Any, Any, Any]) -> Any:
         return self.engine.run_sync(coro)
@@ -107,7 +107,7 @@ class Grants:
                 if not stale:
                     return current
                 try:
-                    response = self.run(self._refresh_coro(current, self._engine_client()))
+                    response = self.run(self._refresh_coro(current, on_engine=True))
                 except Exception as exc:
                     raise _refresh_error(actor, exc) from exc
                 return self._store_refreshed(actor, current, response)
@@ -136,43 +136,38 @@ class Grants:
             return await _uncancellable(self._arefresh_and_store(actor, current))
 
     async def _arefresh_and_store(self, actor: str, sign_in: SignIn) -> SignIn:
+        try:
+            response = await self._refresh_coro(sign_in)
+        except Exception as exc:
+            raise _refresh_error(actor, exc) from exc
+        return self._store_refreshed(actor, sign_in, response)
+
+    async def _refresh_coro(self, sign_in: SignIn, *, on_engine: bool = False) -> Any:
+        owned = False
         if self.public_client is not None:
             client = self.public_client
-            owned = False
+        elif on_engine:
+            # Reuse public clients on the persistent engine loop, but never
+            # send its application authentication or another sign-in's ID.
+            client = self._engine_public.get(sign_in.client_id)
+            if client is None:
+                client = AsyncClient(issuer=self.settings.zone_url, client_id=sign_in.client_id)
+                self._engine_public[sign_in.client_id] = client
         else:
             # One client per refresh on the caller's loop: a refresh runs once
             # per access token lifetime, and a client kept past this loop
             # would hold the loop through its transport after it closes.
-            client = AsyncClient(issuer=self.settings.zone_url)
+            client = AsyncClient(issuer=self.settings.zone_url, client_id=sign_in.client_id)
             owned = True
         try:
-            response = await self._refresh_coro(sign_in, client)
-        except Exception as exc:
-            raise _refresh_error(actor, exc) from exc
+            resources = [self.settings.sign_in_resource] if self.settings.sign_in_resource else None
+            return await client.refresh_token_grant(
+                refresh_token=sign_in.refresh_token or "",
+                resources=resources,
+            )
         finally:
             if owned:
                 await client.aclose()
-        return self._store_refreshed(actor, sign_in, response)
-
-    def _engine_client(self) -> AsyncClient:
-        """The unauthenticated client for refreshes on the engine's persistent
-        loop: the engine's client carries the application's own client
-        authentication, which must not be sent with a public client_id. An
-        injected ``public_client`` is used as is; otherwise one client is
-        kept for the life of the profile, as that loop is."""
-        if self.public_client is not None:
-            return self.public_client
-        if self._engine_public is None:
-            self._engine_public = AsyncClient(issuer=self.settings.zone_url)
-        return self._engine_public
-
-    async def _refresh_coro(self, sign_in: SignIn, client: AsyncClient) -> Any:
-        resources = [self.settings.sign_in_resource] if self.settings.sign_in_resource else None
-        return await client.refresh_token_grant(
-            refresh_token=sign_in.refresh_token or "",
-            client_id=sign_in.client_id,
-            resources=resources,
-        )
 
     def _store_refreshed(self, actor: str, sign_in: SignIn, response: Any) -> SignIn:
         expires_in = response.expires_in if response.expires_in is not None else 300
