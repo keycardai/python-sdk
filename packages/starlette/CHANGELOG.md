@@ -1,3 +1,52 @@
+## 0.17.0-keycardai-starlette (2026-11-26)
+
+
+- feat(keycardai-starlette): bind metadata, challenges and audience to one resource identifier (SDK-14) (#493)
+- * feat(keycardai-starlette): bind metadata, challenges and audience to one resource identifier (SDK-14)
+- Use configured resource bindings for bearer verification and OAuth discovery. Preserve legacy behavior with a single deprecation warning and add spec conformance tests.
+- Co-Authored-By: Devin AI <158243242+devin-ai-integration[bot]@users.noreply.github.com>
+- * fix(keycardai-starlette): limit explicit metadata authentication exemptions
+- Co-Authored-By: Devin AI <158243242+devin-ai-integration[bot]@users.noreply.github.com>
+- * fix(keycardai-starlette): preserve configured metadata authorization servers
+- Co-Authored-By: Devin AI <158243242+devin-ai-integration[bot]@users.noreply.github.com>
+- * fix(keycardai-starlette): route shared grants to the verified zone issuer
+- Co-Authored-By: Devin AI <158243242+devin-ai-integration[bot]@users.noreply.github.com>
+- * fix(keycardai-starlette): reject non-ASCII HTTP resource identifiers
+- Co-Authored-By: Devin AI <158243242+devin-ai-integration[bot]@users.noreply.github.com>
+- * fix(keycardai-starlette): keep anonymous per-zone routes public
+- Co-Authored-By: Devin AI <158243242+devin-ai-integration[bot]@users.noreply.github.com>
+- * fix(keycardai-starlette): require a binding map for request-zone verification
+- Co-Authored-By: Devin AI <158243242+devin-ai-integration[bot]@users.noreply.github.com>
+- * fix(keycardai-starlette): derive shared issuers from the configured base URL
+- Co-Authored-By: Devin AI <158243242+devin-ai-integration[bot]@users.noreply.github.com>
+- * fix(keycardai-starlette): clarify discovery in the quick start
+- Co-Authored-By: Devin AI <158243242+devin-ai-integration[bot]@users.noreply.github.com>
+- * fix(keycardai-starlette): keep exact standalone discovery routes public
+- Co-Authored-By: Devin AI <158243242+devin-ai-integration[bot]@users.noreply.github.com>
+- * fix(keycardai-starlette): require a registered JWKS endpoint for discovery exemption
+- Co-Authored-By: Devin AI <158243242+devin-ai-integration[bot]@users.noreply.github.com>
+- * fix(keycardai-starlette): expose the base issuer for shared discovery
+- Co-Authored-By: Devin AI <158243242+devin-ai-integration[bot]@users.noreply.github.com>
+- * test(keycardai-starlette): cover unpublished metadata paths and shared manual wiring
+- Adds regression tests for anonymous requests to unpublished well-known
+paths under require_authentication in every explicit mode, and for the
+README shared discovery wiring through auth.issuer. Renames the
+conformance tests to test_row_N_ and notes in the README that auth.issuer
+is the base URL for shared discovery.
+- * fix(keycardai-starlette): keep shared discovery token-keyed and find wrapped JWKS routes
+- A multi-zone ClientSecret no longer turns on request zone selection in
+shared mode, and the error for an explicit enable_multi_zone=True names
+the remedy. The standalone backend looks through middleware that wraps a
+mounted router when it checks for the SDK JWKS endpoint.
+- * fix(keycardai-starlette): let shared discovery run without a default zone
+- Shared discovery derives every zone from the base URL and the verified
+token, so AuthProvider no longer requires zone_id or zone_url in that
+mode.
+- ---------
+- Co-authored-by: devin-ai-keycard <devin-ai@keycard.ai>
+Co-authored-by: Devin AI <158243242+devin-ai-integration[bot]@users.noreply.github.com>
+Co-authored-by: Larry Osakwe <23560354+Larry-Osakwe@users.noreply.github.com>
+
 ## 0.16.0-keycardai-starlette (2026-11-25)
 
 
