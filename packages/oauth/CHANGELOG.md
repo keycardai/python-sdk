@@ -1,3 +1,16 @@
+## 0.43.1-keycardai-oauth (2026-11-26)
+
+
+- fix(keycardai-oauth): omit secrets from printed OAuth values (#486)
+- * fix(keycardai-oauth): omit secrets from printed OAuth values
+- Refs SDK-127
+- Co-Authored-By: Devin AI <158243242+devin-ai-integration[bot]@users.noreply.github.com>
+- * fix(keycardai-oauth): print configured client id in client repr
+- Co-Authored-By: Devin AI <158243242+devin-ai-integration[bot]@users.noreply.github.com>
+- ---------
+- Co-authored-by: devin-ai-keycard <devin-ai@keycard.ai>
+Co-authored-by: Devin AI <158243242+devin-ai-integration[bot]@users.noreply.github.com>
+
 ## 0.43.0-keycardai-oauth (2026-11-26)
 
 
