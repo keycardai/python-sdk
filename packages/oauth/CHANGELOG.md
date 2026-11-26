@@ -1,3 +1,10 @@
+## 0.46.1-keycardai-oauth (2026-11-26)
+
+
+- fix(keycardai-oauth): attach KEYCARD_CLIENT_ID to a discovered web identity credential (#511)
+- Co-authored-by: devin-ai-keycard <devin-ai@keycard.ai>
+Co-authored-by: Devin AI <158243242+devin-ai-integration[bot]@users.noreply.github.com>
+
 ## 0.46.0-keycardai-oauth (2026-11-26)
 
 
