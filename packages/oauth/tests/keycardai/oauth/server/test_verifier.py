@@ -1074,12 +1074,14 @@ class TestZoneJwksUri:
 
 
 class TestZoneIdValidation:
+    """Row 4 of specs/multi-zone-and-ops/multi-zone-support.md."""
+
     @pytest.mark.asyncio
     @pytest.mark.parametrize("enable_multi_zone", [False, True])
     @pytest.mark.parametrize(
         "encoded_zone", ["", "a%23b", "a%2Fb", "a%40b", "a%3Ab", "team%2Eeu"]
     )
-    async def test_row_17_invalid_zone_id_makes_no_requests(
+    async def test_row_4_invalid_zone_id_makes_no_requests(
         self, monkeypatch, enable_multi_zone, encoded_zone
     ):
         issuer = "https://example.com"
@@ -1110,7 +1112,7 @@ class TestZoneIdValidation:
                     await verifier.verify_token_for_zone("token", unquote(encoded_zone))
         handle_request.assert_not_called()
 
-    def test_row_18_url_helpers_reject_invalid_zone_id(self):
+    def test_row_4_url_helpers_reject_invalid_zone_id(self):
         issuer = "https://example.com"
         verifier = TokenVerifier(issuer=issuer, audience=issuer)
         with pytest.raises(InvalidTokenError, match="Invalid zone ID"):
