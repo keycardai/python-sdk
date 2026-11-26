@@ -1,3 +1,9 @@
+## 0.8.0-keycardai-fastmcp (2026-11-26)
+
+
+- feat(keycardai-fastmcp): token introspection in the bearer middleware (#544)
+- Passes introspect and the owning Application's credential through the FastMCP provider per fastmcp spec-version 2 and bearer-token-verification-middleware spec-version 8 (spec#101, ID-882).
+
 ## 0.7.5-keycardai-fastmcp (2026-11-25)
 
 ## 0.7.4-keycardai-fastmcp (2026-11-06)
