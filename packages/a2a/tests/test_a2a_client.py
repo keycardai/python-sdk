@@ -2,9 +2,11 @@
 
 from unittest.mock import AsyncMock, Mock, patch
 
+import httpx
 import pytest
+from keycardai.oauth.exceptions import ConfigError
 
-from keycardai.a2a import AgentServiceConfig, DelegationClient
+from keycardai.a2a import AgentServiceConfig, DelegationClient, DelegationClientSync
 
 
 @pytest.fixture
@@ -23,6 +25,67 @@ def service_config():
 def a2a_client(service_config):
     """Create delegation client."""
     return DelegationClient(service_config)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("client_type", [DelegationClient, DelegationClientSync])
+@pytest.mark.parametrize(
+    ("status", "location", "trusted", "origin_error"),
+    [
+        pytest.param(
+            307, "https://other.example/rpc", (), "https://other.example:443",
+            id="row_16_307",
+        ),
+        pytest.param(
+            302, "https://peer.example:8443/rpc", (), "https://peer.example:8443",
+            id="row_16_302",
+        ),
+        pytest.param(307, "/next", (), None, id="row_17"),
+        pytest.param(
+            307, "https://other.example/rpc", ("https://OTHER.example:443",), None,
+            id="row_18",
+        ),
+        pytest.param(
+            307, "http://peer.example/a2a/jsonrpc", (), "http://peer.example:80",
+            id="row_19",
+        ),
+    ],
+)
+async def test_a2a_invocation_redirect(
+    service_config, client_type, status, location, trusted, origin_error
+):
+    target = "https://peer.example"
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(status, headers={"Location": location})
+
+    error_type = ConfigError if origin_error else httpx.HTTPStatusError
+    transport = httpx.MockTransport(handler)
+    if client_type is DelegationClient:
+        async with (
+            client_type(service_config, trusted_endpoint_origins=trusted) as client,
+            httpx.AsyncClient(transport=transport, follow_redirects=True) as http_client,
+        ):
+            with patch.object(client, "http_client", http_client):
+                with pytest.raises(error_type) as caught:
+                    await client.invoke_service(target, "task", token="delegated")
+    else:
+        with (
+            client_type(service_config, trusted_endpoint_origins=trusted) as client,
+            httpx.Client(transport=transport, follow_redirects=True) as http_client,
+        ):
+            with patch.object(client, "http_client", http_client):
+                with pytest.raises(error_type) as caught:
+                    client.invoke_service(target, "task", token="delegated")
+
+    if origin_error:
+        assert not caught.value.retryable
+        assert origin_error in str(caught.value)
+        assert repr(target) in str(caught.value)
+    assert [str(request.url) for request in requests] == [f"{target}/a2a/jsonrpc"]
+    assert requests[0].headers["Authorization"] == "Bearer delegated"
 
 
 @pytest.mark.asyncio
