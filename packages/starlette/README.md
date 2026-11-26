@@ -55,7 +55,7 @@ Choose one mode when constructing `AuthProvider`:
 | `resource_identifier="https://api.example.com/mcp"` | Accepts that exact audience and publishes RFC 9728 metadata for that URL. A URN such as `urn:example:service` binds the audience without publishing metadata. |
 | `resource_identifiers_by_zone={"a": "https://api.example.com/a/mcp", ...}`, `enable_multi_zone=True` | Selects the zone before verification from a `{zone_id}` routing parameter. `protected_router` mounts the app at `/{zone_id}`; with `install`, declare the parameter in your routes. A missing or unconfigured zone is rejected. Each HTTP(S) identifier has its own document. |
 | `multi_resource=True`, `audience=["resource-a", "resource-b"]` | Accepts any listed audience without publishing metadata. |
-| `multi_resource=True`, `resource_identifiers_by_zone={...}`, `audience=[shared_url]` | Publishes one document when all trusted zones share the exact same HTTP(S) identifier. Pass the base issuer as `zone_url` and leave `enable_multi_zone=False` so the token selects its issuer. |
+| `multi_resource=True`, `resource_identifiers_by_zone={...}`, `audience=[shared_url]` | Publishes one document when all trusted zones share the exact same HTTP(S) identifier. Zone issuers are derived from `base_url` (default: `https://keycard.cloud`). Leave `enable_multi_zone=False` so the token selects its issuer. |
 | `allow_any_audience=True` | Skips only the audience check, without publishing metadata. |
 
 Leave the binding options unset to retain legacy audience and discovery

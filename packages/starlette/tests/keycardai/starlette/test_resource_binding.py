@@ -308,7 +308,8 @@ def test_review_finding_2_grant_uses_verified_issuer_client(monkeypatch, token_h
         "keycardai.starlette.authorization.exchange_tokens_for_resources", exchange
     )
     provider = AuthProvider(
-        zone_url=issuer,
+        zone_id="z",
+        base_url=issuer,
         resource_identifiers_by_zone=dict.fromkeys(ZONES, IDENTIFIER),
         multi_resource=True,
         audience=[IDENTIFIER],
@@ -421,12 +422,13 @@ def test_bearer_row_17_shared_binding_accepts_exactly_the_trusted_issuers(
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         provider = AuthProvider(
-            zone_url=ISSUER,
+            zone_id="z",
             resource_identifiers_by_zone=dict.fromkeys(ZONES, IDENTIFIER),
             multi_resource=True,
             audience=[IDENTIFIER],
         )
-        app = protected_app(provider)
+        inner = Starlette(routes=[Route("/mcp", requires("authenticated")(handled))])
+        app = Starlette(routes=provider.get_routes(inner))
     assert not caught
     with TestClient(app) as client:
         request(client, "/mcp", status=401, metadata=f"{METADATA}/mcp")
@@ -444,6 +446,29 @@ def test_bearer_row_17_shared_binding_accepts_exactly_the_trusted_issuers(
             status=401,
             metadata=f"{METADATA}/mcp",
         )
+
+
+@pytest.mark.parametrize("install", [True, False])
+def test_review_4703017898_shared_metadata_uses_base_issuer(install):
+    provider = AuthProvider(
+        zone_id="z",
+        base_url="https://login.example.com:8443",
+        resource_identifiers_by_zone=dict.fromkeys(ZONES, IDENTIFIER),
+        multi_resource=True,
+        audience=[IDENTIFIER],
+    )
+    app = Starlette()
+    if install:
+        provider.install(app)
+    else:
+        app = Starlette(routes=provider.get_routes(app))
+    with TestClient(app) as client:
+        response = client.get("/.well-known/oauth-protected-resource/mcp")
+        assert response.status_code == 200
+        assert response.json()["authorization_servers"] == [
+            "https://a.login.example.com:8443",
+            "https://b.login.example.com:8443",
+        ]
 
 
 @pytest.mark.parametrize(
