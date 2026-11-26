@@ -45,6 +45,21 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      - name: Check package LICENSE files
+        run: |
+          shopt -s nullglob
+          for package in packages/*/; do
+            license="${package}LICENSE"
+            if [[ ! -f "$license" ]]; then
+              printf 'Missing %s\n' "$license" >&2
+              exit 1
+            fi
+            if ! cmp -s -- LICENSE "$license"; then
+              printf '%s differs from the root LICENSE\n' "$license" >&2
+              exit 1
+            fi
+          done
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
