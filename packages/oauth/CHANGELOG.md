@@ -1,3 +1,28 @@
+## 0.43.2-keycardai-oauth (2026-11-26)
+
+
+- fix(keycardai-oauth): the request timeout bounds the credential call too (#437)
+- * fix(keycardai-oauth): the request timeout bounds the credential call too
+- request_device_authorization, poll_device_token, and each poll of
+wait_for_device_token run the credential's client authentication and
+the request under one asyncio.wait_for, so the timeout bounds the whole
+round trip, as Go does with one context.WithTimeout. httpx's timeout
+alone applies to each phase of the request, and the credential call had
+no bound. Running out of time raises NetworkError, so poll until done
+stops with DevicePollError and a doubled interval. An exception the
+credential raises propagates unchanged (unit row 27).
+- Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+- * fix(keycardai-oauth): a cancelled device poll stops even as its bounded call finishes
+- asyncio.wait_for on Python 3.10 and 3.11 can return the inner result when
+the caller is cancelled in the same step the inner call finishes (CPython
+gh-86296), so wait_for_device_token could keep polling after cancellation.
+The bound now uses asyncio.timeout on 3.11 and later, and a task with
+asyncio.wait on 3.10. The wait_for_device_token docstring says the timeout
+bounds the credential call and the request together.
+- ---------
+- Co-authored-by: Claude Opus 5.5 <noreply@anthropic.com>
+Co-authored-by: Larry Osakwe <23560354+Larry-Osakwe@users.noreply.github.com>
+
 ## 0.43.1-keycardai-oauth (2026-11-26)
 
 
