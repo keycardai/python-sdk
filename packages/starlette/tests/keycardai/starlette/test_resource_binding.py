@@ -433,28 +433,20 @@ async def test_row_17_grant_rejects_missing_or_unknown_zone(zone_id):
     factory.create_async_client.assert_not_called()
 
 
-@pytest.mark.parametrize(
-    "options",
-    [
-        {"resource_identifier": IDENTIFIER},
-        {"multi_resource": True, "audience": AUDIENCES},
-        {"allow_any_audience": True},
-    ],
-)
-def test_row_16b_request_zone_modes_require_zone_map(options):
+def test_row_16b_discoverable_multi_zone_requires_zone_map():
     expected = "resource_identifiers_by_zone"
     with pytest.raises(ResourceBindingConfigError, match=expected):
-        AuthProvider(enable_multi_zone=True, **options)
+        AuthProvider(enable_multi_zone=True, resource_identifier=IDENTIFIER)
     with pytest.raises(ResourceBindingConfigError, match=expected):
         AuthProvider(
             application_credential=ClientSecret({
                 "https://a.keycard.cloud": ("a", "secret-a"),
                 "https://b.keycard.cloud": ("b", "secret-b"),
             }),
-            **options,
+            resource_identifier=IDENTIFIER,
         )
 
-    provider = AuthProvider(zone_id="a", **options)
+    provider = AuthProvider(zone_id="a", resource_identifier=IDENTIFIER)
     with pytest.raises(ResourceBindingConfigError, match=expected):
         provider.get_token_verifier(enable_multi_zone=True)
     verifier = provider.get_token_verifier()
@@ -469,6 +461,29 @@ def test_row_16b_request_zone_modes_require_zone_map(options):
             enable_multi_zone=True,
             resource_binding=provider.resource_binding,
         )
+
+
+@pytest.mark.parametrize(
+    ("options", "audience"),
+    [
+        pytest.param(
+            {"multi_resource": True, "audience": [IDENTIFIER]}, IDENTIFIER, id="row_8a"
+        ),
+        pytest.param({"allow_any_audience": True}, IDENTIFIER, id="row_8g"),
+        pytest.param(
+            {"resource_identifier": "urn:example:service"},
+            "urn:example:service",
+            id="row_8h",
+        ),
+    ],
+)
+def test_row_8a_8g_8h_multi_zone_verifier_only(token_headers, options, audience):
+    provider = AuthProvider(zone_url=ISSUER, enable_multi_zone=True, **options)
+    with TestClient(protected_app(provider)) as client:
+        headers = token_headers(audience, "https://a.keycard.cloud")
+        request(client, "/a/mcp", status=401)
+        request(client, "/a/mcp", headers, status=200)
+        request(client, "/b/mcp", headers, status=401)
 
 
 def test_row_8_prebuilt_verifier_mismatch_is_detectable():
