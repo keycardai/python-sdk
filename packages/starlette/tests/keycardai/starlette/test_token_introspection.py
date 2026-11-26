@@ -1,5 +1,6 @@
 """Bearer middleware v8 and Starlette/FastAPI integration v2 conformance."""
 
+import asyncio
 import json
 import time
 from unittest.mock import AsyncMock
@@ -67,16 +68,19 @@ def reply(body, status=200):
 
 
 class Wire(DefaultClientFactory):
-    def __init__(self, *responses, missing_endpoint=False, endpoint=None):
+    def __init__(self, *responses, missing_endpoint=False, endpoint=None, delay=0):
         self.responses = iter(responses)
         self.missing_endpoint = missing_endpoint
         self.endpoint = endpoint
+        self.delay = delay
         self.requests = []
 
     def create_async_client(self, base_url, auth=None, config=None):
         class Transport:
             async def request_raw(_, request, *, timeout=None):
                 self.requests.append((request, timeout))
+                if self.delay:
+                    await asyncio.sleep(self.delay)
                 if request.method == "GET":
                     assert request.url == f"{base_url}/.well-known/oauth-authorization-server"
                     metadata = {"issuer": base_url}
@@ -317,6 +321,16 @@ def test_introspection_never_discovers_metadata_over_plaintext(app, bearer):
     client = backend(app, wire, issuers=issuer, introspect=True, credential=CREDENTIAL)
     assert_unavailable(client.get("/mcp", headers=bearer(issuer=issuer)))
     assert wire.requests == []
+    assert app[1] == []
+
+
+def test_introspection_deadline_covers_discovery_and_post(app, bearer):
+    wire = Wire(reply({"active": True}), delay=0.08)
+    client = backend(
+        app, wire, introspect=True, credential=CREDENTIAL, introspection_timeout=0.12
+    )
+    assert_unavailable(client.get("/mcp", headers=bearer()))
+    assert [request.method for request, _ in wire.requests] == ["GET", "POST"]
     assert app[1] == []
 
 

@@ -93,7 +93,8 @@ Supply the credential of the application that owns the protected resource
 router and backend). A multi-zone verifier needs credentials keyed by
 issuer URL, for example a `ClientSecret` containing one entry for each zone.
 `introspect=True` requires an HTTPS issuer for authorization server discovery.
-`introspection_timeout` bounds each request in seconds and defaults to 10.
+`introspection_timeout` bounds each status check, including discovery, in seconds
+and defaults to 10.
 
 Inactive tokens receive a 401 challenge. A failed status check returns 503
 without a challenge. The SDK does not cache status results. For a token

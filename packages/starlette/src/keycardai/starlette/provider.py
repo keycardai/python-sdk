@@ -177,7 +177,7 @@ class AuthProvider:
                 protected-resource discovery.
             introspect: Check each locally verified token using the application
                 credential that owns the resource.
-            introspection_timeout: Bound each introspection request in seconds.
+            introspection_timeout: Bound each status check, including discovery, in seconds.
         """
         zone_url = zone_url or os.getenv("KEYCARD_ZONE_URL")
         zone_id = zone_id or _deprecated_zone_env("KEYCARD_ZONE_ID")

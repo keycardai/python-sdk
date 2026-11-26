@@ -3,6 +3,8 @@ from __future__ import annotations
 import logging
 from urllib.parse import urlsplit
 
+from anyio import fail_after
+
 from keycardai.oauth import AsyncClient, ClientConfig
 from keycardai.oauth.client_auth import (
     ClientAuthenticator,
@@ -57,9 +59,10 @@ class TokenIntrospector:
                     ),
                 )
                 self._clients[issuer] = client
-            result = await client.introspect_token(
-                token, credential=self._credential, timeout=self._timeout
-            )
+            with fail_after(self._timeout):
+                result = await client.introspect_token(
+                    token, credential=self._credential, timeout=self._timeout
+                )
             return result.active
         except Exception as exc:
             status = (

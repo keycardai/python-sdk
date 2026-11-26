@@ -317,7 +317,7 @@ class KeycardAuthBackend(AuthenticationBackend):
             inspect, such as middleware on a bare ``Router``.
         introspect: Check whether locally verified tokens are still active.
         credential: Client authenticator for the resource-owning application.
-        introspection_timeout: Bound each introspection request in seconds.
+        introspection_timeout: Bound each status check, including discovery, in seconds.
     """
 
     def __init__(

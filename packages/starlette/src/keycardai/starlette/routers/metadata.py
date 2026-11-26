@@ -469,7 +469,7 @@ def protected_router(
             authorization server metadata fetch.
         introspect: Check whether locally verified tokens are still active.
         credential: Client authenticator for the resource-owning application.
-        introspection_timeout: Bound each introspection request in seconds.
+        introspection_timeout: Bound each status check, including discovery, in seconds.
 
     Returns:
         Sequence of routes including metadata mount and protected app mount.
