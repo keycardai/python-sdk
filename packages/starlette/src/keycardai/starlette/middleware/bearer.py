@@ -34,7 +34,7 @@ from starlette.authentication import (
     BaseUser,
 )
 from starlette.requests import HTTPConnection, Request
-from starlette.responses import Response
+from starlette.responses import JSONResponse, Response
 from starlette.routing import BaseRoute, Match
 from starlette.types import Scope
 
@@ -47,6 +47,11 @@ from ..binding import (
 from ..handlers.jwks import _is_jwks_endpoint
 from ..shared.starlette import get_base_url
 from ..shared.zone import is_valid_zone_id
+from ._introspection import (
+    IntrospectionUnavailable,
+    TokenIntrospector,
+    validate_credential,
+)
 
 _BINDING_SCOPE_KEY = "keycard.resource_binding"
 
@@ -310,6 +315,9 @@ class KeycardAuthBackend(AuthenticationBackend):
             registered SDK JWKS endpoint at its well-known path are public.
             Pass a matcher when the backend runs before routing it cannot
             inspect, such as middleware on a bare ``Router``.
+        introspect: Check whether locally verified tokens are still active.
+        credential: Client authenticator for the resource-owning application.
+        introspection_timeout: Bound each status check, including discovery, in seconds.
     """
 
     def __init__(
@@ -326,6 +334,9 @@ class KeycardAuthBackend(AuthenticationBackend):
         issuer: str | None = None,
         zone_resolver: Callable[[Scope], str | None] | None = None,
         metadata_matcher: Callable[[Scope], bool] | None = None,
+        introspect: bool = False,
+        credential: object | None = None,
+        introspection_timeout: float = 10.0,
     ):
         self.verifier = verifier
         self.require_authentication = require_authentication
@@ -380,6 +391,17 @@ class KeycardAuthBackend(AuthenticationBackend):
                 raise ResourceBindingConfigError(
                     "Verifier trusted issuers do not match shared discovery"
                 )
+
+        self._introspector = None
+        if introspect:
+            authenticator = validate_credential(
+                credential,
+                multi_zone=verifier.enable_multi_zone or len(verifier._trusted_issuers) > 1,
+                timeout=introspection_timeout,
+            )
+            self._introspector = TokenIntrospector(
+                authenticator, verifier.client_factory, introspection_timeout
+            )
 
     async def authenticate(
         self, conn: HTTPConnection
@@ -441,7 +463,9 @@ class KeycardAuthBackend(AuthenticationBackend):
             else:
                 access_token = await self.verifier.verify_token(token)
         except InvalidTokenError as e:
-            if binding.mode != "legacy" and str(e) == "Insufficient scope":
+            if (
+                binding.mode != "legacy" or self._introspector is not None
+            ) and str(e) == "Insufficient scope":
                 raise KeycardAuthError(
                     "insufficient_scope", "Insufficient scope", status_code=403
                 ) from e
@@ -479,10 +503,24 @@ class KeycardAuthBackend(AuthenticationBackend):
             claims = {}
         aud = claims.get("aud")
         act = claims.get("act")
+        issuer = claims.get("iss")
         if binding.mode == "shared":
-            token_issuer = claims.get("iss")
-            if isinstance(token_issuer, str):
-                zone_id = self._shared_zones_by_issuer.get(token_issuer)
+            if isinstance(issuer, str):
+                zone_id = self._shared_zones_by_issuer.get(issuer)
+
+        if self._introspector is not None:
+            try:
+                active = await self._introspector.is_active(
+                    token, issuer if isinstance(issuer, str) else None
+                )
+            except IntrospectionUnavailable as e:
+                raise KeycardAuthError(
+                    "temporarily_unavailable",
+                    "Unable to introspect the token",
+                    status_code=503,
+                ) from e
+            if not active:
+                raise KeycardAuthError("invalid_token", "Token is inactive")
 
         resource_server_url = binding.metadata_for(zone_id) or _get_oauth_protected_resource_url(conn)
         user = KeycardUser(
@@ -547,6 +585,8 @@ def keycard_on_error(conn: HTTPConnection, exc: Exception) -> Response:
     ``starlette.middleware.authentication.AuthenticationMiddleware``.
     """
     if isinstance(exc, KeycardAuthError):
+        if isinstance(exc.__cause__, IntrospectionUnavailable):
+            return JSONResponse({"error": exc.error}, status_code=exc.status_code)
         return _build_unauthorized_response(
             conn,
             error=exc.error,

@@ -437,6 +437,9 @@ def protected_router(
     audience: Audience = None,
     allow_any_audience: bool = False,
     resource_binding: ResourceBinding | None = None,
+    introspect: bool = False,
+    credential: object | None = None,
+    introspection_timeout: float = 10.0,
 ) -> Sequence[BaseRoute]:
     """Create a protected router with OAuth metadata and bearer auth middleware.
 
@@ -464,6 +467,9 @@ def protected_router(
             protected resource metadata document.
         as_metadata_timeout: Timeout in seconds for the upstream
             authorization server metadata fetch.
+        introspect: Check whether locally verified tokens are still active.
+        credential: Client authenticator for the resource-owning application.
+        introspection_timeout: Bound each status check, including discovery, in seconds.
 
     Returns:
         Sequence of routes including metadata mount and protected app mount.
@@ -495,6 +501,9 @@ def protected_router(
         allow_any_audience=allow_any_audience,
         resource_binding=resource_binding,
         issuer=issuer,
+        introspect=introspect,
+        credential=credential,
+        introspection_timeout=introspection_timeout,
         # Discovery is served by a sibling mount.
         metadata_matcher=lambda _: False,
     )
