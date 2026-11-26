@@ -986,9 +986,8 @@ def discover_credential(
 
     Environment variables read:
         KEYCARD_CLIENT_ID, KEYCARD_CLIENT_SECRET: together build a
-            ClientSecret. KEYCARD_CLIENT_ID alone is also attached to a
-            WorkloadIdentity as its client_id (v2 token credentials are
-            resolved by it).
+            ClientSecret. When set and non-empty, KEYCARD_CLIENT_ID is also
+            attached as client_id to a discovered WorkloadIdentity or WebIdentity.
         KEYCARD_EKS_WORKLOAD_IDENTITY_TOKEN_FILE,
         AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE, AWS_WEB_IDENTITY_TOKEN_FILE,
         AZURE_FEDERATED_TOKEN_FILE: any one of them (the FileTokenSource
@@ -1098,7 +1097,9 @@ def discover_credential(
         return ClientSecret((client_id, client_secret))
     if selected == CREDENTIAL_TYPE_WEB_IDENTITY:
         return WebIdentity(
-            server_name=web_identity_server_name, storage_dir=key_storage_dir
+            server_name=web_identity_server_name,
+            storage_dir=key_storage_dir,
+            client_id=client_id,
         )
     if token_file_var is None:
         raise CredentialDiscoveryError(
