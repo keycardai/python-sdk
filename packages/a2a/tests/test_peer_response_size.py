@@ -4,6 +4,7 @@ import gzip
 import json
 import tracemalloc
 import zlib
+from contextlib import AsyncExitStack
 from inspect import isawaitable
 
 import httpx
@@ -11,6 +12,7 @@ import pytest
 from keycardai.oauth.exceptions import ResponseBodyTooLargeError
 from keycardai.oauth.http._transports import HttpxAsyncTransport, HttpxTransport, ResponseBodyDecodeError
 
+from keycardai.a2a._peer_http import AsyncPeerClient, PeerClient
 from keycardai.a2a.client import ServiceDiscovery
 from keycardai.a2a.server import DelegationClient, DelegationClientSync
 
@@ -115,6 +117,70 @@ async def test_tiny_compressed_reply_does_not_allocate_the_default_limit(peer, e
         tracemalloc.stop()
     assert result == expected
     assert peak < 8 * _MIB
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("client_type", [PeerClient, AsyncPeerClient])
+@pytest.mark.parametrize("compress", [False, True])
+@pytest.mark.parametrize("status", [200, 503])
+async def test_peer_stream_reads_lazily_and_closes_on_decoded_overflow(client_type, compress, status, monkeypatch):
+    first = b"data: one\n\n"
+    second = b"data: " + b"x" * 1024 + b"\n\n"
+    encoded = [gzip.compress(chunk) if compress else chunk for chunk in (first, second)]
+    requested = []
+    closed = []
+
+    class Stream(_Chunks):
+        def __iter__(self):
+            for chunk in encoded:
+                requested.append(chunk)
+                yield chunk
+            pytest.fail("the source was read after overflow")
+
+        def close(self):
+            closed.append(True)
+
+        async def aclose(self):
+            self.close()
+
+    headers = {"Content-Type": "text/event-stream"}
+    if compress:
+        headers.update({"Content-Encoding": "gzip", "Content-Length": str(sum(map(len, encoded)))})
+    transport = httpx.MockTransport(lambda _: httpx.Response(status, headers=headers, stream=Stream()))
+
+    async with AsyncExitStack() as stack:
+        client = client_type(len(first) + 1)
+        monkeypatch.setattr(client, "_transport_for_url", lambda _: transport)
+        if isinstance(client, AsyncPeerClient):
+            await stack.enter_async_context(client)
+            response = await stack.enter_async_context(client.stream("POST", _PEER))
+            iterator = response.aiter_bytes()
+
+            async def read():
+                return await anext(iterator)
+        else:
+            stack.enter_context(client)
+            response = stack.enter_context(client.stream("POST", _PEER))
+            iterator = response.iter_bytes()
+
+            async def read():
+                return next(iterator)
+
+        assert not requested
+        assert not response.is_stream_consumed
+        assert response.headers["Content-Type"] == "text/event-stream"
+        assert "content-encoding" not in response.headers
+        assert "content-length" not in response.headers
+        assert await read() == first
+        assert requested == encoded[:1]
+        with pytest.raises(ResponseBodyTooLargeError) as caught:
+            await read()
+        assert caught.value.status_code == status
+        assert caught.value.limit == len(first) + 1
+        assert caught.value.operation == "a2a_invocation"
+        assert caught.value.retryable is (status == 503)
+        assert response.is_closed
+        assert closed == [True]
 
 
 @pytest.mark.asyncio

@@ -1,8 +1,9 @@
 """Bounded default HTTP clients for peer replies."""
 
 import zlib
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 from contextlib import contextmanager
+from typing import Generic, TypeVar
 
 import httpx
 
@@ -27,6 +28,12 @@ class _InvocationResponseTooLargeError(ResponseBodyTooLargeError):
 
 
 class _PeerZlibDecoder(_BoundedZlibDecoder):
+    def take_chunk(self) -> bytes:
+        chunk = bytes(self._buf)
+        self._limit -= len(chunk)
+        self._buf.clear()
+        return chunk
+
     def finish(self) -> bytes:
         remaining = self._limit - len(self._buf)
         tail = self._decompressor.decompress(b"", remaining + 1)
@@ -61,30 +68,126 @@ def _decoded_response(response: httpx.Response, content: bytes) -> httpx.Respons
     )
 
 
-@contextmanager
-def _peer_decoder(
-    response: httpx.Response, operation: str, limit: int
-) -> Iterator[_PeerZlibDecoder | None]:
+def _peer_coding(response: httpx.Response, operation: str) -> str | None:
     tokens = [value.strip().lower() for value in response.headers.get_list("content-encoding", split_commas=True)]
     codings = [token for token in tokens if token in _BOUNDED_CODINGS or token in _UNSUPPORTED_CODINGS]
     if not codings:
+        return None
+    if len(codings) != 1 or codings[0] in _UNSUPPORTED_CODINGS:
+        cause = httpx.DecodingError(
+            f"Unsupported peer content encoding: {', '.join(codings)}",
+            request=response.request,
+        )
+        raise _decode_error(response, operation, cause, response.headers) from cause
+    return codings[0]
+
+
+def _decode_error(
+    response: httpx.Response, operation: str, cause: httpx.DecodingError, headers: httpx.Headers
+) -> ResponseBodyDecodeError:
+    return ResponseBodyDecodeError(
+        status=response.status_code,
+        headers=headers,
+        cause=cause,
+        operation=operation,
+    )
+
+
+@contextmanager
+def _peer_decoder(
+    response: httpx.Response, operation: str, limit: int, coding: str | None, headers: httpx.Headers
+) -> Iterator[_PeerZlibDecoder | None]:
+    if coding is None:
         yield None
         return
     try:
-        if len(codings) != 1 or codings[0] in _UNSUPPORTED_CODINGS:
-            raise httpx.DecodingError(
-                f"Unsupported peer content encoding: {', '.join(codings)}",
-                request=response.request,
-            )
-        yield _PeerZlibDecoder(codings[0], limit, response.status_code, operation)
+        yield _PeerZlibDecoder(coding, limit, response.status_code, operation)
     except (zlib.error, httpx.DecodingError) as error:
         cause = error if isinstance(error, httpx.DecodingError) else httpx.DecodingError(str(error))
-        raise ResponseBodyDecodeError(
-            status=response.status_code,
-            headers=response.headers,
-            cause=cause,
-            operation=operation,
-        ) from error
+        raise _decode_error(response, operation, cause, headers) from error
+
+
+def _overflow(response: httpx.Response, operation: str, limit: int) -> ResponseBodyTooLargeError:
+    error_type = (
+        _InvocationResponseTooLargeError
+        if operation == "a2a_invocation" and response.is_success
+        else ResponseBodyTooLargeError
+    )
+    return error_type(status_code=response.status_code, limit=limit, operation=operation)
+
+
+_Stream = TypeVar("_Stream", httpx.SyncByteStream, httpx.AsyncByteStream)
+
+
+class _BoundedPeerStream(Generic[_Stream]):
+    def __init__(
+        self, source: _Stream, response: httpx.Response, operation: str, limit: int, coding: str | None
+    ):
+        self._source = source
+        self._response = response
+        self._operation = operation
+        self._limit = self._remaining = limit
+        self._coding = coding
+        self._wire_headers = response.headers
+        if coding is not None:
+            response.headers = response.headers.copy()
+            response.headers.pop("content-encoding", None)
+            response.headers.pop("content-length", None)
+
+    @contextmanager
+    def _read(self) -> Iterator[_PeerZlibDecoder | None]:
+        try:
+            with _peer_decoder(
+                self._response, self._operation, self._limit, self._coding, self._wire_headers
+            ) as decoder:
+                yield decoder
+        except ResponseBodyTooLargeError as error:
+            raise _overflow(self._response, self._operation, self._limit) from error
+
+    def _chunk(self, data: bytes, decoder: _PeerZlibDecoder | None) -> bytes:
+        if decoder is not None:
+            decoder.feed(data)
+            return decoder.take_chunk()
+        self._remaining -= len(data)
+        if self._remaining < 0:
+            raise ResponseBodyTooLargeError(
+                status_code=self._response.status_code, limit=self._limit, operation=self._operation
+            )
+        return data
+
+
+class _BoundedSyncPeerStream(_BoundedPeerStream[httpx.SyncByteStream], httpx.SyncByteStream):
+    def __iter__(self) -> Iterator[bytes]:
+        try:
+            with self._read() as decoder:
+                for raw in self._source:
+                    if chunk := self._chunk(raw, decoder):
+                        yield chunk
+                if decoder is not None and (tail := decoder.finish()):
+                    yield tail
+        except BaseException:
+            self._response.close()
+            raise
+
+    def close(self) -> None:
+        self._source.close()
+
+
+class _BoundedAsyncPeerStream(_BoundedPeerStream[httpx.AsyncByteStream], httpx.AsyncByteStream):
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        try:
+            with self._read() as decoder:
+                async for raw in self._source:
+                    if chunk := self._chunk(raw, decoder):
+                        yield chunk
+                if decoder is not None and (tail := decoder.finish()):
+                    yield tail
+        except BaseException:
+            await self._response.aclose()
+            raise
+
+    async def aclose(self) -> None:
+        await self._source.aclose()
 
 
 class PeerClient(httpx.Client):
@@ -95,8 +198,15 @@ class PeerClient(httpx.Client):
     def send(self, request: httpx.Request, *, stream: bool = False, **kwargs) -> httpx.Response:
         response = super().send(request, stream=True, **kwargs)
         operation = "a2a_invocation" if request.method == "POST" else "a2a_discovery"
+        live = False
         try:
-            with _peer_decoder(response, operation, self._limit) as decoder:
+            coding = _peer_coding(response, operation)
+            if stream:
+                assert isinstance(response.stream, httpx.SyncByteStream)
+                response.stream = _BoundedSyncPeerStream(response.stream, response, operation, self._limit, coding)
+                live = True
+                return response
+            with _peer_decoder(response, operation, self._limit, coding, response.headers) as decoder:
                 if decoder is None:
                     content = _read_bounded_sync(response, operation, self._limit)
                 else:
@@ -106,14 +216,11 @@ class PeerClient(httpx.Client):
             return _decoded_response(response, content)
         except ResponseBodyTooLargeError as error:
             if request.method == "POST" and response.is_success:
-                raise _InvocationResponseTooLargeError(
-                    status_code=response.status_code,
-                    limit=self._limit,
-                    operation=operation,
-                ) from error
+                raise _overflow(response, operation, self._limit) from error
             raise
         finally:
-            response.close()
+            if not live:
+                response.close()
 
 
 class AsyncPeerClient(httpx.AsyncClient):
@@ -124,8 +231,15 @@ class AsyncPeerClient(httpx.AsyncClient):
     async def send(self, request: httpx.Request, *, stream: bool = False, **kwargs) -> httpx.Response:
         response = await super().send(request, stream=True, **kwargs)
         operation = "a2a_invocation" if request.method == "POST" else "a2a_discovery"
+        live = False
         try:
-            with _peer_decoder(response, operation, self._limit) as decoder:
+            coding = _peer_coding(response, operation)
+            if stream:
+                assert isinstance(response.stream, httpx.AsyncByteStream)
+                response.stream = _BoundedAsyncPeerStream(response.stream, response, operation, self._limit, coding)
+                live = True
+                return response
+            with _peer_decoder(response, operation, self._limit, coding, response.headers) as decoder:
                 if decoder is None:
                     content = await _read_bounded_async(response, operation, self._limit)
                 else:
@@ -135,11 +249,8 @@ class AsyncPeerClient(httpx.AsyncClient):
             return _decoded_response(response, content)
         except ResponseBodyTooLargeError as error:
             if request.method == "POST" and response.is_success:
-                raise _InvocationResponseTooLargeError(
-                    status_code=response.status_code,
-                    limit=self._limit,
-                    operation=operation,
-                ) from error
+                raise _overflow(response, operation, self._limit) from error
             raise
         finally:
-            await response.aclose()
+            if not live:
+                await response.aclose()
