@@ -16,6 +16,8 @@ from keycardai.oauth.http._transports import (
 
 DEFAULT_PEER_RESPONSE_BYTES = 64 * 1024 * 1024
 _ACCEPT_ENCODING = {"Accept-Encoding": "gzip, deflate"}
+_BOUNDED_CODINGS = {"gzip", "x-gzip", "deflate"}
+_UNSUPPORTED_CODINGS = {"br", "zstd", "compress"}
 
 
 class _InvocationResponseTooLargeError(ResponseBodyTooLargeError):
@@ -63,14 +65,15 @@ def _decoded_response(response: httpx.Response, content: bytes) -> httpx.Respons
 def _peer_decoder(
     response: httpx.Response, operation: str, limit: int
 ) -> Iterator[_PeerZlibDecoder | None]:
-    encoding = response.headers.get("content-encoding", "").strip().lower()
-    if encoding in ("", "identity"):
+    tokens = [value.strip().lower() for value in response.headers.get_list("content-encoding", split_commas=True)]
+    codings = [token for token in tokens if token in _BOUNDED_CODINGS or token in _UNSUPPORTED_CODINGS]
+    if not codings:
         yield None
         return
-    if encoding not in ("gzip", "x-gzip", "deflate"):
-        raise httpx.DecodingError(f"Unsupported peer content encoding: {encoding}", request=response.request)
+    if len(codings) != 1 or codings[0] in _UNSUPPORTED_CODINGS:
+        raise httpx.DecodingError(f"Unsupported peer content encoding: {', '.join(codings)}", request=response.request)
     try:
-        yield _PeerZlibDecoder(encoding, limit, response.status_code, operation)
+        yield _PeerZlibDecoder(codings[0], limit, response.status_code, operation)
     except (zlib.error, httpx.DecodingError) as error:
         cause = error if isinstance(error, httpx.DecodingError) else httpx.DecodingError(str(error))
         raise ResponseBodyDecodeError(

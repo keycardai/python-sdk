@@ -73,6 +73,21 @@ async def test_row_9_default_accepts_more_than_one_mib(peer):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "encodings,encode",
+    [
+        (["identity, vendor", "IDENTITY"], bytes),
+        (["identity, vendor", "GZip"], gzip.compress),
+        ([" x-gzip , identity "], gzip.compress),
+    ],
+)
+async def test_peer_encoding_list_ignores_identity_and_unknown_tokens(peer, encodings, encode):
+    call, body, expected, _ = peer
+    headers = [("Content-Encoding", encoding) for encoding in encodings]
+    assert await call(lambda: httpx.Response(200, headers=headers, stream=_Chunks(encode(body)))) == expected
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("encoding,compress", [("gzip", gzip.compress), ("deflate", zlib.compress)])
 async def test_tiny_compressed_reply_does_not_allocate_the_default_limit(peer, encoding, compress):
     call, body, expected, _ = peer
