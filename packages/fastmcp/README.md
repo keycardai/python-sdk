@@ -47,7 +47,8 @@ carries that resource's error and no tokens.
 To check whether each locally verified bearer token is active, set
 `introspect=True` on `AuthProvider` and supply the resource-owning
 application's `application_credential`. The status check runs on each
-authenticated HTTP request and does not cache results. An inactive token
+authenticated HTTP request and does not cache results. Configure an HTTPS
+issuer for authorization server discovery. An inactive token
 gets a 401 challenge. If the check fails, the server returns 503 without a
 challenge. `introspection_timeout` defaults to 10 seconds.
 

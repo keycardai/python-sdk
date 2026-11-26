@@ -154,6 +154,19 @@ def test_invalid_local_token_is_not_introspected(http_request, mock_async_client
     mock_async_client.introspect_token.assert_not_called()
 
 
+def test_introspection_never_discovers_metadata_over_plaintext(mock_client_factory):
+    with pytest.raises(AuthProviderConfigurationError, match="requires an HTTPS issuer"):
+        AuthProvider(
+            zone_url="http://issuer.example",
+            mcp_server_url=RESOURCE,
+            introspect=True,
+            application_credential=CREDENTIAL,
+            client_factory=mock_client_factory,
+        )
+    mock_client_factory.create_client.assert_not_called()
+    mock_client_factory.create_async_client.assert_not_called()
+
+
 def test_same_token_is_introspected_on_every_request(http_request, mock_async_client):
     mock_async_client.introspect_token.side_effect = [
         TokenIntrospection(active=True), TokenIntrospection(active=False)

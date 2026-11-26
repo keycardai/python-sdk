@@ -854,6 +854,8 @@ class AuthProvider:
         self._introspector = None
         if introspect:
             try:
+                if urlparse(self.zone_url).scheme != "https":
+                    raise ConfigError("Token introspection requires an HTTPS issuer")
                 if self.application_credential is None:
                     raise ConfigError("Token introspection requires a credential")
                 if not 0 < introspection_timeout < float("inf"):
