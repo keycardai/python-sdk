@@ -213,6 +213,22 @@ async def test_row_5_no_introspection_endpoint_is_config_error(introspection, su
     )
 
 
+@pytest.mark.parametrize("supplied", [False, True])
+async def test_plaintext_endpoint_is_rejected_before_post(introspection, supplied):
+    endpoint = "http://zone.example.com/oauth/2/introspect"
+    metadata = AuthorizationServerMetadata(issuer=ISSUER, introspection_endpoint=endpoint)
+    introspect, requests, _ = introspection(
+        response({"issuer": ISSUER, "introspection_endpoint": endpoint})
+    )
+
+    with pytest.raises(ConfigError, match="not an HTTPS URL"):
+        await introspect(
+            "token", credential=CREDENTIAL, metadata=metadata if supplied else None
+        )
+
+    assert [request.url for request in requests] == ([] if supplied else [DISCOVERY_URL])
+
+
 @pytest.mark.parametrize(
     ("status", "code", "retryable"),
     [(401, "invalid_client", False), (400, "invalid_request", True)],

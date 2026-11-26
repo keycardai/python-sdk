@@ -555,6 +555,7 @@ def _introspection_endpoint(
         issuer,
         "introspection_endpoint",
         metadata.introspection_endpoint if metadata is not None else None,
+        require_https=True,
     )
 
 

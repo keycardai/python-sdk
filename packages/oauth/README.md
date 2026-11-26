@@ -299,7 +299,7 @@ with Client("https://zone.keycard.cloud") as client:
         print(status.scope)
 ```
 
-The request uses the `introspection_endpoint` advertised by discovery or
+The request uses the HTTPS `introspection_endpoint` advertised by discovery or
 provided in `metadata=`. The SDK does not derive an endpoint URL. The
 request requires a confidential client credential and sends
 `token_type_hint` only when provided. Client secrets use HTTP Basic, and
