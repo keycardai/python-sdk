@@ -68,17 +68,23 @@ def _get_zone_id_from_path(path: str) -> str | None:
 def _get_request_zone_id(
     request: Request, remove_prefix: Callable[[str], str]
 ) -> str | None:
-    raw_path = request.scope.get("raw_path")
     path = request.scope["path"]
+    zone_id = _get_zone_id_from_path(remove_prefix(path))
+    raw_path = request.scope.get("raw_path")
     if raw_path is not None:
         encoded_path = raw_path.decode(errors="replace")
         if "%2f" in encoded_path.lower() and unquote(encoded_path) == path:
             # Keep encoded slashes inside their original path segments.
-            path = "/".join(
+            path_with_encoded_slashes = "/".join(
                 unquote(segment).replace("/", "%2F")
                 for segment in encoded_path.split("/")
             )
-    return _get_zone_id_from_path(remove_prefix(path))
+            encoded_zone_id = _get_zone_id_from_path(
+                remove_prefix(path_with_encoded_slashes)
+            )
+            if encoded_zone_id != zone_id:
+                return ""
+    return zone_id
 
 
 def _remove_well_known_prefix(path: str) -> str:

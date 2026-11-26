@@ -422,13 +422,16 @@ class KeycardAuthBackend(AuthenticationBackend):
         if self.verifier.enable_multi_zone:
             if binding.mode != "per_zone":
                 zone_id = conn.path_params.get("zone_id")
-                if binding.mode != "legacy":
-                    if zone_id is None and self.zone_resolver is not None:
-                        zone_id = self.zone_resolver(conn.scope)
-                    if zone_id is not None and not is_valid_zone_id(zone_id):
-                        raise KeycardAuthError("invalid_token", "Invalid zone ID")
+                if (
+                    binding.mode != "legacy"
+                    and zone_id is None
+                    and self.zone_resolver is not None
+                ):
+                    zone_id = self.zone_resolver(conn.scope)
             if zone_id is None:
                 raise KeycardAuthError("invalid_token", "Zone ID is required")
+            if not is_valid_zone_id(zone_id):
+                raise KeycardAuthError("invalid_token", "Invalid zone ID")
 
         try:
             if self.verifier.enable_multi_zone and zone_id:

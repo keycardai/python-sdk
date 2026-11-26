@@ -20,12 +20,13 @@ from starlette.testclient import TestClient
 from keycardai.oauth.server import AccessContext, ClientSecret
 from keycardai.oauth.server._cache import JWKSKey
 from keycardai.oauth.server.exceptions import AuthProviderConfigurationError
-from keycardai.oauth.server.verifier import TokenVerifier
+from keycardai.oauth.server.verifier import AccessToken, TokenVerifier
 from keycardai.oauth.types import JsonWebKeySet
 from keycardai.starlette import (
     AuthProvider,
     KeycardAuthBackend,
     LegacyResourceBindingWarning,
+    ResourceBinding,
     ResourceBindingConfigError,
     auth_metadata_mount,
     keycard_on_error,
@@ -784,6 +785,27 @@ def test_row_13_14b_16b_invalid_configuration_never_warns(options):
         warnings.simplefilter("always")
         AuthProvider(zone_url=ISSUER, **options)
     assert not caught
+
+
+def test_resource_binding_rejects_dotted_zone_key():
+    with pytest.raises(ResourceBindingConfigError, match="Invalid zone ID"):
+        ResourceBinding(resource_identifiers_by_zone={"team.eu": IDENTIFIER})
+
+
+def test_legacy_bearer_rejects_invalid_zone_before_verification(monkeypatch):
+    verify = AsyncMock(
+        return_value=AccessToken(token="token", client_id="client", scopes=[])
+    )
+    monkeypatch.setattr(TokenVerifier, "verify_token_for_zone", verify)
+    with pytest.warns(LegacyResourceBindingWarning):
+        provider = AuthProvider(
+            zone_url=ISSUER, audience=IDENTIFIER, enable_multi_zone=True
+        )
+    with TestClient(protected_app(provider)) as client:
+        response = client.get("/team.eu/mcp", headers={"Authorization": "Bearer token"})
+    assert response.status_code == 401
+    assert 'error="invalid_token"' in response.headers["WWW-Authenticate"]
+    verify.assert_not_called()
 
 
 @pytest.mark.parametrize(
