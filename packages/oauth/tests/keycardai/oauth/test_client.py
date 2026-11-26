@@ -105,6 +105,30 @@ class TestGrantCredential:
             "client_assertion_type": [self.assertion_type],
         }
 
+    @pytest.mark.parametrize(
+        ("credential", "expected"),
+        [
+            pytest.param(
+                WorkloadIdentity(lambda: "jwt"), ["app-123"], id="assertion-without-id"
+            ),
+            pytest.param(
+                WorkloadIdentity(lambda: "jwt", "workload"),
+                ["workload"],
+                id="credential-id-wins",
+            ),
+            pytest.param(ClientSecret(("basic", "secret")), None, id="basic"),
+        ],
+    )
+    async def test_row_4b_request_client_id_with_configured_credential(
+        self, client_type, credential, expected
+    ):
+        client = self.client(client_type, credential)
+
+        await self.call(client, "client_credentials_grant", client_id="app-123")
+
+        form = parse_qs(client.transport.request_raw.call_args.args[0].body.decode())
+        assert form.get("client_id") == expected
+
     async def test_impersonate_uses_configured_secret(self, client_type):
         client = self.client(client_type, client_id="app", client_secret="secret")
 

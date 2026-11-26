@@ -43,10 +43,19 @@ def build_client_credentials_http_request(
     }
 
     if request.client_assertion is None and client_auth is not None:
-        payload.pop("client_id", None)
+        request_client_id = payload.pop("client_id", None)
         payload.pop("client_assertion_type", None)
         headers.update(client_auth.headers)
         payload.update(client_auth.form_fields)
+        # An assertion without an ID keeps the request's client_id, which the
+        # zone needs to resolve a v2 credential. The credential's own ID wins,
+        # and HTTP Basic sends no client_id in the body.
+        if (
+            request_client_id is not None
+            and "client_assertion" in client_auth.form_fields
+            and "client_id" not in client_auth.form_fields
+        ):
+            payload["client_id"] = request_client_id
     elif request.client_assertion is None and context.auth:
         headers.update(dict(context.auth.apply_headers(context.issuer)))
 
