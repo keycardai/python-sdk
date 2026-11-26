@@ -11,7 +11,6 @@ include the RFC 9728 ``resource_metadata`` URL.
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from re import fullmatch
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -47,6 +46,7 @@ from ..binding import (
 )
 from ..handlers.jwks import _is_jwks_endpoint
 from ..shared.starlette import get_base_url
+from ..shared.zone import is_valid_zone_id
 
 _BINDING_SCOPE_KEY = "keycard.resource_binding"
 
@@ -425,12 +425,7 @@ class KeycardAuthBackend(AuthenticationBackend):
                 if binding.mode != "legacy":
                     if zone_id is None and self.zone_resolver is not None:
                         zone_id = self.zone_resolver(conn.scope)
-                    if zone_id is not None and (
-                        not isinstance(zone_id, str)
-                        or not fullmatch(
-                            r"[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?", zone_id
-                        )
-                    ):
+                    if zone_id is not None and not is_valid_zone_id(zone_id):
                         raise KeycardAuthError("invalid_token", "Invalid zone ID")
             if zone_id is None:
                 raise KeycardAuthError("invalid_token", "Zone ID is required")
