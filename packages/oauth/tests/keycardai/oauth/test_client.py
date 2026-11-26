@@ -3,6 +3,7 @@
 import asyncio
 import multiprocessing
 import threading
+import warnings
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest.mock import AsyncMock, Mock, patch
 from urllib.parse import parse_qs
@@ -13,7 +14,12 @@ from joserfc import jwt
 from joserfc.jwk import KeySet
 from pydantic import ValidationError
 
-from keycardai.oauth import AsyncClient, Client, ClientConfig
+from keycardai.oauth import (
+    AsyncClient,
+    Client,
+    ClientConfig,
+    LegacyGrantCredentialWarning,
+)
 from keycardai.oauth.exceptions import ConfigError, NetworkError
 from keycardai.oauth.http._wire import HttpResponse
 from keycardai.oauth.http.auth import BasicAuth, MultiZoneBasicAuth, NoneAuth
@@ -150,6 +156,118 @@ class TestGrantCredential:
             assert form["client_assertion"] == ["workload-jwt"]
             assert form["client_assertion_type"] == [self.assertion_type]
             assert form["client_id"] == ["workload"]
+
+    @pytest.mark.parametrize(
+        "auth", [BasicAuth("basic", "secret"), NoneAuth()], ids=["basic", "none"]
+    )
+    async def test_row_4c_credential_and_auth_conflict(self, client_type, auth):
+        with pytest.raises(ConfigError, match="either `credential` or `auth`"):
+            self.client(client_type, ClientSecret(("configured", "secret")), auth=auth)
+
+    @pytest.mark.parametrize(
+        ("kwargs", "message"),
+        [
+            pytest.param(
+                {"credential": ClientSecret(("configured", "secret")), "client_id": "raw"},
+                "cannot be combined",
+                id="credential-and-public-client-id",
+            ),
+            pytest.param(
+                {"auth": BasicAuth("basic", "secret"), "client_id": "raw"},
+                "cannot be combined",
+                id="auth-and-public-client-id",
+            ),
+            pytest.param({"client_secret": "secret"}, "nonempty client ID", id="secret-only"),
+            pytest.param({"client_id": ""}, "nonempty client ID", id="empty-client-id"),
+            pytest.param(
+                {"client_id": "raw", "client_secret": ""},
+                "nonempty client secret",
+                id="empty-client-secret",
+            ),
+        ],
+    )
+    async def test_row_4c_invalid_construction(self, client_type, kwargs, message):
+        with pytest.raises(ConfigError, match=message):
+            self.client(client_type, **kwargs)
+
+    async def test_row_35_public_client_id_at_construction(self, client_type):
+        client = self.client(client_type, client_id="public-app")
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", LegacyGrantCredentialWarning)
+            token = await self.call(
+                client,
+                "exchange_authorization_code",
+                code="code",
+                code_verifier="verifier",
+                redirect_uri="https://app.example.com/callback",
+            )
+            await self.call(
+                client, "refresh_token_grant", refresh_token=token.refresh_token
+            )
+
+        for call in client.transport.request_raw.call_args_list:
+            wire = call.args[0]
+            assert "Authorization" not in wire.headers
+            assert parse_qs(wire.body.decode())["client_id"] == ["public-app"]
+
+
+@pytest.mark.asyncio
+class TestLegacyGrantCredentialWarning:
+    issuer = "https://zone.example.com"
+    endpoint = "https://zone.example.com/oauth/token"
+
+    def client(self, **kwargs):
+        send = AsyncMock(
+            return_value=HttpResponse(
+                200, {}, b'{"access_token":"at","token_type":"Bearer","refresh_token":"rt"}'
+            )
+        )
+        return AsyncClient(
+            self.issuer,
+            endpoints=Endpoints(token=self.endpoint),
+            transport=Mock(request_raw=send),
+            config=ClientConfig(enable_metadata_discovery=False),
+            **kwargs,
+        )
+
+    @pytest.mark.parametrize(
+        ("method", "kwargs"),
+        [
+            (
+                "exchange_authorization_code",
+                {
+                    "code": "code",
+                    "code_verifier": "verifier",
+                    "redirect_uri": "https://app.example.com/callback",
+                },
+            ),
+            ("refresh_token_grant", {"refresh_token": "rt"}),
+        ],
+    )
+    async def test_per_call_credential_warns(self, method, kwargs):
+        client = self.client()
+        credential = WorkloadIdentity(lambda: "workload-jwt", "workload")
+
+        with pytest.warns(
+            LegacyGrantCredentialWarning,
+            match=f"Passing credential to AsyncClient.{method} is deprecated",
+        ):
+            await getattr(client, method)(credential=credential, **kwargs)
+
+        form = parse_qs(client.transport.request_raw.call_args.args[0].body.decode())
+        assert form["client_assertion"] == ["workload-jwt"]
+
+    async def test_per_call_public_client_id_on_code_exchange_does_not_warn(self):
+        client = self.client()
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", LegacyGrantCredentialWarning)
+            await client.exchange_authorization_code(
+                code="code",
+                code_verifier="verifier",
+                redirect_uri="https://app.example.com/callback",
+                client_id="public-app",
+            )
 
 
 @pytest.mark.asyncio

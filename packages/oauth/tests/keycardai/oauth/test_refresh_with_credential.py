@@ -9,6 +9,7 @@ authentication replaces the client's auth strategy.
 import base64
 import json
 import re
+import warnings
 from collections.abc import Awaitable, Callable
 from urllib.parse import parse_qs
 
@@ -21,6 +22,7 @@ from keycardai.oauth import (
     BasicAuth,
     ClientAuthentication,
     ConfigError,
+    LegacyGrantCredentialWarning,
 )
 from keycardai.oauth.http._wire import HttpRequest, HttpResponse
 from keycardai.oauth.pkce import refresh_authorization
@@ -154,6 +156,18 @@ async def test_row_16_refresh_with_credential(hosts, host):
 def basic(value: bytes) -> str:
     return "Basic " + base64.b64encode(value).decode()
 
+
+@pytest.mark.parametrize("host", HOSTS)
+async def test_row_16_only_the_client_method_warns_for_a_per_call_credential(hosts, host):
+    _, _, calls = hosts
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        await calls[host](credential=FakeCredential())
+
+    legacy = [w for w in caught if issubclass(w.category, LegacyGrantCredentialWarning)]
+    assert len(legacy) == (1 if host == "async-client" else 0)
+    assert all(w.filename == __file__ for w in legacy)
 
 @pytest.mark.parametrize("host", HOSTS)
 @pytest.mark.parametrize(

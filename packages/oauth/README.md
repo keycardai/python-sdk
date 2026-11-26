@@ -206,6 +206,12 @@ To refresh with an application credential (`ClientSecret`, `WebIdentity`, or
 authenticate code exchange and refresh on the same client. The stateless
 `refresh_authorization` helper takes `credential=` on the call.
 
+Passing `credential=` to `AsyncClient.exchange_authorization_code`,
+`AsyncClient.refresh_token_grant`, or the device operations, or `client_id=`
+to the device operations, is deprecated and emits
+`LegacyGrantCredentialWarning`. Configure it on the client instead. A client
+takes either `credential=` or `auth=`, not both.
+
 ### Device Authorization Grant (RFC 8628)
 
 For a process with no browser, such as a headless agent host. The device asks
@@ -240,9 +246,9 @@ a 5xx stops it with `DevicePollError`. To resume, call it again with
 The endpoints come from discovery or from `metadata=`. An `Endpoints` override
 applies to the token endpoint only.
 
-For a public client, pass `client_id=` to each device operation. Use the same
-client authentication for every request in one flow. `WebIdentity` needs its
-`client_id` option for this grant. `DeviceAuthorization` is a pydantic model,
+For a public client, construct the client with `client_id=` and no
+`client_secret`. Use the same client authentication for every request in one
+flow. `WebIdentity` needs its `client_id` option for this grant. `DeviceAuthorization` is a pydantic model,
 so it can be persisted and polled from another process. The client's `clock`
 sets `expires_at` and runs the waits between polls.
 

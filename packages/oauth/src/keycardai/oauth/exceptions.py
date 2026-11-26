@@ -351,6 +351,16 @@ class ConfigError(OAuthError):
         super().__init__(message, cause)
 
 
+class LegacyGrantCredentialWarning(UserWarning):
+    """A grant method received a per-call ``credential`` or ``client_id``.
+
+    Configure ``credential``, or ``client_id`` for a public client, when
+    constructing the client instead. Per-call client authentication on the
+    client methods becomes a configuration error in a release no sooner than
+    60 days after the first minor release that emits this warning.
+    """
+
+
 class MissingTokenEndpointError(AuthorizationServerDiscoveryError, ConfigError):
     """Discovered metadata does not advertise ``token_endpoint``.
 
