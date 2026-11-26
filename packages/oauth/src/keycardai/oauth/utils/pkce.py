@@ -21,7 +21,7 @@ import base64
 import hashlib
 import secrets
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class PKCEChallenge(BaseModel):
@@ -30,7 +30,7 @@ class PKCEChallenge(BaseModel):
     Reference: https://datatracker.ietf.org/doc/html/rfc7636#section-4.1
     """
 
-    code_verifier: str
+    code_verifier: str = Field(repr=False)
     code_challenge: str
     code_challenge_method: str = "S256"
 

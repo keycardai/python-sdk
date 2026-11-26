@@ -244,6 +244,15 @@ def _device_client_authenticator(
     return _PublicClient(client_id)
 
 
+def _client_repr(client: "AsyncClient | Client") -> str:
+    client_id = client._client_id or client.config.client_id
+    if not client_id:
+        auth_client_id = getattr(client.auth_strategy, "client_id", None)
+        if isinstance(auth_client_id, str):
+            client_id = auth_client_id
+    return f"{type(client).__name__}(issuer={client.issuer!r}, client_id={client_id!r})"
+
+
 def _resolve_issuer_arg(issuer: str | None, base_url: str | None) -> str:
     """Resolve the canonical issuer from the ``issuer`` / deprecated ``base_url`` args.
 
@@ -525,6 +534,9 @@ class AsyncClient:
             AuthorizationServerMetadata, AuthorizationServerDiscoveryError
         ] = MetadataCache(self.config.discovery_ttl, self.config.negative_ttl)
         self._discovery_task: asyncio.Task[AuthorizationServerMetadata] | None = None
+
+    def __repr__(self) -> str:
+        return _client_repr(self)
 
     @property
     def base_url(self) -> str:
@@ -2048,6 +2060,9 @@ class Client:
             AuthorizationServerMetadata, AuthorizationServerDiscoveryError
         ] = MetadataCache(self.config.discovery_ttl, self.config.negative_ttl)
         self._discovery_lock = threading.Lock()
+
+    def __repr__(self) -> str:
+        return _client_repr(self)
 
     @property
     def base_url(self) -> str:

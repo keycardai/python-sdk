@@ -78,6 +78,9 @@ class BasicAuth:
         self.client_id = client_id
         self.client_secret = client_secret
 
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}(client_id={self.client_id!r})"
+
     def apply_headers(self, issuer: str | None = None) -> dict[str, str]:
         """Apply HTTP Basic authentication header. The issuer selector is ignored."""
         client_id = quote(self.client_id, safe="")
@@ -158,6 +161,10 @@ class MultiZoneBasicAuth:
             self.issuer_credentials[_normalize_issuer(issuer)] = BasicAuth(
                 client_id, client_secret
             )
+
+    def __repr__(self) -> str:
+        clients = {issuer: auth.client_id for issuer, auth in self.issuer_credentials.items()}
+        return f"{type(self).__name__}(clients={clients!r})"
 
     def apply_headers(self, issuer: str | None = None) -> dict[str, str]:
         """Apply HTTP Basic authentication headers for the given issuer.

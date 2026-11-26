@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
-from pydantic import AnyHttpUrl, BaseModel
+from pydantic import AnyHttpUrl, BaseModel, Field
 
 from keycardai.oauth._metadata_cache import (
     MAX_RETRY_CACHE_ENTRIES,
@@ -71,7 +71,7 @@ class AccessToken(BaseModel):
     on a token from another issuer.
     """
 
-    token: str
+    token: str = Field(repr=False)
     client_id: str
     scopes: list[str]
     expires_at: int | None = None

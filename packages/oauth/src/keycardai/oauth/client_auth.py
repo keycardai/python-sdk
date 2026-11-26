@@ -19,12 +19,17 @@ class ClientAuthentication:
     Holds only client authentication. It never includes a grant parameter
     such as ``grant_type`` or ``subject_token_type``.
 
-    Both fields hold secrets, such as a Basic header or a client assertion,
-    so ``repr()`` leaves them out.
+    Printed forms show only the header and form field names.
     """
 
     headers: dict[str, str] = field(default_factory=dict, repr=False)
     form_fields: dict[str, str] = field(default_factory=dict, repr=False)
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}(headers={list(self.headers)!r}, "
+            f"form_fields={list(self.form_fields)!r})"
+        )
 
 
 @runtime_checkable

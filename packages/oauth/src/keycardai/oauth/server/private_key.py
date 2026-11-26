@@ -27,7 +27,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives.serialization import PublicFormat
 from joserfc import jwt as jose_jwt
 from joserfc.jwk import import_key
-from pydantic import AnyHttpUrl, BaseModel
+from pydantic import AnyHttpUrl, BaseModel, Field
 
 from keycardai.oauth.types.models import (
     JsonWebKey as KeycardJsonWebKey,
@@ -73,7 +73,7 @@ class KeyPairInfo(BaseModel):
     """Information about a stored key pair."""
 
     key_id: str
-    private_key_pem: str
+    private_key_pem: str = Field(repr=False)
     public_key_jwk: dict[str, Any]
     created_at: float
     algorithm: str = "RS256"
@@ -182,6 +182,9 @@ class PrivateKeyManager:
         self.audience_config = audience_config
         self._private_key_pem: str | None = None
         self._public_key_jwk: dict[str, Any] | None = None
+
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}(key_id={self.key_id!r})"
 
     def bootstrap_identity(self) -> None:
         """Idempotent key pair creation and loading."""

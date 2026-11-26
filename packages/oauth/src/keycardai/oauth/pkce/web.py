@@ -10,7 +10,7 @@ from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING
 
 import httpx
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ..client import AsyncClient
 from ..client_auth import ClientAuthenticator, require_client_authenticator
@@ -53,7 +53,7 @@ class AuthorizationRedirect(BaseModel):
 
     url: str
     state: str
-    code_verifier: str
+    code_verifier: str = Field(repr=False)
     resources: list[str] | None = None
 
 
