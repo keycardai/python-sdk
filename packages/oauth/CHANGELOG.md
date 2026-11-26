@@ -1,3 +1,16 @@
+## 0.43.0-keycardai-oauth (2026-11-26)
+
+
+- feat(keycardai-oauth): SPIFFE JWT-SVID workload identity source (SDK-100) (#489)
+- * feat(keycardai-oauth): SPIFFE JWT-SVID workload identity source (SDK-100)
+- Implements keycardai/keycard-sdk-spec workload-identity.md SPIFFE Workload API source
+- Refs SDK-100
+- * fix(keycardai-oauth): make workload identity configuration errors non-retryable
+- * fix(keycardai-oauth): validate SPIFFE IDs at construction
+- * fix(keycardai-oauth): remove SPIFFE protobuf runtime dependency
+- ---------
+- Co-authored-by: devin-ai-keycard <devin-ai@keycard.ai>
+
 ## 0.42.0-keycardai-oauth (2026-11-26)
 
 
