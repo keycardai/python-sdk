@@ -11,6 +11,7 @@ include the RFC 9728 ``resource_metadata`` URL.
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from re import fullmatch
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -421,6 +422,13 @@ class KeycardAuthBackend(AuthenticationBackend):
         if self.verifier.enable_multi_zone:
             if binding.mode != "per_zone":
                 zone_id = conn.path_params.get("zone_id")
+                if binding.mode != "legacy":
+                    if zone_id is None and self.zone_resolver is not None:
+                        zone_id = self.zone_resolver(conn.scope)
+                    if zone_id is not None and not fullmatch(
+                        r"[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?", zone_id
+                    ):
+                        raise KeycardAuthError("invalid_token", "Invalid zone ID")
             if zone_id is None:
                 raise KeycardAuthError("invalid_token", "Zone ID is required")
 

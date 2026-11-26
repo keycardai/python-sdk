@@ -486,6 +486,25 @@ def test_row_8a_8g_8h_multi_zone_verifier_only(token_headers, options, audience)
         request(client, "/b/mcp", headers, status=401)
 
 
+def test_row_8a_multi_zone_verifier_only_install_resolves_routed_zone(token_headers):
+    app = Starlette(
+        routes=[Route("/{zone_id}/mcp", requires("authenticated")(handled))]
+    )
+    AuthProvider(
+        zone_url=ISSUER,
+        enable_multi_zone=True,
+        multi_resource=True,
+        audience=[IDENTIFIER],
+    ).install(app)
+    headers = token_headers(IDENTIFIER, "https://a.keycard.cloud")
+    with TestClient(app) as client:
+        request(client, "/a/mcp", status=401)
+        request(client, "/a/mcp", headers, status=200)
+        request(client, "/b/mcp", headers, status=401)
+        invalid_zone = token_headers(IDENTIFIER, "https://invalid_zone.keycard.cloud")
+        request(client, "/invalid_zone/mcp", invalid_zone, status=401)
+
+
 def test_row_8_prebuilt_verifier_mismatch_is_detectable():
     with pytest.raises(ResourceBindingConfigError, match="audience"):
         KeycardAuthBackend(
