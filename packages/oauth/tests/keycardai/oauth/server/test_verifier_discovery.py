@@ -331,7 +331,9 @@ class TestJwksDiscoveryConcurrency:
             new=Mock(side_effect=lambda *a, **k: asyncio.sleep(0, result="pem")),
         ):
             tasks = [
-                asyncio.create_task(verifier._get_verification_key(f"t{i}"))
+                asyncio.create_task(
+                    verifier._get_verification_key(f"t{i}", issuer=verifier.issuer)
+                )
                 for i in range(4)
             ]
             await asyncio.sleep(0.05)
@@ -359,8 +361,12 @@ class TestJwksDiscoveryConcurrency:
             "_key_from_jwks",
             new=Mock(side_effect=lambda *a, **k: asyncio.sleep(0, result="pem")),
         ):
-            cancelled = asyncio.create_task(verifier._get_verification_key("t1"))
-            survivor = asyncio.create_task(verifier._get_verification_key("t2"))
+            cancelled = asyncio.create_task(
+                verifier._get_verification_key("t1", issuer=verifier.issuer)
+            )
+            survivor = asyncio.create_task(
+                verifier._get_verification_key("t2", issuer=verifier.issuer)
+            )
             await asyncio.sleep(0.05)
 
             cancelled.cancel()
@@ -389,10 +395,10 @@ class TestJwksDiscoveryConcurrency:
             new=Mock(side_effect=lambda *a, **k: asyncio.sleep(0, result="pem")),
         ):
             with pytest.raises(JWKSDiscoveryError):
-                await verifier._get_verification_key("t1")
+                await verifier._get_verification_key("t1", issuer=verifier.issuer)
             assert verifier._key_inflight == {}
             clock.advance(1.2)
-            result = await verifier._get_verification_key("t1")
+            result = await verifier._get_verification_key("t1", issuer=verifier.issuer)
 
         assert result.key == "pem"
         assert discover.call_count == 2

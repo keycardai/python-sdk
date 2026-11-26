@@ -8,6 +8,8 @@ from urllib.parse import unquote
 
 import httpx
 import pytest
+from joserfc import jwt as jose_jwt
+from joserfc.jwk import RSAKey
 
 from keycardai.oauth.exceptions import InvalidTokenError, OAuthHttpError
 from keycardai.oauth.http._transports import HttpxAsyncTransport, HttpxTransport
@@ -712,7 +714,11 @@ class TestTokenVerifierVerifyToken:
             with pytest.raises(OAuthHttpError):
                 await verifier.verify_token_for_zone("test.jwt.token", "invalid-zone-id")
 
-            mock_get_key.assert_called_once_with("test.jwt.token", "invalid-zone-id")
+            mock_get_key.assert_called_once_with(
+                "test.jwt.token",
+                issuer="https://invalid-zone-id.keycard.cloud",
+                zone_id="invalid-zone-id",
+            )
 
     @pytest.mark.asyncio
     async def test_verify_token_for_zone_discovery_error(self):
@@ -734,7 +740,11 @@ class TestTokenVerifierVerifyToken:
             with pytest.raises(JWKSDiscoveryError):
                 await verifier.verify_token_for_zone("test.jwt.token", "invalid-zone")
 
-            mock_get_key.assert_called_once_with("test.jwt.token", "invalid-zone")
+            mock_get_key.assert_called_once_with(
+                "test.jwt.token",
+                issuer="https://invalid-zone.keycard.cloud",
+                zone_id="invalid-zone",
+            )
 
     @pytest.mark.asyncio
     async def test_verify_token_for_zone_other_http_errors_propagate(self):
@@ -758,7 +768,11 @@ class TestTokenVerifierVerifyToken:
             with pytest.raises(OAuthHttpError):
                 await verifier.verify_token_for_zone("test.jwt.token", "some-zone-id")
 
-            mock_get_key.assert_called_once_with("test.jwt.token", "some-zone-id")
+            mock_get_key.assert_called_once_with(
+                "test.jwt.token",
+                issuer="https://some-zone-id.keycard.cloud",
+                zone_id="some-zone-id",
+            )
 
     @pytest.mark.asyncio
     async def test_verify_token_for_zone_key_resolution_value_error_propagates(self):
@@ -784,7 +798,11 @@ class TestTokenVerifierVerifyToken:
             with pytest.raises(ValueError, match="JWT parsing failed"):
                 await verifier.verify_token_for_zone("test.jwt.token", "some-zone-id")
 
-            mock_get_key.assert_called_once_with("test.jwt.token", "some-zone-id")
+            mock_get_key.assert_called_once_with(
+                "test.jwt.token",
+                issuer="https://some-zone-id.keycard.cloud",
+                zone_id="some-zone-id",
+            )
 
     @pytest.mark.asyncio
     async def test_verify_token_for_zone_success(self):
@@ -819,7 +837,9 @@ class TestTokenVerifierVerifyToken:
             assert isinstance(result, AccessToken)
             assert result.token == "test.jwt.token"
             assert result.client_id == "test-client"
-            mock_get_key.assert_called_once_with("test.jwt.token", "zone1")
+            mock_get_key.assert_called_once_with(
+                "test.jwt.token", issuer="https://zone1.keycard.cloud", zone_id="zone1"
+            )
 
     @pytest.mark.asyncio
     async def test_untrusted_issuer_rejected_before_key_resolution(self):
@@ -1023,9 +1043,9 @@ class TestTokenVerifierInflightDedup:
             return_value={"alg": "RS256", "kid": "abc"},
         ), patch.object(TokenVerifier, "_key_from_jwks", slow_key_from_jwks):
             results = await asyncio.gather(
-                verifier._get_verification_key("t1"),
-                verifier._get_verification_key("t2"),
-                verifier._get_verification_key("t3"),
+                verifier._get_verification_key("t1", issuer=verifier.issuer),
+                verifier._get_verification_key("t2", issuer=verifier.issuer),
+                verifier._get_verification_key("t3", issuer=verifier.issuer),
             )
 
         assert call_count == 1
@@ -1057,20 +1077,28 @@ class TestZoneJwksUri:
     @pytest.mark.asyncio
     async def test_single_zone_verify_token_for_zone_reaches_zone_scoped_jwks(self):
         """A single-zone verifier handed a zone id derives the zone JWKS URL instead of crashing."""
+        issuer = "https://keycard.cloud"
         verifier = TokenVerifier(
-            issuer="https://keycard.cloud",
+            issuer=issuer,
             jwks_uri="https://keycard.cloud/.well-known/jwks.json",
         )
         seen: dict[str, str] = {}
 
         async def fake_key_from_jwks(self, kid, jwks_uri):
             seen["jwks_uri"] = jwks_uri
-            return "pem"
+            return jwks_uri
 
-        with patch.object(TokenVerifier, "_key_from_jwks", fake_key_from_jwks):
-            await verifier._resolve_and_cache_key("kid1", "RS256", zone_id="zone123")
+        with patch.object(
+            TokenVerifier, "_get_kid_and_algorithm", return_value=("kid1", "RS256")
+        ), patch.object(TokenVerifier, "_key_from_jwks", fake_key_from_jwks):
+            default_key = await verifier._get_verification_key("token", issuer=issuer)
+            zone_key = await verifier._get_verification_key(
+                "token", issuer=issuer, zone_id="zone123"
+            )
 
         assert seen["jwks_uri"] == "https://zone123.keycard.cloud/.well-known/jwks.json"
+        assert default_key.key == "https://keycard.cloud/.well-known/jwks.json"
+        assert zone_key.key == seen["jwks_uri"]
 
 
 class TestZoneIdValidation:
@@ -1078,8 +1106,50 @@ class TestZoneIdValidation:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("enable_multi_zone", [False, True])
+    @pytest.mark.parametrize("zone_id", ["", None])
+    async def test_empty_zone_id_uses_default_issuer(self, monkeypatch, enable_multi_zone, zone_id):
+        issuer = "https://example.com"
+        jwks_uri = f"{issuer}/jwks"
+        key = RSAKey.generate_key(2048)
+        now = int(time.time())
+        token = jose_jwt.encode(
+            {"alg": "RS256", "kid": "kid"},
+            {
+                "iss": issuer,
+                "aud": issuer,
+                "sub": "user-1",
+                "client_id": "client-1",
+                "iat": now,
+                "exp": now + 60,
+            },
+            key,
+        )
+        requests = []
+
+        def handle_request(request):
+            requests.append(str(request.url))
+            return httpx.Response(
+                200, json={"keys": [{**key.as_dict(private=False), "kid": "kid"}]}
+            )
+
+        verifier = TokenVerifier(
+            issuer=issuer,
+            jwks_uri=jwks_uri,
+            audience=issuer,
+            enable_multi_zone=enable_multi_zone,
+        )
+        transport = httpx.MockTransport(handle_request)
+        async with httpx.AsyncClient(transport=transport) as client:
+            monkeypatch.setattr(HttpxAsyncTransport, "_create_client", lambda _: client)
+            result = await verifier.verify_token_for_zone(token, zone_id)
+
+        assert result.sub == "user-1"
+        assert requests == [jwks_uri]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("enable_multi_zone", [False, True])
     @pytest.mark.parametrize(
-        "encoded_zone", ["", "a%23b", "a%2Fb", "a%40b", "a%3Ab", "team%2Eeu"]
+        "encoded_zone", ["a%23b", "a%2Fb", "a%40b", "a%3Ab", "team%2Eeu"]
     )
     async def test_row_4_invalid_zone_id_makes_no_requests(
         self, monkeypatch, enable_multi_zone, encoded_zone
@@ -1119,6 +1189,125 @@ class TestZoneIdValidation:
             verifier._create_zone_scoped_url(issuer, "team.eu")
         with pytest.raises(InvalidTokenError, match="Invalid zone ID"):
             verifier._get_zone_jwks_uri(f"{issuer}/jwks", "team.eu")
+
+    @pytest.mark.parametrize("zone_id", ["", None])
+    def test_empty_zone_id_leaves_urls_unchanged(self, zone_id):
+        issuer = "https://example.com"
+        jwks_uri = f"{issuer}/jwks"
+        verifier = TokenVerifier(issuer=issuer, audience=issuer)
+        assert verifier._create_zone_scoped_url(issuer, zone_id) == issuer
+        assert verifier._get_zone_jwks_uri(jwks_uri, zone_id) == jwks_uri
+
+
+@pytest.fixture
+def mock_zone_endpoints(monkeypatch):
+    def setup(issuers, *, missing_jwks=None):
+        keys = {issuer: RSAKey.generate_key(2048) for issuer in issuers}
+        requests = []
+
+        def handle_request(request):
+            requests.append(str(request.url))
+            issuer = f"https://{request.url.host}"
+            if request.url.path == "/.well-known/oauth-authorization-server":
+                metadata = {
+                    "issuer": issuer,
+                    "authorization_endpoint": f"{issuer}/authorize",
+                    "token_endpoint": f"{issuer}/token",
+                    "response_types_supported": ["code"],
+                }
+                if issuer != missing_jwks:
+                    metadata["jwks_uri"] = f"{issuer}/jwks"
+                return httpx.Response(200, json=metadata)
+            assert request.url.path == "/jwks"
+            jwk = keys[issuer].as_dict(private=False)
+            return httpx.Response(200, json={"keys": [{**jwk, "kid": "shared"}]})
+
+        transport = httpx.MockTransport(handle_request)
+        monkeypatch.setattr(
+            HttpxTransport, "_create_client", lambda _: httpx.Client(transport=transport)
+        )
+        monkeypatch.setattr(
+            HttpxAsyncTransport,
+            "_create_client",
+            lambda _: httpx.AsyncClient(transport=transport),
+        )
+        return keys, requests
+
+    return setup
+
+
+@pytest.mark.parametrize("first_zone", [None, "default"])
+@pytest.mark.parametrize("failure", [None, "primary", "default"])
+def test_default_zone_and_no_zone_have_separate_discovery_caches(
+    mock_zone_endpoints, first_zone, failure
+):
+    issuer = "https://example.com"
+    zone_issuer = "https://default.example.com"
+    issuers = {None: issuer, "default": zone_issuer}
+    failing_issuer = {"primary": issuer, "default": zone_issuer}.get(failure)
+    _, requests = mock_zone_endpoints(issuers.values(), missing_jwks=failing_issuer)
+    verifier = TokenVerifier(issuer=issuer, audience=issuer, enable_multi_zone=True)
+    zones = [None, "default"] if first_zone is None else ["default", None]
+
+    for zone_id in zones * 2:
+        if issuers[zone_id] == failing_issuer:
+            with pytest.raises(JWKSDiscoveryError, match=issuers[zone_id]):
+                verifier._discover_jwks_uri(zone_id=zone_id)
+        else:
+            assert verifier._discover_jwks_uri(zone_id=zone_id) == (
+                f"{issuers[zone_id]}/jwks"
+            )
+
+    assert requests == [
+        f"{issuers[zone_id]}/.well-known/oauth-authorization-server" for zone_id in zones
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("first_zone", [None, "team"])
+async def test_issuers_with_the_same_kid_only_use_their_own_keys(
+    mock_zone_endpoints, first_zone
+):
+    issuer = "https://example.com"
+    zone_issuer = "https://team.example.com"
+    issuers = {None: issuer, "team": zone_issuer}
+    keys, requests = mock_zone_endpoints(issuers.values())
+    verifier = TokenVerifier(issuer=issuer, audience=issuer, enable_multi_zone=True)
+    zones = [None, "team"] if first_zone is None else ["team", None]
+
+    def mint(token_issuer, key_issuer):
+        now = int(time.time())
+        return jose_jwt.encode(
+            {"alg": "RS256", "kid": "shared"},
+            {
+                "iss": token_issuer,
+                "aud": issuer,
+                "sub": token_issuer,
+                "client_id": "client-1",
+                "iat": now,
+                "exp": now + 60,
+            },
+            keys[key_issuer],
+        )
+
+    for zone_id in zones * 2:
+        token_issuer = issuers[zone_id]
+        result = await verifier.verify_token_for_zone(
+            mint(token_issuer, token_issuer), zone_id
+        )
+        assert result.sub == token_issuer
+
+    for zone_id, other_zone in (zones, zones[::-1]):
+        with pytest.raises(InvalidTokenError, match="Token signature or claims invalid"):
+            await verifier.verify_token_for_zone(
+                mint(issuers[zone_id], issuers[other_zone]), zone_id
+            )
+
+    assert requests == [
+        f"{issuers[zone_id]}{path}"
+        for zone_id in zones
+        for path in ("/.well-known/oauth-authorization-server", "/jwks")
+    ]
 
 
 class TestJwksRefetchCooldown:
