@@ -1,3 +1,15 @@
+## 0.6.1-keycardai-a2a (2026-11-26)
+
+
+- fix(keycardai-a2a): enforce trusted invocation redirect origins (#500)
+- * fix(keycardai-a2a): enforce trusted invocation redirect origins
+- Co-Authored-By: Devin AI <158243242+devin-ai-integration[bot]@users.noreply.github.com>
+- * fix(keycardai-a2a): validate redirect origins before reading bodies
+- Co-Authored-By: Devin AI <158243242+devin-ai-integration[bot]@users.noreply.github.com>
+- ---------
+- Co-authored-by: devin-ai-keycard <devin-ai@keycard.ai>
+Co-authored-by: Devin AI <158243242+devin-ai-integration[bot]@users.noreply.github.com>
+
 ## 0.6.0-keycardai-a2a (2026-11-26)
 
 
