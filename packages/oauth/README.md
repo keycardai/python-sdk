@@ -302,8 +302,9 @@ with Client("https://zone.keycard.cloud") as client:
 The request uses the HTTPS `introspection_endpoint` advertised by discovery or
 provided in `metadata=`. The SDK does not derive an endpoint URL. The
 request requires a confidential client credential and sends
-`token_type_hint` only when provided. Client secrets use HTTP Basic, and
-private-key JWT client assertions use the zone issuer as their audience.
+`token_type_hint` only when provided. Client secrets use HTTP Basic, which
+can also be configured with `auth=BasicAuth(...)`. Private-key JWT client
+assertions use the zone issuer as their audience.
 
 `TokenIntrospection` exposes typed fields such as `active`, `scope`, and
 `iss`. Additional claims are available in `model_extra`. An inactive token

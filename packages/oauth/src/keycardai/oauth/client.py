@@ -541,12 +541,30 @@ def _check_required_token_endpoint(
 def _introspection_authenticator(
     token: str | None,
     credential: object | None,
+    auth: AuthStrategy,
+    issuer: str,
 ) -> ClientAuthenticator:
     if not token:
         raise ConfigError("`token` is required for token introspection.")
-    if credential is None:
-        raise ConfigError("A confidential client credential is required for introspection.")
-    return require_client_authenticator(credential)
+    if credential is not None:
+        return require_client_authenticator(credential)
+    try:
+        headers = auth.apply_headers(issuer)
+    except KeyError as e:
+        raise ConfigError(
+            f"The client's auth strategy has no credentials for {issuer}."
+        ) from e
+    if not any(
+        name.lower() == "authorization"
+        and value[:6].lower() == "basic "
+        and value[6:].strip()
+        for name, value in headers.items()
+    ):
+        raise ConfigError(
+            "Token introspection requires a confidential client credential "
+            "or HTTP Basic authentication."
+        )
+    return _StaticClientAuthentication(headers)
 
 
 def _introspection_endpoint(
@@ -2133,11 +2151,15 @@ class AsyncClient:
         """Check a token's current status with the issuer (RFC 7662).
 
         Uses the supplied or discovered metadata's ``introspection_endpoint``.
-        Pass ``credential`` or configure a confidential credential on the
-        client. The SDK neither caches results nor retries the request.
+        Pass ``credential`` or configure a confidential credential or HTTP
+        Basic authentication on the client. Results are not cached, and
+        requests are not retried.
         """
         authenticator = _introspection_authenticator(
-            token, self._credential if credential is None else credential
+            token,
+            self._credential if credential is None else credential,
+            self.auth_strategy,
+            self.issuer,
         )
         assert token is not None
         endpoint = (
@@ -2922,11 +2944,15 @@ class Client:
         """Check a token's current status with the issuer (RFC 7662).
 
         Uses the supplied or discovered metadata's ``introspection_endpoint``.
-        Pass ``credential`` or configure a confidential credential on the
-        client. The SDK neither caches results nor retries the request.
+        Pass ``credential`` or configure a confidential credential or HTTP
+        Basic authentication on the client. Results are not cached, and
+        requests are not retried.
         """
         authenticator = _introspection_authenticator(
-            token, self._credential if credential is None else credential
+            token,
+            self._credential if credential is None else credential,
+            self.auth_strategy,
+            self.issuer,
         )
         assert token is not None
         endpoint = (

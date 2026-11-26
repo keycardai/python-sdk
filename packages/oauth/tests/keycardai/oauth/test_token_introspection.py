@@ -10,12 +10,14 @@ from keycardai.oauth import (
     AsyncClient,
     AuthorizationServerMetadata,
     BasicAuth,
+    BearerAuth,
     Client,
     ClientAuthentication,
     ClientConfig,
     ConfigError,
     Endpoints,
     MissingTokenEndpointError,
+    MultiZoneBasicAuth,
     NetworkError,
     OAuthHttpError,
     OAuthProtocolError,
@@ -140,6 +142,24 @@ async def test_auto_registration_requires_token_endpoint_before_registering(intr
     assert [(request.method, request.url) for request in requests] == [
         ("GET", DISCOVERY_URL)
     ]
+
+
+@pytest.mark.parametrize(
+    "auth",
+    [BasicAuth("client", "secret"), MultiZoneBasicAuth({ISSUER: ("client", "secret")})],
+)
+async def test_row_1_client_basic_auth_strategy_authenticates_introspection(
+    introspection, auth
+):
+    introspect, requests, _ = introspection(response({"active": False}), auth=auth)
+
+    await introspect("token", metadata=METADATA)
+
+    (post,) = requests
+    assert post.headers["Authorization"] == BasicAuth(
+        "client", "secret"
+    ).apply_headers()["Authorization"]
+    assert form(post) == {"token": ["token"]}
 
 
 async def test_row_2_private_jwt_authenticates_with_issuer_as_audience(
@@ -360,6 +380,22 @@ async def test_row_11_client_authentication_required_before_discovery(
 
     with pytest.raises(ConfigError):
         await introspect("token", credential=credential)
+
+    assert requests == []
+
+
+@pytest.mark.parametrize(
+    "auth",
+    [
+        BearerAuth("bearer-token"),
+        MultiZoneBasicAuth({"https://other.example.com": ("client", "secret")}),
+    ],
+)
+async def test_row_11_unusable_auth_strategy_fails_before_discovery(introspection, auth):
+    introspect, requests, _ = introspection(auth=auth)
+
+    with pytest.raises(ConfigError):
+        await introspect("token")
 
     assert requests == []
 
