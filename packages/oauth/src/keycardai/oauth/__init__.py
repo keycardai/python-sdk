@@ -9,6 +9,7 @@ Supported OAuth 2.0 Standards:
 - RFC 6750: OAuth 2.0 Bearer Token Usage
 - RFC 8414: OAuth 2.0 Authorization Server Metadata
 - RFC 8628: OAuth 2.0 Device Authorization Grant
+- RFC 7009: OAuth 2.0 Token Revocation
 - OpenID Connect Core 1.0 Section 5.3: UserInfo
 
 Example:
@@ -56,6 +57,7 @@ from .exceptions import (
     ResponseBodyTooLargeError,
     StateMismatchError,
     TokenExchangeError,
+    TokenRevocationError,
 )
 from .http.auth import AuthStrategy, BasicAuth, BearerAuth, MultiZoneBasicAuth, NoneAuth
 from .operations._authorize import build_authorize_url
@@ -104,6 +106,7 @@ __all__ = [
     "MissingTokenEndpointError",
     "StateMismatchError",
     "TokenExchangeError",
+    "TokenRevocationError",
     "JWKSError",
     "JWKSFetchError",
     "JWKSKeyNotFoundError",

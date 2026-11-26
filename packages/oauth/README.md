@@ -251,9 +251,37 @@ When the device authorization request names more than one resource, the token
 is not for any one of them. To get a token for one resource, refresh with that
 resource.
 
+### Token Revocation (RFC 7009)
+
+Revoke a refresh token or a session's access token, for example on sign-out.
+Async only.
+
+```python
+from keycardai.oauth import AsyncClient
+
+async with AsyncClient("https://zone.keycard.cloud") as client:
+    await client.revoke_token(refresh_token, client_id="public-app")
+```
+
+The endpoint is `revocation_endpoint` from discovery or `metadata=`, or an
+`Endpoints(revoke=...)` override. When none sets it, `revoke_token` raises
+`ConfigError` before any request; there is no conventional path.
+
+Authenticate the client with `client_id=` alone (public client), `client_id=`
+and `client_secret=` (HTTP Basic), or `credential=` (`ClientSecret`,
+`WebIdentity`, `WorkloadIdentity`). A `WebIdentity` assertion has the zone
+issuer as its `aud`. `token_type_hint` defaults to `refresh_token`.
+
+The zone answers 200 for an unknown, expired, or already revoked token, so
+success does not mean a session was revoked. An OAuth error raises
+`TokenRevocationError` with its `error` and `error_description`;
+`unsupported_token_type` means the token cannot be revoked here, such as an
+exchanged access token. The SDK does not retry.
+
 ## Features
 
 - **Token Exchange (RFC 8693)** - Exchange tokens for different audiences, scopes, or token types
+- **Token Revocation (RFC 7009)** - Revoke refresh tokens and session access tokens
 - **Dynamic Client Registration (RFC 7591)** - Register OAuth clients programmatically
 - **Authorization Server Metadata (RFC 8414)** - Auto-discover server endpoints and capabilities
 - **UserInfo (OIDC Core 1.0 Section 5.3)** - Fetch the signed-in user's identity claims
