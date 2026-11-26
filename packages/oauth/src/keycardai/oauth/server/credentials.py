@@ -426,6 +426,7 @@ def _source_error_retryable(error: Exception) -> bool:
             asyncio.TimeoutError,
             NetworkError,
             httpx.NetworkError,
+            httpx.RemoteProtocolError,
             httpx.TimeoutException,
         ),
     ):

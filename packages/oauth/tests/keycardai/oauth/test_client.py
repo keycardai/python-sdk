@@ -469,6 +469,11 @@ class TestExchangeActor:
                 asyncio.TimeoutError("source timed out"), True, id="asyncio-timeout"
             ),
             pytest.param(
+                httpx.RemoteProtocolError("server disconnected"),
+                True,
+                id="remote-protocol-error",
+            ),
+            pytest.param(
                 httpx.HTTPStatusError(
                     "source unavailable",
                     request=httpx.Request("GET", "https://source.example"),
