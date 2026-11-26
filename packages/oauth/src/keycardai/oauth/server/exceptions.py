@@ -546,7 +546,7 @@ class WorkloadIdentityRuntimeError(OAuthServerError):
         *,
         source: str | None = None,
         details: dict | None = None,
-        retryable: bool = True,
+        retryable: bool = False,
     ):
         self.source = source
         self.retryable = retryable
@@ -653,7 +653,7 @@ class EKSWorkloadIdentityRuntimeError(WorkloadIdentityRuntimeError):
             "solution": "Verify token file is accessible and not corrupted. Check token rotation if applicable.",
         }
 
-        super().__init__(message, source="file", details=details)
+        super().__init__(message, source="file", details=details, retryable=True)
 
 
 class ClientSecretConfigurationError(OAuthServerError):
