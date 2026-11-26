@@ -1,6 +1,8 @@
 import json
 from dataclasses import asdict
 
+import pytest
+
 from keycardai.oauth import AsyncClient, Client, ClientConfig
 from keycardai.oauth.http.auth import BasicAuth, MultiZoneBasicAuth
 from keycardai.oauth.server._cache import JWKSCache
@@ -81,3 +83,28 @@ def test_printed_forms_for_other_oauth_secret_holders(tmp_path):
             assert visible in printed
             assert secret not in printed
             assert "BEGIN PRIVATE KEY" not in printed
+
+
+@pytest.mark.parametrize("client_type", [Client, AsyncClient])
+@pytest.mark.parametrize(
+    ("registered_id", "configured_id", "expected_id"),
+    [
+        (None, None, "auth-client"),
+        (None, "configured-client", "configured-client"),
+        ("registered-client", "configured-client", "registered-client"),
+    ],
+)
+def test_client_repr_prints_client_id_without_secret(
+    client_type, registered_id, configured_id, expected_id
+):
+    secret = "not-for-display"
+    client = client_type(
+        "https://zone.example",
+        auth=BasicAuth("auth-client", secret),
+        config=ClientConfig(client_id=configured_id),
+    )
+    if registered_id is not None:
+        client._client_id = registered_id
+
+    assert f"client_id={expected_id!r}" in repr(client)
+    assert secret not in repr(client)
