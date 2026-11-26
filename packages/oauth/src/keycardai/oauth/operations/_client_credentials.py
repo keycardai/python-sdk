@@ -7,6 +7,7 @@ using the HTTP transport layer with byte-level operations.
 import json
 from urllib.parse import urlencode
 
+from ..client_auth import ClientAuthentication
 from ..exceptions import OAuthHttpError, OAuthProtocolError
 from ..http._context import HTTPContext
 from ..http._wire import HttpRequest, HttpResponse
@@ -15,7 +16,9 @@ from ..types.models import ClientCredentialsRequest, TokenResponse
 
 
 def build_client_credentials_http_request(
-    request: ClientCredentialsRequest, context: HTTPContext
+    request: ClientCredentialsRequest,
+    context: HTTPContext,
+    client_auth: ClientAuthentication | None = None,
 ) -> HttpRequest:
     """Build HTTP request for the client credentials grant.
 
@@ -39,7 +42,21 @@ def build_client_credentials_http_request(
         "Content-Type": "application/x-www-form-urlencoded",
     }
 
-    if context.auth:
+    if request.client_assertion is None and client_auth is not None:
+        request_client_id = payload.pop("client_id", None)
+        payload.pop("client_assertion_type", None)
+        headers.update(client_auth.headers)
+        payload.update(client_auth.form_fields)
+        # An assertion without an ID keeps the request's client_id, which the
+        # zone needs to resolve a v2 credential. The credential's own ID wins,
+        # and HTTP Basic sends no client_id in the body.
+        if (
+            request_client_id is not None
+            and "client_assertion" in client_auth.form_fields
+            and "client_id" not in client_auth.form_fields
+        ):
+            payload["client_id"] = request_client_id
+    elif request.client_assertion is None and context.auth:
         headers.update(dict(context.auth.apply_headers(context.issuer)))
 
     # Convert to properly URL-encoded form data as required by OAuth 2.0 RFC 6749
@@ -136,6 +153,7 @@ def parse_client_credentials_http_response(res: HttpResponse) -> TokenResponse:
 def client_credentials_grant(
     request: ClientCredentialsRequest,
     context: HTTPContext[HTTPTransport],
+    client_auth: ClientAuthentication | None = None,
 ) -> TokenResponse:
     """Perform OAuth 2.0 Client Credentials Grant (sync version).
 
@@ -157,7 +175,7 @@ def client_credentials_grant(
 
     Reference: https://datatracker.ietf.org/doc/html/rfc6749#section-4.4
     """
-    http_req = build_client_credentials_http_request(request, context)
+    http_req = build_client_credentials_http_request(request, context, client_auth)
 
     # Execute HTTP request using transport
     http_res = context.transport.request_raw(http_req, timeout=context.timeout)
@@ -169,6 +187,7 @@ def client_credentials_grant(
 async def client_credentials_grant_async(
     request: ClientCredentialsRequest,
     context: HTTPContext[AsyncHTTPTransport],
+    client_auth: ClientAuthentication | None = None,
 ) -> TokenResponse:
     """Perform OAuth 2.0 Client Credentials Grant (async version).
 
@@ -190,7 +209,7 @@ async def client_credentials_grant_async(
 
     Reference: https://datatracker.ietf.org/doc/html/rfc6749#section-4.4
     """
-    http_req = build_client_credentials_http_request(request, context)
+    http_req = build_client_credentials_http_request(request, context, client_auth)
 
     # Execute HTTP request using async transport
     http_res = await context.transport.request_raw(http_req, timeout=context.timeout)

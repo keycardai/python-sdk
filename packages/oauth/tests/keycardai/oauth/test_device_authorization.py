@@ -11,6 +11,7 @@ import base64
 import dataclasses
 import json
 import re
+import warnings
 from datetime import datetime, timedelta, timezone
 from urllib.parse import parse_qs
 
@@ -28,6 +29,7 @@ from keycardai.oauth import (
     DeviceAuthorizationError,
     DevicePollError,
     Endpoints,
+    LegacyGrantCredentialWarning,
     MissingTokenEndpointError,
     NetworkError,
     OAuthHttpError,
@@ -277,7 +279,9 @@ async def test_row_2_public_client_id():
             id="row-3-both",
         ),
         pytest.param(
-            {}, "Pass exactly one of `credential` and `client_id`.", id="row-3-neither"
+            {},
+            "Configure `credential` or a public `client_id` on the client.",
+            id="row-3-neither",
         ),
         pytest.param({"client_id": ""}, "`client_id` is empty.", id="empty-client_id"),
         pytest.param(
@@ -310,7 +314,10 @@ async def test_row_3_checks_run_before_discovery(operation):
     transport = FakeTransport()
     client = AsyncClient(ISSUER, transport=transport, clock=FakeClock())
 
-    with pytest.raises(ConfigError, match=exactly("Pass exactly one of `credential` and `client_id`.")):
+    with pytest.raises(
+        ConfigError,
+        match=exactly("Configure `credential` or a public `client_id` on the client."),
+    ):
         await operation(client, None)
 
     assert transport.requests == []
@@ -1131,6 +1138,76 @@ async def test_row_22_web_identity_signs_a_new_assertion_per_request(tmp_path):
         ("registered-client", "registered-client")
     }
     assert len({c["jti"] for c in claims}) == 3
+
+
+@pytest.mark.parametrize("wait_for_token", [True, False])
+async def test_row_22_client_binds_web_identity(tmp_path, wait_for_token):
+    credential = WebIdentity(
+        server_name="device", storage_dir=str(tmp_path), client_id="registered-client"
+    )
+    transport = FakeTransport(
+        device_response(), respond(400, PENDING), respond(200, TOKEN_BODY)
+    )
+    client = AsyncClient(
+        ISSUER, credential=credential, transport=transport, clock=FakeClock()
+    )
+
+    auth = await client.request_device_authorization(metadata=METADATA)
+    if wait_for_token:
+        await client.wait_for_device_token(auth, metadata=METADATA)
+    else:
+        with pytest.raises(DeviceAuthorizationError):
+            await client.poll_device_token(auth, metadata=METADATA)
+        await client.poll_device_token(auth, metadata=METADATA)
+
+    claims = [jwt_claims(form(r)["client_assertion"][0]) for r in transport.requests]
+    assert [c["aud"] for c in claims] == [
+        DEVICE_ENDPOINT, TOKEN_ENDPOINT, TOKEN_ENDPOINT
+    ]
+    assert len({c["jti"] for c in claims}) == 3
+
+
+@pytest.mark.parametrize("wait_for_token", [True, False])
+async def test_row_2_client_binds_public_client_id(wait_for_token):
+    transport = FakeTransport(
+        device_response(), respond(400, PENDING), respond(200, TOKEN_BODY)
+    )
+    client = AsyncClient(
+        ISSUER, client_id="public-app", transport=transport, clock=FakeClock()
+    )
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", LegacyGrantCredentialWarning)
+        auth = await client.request_device_authorization(metadata=METADATA)
+        if wait_for_token:
+            await client.wait_for_device_token(auth, metadata=METADATA)
+        else:
+            with pytest.raises(DeviceAuthorizationError):
+                await client.poll_device_token(auth, metadata=METADATA)
+            await client.poll_device_token(auth, metadata=METADATA)
+
+    assert [form(r)["client_id"] for r in transport.requests] == [["public-app"]] * 3
+    assert all("Authorization" not in r.headers for r in transport.requests)
+
+
+@pytest.mark.parametrize("name", ["credential", "client_id"])
+async def test_row_3_per_call_authentication_warns(name):
+    value = FakeCredential() if name == "credential" else "public-app"
+    transport = FakeTransport(device_response(), respond(200, TOKEN_BODY))
+    client = make_client(transport)
+
+    with pytest.warns(
+        LegacyGrantCredentialWarning,
+        match=f"Passing {name} to AsyncClient.request_device_authorization",
+    ):
+        auth = await client.request_device_authorization(
+            metadata=METADATA, **{name: value}
+        )
+    with pytest.warns(
+        LegacyGrantCredentialWarning,
+        match=f"Passing {name} to AsyncClient.poll_device_token",
+    ):
+        await client.poll_device_token(auth, metadata=METADATA, **{name: value})
 
 
 async def test_row_24_multi_resource_token_is_not_associated_with_a_resource():

@@ -202,9 +202,15 @@ The same grant is available on `AsyncClient` and `Client` as
 `refresh_token_grant(refresh_token=..., client_id=..., resources=..., scopes=...)`.
 
 To refresh with an application credential (`ClientSecret`, `WebIdentity`, or
-`WorkloadIdentity`), pass `credential=` in place of `client_id` and
-`client_secret`. The credential authenticates the request. This is async only:
-`refresh_authorization` and `AsyncClient.refresh_token_grant`.
+`WorkloadIdentity`), configure `credential=` on `Client` or `AsyncClient` to
+authenticate code exchange and refresh on the same client. The stateless
+`refresh_authorization` helper takes `credential=` on the call.
+
+Passing `credential=` to `AsyncClient.exchange_authorization_code`,
+`AsyncClient.refresh_token_grant`, or the device operations, or `client_id=`
+to the device operations, is deprecated and emits
+`LegacyGrantCredentialWarning`. Configure it on the client instead. A client
+takes either `credential=` or `auth=`, not both.
 
 ### Device Authorization Grant (RFC 8628)
 
@@ -218,14 +224,13 @@ from keycardai.oauth.server.credentials import FileTokenSource, WorkloadIdentity
 
 credential = WorkloadIdentity(FileTokenSource(), client_id="app-credential-id")
 
-async with AsyncClient("https://zone.keycard.cloud") as client:
+async with AsyncClient("https://zone.keycard.cloud", credential=credential) as client:
     auth = await client.request_device_authorization(
-        credential=credential,
         scopes=["openid"],
         resources=["https://api.example.com"],
     )
     print(auth.verification_uri_complete or auth.verification_uri, auth.user_code)
-    token = await client.wait_for_device_token(auth, credential=credential)
+    token = await client.wait_for_device_token(auth)
 ```
 
 `wait_for_device_token` waits `interval` before each poll and adds 5 seconds
@@ -241,9 +246,9 @@ a 5xx stops it with `DevicePollError`. To resume, call it again with
 The endpoints come from discovery or from `metadata=`. An `Endpoints` override
 applies to the token endpoint only.
 
-Pass `client_id=` in place of `credential=` for a public client. Use the same
-client authentication for every request in one flow. `WebIdentity` needs its
-`client_id` option for this grant. `DeviceAuthorization` is a pydantic model,
+For a public client, construct the client with `client_id=` and no
+`client_secret`. Use the same client authentication for every request in one
+flow. `WebIdentity` needs its `client_id` option for this grant. `DeviceAuthorization` is a pydantic model,
 so it can be persisted and polled from another process. The client's `clock`
 sets `expires_at` and runs the waits between polls.
 

@@ -31,7 +31,7 @@ from typing import TYPE_CHECKING
 
 import httpx
 
-from ..client import AsyncClient
+from ..client import AsyncClient, _stateless_grant_call
 from ..client_auth import ClientAuthenticator, require_client_authenticator
 from ..exceptions import ConfigError
 from ..http.auth import BasicAuth, NoneAuth
@@ -206,11 +206,12 @@ async def authenticate(
         finally:
             callback_server.stop()
 
-        return await oauth_client.exchange_authorization_code(
-            code=code,
-            redirect_uri=redirect_uri,
-            code_verifier=pkce.code_verifier,
-            client_id=None if authenticator is not None else client_id,
-            credential=authenticator,
-            resource=resource_url,
-        )
+        with _stateless_grant_call():
+            return await oauth_client.exchange_authorization_code(
+                code=code,
+                redirect_uri=redirect_uri,
+                code_verifier=pkce.code_verifier,
+                client_id=None if authenticator is not None else client_id,
+                credential=authenticator,
+                resource=resource_url,
+            )

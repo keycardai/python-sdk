@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 import httpx
 from pydantic import BaseModel, Field
 
-from ..client import AsyncClient
+from ..client import AsyncClient, _stateless_grant_call
 from ..client_auth import ClientAuthenticator, require_client_authenticator
 from ..exceptions import (
     AuthorizationDeniedError,
@@ -349,13 +349,14 @@ async def complete_authorization(
                 raise ValueError(
                     "Authorization server metadata is missing token_endpoint"
                 )
-        return await oauth_client.exchange_authorization_code(
-            code=code,
-            redirect_uri=redirect_uri,
-            code_verifier=code_verifier,
-            client_id=client_id,
-            credential=authenticator,
-        )
+        with _stateless_grant_call():
+            return await oauth_client.exchange_authorization_code(
+                code=code,
+                redirect_uri=redirect_uri,
+                code_verifier=code_verifier,
+                client_id=client_id,
+                credential=authenticator,
+            )
 
 
 
@@ -486,13 +487,14 @@ async def refresh_authorization(
         config=config,
         endpoints=Endpoints(token=metadata.token_endpoint) if metadata else None,
     ) as oauth_client:
-        return await oauth_client.refresh_token_grant(
-            refresh_token=refresh_token,
-            client_id=None if client_secret else client_id,
-            credential=authenticator,
-            resources=resources,
-            scopes=scopes,
-        )
+        with _stateless_grant_call():
+            return await oauth_client.refresh_token_grant(
+                refresh_token=refresh_token,
+                client_id=None if client_secret else client_id,
+                credential=authenticator,
+                resources=resources,
+                scopes=scopes,
+            )
 
 
 async def _resolve_issuer(
