@@ -19,7 +19,7 @@ Quick Start::
         application_credential=ClientSecret(("client_id", "client_secret")),
         # Resource indicator (RFC 8707) Keycard mints tokens for. The verifier
         # rejects tokens whose "aud" claim does not include this value.
-        audience="https://your-api.example.com",
+        resource_identifier="https://your-api.example.com/api/me",
     )
 
     app = FastAPI()
@@ -41,11 +41,15 @@ Quick Start::
     async def get_data(request: Request, access: AccessContext):
         token = access.access("https://api.example.com").access_token
 
-Leaving ``audience`` unset disables the audience check: the verifier accepts
-any token minted by the zone regardless of its ``aud`` claim.
+Use ``allow_any_audience=True`` to explicitly skip audience verification.
 """
 
 from .authorization import grant, requires
+from .binding import (
+    LegacyResourceBindingWarning,
+    ResourceBinding,
+    ResourceBindingConfigError,
+)
 from .handlers.metadata import ProtectedResourceMetadata
 from .middleware import (
     KeycardAuthBackend,
@@ -65,6 +69,9 @@ from .routers import (
 __all__ = [
     # === Primary API ===
     "AuthProvider",
+    "LegacyResourceBindingWarning",
+    "ResourceBinding",
+    "ResourceBindingConfigError",
     "requires",
     "grant",
     # === Authentication backend ===

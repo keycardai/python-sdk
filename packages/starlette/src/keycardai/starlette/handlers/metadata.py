@@ -4,7 +4,8 @@ Implements RFC 9728 (OAuth Protected Resource Metadata) and RFC 8414
 (Authorization Server Metadata) discovery endpoints as Starlette handlers.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+from urllib.parse import urlsplit
 
 import httpx
 from pydantic import AnyHttpUrl, BaseModel, Field
@@ -12,6 +13,7 @@ from pydantic import AnyHttpUrl, BaseModel, Field
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
+from ..binding import Audience, ResourceBinding, metadata_url, resolve_binding
 from ..shared.starlette import get_base_url
 
 CORS_HEADERS = {"Access-Control-Allow-Origin": "*"}
@@ -114,6 +116,60 @@ def protected_resource_metadata(
     metadata: ProtectedResourceMetadata,
     enable_multi_zone: bool = False,
     include_jwks_uri: bool = True,
+    *,
+    resource_identifier: str | None = None,
+    resource_identifiers_by_zone: dict[str, str] | None = None,
+    multi_resource: bool = False,
+    audience: Audience = None,
+    allow_any_audience: bool = False,
+    resource_binding: ResourceBinding | None = None,
+) -> Callable:
+    """Build a metadata handler for an application-managed route.
+
+    Use the route builders to have the SDK register the public well-known
+    paths and omit routes that do not publish a document.
+    """
+    binding = resolve_binding(
+        resource_binding,
+        resource_identifier=resource_identifier,
+        resource_identifiers_by_zone=resource_identifiers_by_zone,
+        multi_resource=multi_resource,
+        audience=audience,
+        allow_any_audience=allow_any_audience,
+        metadata_only=True,
+    )
+    if binding.mode == "legacy":
+        return _protected_resource_metadata(metadata, enable_multi_zone, include_jwks_uri)
+
+    handlers = []
+    for identifier, issuers in binding.documents(str(metadata.authorization_servers[0])):
+        url = urlsplit(metadata_url(identifier))
+        handler = _protected_resource_metadata(
+            metadata,
+            include_jwks_uri=include_jwks_uri,
+            resource_identifier=identifier,
+            authorization_servers=issuers,
+        )
+        handlers.append((url.path.encode(), url.query.encode(), handler))
+
+    def select_document(request: Request) -> Response:
+        path = request.scope.get("raw_path") or request.scope["path"].encode()
+        query = request.scope.get("query_string", b"")
+        for document_path, document_query, handler in handlers:
+            if path.endswith(document_path) and query == document_query:
+                return handler(request)
+        return Response(status_code=404)
+
+    return select_document
+
+
+def _protected_resource_metadata(
+    metadata: ProtectedResourceMetadata,
+    enable_multi_zone: bool = False,
+    include_jwks_uri: bool = True,
+    *,
+    resource_identifier: str | None = None,
+    authorization_servers: list[str] | None = None,
 ) -> Callable:
     """Create a Starlette handler that serves OAuth Protected Resource Metadata (RFC 9728).
 
@@ -129,6 +185,16 @@ def protected_resource_metadata(
     def wrapper(request: Request) -> Response:
         if request.method == "OPTIONS":
             return _preflight_response()
+
+        if resource_identifier is not None:
+            content = metadata.model_dump(mode="json", exclude_none=True)
+            content["resource"] = resource_identifier
+            if authorization_servers is not None:
+                content["authorization_servers"] = authorization_servers
+            if include_jwks_uri:
+                url = urlsplit(resource_identifier)
+                content["jwks_uri"] = str(_create_jwks_uri(f"{url.scheme}://{url.netloc}"))
+            return JSONResponse(content=content, headers=CORS_HEADERS)
 
         request_metadata = metadata.model_copy(deep=True)
         path = _remove_well_known_prefix(request.url.path)
@@ -160,6 +226,8 @@ def authorization_server_metadata(
     issuer: str,
     enable_multi_zone: bool = False,
     timeout: float = 10.0,
+    *,
+    zone_issuers: Mapping[str, str] | None = None,
 ) -> Callable:
     """Create a Starlette handler that proxies OAuth Authorization Server Metadata (RFC 8414).
 
@@ -175,14 +243,18 @@ def authorization_server_metadata(
     """
 
     def wrapper(request: Request) -> Response:
+        actual_issuer = issuer
+        if zone_issuers is not None:
+            zone = request.path_params.get("zone_id")
+            if zone is None or zone not in zone_issuers:
+                return Response(status_code=404)
+            actual_issuer = zone_issuers[zone]
         if request.method == "OPTIONS":
             return _preflight_response()
 
-        actual_issuer = issuer
         try:
-            path = _remove_authorization_server_prefix(request.url.path)
-
-            if enable_multi_zone:
+            if zone_issuers is None and enable_multi_zone:
+                path = _remove_authorization_server_prefix(request.url.path)
                 zone_id = _get_zone_id_from_path(path)
                 if zone_id:
                     actual_issuer = str(

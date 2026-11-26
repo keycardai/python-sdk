@@ -4,14 +4,15 @@
 incoming bearer tokens via a ``TokenVerifier`` and populates ``request.user``
 (a ``KeycardUser``) and ``request.auth`` (a ``KeycardAuthCredentials``).
 The on-error hook (``keycard_on_error``) maps a ``KeycardAuthError`` raised
-by the backend into an RFC 6750 ``WWW-Authenticate`` challenge that
-includes the ``resource_metadata=`` URL required by RFC 9728.
+by the backend into an RFC 6750 ``WWW-Authenticate`` challenge that can
+include the RFC 9728 ``resource_metadata`` URL.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Any
+from urllib.parse import urlsplit
 
 from pydantic import AnyHttpUrl
 
@@ -34,8 +35,17 @@ from starlette.authentication import (
 )
 from starlette.requests import HTTPConnection, Request
 from starlette.responses import Response
+from starlette.types import Scope
 
+from ..binding import (
+    Audience,
+    ResourceBinding,
+    ResourceBindingConfigError,
+    resolve_binding,
+)
 from ..shared.starlette import get_base_url
+
+_BINDING_SCOPE_KEY = "keycard.resource_binding"
 
 # OAuth metadata discovery endpoints that must remain publicly reachable per
 # RFC 9728 §2 and RFC 8414 §3. Other entries under /.well-known/ (change-password,
@@ -60,6 +70,22 @@ def _get_oauth_protected_resource_url(conn: HTTPConnection | Request) -> str:
     return str(AnyHttpUrl(f"{base_url}/.well-known/oauth-protected-resource/{path}"))
 
 
+def _challenge_metadata_url(conn: HTTPConnection | Request) -> str | None:
+    binding, zone_id = conn.scope.get(_BINDING_SCOPE_KEY, (None, None))
+    if binding is None or binding.mode == "legacy":
+        return _get_oauth_protected_resource_url(conn)
+    path = conn.scope.get("raw_path") or conn.scope["path"].encode()
+    return binding.challenge_metadata(path, conn.scope.get("query_string", b""), zone_id)
+
+
+def _accepted_audiences(audience: Audience) -> Audience | set[str]:
+    if isinstance(audience, str):
+        return {audience}
+    if isinstance(audience, list):
+        return set(audience)
+    return audience
+
+
 def _get_bearer_token(conn: HTTPConnection | Request) -> str | None:
     """Extract the bearer token from a request's Authorization header.
 
@@ -82,7 +108,7 @@ def _get_bearer_token(conn: HTTPConnection | Request) -> str | None:
 def _build_challenge_header(
     error: str,
     description: str,
-    resource_metadata: str,
+    resource_metadata: str | None,
     scope: str | None = None,
 ) -> str:
     parts = [
@@ -93,7 +119,8 @@ def _build_challenge_header(
         # RFC 6750 §3: space-delimited list of scopes needed to access the
         # protected resource. Sent with insufficient_scope challenges.
         parts.append(f'scope="{scope}"')
-    parts.append(f'resource_metadata="{resource_metadata}"')
+    if resource_metadata is not None:
+        parts.append(f'resource_metadata="{resource_metadata}"')
     return "Bearer " + ", ".join(parts)
 
 
@@ -221,6 +248,10 @@ class KeycardAuthBackend(AuthenticationBackend):
             non-metadata path raises ``KeycardAuthError`` instead of
             falling through anonymously. Defaults to False to preserve
             the mixed-route default.
+        resource_binding: Reuse a provider's binding, or pass the explicit
+            resource mode options directly.
+        zone_resolver: Optional token-independent zone selector when the
+            ASGI scope does not already contain a ``zone_id`` path parameter.
     """
 
     def __init__(
@@ -228,15 +259,77 @@ class KeycardAuthBackend(AuthenticationBackend):
         verifier: TokenVerifier,
         *,
         require_authentication: bool = False,
+        resource_identifier: str | None = None,
+        resource_identifiers_by_zone: dict[str, str] | None = None,
+        multi_resource: bool = False,
+        audience: Audience = None,
+        allow_any_audience: bool = False,
+        resource_binding: ResourceBinding | None = None,
+        issuer: str | None = None,
+        zone_resolver: Callable[[Scope], str | None] | None = None,
     ):
         self.verifier = verifier
         self.require_authentication = require_authentication
+        self.zone_resolver = zone_resolver
+        if (
+            resource_binding is None and resource_identifier is None
+            and resource_identifiers_by_zone is None and not multi_resource
+            and not allow_any_audience and audience is None
+            and isinstance(verifier, TokenVerifier)
+        ):
+            audience = verifier.audience
+        self.resource_binding = resolve_binding(
+            resource_binding,
+            resource_identifier=resource_identifier,
+            resource_identifiers_by_zone=resource_identifiers_by_zone,
+            multi_resource=multi_resource,
+            audience=audience,
+            allow_any_audience=allow_any_audience,
+        )
+        binding = self.resource_binding
+        if binding.mode == "per_zone" and not verifier.enable_multi_zone:
+            raise ResourceBindingConfigError("Per-zone binding requires request zone selection")
+        if binding.mode == "shared" and verifier.enable_multi_zone:
+            raise ResourceBindingConfigError("Shared discovery requires token-keyed verification")
+        if isinstance(verifier, TokenVerifier) and binding.mode != "legacy":
+            if _accepted_audiences(binding.audience) != _accepted_audiences(verifier.audience):
+                raise ResourceBindingConfigError("Verifier audience does not match resource binding")
+            if binding.mode == "shared":
+                if issuer is None:
+                    primary = urlsplit(verifier.issuer)
+                    for zone in binding.resource_identifiers_by_zone:
+                        if primary.netloc.startswith(f"{zone}."):
+                            issuer = f"{primary.scheme}://{primary.netloc[len(zone) + 1:]}"
+                            break
+                if not issuer or verifier._trusted_issuers != set(
+                    binding.zone_issuers(issuer).values()
+                ):
+                    raise ResourceBindingConfigError(
+                        "Verifier trusted issuers do not match shared discovery"
+                    )
+            if binding.mode == "per_zone" and issuer is not None and (
+                binding.zone_issuers(issuer) != binding.zone_issuers(verifier.issuer)
+            ):
+                raise ResourceBindingConfigError(
+                    "Verifier issuer does not match per-zone discovery"
+                )
 
     async def authenticate(
         self, conn: HTTPConnection
     ) -> tuple[KeycardAuthCredentials, KeycardUser] | None:
-        if _is_oauth_metadata_path(conn.url.path):
+        binding = self.resource_binding
+        path = conn.url.path if binding.mode == "legacy" else conn.scope["path"]
+        if _is_oauth_metadata_path(path):
             return None
+
+        zone_id: str | None = None
+        if binding.mode == "per_zone":
+            zone_id = conn.path_params.get("zone_id")
+            if zone_id is None and self.zone_resolver is not None:
+                zone_id = self.zone_resolver(conn.scope)
+        conn.scope[_BINDING_SCOPE_KEY] = (binding, zone_id)
+        if binding.mode == "per_zone" and zone_id not in binding.resource_identifiers_by_zone:
+            raise KeycardAuthError("invalid_token", "No configured resource for this zone")
 
         if not conn.headers.get("Authorization"):
             if self.require_authentication:
@@ -253,9 +346,9 @@ class KeycardAuthBackend(AuthenticationBackend):
                 status_code=400,
             )
 
-        zone_id: str | None = None
         if self.verifier.enable_multi_zone:
-            zone_id = conn.path_params.get("zone_id") if hasattr(conn, "path_params") else None
+            if binding.mode != "per_zone":
+                zone_id = conn.path_params.get("zone_id")
             if zone_id is None:
                 raise KeycardAuthError("invalid_token", "Zone ID is required")
 
@@ -267,6 +360,10 @@ class KeycardAuthBackend(AuthenticationBackend):
             else:
                 access_token = await self.verifier.verify_token(token)
         except InvalidTokenError as e:
+            if binding.mode != "legacy" and str(e) == "Insufficient scope":
+                raise KeycardAuthError(
+                    "insufficient_scope", "Insufficient scope", status_code=403
+                ) from e
             raise KeycardAuthError(
                 "invalid_token", "Token verification failed"
             ) from e
@@ -302,7 +399,7 @@ class KeycardAuthBackend(AuthenticationBackend):
         aud = claims.get("aud")
         act = claims.get("act")
 
-        resource_server_url = _get_oauth_protected_resource_url(conn)
+        resource_server_url = binding.metadata_for(zone_id) or _get_oauth_protected_resource_url(conn)
         user = KeycardUser(
             access_token=token,
             client_id=access_token.client_id,
@@ -331,8 +428,9 @@ def _build_unauthorized_response(
 
     Used by ``keycard_on_error`` (when the authentication backend raises) and
     by the ``@requires`` / ``@auth.grant`` decorators (when the request is
-    anonymous). The ``resource_metadata=`` URL is computed from the request
-    per RFC 9728. ``scope`` carries the RFC 6750 §3 space-delimited list of
+    anonymous). Explicit resource bindings advertise the configured metadata
+    URL only at the matching request path and query. ``scope`` carries the
+    RFC 6750 §3 space-delimited list of
     required scopes for ``insufficient_scope`` challenges.
     """
     if status_code >= 500:
@@ -342,7 +440,11 @@ def _build_unauthorized_response(
         # header. Never leak the underlying exception.
         return Response(content=description or "Service Unavailable", status_code=status_code)
 
-    resource_metadata = _get_oauth_protected_resource_url(conn)
+    binding, _ = conn.scope.get(_BINDING_SCOPE_KEY, (None, None))
+    if status_code == 400 and binding is not None and binding.mode != "legacy":
+        return Response(content=description, status_code=status_code)
+
+    resource_metadata = _challenge_metadata_url(conn)
     response = Response(
         content="Unauthorized" if status_code == 401 else "Forbidden",
         status_code=status_code,

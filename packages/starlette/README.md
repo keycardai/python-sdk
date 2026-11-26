@@ -23,7 +23,7 @@ auth = AuthProvider(
     application_credential=ClientSecret(("client_id", "client_secret")),
     # Resource indicator (RFC 8707) Keycard mints tokens for. The verifier
     # rejects tokens whose "aud" claim does not include this value.
-    audience="https://your-api.example.com",
+    resource_identifier="https://your-api.example.com/api/me",
 )
 
 app = FastAPI()
@@ -46,9 +46,42 @@ async def get_data(request: Request, access: AccessContext):
     token = access.access("https://api.example.com").access_token
 ```
 
-Leaving `audience` unset disables the audience check: the verifier accepts any
-token minted by the zone regardless of its `aud` claim, and warns once at
-construction (`MissingAudienceWarning`) so the omission does not go unnoticed.
+## Resource binding and OAuth discovery
+
+Choose one mode when constructing `AuthProvider`:
+
+| Options | Audience and discovery |
+|---------|------------------------|
+| `resource_identifier="https://api.example.com/mcp"` | Accepts that exact audience and publishes RFC 9728 metadata for that URL. A URN such as `urn:example:service` binds the audience without publishing metadata. |
+| `resource_identifiers_by_zone={"a": "https://api.example.com/a/mcp", ...}`, `enable_multi_zone=True` | Selects the zone before verification from a `{zone_id}` routing parameter. `protected_router` mounts the app at `/{zone_id}`; with `install`, declare the parameter in your routes. A missing or unconfigured zone is rejected. Each HTTP(S) identifier has its own document. |
+| `multi_resource=True`, `audience=["resource-a", "resource-b"]` | Accepts any listed audience without publishing metadata. |
+| `multi_resource=True`, `resource_identifiers_by_zone={...}`, `audience=[shared_url]` | Publishes one document when all trusted zones share the exact same HTTP(S) identifier. Pass the base issuer as `zone_url` and leave `enable_multi_zone=False` so the token selects its issuer. |
+| `allow_any_audience=True` | Skips only the audience check, without publishing metadata. |
+
+Leave the binding options unset to retain legacy audience and discovery
+behavior during deprecation. This emits one `LegacyResourceBindingWarning`
+per configuration. Legacy support will not be removed until at least 60
+days after the first minor release that emits this warning.
+
+For an HTTP(S) identifier like `https://api.example.com/app/mcp`, publish
+metadata at the public host root:
+`https://api.example.com/.well-known/oauth-protected-resource/app/mcp`.
+If your app is mounted under `/app`, register the metadata routes on the
+outer app or configure your proxy to forward from that public URL to the
+metadata handler. This registration can reuse the provider's binding:
+
+```python
+from keycardai.starlette import well_known_metadata_routes
+
+root.router.routes.extend(
+    well_known_metadata_routes(auth.issuer, resource_binding=auth.resource_binding)
+)
+```
+
+An explicit challenge advertises that URL only when the original request
+path and query match the configured identifier, regardless of the internal
+host, scheme, or forwarded headers. Give each independently discoverable
+route its own binding.
 
 ## Configuration from the environment
 
@@ -84,8 +117,8 @@ fails at startup with an ambiguity error naming the selector as the remedy.
    and `request.auth`.
 2. Mounts the OAuth discovery endpoints under `/.well-known/`.
 
-Routes you do not decorate stay public: the backend returns `None` (anonymous
-user) when no `Authorization` header is present, exactly like
+Outside per-zone mode, routes you do not decorate stay public: the backend
+returns `None` (anonymous user) when no `Authorization` header is present, like
 `starlette.authentication.UnauthenticatedUser`. Routes that need a verified
 caller use the `@requires(...)` decorator.
 
@@ -96,7 +129,7 @@ caller use the `@requires(...)` decorator.
 `keycardai.starlette.requires` is a drop-in for
 `starlette.authentication.requires` with one difference: anonymous requests
 get an RFC 6750 401 response with a
-`WWW-Authenticate: Bearer ... resource_metadata="..."` header (RFC 9728)
+`WWW-Authenticate: Bearer ...` header (with `resource_metadata` when applicable)
 instead of stock `HTTPException(403)`. Scope checks behave the same.
 
 ```python
@@ -150,6 +183,7 @@ app = Starlette(routes=protected_router(
     issuer=auth.issuer,
     app=inner,
     verifier=auth.get_token_verifier(),
+    resource_binding=auth.resource_binding,
 ))
 ```
 
@@ -167,6 +201,7 @@ app = Starlette(routes=protected_router(
     issuer=auth.issuer,
     app=inner,
     verifier=auth.get_token_verifier(),
+    resource_binding=auth.resource_binding,
     require_authentication=True,  # every request to `inner` needs a token
 ))
 ```
@@ -186,7 +221,9 @@ from keycardai.starlette import KeycardAuthBackend, keycard_on_error
 
 app.add_middleware(
     AuthenticationMiddleware,
-    backend=KeycardAuthBackend(auth.get_token_verifier()),
+    backend=KeycardAuthBackend(
+        auth.get_token_verifier(), resource_binding=auth.resource_binding
+    ),
     on_error=keycard_on_error,
 )
 ```
