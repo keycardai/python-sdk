@@ -44,6 +44,13 @@ schema. Exchange failures are recorded on the `AccessContext` (check
 multiple resources is all-or-nothing: if any exchange fails, the context
 carries that resource's error and no tokens.
 
+To check whether each locally verified bearer token is active, set
+`introspect=True` on `AuthProvider` and supply the resource-owning
+application's `application_credential`. The status check runs on each
+authenticated HTTP request and does not cache results. An inactive token
+gets a 401 challenge. If the check fails, the server returns 503 without a
+challenge. `introspection_timeout` defaults to 10 seconds.
+
 If you lint with flake8-bugbear or Ruff's `B008` rule (function call in
 argument default), exempt your tool modules: the call-in-default is the
 intended spelling here, the same pattern as FastAPI's `Depends`. In
