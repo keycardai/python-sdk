@@ -1534,6 +1534,50 @@ async def test_row_20_cancelled_while_a_poll_is_in_flight():
 
 
 
+class BlockingCredential(FakeCredential):
+    """A FakeCredential that waits for ``block`` before it answers."""
+
+    def __init__(self, block: asyncio.Event):
+        super().__init__()
+        self.block = block
+        self.waiting = False
+
+    async def client_authentication(self, *, issuer: str, endpoint: str) -> ClientAuthentication:
+        self.waiting = True
+        await self.block.wait()
+        return await super().client_authentication(issuer=issuer, endpoint=endpoint)
+
+
+# The bounded call finishes in the same event loop step as the cancellation.
+# asyncio.wait_for on Python 3.10 and 3.11 returns the result then, and the
+# loop polls again (CPython gh-86296). The cancellation must win.
+@pytest.mark.parametrize("blocked", ["credential", "request"])
+async def test_row_20_cancelled_as_the_bounded_call_finishes(blocked):
+    block = asyncio.Event()
+    credential = BlockingCredential(block) if blocked == "credential" else FakeCredential()
+    transport = FakeTransport(
+        respond(400, PENDING),
+        respond(200, TOKEN_BODY),
+        block=block if blocked == "request" else None,
+    )
+    task = asyncio.create_task(
+        wait(make_client(transport), client_id=None, credential=credential, timeout=30)
+    )
+    while not (transport.requests or getattr(credential, "waiting", False)):
+        await asyncio.sleep(0)
+
+    block.set()
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    # On Python 3.11 and later the cancellation can end the blocked step
+    # before it returns. On 3.10 the step finishes first. Either way the
+    # loop never polls a second time.
+    assert len(credential.calls) <= 1
+    assert len(transport.requests) <= 1
+
+
 async def test_row_21_interval_longer_than_time_left():
     transport = FakeTransport()
     clock = FakeClock()
