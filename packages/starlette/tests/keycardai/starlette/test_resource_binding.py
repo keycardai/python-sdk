@@ -238,7 +238,10 @@ def test_row_16_16a_16c_zone_is_selected_before_verification(token_headers):
 
 def test_row_16_provider_install_resolves_routed_zone(token_headers):
     app = Starlette(
-        routes=[Route("/{zone_id}/mcp", requires("authenticated")(handled))]
+        routes=[
+            Route("/{zone_id:int}/mcp", requires("authenticated")(handled)),
+            Route("/{zone_id}/mcp", requires("authenticated")(handled)),
+        ]
     )
     AuthProvider(
         zone_url=ISSUER, enable_multi_zone=True, resource_identifiers_by_zone=ZONES
@@ -252,6 +255,8 @@ def test_row_16_provider_install_resolves_routed_zone(token_headers):
             status=200,
         )
         request(client, "/unknown/mcp", status=401)
+        headers = token_headers(ZONES["a"], "https://123.keycard.cloud")
+        assert 'error="invalid_token"' in request(client, "/123/mcp", headers, status=401)
 
 
 def test_row_16c_per_zone_install_keeps_anonymous_public_routes_public(token_headers):
@@ -488,7 +493,10 @@ def test_row_8a_8g_8h_multi_zone_verifier_only(token_headers, options, audience)
 
 def test_row_8a_multi_zone_verifier_only_install_resolves_routed_zone(token_headers):
     app = Starlette(
-        routes=[Route("/{zone_id}/mcp", requires("authenticated")(handled))]
+        routes=[
+            Route("/{zone_id:int}/mcp", requires("authenticated")(handled)),
+            Route("/{zone_id}/mcp", requires("authenticated")(handled)),
+        ]
     )
     AuthProvider(
         zone_url=ISSUER,
@@ -503,6 +511,8 @@ def test_row_8a_multi_zone_verifier_only_install_resolves_routed_zone(token_head
         request(client, "/b/mcp", headers, status=401)
         invalid_zone = token_headers(IDENTIFIER, "https://invalid_zone.keycard.cloud")
         request(client, "/invalid_zone/mcp", invalid_zone, status=401)
+        headers = token_headers(IDENTIFIER, "https://123.keycard.cloud")
+        assert 'error="invalid_token"' in request(client, "/123/mcp", headers, status=401)
 
 
 def test_row_8_prebuilt_verifier_mismatch_is_detectable():

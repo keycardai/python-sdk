@@ -425,8 +425,11 @@ class KeycardAuthBackend(AuthenticationBackend):
                 if binding.mode != "legacy":
                     if zone_id is None and self.zone_resolver is not None:
                         zone_id = self.zone_resolver(conn.scope)
-                    if zone_id is not None and not fullmatch(
-                        r"[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?", zone_id
+                    if zone_id is not None and (
+                        not isinstance(zone_id, str)
+                        or not fullmatch(
+                            r"[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?", zone_id
+                        )
                     ):
                         raise KeycardAuthError("invalid_token", "Invalid zone ID")
             if zone_id is None:
