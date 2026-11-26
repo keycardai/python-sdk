@@ -9,7 +9,7 @@ from inspect import isawaitable
 import httpx
 import pytest
 from keycardai.oauth.exceptions import ResponseBodyTooLargeError
-from keycardai.oauth.http._transports import HttpxAsyncTransport, HttpxTransport
+from keycardai.oauth.http._transports import HttpxAsyncTransport, HttpxTransport, ResponseBodyDecodeError
 
 from keycardai.a2a.client import ServiceDiscovery
 from keycardai.a2a.server import DelegationClient, DelegationClientSync
@@ -85,6 +85,19 @@ async def test_peer_encoding_list_ignores_identity_and_unknown_tokens(peer, enco
     call, body, expected, _ = peer
     headers = [("Content-Encoding", encoding) for encoding in encodings]
     assert await call(lambda: httpx.Response(200, headers=headers, stream=_Chunks(encode(body)))) == expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("encoding", ["br", "zstd", "compress", "gzip, deflate"])
+async def test_unsupported_peer_codings_raise_typed_decode_errors(peer, encoding):
+    call, _, _, invocation = peer
+    headers = {"Content-Encoding": encoding, "X-Peer": "agent"}
+    with pytest.raises(ResponseBodyDecodeError) as caught:
+        await call(lambda: httpx.Response(502, headers=headers, stream=_Chunks(exhaust=False)))
+    assert caught.value.status == 502
+    assert caught.value.headers["x-peer"] == "agent"
+    assert caught.value.operation == ("a2a_invocation" if invocation else "a2a_discovery")
+    assert isinstance(caught.value.cause, httpx.DecodingError)
 
 
 @pytest.mark.asyncio

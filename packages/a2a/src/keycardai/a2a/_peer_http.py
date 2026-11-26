@@ -70,9 +70,12 @@ def _peer_decoder(
     if not codings:
         yield None
         return
-    if len(codings) != 1 or codings[0] in _UNSUPPORTED_CODINGS:
-        raise httpx.DecodingError(f"Unsupported peer content encoding: {', '.join(codings)}", request=response.request)
     try:
+        if len(codings) != 1 or codings[0] in _UNSUPPORTED_CODINGS:
+            raise httpx.DecodingError(
+                f"Unsupported peer content encoding: {', '.join(codings)}",
+                request=response.request,
+            )
         yield _PeerZlibDecoder(codings[0], limit, response.status_code, operation)
     except (zlib.error, httpx.DecodingError) as error:
         cause = error if isinstance(error, httpx.DecodingError) else httpx.DecodingError(str(error))
