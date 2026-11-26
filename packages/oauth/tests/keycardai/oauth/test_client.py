@@ -23,7 +23,10 @@ from keycardai.oauth.server.credentials import (
     WebIdentity,
     WorkloadIdentity,
 )
-from keycardai.oauth.server.exceptions import WorkloadIdentityRuntimeError
+from keycardai.oauth.server.exceptions import (
+    WorkloadIdentityConfigurationError,
+    WorkloadIdentityRuntimeError,
+)
 from keycardai.oauth.types.models import (
     AuthorizationServerMetadata,
     ClientCredentialsRequest,
@@ -337,7 +340,7 @@ def test_sync_exchange_restarts_assertion_preparation_after_fork():
 
 
 @pytest.fixture(params=[Client, AsyncClient], ids=["sync", "async"])
-def token_exchange_client(request):
+def token_exchange_client_factory(request):
     issuer = "https://exchange.example.com"
     endpoint = f"{issuer}/token"
 
@@ -359,13 +362,244 @@ def token_exchange_client(request):
         side_effect=respond
     )
 
+    def create_client(**options):
+        return client_cls(issuer, transport=Mock(request_raw=send), **options)
+
+    return create_client, send
+
+
+@pytest.fixture
+def token_exchange_client(token_exchange_client_factory):
+    create_client, send = token_exchange_client_factory
+
     async def exchange(token_request, auth):
-        client = client_cls(issuer, auth=auth, transport=Mock(request_raw=send))
-        if client_cls is AsyncClient:
+        client = create_client(auth=auth)
+        if isinstance(client, AsyncClient):
             return await client.exchange_token(token_request)
         return client.exchange_token(token_request)
 
     return exchange, send
+
+
+@pytest.mark.asyncio
+class TestExchangeActor:
+    async def exchange(self, client, request):
+        if isinstance(client, AsyncClient):
+            return await client.exchange_token(request)
+        return client.exchange_token(request)
+
+    def posted_forms(self, send):
+        return [
+            parse_qs(wire.body.decode())
+            for call in send.call_args_list
+            if (wire := call.args[0]).method == "POST"
+        ]
+
+    async def test_row_23_fetches_a_fresh_actor_token_per_exchange(
+        self, token_exchange_client_factory
+    ):
+        create_client, send = token_exchange_client_factory
+        source = Mock(identity_token=AsyncMock(side_effect=["first", "second"]))
+        client = create_client(actor=source, auth=BasicAuth("client", "secret"))
+        request = TokenExchangeRequest(subject_token="subject")
+
+        await self.exchange(client, request)
+        await self.exchange(client, request)
+
+        assert source.identity_token.await_count == 2
+        assert request.actor_token is None
+        assert request.actor_token_type is None
+        assert [
+            (form["actor_token"], form["actor_token_type"])
+            for form in self.posted_forms(send)
+        ] == [
+            (["first"], ["urn:ietf:params:oauth:token-type:jwt"]),
+            (["second"], ["urn:ietf:params:oauth:token-type:jwt"]),
+        ]
+
+    async def test_row_24_explicit_actor_skips_source(self, token_exchange_client_factory):
+        create_client, send = token_exchange_client_factory
+        source = Mock(identity_token=AsyncMock())
+        client = create_client(actor=source)
+        request = TokenExchangeRequest(
+            subject_token="subject",
+            actor_token="explicit",
+            actor_token_type="urn:ietf:params:oauth:token-type:access_token",
+        )
+
+        await self.exchange(client, request)
+
+        source.identity_token.assert_not_called()
+        (form,) = self.posted_forms(send)
+        assert form["actor_token"] == ["explicit"]
+        assert form["actor_token_type"] == ["urn:ietf:params:oauth:token-type:access_token"]
+
+    async def test_row_25_impersonation_skips_actor(self, token_exchange_client_factory):
+        create_client, send = token_exchange_client_factory
+        source = Mock(identity_token=AsyncMock())
+        client = create_client(actor=source, auth=BasicAuth("client", "secret"))
+        args = {"user_identifier": "user@example.com", "resource": "https://api.example.com"}
+
+        if isinstance(client, AsyncClient):
+            await client.impersonate(**args)
+        else:
+            client.impersonate(**args)
+
+        source.identity_token.assert_not_called()
+        (form,) = self.posted_forms(send)
+        assert "actor_token" not in form
+        assert "actor_token_type" not in form
+
+    @pytest.mark.parametrize(
+        ("error", "retryable"),
+        [
+            pytest.param(
+                WorkloadIdentityConfigurationError("missing source", source="file"),
+                False,
+                id="typed-configuration",
+            ),
+            pytest.param(
+                WorkloadIdentityRuntimeError("source failed", source="file"),
+                False,
+                id="typed-runtime",
+            ),
+            pytest.param(ValueError("source failed"), False, id="plain"),
+            pytest.param(TimeoutError("source timed out"), False, id="timeout"),
+            pytest.param(
+                asyncio.TimeoutError("source timed out"), False, id="asyncio-timeout"
+            ),
+            pytest.param(
+                httpx.RemoteProtocolError("server disconnected"),
+                False,
+                id="remote-protocol-error",
+            ),
+            pytest.param(
+                httpx.HTTPStatusError(
+                    "source unavailable",
+                    request=httpx.Request("GET", "https://source.example"),
+                    response=httpx.Response(503),
+                ),
+                False,
+                id="http-5xx",
+            ),
+            pytest.param(
+                httpx.HTTPStatusError(
+                    "rate limited",
+                    request=httpx.Request("GET", "https://source.example"),
+                    response=httpx.Response(429),
+                ),
+                False,
+                id="http-429",
+            ),
+            pytest.param(
+                WorkloadIdentityRuntimeError(
+                    "source busy", source="my-source", retryable=True
+                ),
+                True,
+                id="typed-marked-retryable",
+            ),
+        ],
+    )
+    async def test_row_26_source_failure_prevents_discovery_and_exchange(
+        self, token_exchange_client_factory, error, retryable
+    ):
+        create_client, send = token_exchange_client_factory
+
+        def source():
+            raise error
+
+        client = create_client(actor=source)
+        request = TokenExchangeRequest(subject_token="subject")
+        typed = isinstance(
+            error, (WorkloadIdentityConfigurationError, WorkloadIdentityRuntimeError)
+        )
+
+        with pytest.raises(type(error) if typed else WorkloadIdentityRuntimeError) as exc:
+            await self.exchange(client, request)
+
+        send.assert_not_called()
+        if typed:
+            assert exc.value is error
+        else:
+            assert exc.value.source == "custom"
+            assert exc.value.__cause__ is error
+            assert exc.value.retryable is retryable
+
+    async def test_row_4f_basic_validation_skips_actor(self, token_exchange_client_factory):
+        create_client, send = token_exchange_client_factory
+        source = Mock(identity_token=AsyncMock())
+        client = create_client(actor=source, auth=BasicAuth("client", "secret"))
+        request = TokenExchangeRequest(subject_token="subject", client_id="request-id")
+
+        with pytest.raises(ConfigError, match="client_id.*HTTP Basic"):
+            await self.exchange(client, request)
+
+        source.identity_token.assert_not_called()
+        send.assert_not_called()
+
+
+@pytest.mark.parametrize("returns_awaitable", [False, True])
+def test_sync_exchange_calls_actor_source_on_the_calling_thread(returns_awaitable):
+    caller = threading.get_ident()
+    threads = []
+
+    async def await_token():
+        threads.append(threading.get_ident())
+        return "actor-jwt"
+
+    def source():
+        threads.append(threading.get_ident())
+        return await_token() if returns_awaitable else "actor-jwt"
+
+    transport = Mock()
+    transport.request_raw.return_value = HttpResponse(
+        200, {}, b'{"access_token":"issued"}'
+    )
+    client = Client(
+        "https://exchange.example.com",
+        actor=source,
+        transport=transport,
+        endpoints=Endpoints(token="https://exchange.example.com/token"),
+        config=ClientConfig(enable_metadata_discovery=False, auto_register_client=False),
+    )
+
+    client.exchange_token(subject_token="subject")
+
+    assert threads[0] == caller
+    if returns_awaitable:
+        assert len(threads) == 2
+        assert threads[1] != caller
+    else:
+        assert threads == [caller]
+    body = transport.request_raw.call_args.args[0].body
+    assert parse_qs(body.decode())["actor_token"] == ["actor-jwt"]
+
+
+def test_sync_exchange_cancels_stalled_actor_source():
+    cancelled = threading.Event()
+
+    async def source():
+        try:
+            await asyncio.sleep(1)
+            return "late-token"
+        except asyncio.CancelledError:
+            cancelled.set()
+            raise
+
+    send = Mock()
+    client = Client(
+        "https://exchange.example.com",
+        actor=source,
+        transport=Mock(request_raw=send),
+    )
+    with pytest.raises(WorkloadIdentityRuntimeError, match="actor token lookup") as exc:
+        client.exchange_token(subject_token="subject", timeout=0.2)
+
+    assert exc.value.source == "custom"
+    assert isinstance(exc.value.__cause__, TimeoutError)
+    assert exc.value.retryable is True
+    assert cancelled.wait(timeout=5)
+    send.assert_not_called()
 
 
 @pytest.mark.asyncio

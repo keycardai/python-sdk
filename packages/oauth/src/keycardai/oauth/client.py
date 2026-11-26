@@ -6,7 +6,7 @@ import os
 import sys
 import threading
 import warnings
-from collections.abc import Callable, Coroutine
+from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, TypeVar, overload
 
@@ -112,9 +112,14 @@ from .types.oauth import (
 from .utils.jwt import build_substitute_user_token
 
 if TYPE_CHECKING:
-    from .server.credentials import ApplicationCredential
+    from .server.credentials import (
+        ApplicationCredential,
+        IdentityTokenSource,
+        _IdentityTokenFetcher,
+    )
 
 
+_ExchangeResult = TypeVar("_ExchangeResult")
 _exchange_loop: asyncio.AbstractEventLoop | None = None
 _exchange_loop_lock = threading.Lock()
 
@@ -169,15 +174,14 @@ async def _prepare_exchange_assertion(
     )
 
 
-def _prepare_exchange_assertion_sync(
-    credential: "ApplicationCredential",
-    request: TokenExchangeRequest,
-    client: "Client",
-    issuer: str,
-    endpoints: ResolvedEndpoints,
+def _run_exchange_coroutine(
+    operation: Coroutine[Any, Any, _ExchangeResult],
     timeout: float,
-) -> TokenExchangeRequest:
-    """Keep credential-owned async connections on one persistent loop."""
+    step: str,
+    *,
+    timeout_error: Callable[[TimeoutError], Exception] | None = None,
+) -> _ExchangeResult:
+    """Keep source- and credential-owned connections on one persistent loop."""
     global _exchange_loop
     with _exchange_loop_lock:
         loop = _exchange_loop
@@ -189,19 +193,46 @@ def _prepare_exchange_assertion_sync(
                 daemon=True,
             ).start()
             _exchange_loop = loop
-    future = asyncio.run_coroutine_threadsafe(
-        _prepare_exchange_assertion(credential, request, client, issuer, endpoints), loop
-    )
+    future = asyncio.run_coroutine_threadsafe(operation, loop)
     try:
         return future.result(timeout=timeout)
     except concurrent.futures.TimeoutError as e:
-        # A hung preparation stays bounded by the exchange timeout instead of
-        # blocking the caller forever on the shared loop.
         future.cancel()
+        cause = TimeoutError(f"{step} exceeded {timeout} seconds")
+        if timeout_error is not None:
+            raise timeout_error(cause) from cause
         raise NetworkError(
-            TimeoutError(f"assertion preparation exceeded {timeout} seconds"),
-            operation="token exchange assertion preparation",
+            cause,
+            operation=f"token exchange {step}",
         ) from e
+
+
+def _actor_fetcher(
+    actor: "IdentityTokenSource | Callable[[], Awaitable[str] | str] | None",
+) -> "_IdentityTokenFetcher | None":
+    if actor is None:
+        return None
+    from .server.credentials import _IdentityTokenFetcher
+
+    return _IdentityTokenFetcher(actor)
+
+
+def _add_exchange_actor(request: TokenExchangeRequest, token: str) -> TokenExchangeRequest:
+    return request.model_copy(
+        update={
+            "actor_token": token,
+            "actor_token_type": TokenType.JWT,
+        }
+    )
+
+
+def _actor_lookup_timeout(cause: TimeoutError) -> Exception:
+    from .server.credentials import WORKLOAD_IDENTITY_SOURCE_CUSTOM
+    from .server.exceptions import WorkloadIdentityRuntimeError
+
+    return WorkloadIdentityRuntimeError(
+        str(cause), source=WORKLOAD_IDENTITY_SOURCE_CUSTOM, retryable=True
+    )
 
 
 class _PublicClient:
@@ -524,6 +555,7 @@ class AsyncClient:
         base_url: str | None = None,
         auth: AuthStrategy | None = None,
         credential: "ApplicationCredential | None" = None,
+        actor: "IdentityTokenSource | Callable[[], Awaitable[str] | str] | None" = None,
         endpoints: Endpoints | None = None,
         transport: AsyncHTTPTransport | None = None,
         config: ClientConfig | None = None,
@@ -537,6 +569,9 @@ class AsyncClient:
             auth: Authentication strategy (BasicAuth, BearerAuth, NoneAuth)
             credential: Application credential for token exchange. An explicit
                 auth strategy takes precedence over the credential's headers.
+            actor: Identity token source or callable for delegation. It supplies
+                a fresh actor token per exchange unless the request sets one.
+                Impersonation does not use it. A sync callable must not block.
             endpoints: Endpoint overrides for multi-server deployments
             transport: Custom asynchronous HTTP transport
             config: Client configuration with timeouts, retries, etc.
@@ -551,6 +586,7 @@ class AsyncClient:
 
         self.auth_strategy = auth or NoneAuth()
         self._exchange_credential = credential
+        self._exchange_actor = _actor_fetcher(actor)
         self._exchange_auth = (
             credential.get_http_client_auth()
             if auth is None and credential is not None
@@ -1120,6 +1156,10 @@ class AsyncClient:
         target_issuer = self.issuer if issuer is None else issuer
         auth = self._exchange_auth
         auth_headers = resolve_token_exchange_auth_headers(request, auth, target_issuer)
+        if self._exchange_actor is not None and request.actor_token is None:
+            request = _add_exchange_actor(
+                request, await self._exchange_actor.identity_token()
+            )
         endpoints = await self._get_current_endpoints()
 
         if (
@@ -2116,6 +2156,7 @@ class Client:
         base_url: str | None = None,
         auth: AuthStrategy | None = None,
         credential: "ApplicationCredential | None" = None,
+        actor: "IdentityTokenSource | Callable[[], Awaitable[str] | str] | None" = None,
         endpoints: Endpoints | None = None,
         transport: HTTPTransport | None = None,
         config: ClientConfig | None = None,
@@ -2128,6 +2169,10 @@ class Client:
             auth: Authentication strategy (BasicAuth, BearerAuth, NoneAuth)
             credential: Application credential for token exchange. An explicit
                 auth strategy takes precedence over the credential's headers.
+            actor: Identity token source or callable for delegation. It supplies
+                a fresh actor token per exchange unless the request sets one.
+                Impersonation does not use it. A sync callable runs on the
+                calling thread and must enforce its own timeout if it blocks.
             endpoints: Endpoint overrides for multi-server deployments
             transport: Custom synchronous HTTP transport
             config: Client configuration with timeouts, retries, etc.
@@ -2137,6 +2182,7 @@ class Client:
 
         self.auth_strategy = auth or NoneAuth()
         self._exchange_credential = credential
+        self._exchange_actor = _actor_fetcher(actor)
         self._exchange_auth = (
             credential.get_http_client_auth()
             if auth is None and credential is not None
@@ -2644,6 +2690,16 @@ class Client:
         timeout = self.config.timeout if request.timeout is None else request.timeout
         auth = self._exchange_auth
         auth_headers = resolve_token_exchange_auth_headers(request, auth, target_issuer)
+        if self._exchange_actor is not None and request.actor_token is None:
+            token = self._exchange_actor.fetch()
+            if not isinstance(token, str):
+                token = _run_exchange_coroutine(
+                    token,
+                    timeout,
+                    "actor token lookup",
+                    timeout_error=_actor_lookup_timeout,
+                )
+            request = _add_exchange_actor(request, token)
         endpoints = self._get_current_endpoints()
 
         if (
@@ -2651,8 +2707,12 @@ class Client:
             and not request.client_assertion
             and not auth_headers
         ):
-            request = _prepare_exchange_assertion_sync(
-                self._exchange_credential, request, self, target_issuer, endpoints, timeout
+            request = _run_exchange_coroutine(
+                _prepare_exchange_assertion(
+                    self._exchange_credential, request, self, target_issuer, endpoints
+                ),
+                timeout,
+                "assertion preparation",
             )
             auth = NoneAuth()
             auth_headers = {}
