@@ -67,9 +67,10 @@ def reply(body, status=200):
 
 
 class Wire(DefaultClientFactory):
-    def __init__(self, *responses, missing_endpoint=False):
+    def __init__(self, *responses, missing_endpoint=False, endpoint=None):
         self.responses = iter(responses)
         self.missing_endpoint = missing_endpoint
+        self.endpoint = endpoint
         self.requests = []
 
     def create_async_client(self, base_url, auth=None, config=None):
@@ -80,7 +81,9 @@ class Wire(DefaultClientFactory):
                     assert request.url == f"{base_url}/.well-known/oauth-authorization-server"
                     metadata = {"issuer": base_url}
                     if not self.missing_endpoint:
-                        metadata["introspection_endpoint"] = f"{base_url}/introspect"
+                        metadata["introspection_endpoint"] = (
+                            self.endpoint or f"{base_url}/introspect"
+                        )
                     return reply(metadata)
                 response = next(self.responses)
                 if isinstance(response, Exception):
@@ -304,6 +307,15 @@ def test_row_24_no_introspection_request_for_zone_without_credential(app, bearer
         credential=ClientSecret({ISSUER: ("resource-server", "secret")}),
     )
     assert_unavailable(client.get("/mcp", headers=bearer(issuer=OTHER_ISSUER)))
+    assert wire.requests == []
+    assert app[1] == []
+
+
+def test_introspection_never_discovers_metadata_over_plaintext(app, bearer):
+    issuer = "http://a.example.com"
+    wire = Wire(reply({"active": True}), endpoint="https://other.example.com/introspect")
+    client = backend(app, wire, issuers=issuer, introspect=True, credential=CREDENTIAL)
+    assert_unavailable(client.get("/mcp", headers=bearer(issuer=issuer)))
     assert wire.requests == []
     assert app[1] == []
 

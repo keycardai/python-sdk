@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from urllib.parse import urlsplit
 
 from keycardai.oauth import AsyncClient, ClientConfig
 from keycardai.oauth.client_auth import (
@@ -43,6 +44,8 @@ class TokenIntrospector:
         try:
             if issuer is None:
                 raise ConfigError("The verified token has no issuer")
+            if urlsplit(issuer).scheme != "https":
+                raise ConfigError("Token introspection requires an HTTPS issuer")
             client = self._clients.get(issuer)
             if client is None:
                 client = self._factory.create_async_client(
