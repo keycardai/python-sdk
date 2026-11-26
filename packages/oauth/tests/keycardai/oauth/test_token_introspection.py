@@ -171,7 +171,7 @@ async def test_row_2_private_jwt_authenticates_with_issuer_as_audience(
 
     class Credential:
         async def client_authentication(self, *, issuer, endpoint):
-            assert issuer == endpoint == f"{ISSUER}/"
+            assert issuer == endpoint == ISSUER
             auth = await credential.client_authentication(
                 issuer=issuer, endpoint=endpoint
             )
@@ -192,7 +192,7 @@ async def test_row_2_private_jwt_authenticates_with_issuer_as_audience(
     (assertion,) = fields.pop("client_assertion")
     payload = assertion.split(".")[1]
     claims = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
-    assert claims["aud"] == f"{ISSUER}/"
+    assert claims["aud"] == ISSUER
     assert claims["iss"] == claims["sub"] == "client"
     assert fields == {"token": ["token"], "client_assertion_type": [JWT_BEARER]}
 

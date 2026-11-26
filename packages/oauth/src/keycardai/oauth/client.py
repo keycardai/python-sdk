@@ -826,7 +826,6 @@ class AsyncClient:
                 ``clock.sleep()``. Defaults to SystemClock.
         """
         self.issuer = _resolve_issuer_arg(issuer, base_url)
-        self._introspection_issuer = issuer or base_url or self.issuer
         self.config = config or ClientConfig()
         self.clock: Clock = clock or SystemClock()
 
@@ -2167,11 +2166,13 @@ class AsyncClient:
             if metadata is not None
             else None
         )
-        issuer = self._introspection_issuer
         limit = timeout or self.config.timeout
         try:
             client_auth = await _run_with_timeout(
-                authenticator.client_authentication(issuer=issuer, endpoint=issuer), limit
+                authenticator.client_authentication(
+                    issuer=self.issuer, endpoint=self.issuer
+                ),
+                limit,
             )
         except asyncio.TimeoutError as e:
             raise NetworkError(e, operation=INTROSPECTION_OPERATION) from e
@@ -2541,7 +2542,6 @@ class Client:
             config: Client configuration with timeouts, retries, etc.
         """
         self.issuer = _resolve_issuer_arg(issuer, base_url)
-        self._introspection_issuer = issuer or base_url or self.issuer
         self.config = config or ClientConfig()
 
         self.auth_strategy = auth or NoneAuth()
@@ -2960,10 +2960,11 @@ class Client:
             if metadata is not None
             else None
         )
-        issuer = self._introspection_issuer
         limit = timeout or self.config.timeout
         client_auth = _run_credential_operation(
-            authenticator.client_authentication(issuer=issuer, endpoint=issuer),
+            authenticator.client_authentication(
+                issuer=self.issuer, endpoint=self.issuer
+            ),
             limit,
             "introspection client authentication",
             error_operation=INTROSPECTION_OPERATION,
