@@ -38,7 +38,7 @@ test-file PACKAGE FILE:
 # frameworks alone would have shrunk it to 2036 and inflated the percentage to
 # ~75 on less measured code; that test is what keeps the gate honest. Headroom
 # is thin (60.88% actual) -- if it dips, add coverage rather than lowering this.
-test-coverage: build
+test-coverage:
     cd packages/oauth && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=70
     cd packages/starlette && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=55
     cd packages/mcp && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=60
@@ -46,8 +46,11 @@ test-coverage: build
     cd packages/a2a && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=55
     cd packages/langchain && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=85
     cd packages/temporal && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=85
-    cd packages/pydantic-ai && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=85
-    cd packages/hermes && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=85
+    case "${UV_PYTHON:-}" in \
+        3.10*) echo "Skipping pydantic-ai and hermes: they require Python >=3.11";; \
+        *) (cd packages/pydantic-ai && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=85) && \
+           (cd packages/hermes && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=85);; \
+    esac
 
 check:
     uv run ruff check

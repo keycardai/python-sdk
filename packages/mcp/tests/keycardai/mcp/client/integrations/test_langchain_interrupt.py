@@ -16,8 +16,10 @@ import pytest
 pytest.importorskip("langchain")
 pytest.importorskip("langgraph")
 
+from langchain_core.messages import AIMessage  # noqa: E402
 from langgraph.checkpoint.memory import InMemorySaver  # noqa: E402
-from langgraph.graph import END, START, StateGraph  # noqa: E402
+from langgraph.graph import END, START, MessagesState, StateGraph  # noqa: E402
+from langgraph.prebuilt import ToolNode  # noqa: E402
 from mcp.types import Tool  # noqa: E402
 from typing_extensions import TypedDict  # noqa: E402
 
@@ -98,6 +100,21 @@ async def run_tool_in_graph(tool, arguments: dict[str, Any]) -> dict[str, Any]:
     return await compiled.ainvoke({"result": ""}, {"configurable": {"thread_id": "t1"}})
 
 
+async def run_tool_call_in_graph(tool, arguments: dict[str, Any]) -> dict[str, Any]:
+    graph = StateGraph(MessagesState)
+    graph.add_node("tools", ToolNode([tool]))
+    graph.add_edge(START, "tools")
+    graph.add_edge("tools", END)
+    compiled = graph.compile(checkpointer=InMemorySaver())
+    message = AIMessage(
+        content="",
+        tool_calls=[{"name": tool.name, "args": arguments, "id": "call"}],
+    )
+    return await compiled.ainvoke(
+        {"messages": [message]}, {"configurable": {"thread_id": "t1"}}
+    )
+
+
 @pytest.fixture
 def pending_client() -> FakeClient:
     return FakeClient(requires_user_action=True)
@@ -141,7 +158,7 @@ async def test_interrupt_mode_pauses_the_run(pending_client: FakeClient) -> None
     client = LangChainClient(pending_client, interrupt_on_auth=True)
     tool = client._convert_mcp_tool_to_langchain(LIST_ISSUES, "linear")
 
-    result = await run_tool_in_graph(tool, {"state": "in progress"})
+    result = await run_tool_call_in_graph(tool, {"state": "in progress"})
 
     (paused,) = result["__interrupt__"]
     assert paused.value == build_authorization_interrupt_payload(
@@ -229,7 +246,7 @@ async def test_lazy_tools_interrupt_before_connecting(
     tools = await client.get_lazy_tools()
     call_mcp_tool = next(t for t in tools if t.name == "call_mcp_tool")
 
-    result = await run_tool_in_graph(
+    result = await run_tool_call_in_graph(
         call_mcp_tool, {"tool_name": "list_issues", "arguments": {"state": "open"}}
     )
 

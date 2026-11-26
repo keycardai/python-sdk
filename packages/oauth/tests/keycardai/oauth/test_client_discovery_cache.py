@@ -524,7 +524,7 @@ class TestAsyncClientDiscoveryCache:
         client, discover = self._client(slow_discover)
         waiter = asyncio.create_task(client._get_current_endpoints())
         await started.wait()
-        with pytest.raises(TimeoutError):
+        with pytest.raises(asyncio.TimeoutError):
             await asyncio.wait_for(waiter, timeout=0)
         survivor = asyncio.create_task(client._get_current_endpoints())
         release.set()
