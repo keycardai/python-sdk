@@ -12,6 +12,7 @@ from keycardai.oauth.exceptions import (
     OAuthProtocolError,
 )
 from keycardai.oauth.server.access_context import AccessContext
+from keycardai.oauth.server.exceptions import WorkloadIdentityConfigurationError
 from keycardai.oauth.server.token_exchange import (
     error_retryable,
     exchange_tokens_for_resources,
@@ -249,6 +250,11 @@ async def test_config_and_authentication_errors_are_permanent(error):
 def test_error_retryable_defaults_true_without_the_property():
     assert error_retryable(RuntimeError("boom")) is True
     assert error_retryable(OAuthProtocolError(error="invalid_client")) is False
+
+
+def test_workload_identity_configuration_error_is_not_retryable():
+    error = WorkloadIdentityConfigurationError("missing socket", source="spiffe")
+    assert error_retryable(error) is False
 
 
 def test_set_error_accepts_plain_string_dicts():

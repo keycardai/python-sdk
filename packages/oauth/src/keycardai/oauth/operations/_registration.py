@@ -44,6 +44,7 @@ def parse_client_registration_http_response(res: HttpResponse) -> ClientRegistra
                 error_description=error_data.get("error_description"),
                 error_uri=error_data.get("error_uri"),
                 operation="POST /register",
+                status_code=res.status,
             )
         response_body = res.body[:512].decode("utf-8", "ignore")
         raise OAuthHttpError(
@@ -59,7 +60,8 @@ def parse_client_registration_http_response(res: HttpResponse) -> ClientRegistra
         raise OAuthProtocolError(
             error="invalid_response",
             error_description="Invalid JSON in registration response",
-            operation="POST /register"
+            operation="POST /register",
+            status_code=res.status,
         ) from e
 
     if isinstance(data, dict) and "error" in data:
@@ -67,14 +69,16 @@ def parse_client_registration_http_response(res: HttpResponse) -> ClientRegistra
             error=data["error"],
             error_description=data.get("error_description"),
             error_uri=data.get("error_uri"),
-            operation="POST /register"
+            operation="POST /register",
+            status_code=res.status,
         )
 
     if not isinstance(data, dict) or "client_id" not in data:
         raise OAuthProtocolError(
             error="invalid_response",
             error_description="Missing required 'client_id' in registration response",
-            operation="POST /register"
+            operation="POST /register",
+            status_code=res.status,
         )
 
     scope = data.get("scope")

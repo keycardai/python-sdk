@@ -15,6 +15,7 @@ Use discover_credential() to build the credential described by the standard
 KEYCARD_* environment variables.
 """
 
+import asyncio
 import inspect
 import os
 import uuid
@@ -35,6 +36,7 @@ from keycardai.oauth import (
     NoneAuth,
 )
 from keycardai.oauth.client_auth import ClientAuthentication
+from keycardai.oauth.exceptions import NetworkError, OAuthHttpError
 from keycardai.oauth.types.models import JsonWebKeySet, TokenExchangeRequest
 from keycardai.oauth.types.oauth import GrantType, TokenEndpointAuthMethod
 
@@ -52,6 +54,7 @@ from .private_key import (
     PrivateKeyManager,
     PrivateKeyStorageProtocol,
 )
+from .spiffe import SpiffeJwtSvidSource as SpiffeJwtSvidSource
 
 
 async def _get_token_exchange_audience(client: AsyncClient) -> str:
@@ -400,8 +403,9 @@ class IdentityTokenSource(Protocol):
     FileTokenSource covers platforms that project the token to a file (EKS,
     AKS, Kubernetes projected service-account tokens), GCPMetadataTokenSource
     covers platforms that serve it from the GCP metadata endpoint (GKE, GCE,
-    Cloud Run), FlyTokenSource covers Fly Machines, and any bare callable
-    returning the token (sync or async) is accepted as a source.
+    Cloud Run), FlyTokenSource covers Fly Machines, and SpiffeJwtSvidSource
+    covers the SPIFFE Workload API. A bare callable returning the token (sync
+    or async) is also accepted as a source.
 
     identity_token is called on every token exchange. Implementations must
     return the current token; platforms rotate these tokens, so returning a
@@ -411,6 +415,26 @@ class IdentityTokenSource(Protocol):
     async def identity_token(self) -> str:
         """Return the current platform-signed OIDC token."""
         ...
+
+
+def _source_error_retryable(error: Exception) -> bool:
+    if isinstance(
+        error,
+        (
+            ConnectionError,
+            TimeoutError,
+            asyncio.TimeoutError,
+            NetworkError,
+            httpx.NetworkError,
+            httpx.TimeoutException,
+        ),
+    ):
+        return True
+    if isinstance(error, OAuthHttpError):
+        return 500 <= error.status_code < 600
+    if isinstance(error, httpx.HTTPStatusError):
+        return 500 <= error.response.status_code < 600
+    return False
 
 
 class _IdentityTokenFetcher:
@@ -457,6 +481,7 @@ class _IdentityTokenFetcher:
             raise WorkloadIdentityRuntimeError(
                 "Error fetching identity token",
                 source=WORKLOAD_IDENTITY_SOURCE_CUSTOM,
+                retryable=_source_error_retryable(err),
             ) from err
 
     @staticmethod
@@ -465,6 +490,7 @@ class _IdentityTokenFetcher:
             raise WorkloadIdentityRuntimeError(
                 "Identity token source returned an empty token",
                 source=WORKLOAD_IDENTITY_SOURCE_CUSTOM,
+                retryable=False,
             )
         return token
 
@@ -579,19 +605,21 @@ class GCPMetadataTokenSource:
                 f"Error calling metadata server at {self.metadata_url} "
                 "(is this running on GCP?)",
                 source=WORKLOAD_IDENTITY_SOURCE_GCP_METADATA,
+                retryable=_source_error_retryable(err),
             ) from err
 
         if response.status_code != 200:
             raise WorkloadIdentityRuntimeError(
                 f"Metadata server returned status {response.status_code}",
                 source=WORKLOAD_IDENTITY_SOURCE_GCP_METADATA,
-                status_code=response.status_code,
+                retryable=500 <= response.status_code < 600,
             )
         token = response.text.strip()
         if not token:
             raise WorkloadIdentityRuntimeError(
                 "Metadata server returned an empty token",
                 source=WORKLOAD_IDENTITY_SOURCE_GCP_METADATA,
+                retryable=False,
             )
         return token
 
@@ -631,19 +659,21 @@ class FlyTokenSource:
                 f"Error calling Machines API socket {self.socket_path} "
                 "(is this running on a Fly Machine?)",
                 source=WORKLOAD_IDENTITY_SOURCE_FLY,
+                retryable=_source_error_retryable(err),
             ) from err
 
         if response.status_code != 200:
             raise WorkloadIdentityRuntimeError(
                 f"Machines API returned status {response.status_code}",
                 source=WORKLOAD_IDENTITY_SOURCE_FLY,
-                status_code=response.status_code,
+                retryable=500 <= response.status_code < 600,
             )
         token = response.text.strip()
         if not token:
             raise WorkloadIdentityRuntimeError(
                 "Machines API returned an empty token",
                 source=WORKLOAD_IDENTITY_SOURCE_FLY,
+                retryable=False,
             )
         return token
 

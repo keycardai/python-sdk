@@ -31,7 +31,9 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
+spiffe = ["grpcio>=1.71.0"]
 test = [
+    "keycardai-oauth[spiffe]",
     "pytest>=8.4.1",
     "pytest-asyncio>=1.1.0",
     "blockbuster>=1.5.27",
@@ -119,7 +121,7 @@ dev = [
 
 [tool.commitizen]
 name = "cz_customize"
-version = "0.41.3"
+version = "0.42.0"
 tag_format = "${version}-keycardai-oauth"
 # Ignores sibling packages' tags only; it must not match this package's own tag, because commitizen applies ignored formats before tag_format.
 ignored_tag_formats = ["${version}-keycardai-(?!oauth$).*"]

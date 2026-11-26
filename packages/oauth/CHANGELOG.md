@@ -1,3 +1,34 @@
+## 0.42.0-keycardai-oauth (2026-11-26)
+
+
+- feat(keycardai-oauth)!: token revocation (ID-881) (#484)
+- * feat(keycardai-oauth): token revocation (ID-881)
+- Add AsyncClient.revoke_token per keycard-sdk-spec#145 and drop the {issuer}/oauth2/revoke endpoint fallback.
+- Co-Authored-By: Larry Osakwe <larry@keycard.ai>
+- * fix(keycardai-oauth): send an enum token_type_hint as its value
+- Co-Authored-By: Larry Osakwe <larry@keycard.ai>
+- * fix(keycardai-oauth): use the revoke endpoint override without discovery
+- Co-Authored-By: Larry Osakwe <larry@keycard.ai>
+- * fix(keycardai-oauth): raise ConfigError for an empty secret or missing zone credentials on revoke
+- Co-Authored-By: Larry Osakwe <larry@keycard.ai>
+- * refactor(keycardai-oauth): inherit TokenRevocationError retryability from OAuthProtocolError
+- ---------
+- Co-authored-by: devin-ai-keycard <devin-ai@keycard.ai>
+Co-authored-by: Larry Osakwe <larry@keycard.ai>
+Co-authored-by: Larry Osakwe <23560354+Larry-Osakwe@users.noreply.github.com>
+
+## 0.41.4-keycardai-oauth (2026-11-25)
+
+
+- fix(keycardai-oauth): classify a 429 or 5xx OAuth error as retryable whatever its code (SDK-109) (#485)
+- * fix(keycardai-oauth): classify a 429 or 5xx OAuth error as retryable whatever its code (SDK-109)
+- Co-Authored-By: Larry Osakwe <larry@keycard.ai>
+- * docs(keycardai-oauth): state status-first retryability in the README
+- Co-Authored-By: Larry Osakwe <larry@keycard.ai>
+- ---------
+- Co-authored-by: devin-ai-keycard <devin-ai@keycard.ai>
+Co-authored-by: Larry Osakwe <larry@keycard.ai>
+
 ## 0.41.3-keycardai-oauth (2026-11-25)
 
 

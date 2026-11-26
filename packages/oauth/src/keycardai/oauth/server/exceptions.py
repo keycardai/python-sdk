@@ -9,15 +9,11 @@ MCP, Starlette, or any other framework.
 
 from __future__ import annotations
 
-import asyncio
 from typing import Any
-
-import httpx
 
 from keycardai.oauth.exceptions import (
     AuthorizationServerDiscoveryError,
     ConfigError,
-    NetworkError,
     OAuthHttpError,
     OAuthProtocolError,
     classify_discovery_failure,
@@ -508,16 +504,17 @@ class ClientInitializationError(OAuthServerError):
 
 
 class WorkloadIdentityConfigurationError(OAuthServerError):
-    """Raised when a workload identity credential or token source is misconfigured.
+    """Indicates a non-retryable workload identity configuration error.
 
-    Raised at construction: a missing or empty token file, no discovery
-    environment variable set, a missing required audience, or an invalid
-    source.
+    Invalid options raise this error at construction. An unresolved SPIFFE
+    socket or missing SPIFFE extra raises it on first fetch.
 
     Attributes:
-        source: Identifies the token source ("file", "gcp-metadata", "fly");
+        source: Identifies the token source ("file", "gcp-metadata", "fly", "spiffe");
             None when the fault is in the credential itself.
     """
+
+    retryable = False
 
     def __init__(
         self,
@@ -533,14 +530,14 @@ class WorkloadIdentityConfigurationError(OAuthServerError):
 class WorkloadIdentityRuntimeError(OAuthServerError):
     """Raised when the subject token cannot be obtained at request time.
 
-    Distinct from WorkloadIdentityConfigurationError, which is a
-    construction-time fault. Examples: the token file was rotated away or
-    emptied after construction, or the platform endpoint was unreachable.
+    Distinct from WorkloadIdentityConfigurationError, which identifies
+    misconfiguration. Examples: an empty token file or unreachable endpoint.
 
     Attributes:
-        source: Identifies the token source ("file", "gcp-metadata", "fly",
+        source: Identifies the token source ("file", "gcp-metadata", "fly", "spiffe",
             or "custom" for a source whose error is not one of this module's
             typed errors).
+        retryable: Whether the caller can retry the token fetch.
     """
 
     def __init__(
@@ -549,34 +546,11 @@ class WorkloadIdentityRuntimeError(OAuthServerError):
         *,
         source: str | None = None,
         details: dict | None = None,
-        status_code: int | None = None,
+        retryable: bool = True,
     ):
         self.source = source
-        self._status_code = status_code
+        self.retryable = retryable
         super().__init__(message, details=details)
-
-    @property
-    def retryable(self) -> bool:
-        """Whether the source fails with a connection error, timeout, or 5xx."""
-        cause = self.__cause__
-        if isinstance(
-            cause,
-            (
-                ConnectionError,
-                TimeoutError,
-                asyncio.TimeoutError,
-                NetworkError,
-                httpx.NetworkError,
-                httpx.TimeoutException,
-            ),
-        ):
-            return True
-        status_code = self._status_code
-        if isinstance(cause, OAuthHttpError):
-            status_code = cause.status_code
-        elif isinstance(cause, httpx.HTTPStatusError):
-            status_code = cause.response.status_code
-        return status_code is not None and 500 <= status_code < 600
 
 
 class EKSWorkloadIdentityConfigurationError(WorkloadIdentityConfigurationError):

@@ -14,7 +14,8 @@ Credential Providers:
     ClientSecret: Client credentials (BasicAuth) for token exchange
     WebIdentity: Private key JWT client assertion (RFC 7523)
     WorkloadIdentity: Platform-signed OIDC token from a pluggable IdentityTokenSource
-    FileTokenSource, GCPMetadataTokenSource, FlyTokenSource: Built-in token sources
+    FileTokenSource, GCPMetadataTokenSource, FlyTokenSource,
+    SpiffeJwtSvidSource: Built-in token sources
     EKSWorkloadIdentity: Deprecated alias for WorkloadIdentity with a FileTokenSource
     discover_credential: Build the credential described by KEYCARD_* environment variables
 
@@ -42,6 +43,7 @@ from .credentials import (
     FlyTokenSource,
     GCPMetadataTokenSource,
     IdentityTokenSource,
+    SpiffeJwtSvidSource,
     WebIdentity,
     WorkloadIdentity,
     discover_credential,
@@ -74,6 +76,7 @@ __all__ = [
     "FlyTokenSource",
     "GCPMetadataTokenSource",
     "IdentityTokenSource",
+    "SpiffeJwtSvidSource",
     "WebIdentity",
     "WorkloadIdentity",
     "discover_credential",

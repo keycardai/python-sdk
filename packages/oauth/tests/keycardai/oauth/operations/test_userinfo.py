@@ -106,7 +106,7 @@ class TestUserInfoResponseParsing:
         assert result.claims["sub"] == "user-123"
 
     def test_missing_sub_is_a_protocol_error(self):
-        with pytest.raises(OAuthProtocolError, match="sub"):
+        with pytest.raises(OAuthProtocolError, match="sub") as exc:
             parse_userinfo_http_response(
                 HttpResponse(
                     status=200,
@@ -114,6 +114,8 @@ class TestUserInfoResponseParsing:
                     body=b'{"email": "kim@example.com"}',
                 )
             )
+
+        assert exc.value.status_code == 200
 
     def test_invalid_token_challenge_is_an_authorization_error(self):
         with pytest.raises(InvalidTokenError, match="invalid_token") as exc_info:

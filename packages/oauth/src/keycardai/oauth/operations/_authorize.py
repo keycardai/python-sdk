@@ -5,9 +5,8 @@ code exchange for OAuth 2.0 authorization code flows (RFC 6749 Section 4.1)
 with PKCE support (RFC 7636).
 """
 
-import functools
 import json
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from typing import Any
 from urllib.parse import unquote_plus, urlencode, urlsplit, urlunsplit
 
@@ -159,7 +158,7 @@ def _parse_token_http_response(
     res: HttpResponse,
     *,
     operation: str,
-    error_cls: Callable[..., OAuthProtocolError],
+    error_cls: type[OAuthProtocolError],
 ) -> TokenResponse:
     """Parse a token endpoint response.
 
@@ -178,6 +177,7 @@ def _parse_token_http_response(
                     error_uri=data.get("error_uri"),
                     reason=data.get("reason"),
                     operation=operation,
+                    status_code=res.status,
                 )
         except (json.JSONDecodeError, ValueError):
             pass
@@ -195,6 +195,7 @@ def _parse_token_http_response(
             error="invalid_response",
             error_description=f"Invalid JSON in {operation} response",
             operation=operation,
+            status_code=res.status,
         ) from e
 
     if not isinstance(data, dict) or "access_token" not in data:
@@ -202,6 +203,7 @@ def _parse_token_http_response(
             error="invalid_response",
             error_description=f"Missing required 'access_token' in {operation} response",
             operation=operation,
+            status_code=res.status,
         )
 
     return token_response_from_json(data, res.headers)
@@ -389,7 +391,7 @@ def parse_refresh_token_http_response(res: HttpResponse) -> TokenResponse:
     return _parse_token_http_response(
         res,
         operation=REFRESH_OPERATION,
-        error_cls=functools.partial(RefreshGrantError, status_code=res.status),
+        error_cls=RefreshGrantError,
     )
 
 

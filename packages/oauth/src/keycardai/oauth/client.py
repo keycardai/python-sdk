@@ -25,6 +25,7 @@ from .exceptions import (
     NetworkError,
     OAuthHttpError,
     ResponseBodyTooLargeError,
+    TokenRevocationError,
     _is_transient_status,
 )
 from .http._context import build_http_context
@@ -36,6 +37,7 @@ from .http._transports import (
 from .http._wire import HttpRequest, HttpResponse
 from .http.auth import (
     AuthStrategy,
+    BasicAuth,
     NoneAuth,
 )
 from .http.transport import AsyncHTTPTransport, HTTPTransport
@@ -68,6 +70,11 @@ from .operations._registration import (
     register_client,
     register_client_async,
 )
+from .operations._revocation import (
+    REVOCATION_OPERATION,
+    build_revocation_http_request,
+    parse_revocation_http_response,
+)
 from .operations._token_exchange import (
     exchange_token,
     exchange_token_async,
@@ -99,6 +106,7 @@ from .types.oauth import (
     ResponseType,
     TokenEndpointAuthMethod,
     TokenType,
+    TokenTypeHint,
 )
 from .utils.jwt import build_substitute_user_token
 
@@ -222,7 +230,7 @@ def _actor_lookup_timeout(cause: TimeoutError) -> Exception:
     from .server.exceptions import WorkloadIdentityRuntimeError
 
     return WorkloadIdentityRuntimeError(
-        str(cause), source=WORKLOAD_IDENTITY_SOURCE_CUSTOM
+        str(cause), source=WORKLOAD_IDENTITY_SOURCE_CUSTOM, retryable=True
     )
 
 
@@ -236,6 +244,18 @@ class _PublicClient:
         self, *, issuer: str, endpoint: str
     ) -> ClientAuthentication:
         return ClientAuthentication(form_fields={"client_id": self.client_id})
+
+
+class _StaticClientAuthentication:
+    """Client authentication with fixed headers, such as HTTP Basic."""
+
+    def __init__(self, headers: dict[str, str]):
+        self._headers = headers
+
+    async def client_authentication(
+        self, *, issuer: str, endpoint: str
+    ) -> ClientAuthentication:
+        return ClientAuthentication(headers=dict(self._headers))
 
 
 def _device_client_authenticator(
@@ -337,8 +357,6 @@ def resolve_endpoints(
         endpoints.introspect = OAuth2DefaultEndpoints.construct_url(issuer, OAuth2DefaultEndpoints.INTROSPECTION)
     if not endpoints.token:
         endpoints.token = OAuth2DefaultEndpoints.construct_url(issuer, OAuth2DefaultEndpoints.TOKEN)
-    if not endpoints.revoke:
-        endpoints.revoke = OAuth2DefaultEndpoints.construct_url(issuer, OAuth2DefaultEndpoints.REVOCATION)
     if not endpoints.register:
         endpoints.register = OAuth2DefaultEndpoints.construct_url(issuer, OAuth2DefaultEndpoints.REGISTRATION)
     if not endpoints.authorize:
@@ -1353,30 +1371,35 @@ class AsyncClient:
             client_auth=client_auth,
         )
 
-    def _device_grant_endpoint(
+    def _advertised_endpoint(
         self, metadata: AuthorizationServerMetadata | None, name: str
     ) -> str | None:
-        """Return ``device_authorization_endpoint`` or ``token_endpoint``.
+        """Return ``device_authorization_endpoint``, ``token_endpoint``, or
+        ``revocation_endpoint``.
 
-        The token endpoint comes from the client's endpoint overrides first.
-        Neither comes from a conventional path.
+        The token and revocation endpoints come from the client's endpoint
+        overrides first. None of them comes from a conventional path.
         """
+        overrides = self._endpoint_overrides
         if name == "token_endpoint":
-            overrides = self._endpoint_overrides
             if overrides and overrides.token:
                 return overrides.token
             return metadata.token_endpoint if metadata else None
+        if name == "revocation_endpoint":
+            if overrides and overrides.revoke:
+                return overrides.revoke
+            return metadata.revocation_endpoint if metadata else None
         return metadata.device_authorization_endpoint if metadata else None
 
-    async def _resolve_device_endpoint(
+    async def _resolve_advertised_endpoint(
         self, metadata: AuthorizationServerMetadata | None, name: str
     ) -> tuple[str, str]:
         """Return the issuer and the URL of the endpoint ``name``.
 
         Pre-discovered ``metadata`` is used as is, with no discovery request.
         Its issuer must match the client's issuer, ignoring a trailing slash;
-        the client's issuer is the one returned. A token endpoint override
-        wins over ``metadata`` and discovery alike.
+        the client's issuer is the one returned. A token or revocation
+        endpoint override wins over ``metadata`` and discovery alike.
         Otherwise the endpoint comes from discovered metadata. When that
         metadata fails the endpoint check, the client discovers again once
         the metadata is older than ``negative_ttl``, so a failed check is
@@ -1395,19 +1418,19 @@ class AsyncClient:
                     f"issuer {self.issuer} does not match the metadata issuer "
                     f"{metadata.issuer}"
                 )
-            url = self._device_grant_endpoint(metadata, name)
+            url = self._advertised_endpoint(metadata, name)
             return self.issuer, check_endpoint(self.issuer, name, url)
 
         discovered = await self._resolve_metadata()
         try:
-            url = self._device_grant_endpoint(discovered, name)
+            url = self._advertised_endpoint(discovered, name)
             return self.issuer, check_endpoint(self.issuer, name, url)
         except ConfigError:
             age = self._metadata_cache.success_age()
             if age is None or age < self.config.negative_ttl:
                 raise
         discovered = await self._resolve_metadata(refresh=True)
-        url = self._device_grant_endpoint(discovered, name)
+        url = self._advertised_endpoint(discovered, name)
         return self.issuer, check_endpoint(self.issuer, name, url)
 
     async def _send_device_request(
@@ -1498,7 +1521,7 @@ class AsyncClient:
             NetworkError: The request failed or timed out.
         """
         authenticator = _device_client_authenticator(credential, client_id)
-        issuer, endpoint = await self._resolve_device_endpoint(
+        issuer, endpoint = await self._resolve_advertised_endpoint(
             metadata, "device_authorization_endpoint"
         )
         client_auth = await authenticator.client_authentication(
@@ -1574,7 +1597,7 @@ class AsyncClient:
         authenticator = _device_client_authenticator(credential, client_id)
         if not authorization.device_code:
             raise ConfigError("authorization.device_code is empty")
-        issuer, endpoint = await self._resolve_device_endpoint(
+        issuer, endpoint = await self._resolve_advertised_endpoint(
             metadata, "token_endpoint"
         )
         client_auth = await authenticator.client_authentication(
@@ -1664,7 +1687,7 @@ class AsyncClient:
                 f"interval {interval} is below the device authorization "
                 f"interval {authorization.interval}"
             )
-        issuer, endpoint = await self._resolve_device_endpoint(
+        issuer, endpoint = await self._resolve_advertised_endpoint(
             metadata, "token_endpoint"
         )
 
@@ -1706,6 +1729,164 @@ class AsyncClient:
                         interval += SLOW_DOWN_INCREMENT
                         continue
                 raise
+
+    def _revocation_client_authenticator(
+        self,
+        client_id: str | None,
+        client_secret: str | None,
+        credential: object | None,
+    ) -> ClientAuthenticator:
+        """Return the client authentication for one revocation request.
+
+        Raises:
+            ConfigError: ``credential`` is combined with ``client_id`` or
+                ``client_secret``, ``client_secret`` is set without
+                ``client_id``, the credential does not provide client
+                authentication, or nothing authenticates the client.
+        """
+        if credential is not None:
+            if client_id is not None or client_secret is not None:
+                raise ConfigError(
+                    "Pass either `credential` or `client_id` and `client_secret`, "
+                    "not both."
+                )
+            return require_client_authenticator(credential)
+        if client_secret is not None and client_id is None:
+            raise ConfigError("`client_secret` requires `client_id`.")
+        if client_id is not None:
+            if not client_id:
+                raise ConfigError("`client_id` is empty.")
+            if client_secret is not None:
+                if not client_secret:
+                    raise ConfigError("`client_secret` is empty.")
+                return _StaticClientAuthentication(
+                    BasicAuth(client_id, client_secret).apply_headers()
+                )
+            return _PublicClient(client_id)
+        try:
+            headers = dict(self.auth_strategy.apply_headers(self.issuer))
+        except KeyError as e:
+            raise ConfigError(
+                f"The client's auth strategy has no credentials for {self.issuer}."
+            ) from e
+        if not headers:
+            raise ConfigError(
+                "Pass `client_id` or `credential`, or create the client with an "
+                "auth strategy, to authenticate the revocation request."
+            )
+        return _StaticClientAuthentication(headers)
+
+    async def revoke_token(
+        self,
+        token: str,
+        *,
+        token_type_hint: str | TokenTypeHint = "refresh_token",
+        client_id: str | None = None,
+        client_secret: str | None = None,
+        credential: "ClientAuthenticator | ApplicationCredential | None" = None,
+        metadata: AuthorizationServerMetadata | None = None,
+        timeout: float | None = None,
+    ) -> None:
+        """Revoke a token (RFC 7009).
+
+        Revoking a Keycard refresh token, or an access token with a ``sid``
+        and no ``act``, revokes the token's session. The zone answers 200
+        for an unknown, expired, already revoked, or unparseable token, so
+        success does not mean a session was revoked.
+
+        The endpoint is an ``Endpoints.revoke`` override, or else
+        ``revocation_endpoint`` from ``metadata`` or discovery. With an
+        override and no ``metadata``, no discovery request is made. There is
+        no conventional path.
+
+        Client authentication, in order of precedence:
+
+        - ``credential``: its client authentication, with the zone issuer as
+          both the issuer and the endpoint, so a private key JWT assertion
+          has the issuer as its sole ``aud``.
+        - ``client_id`` and ``client_secret``: HTTP Basic, with no
+          ``client_id`` in the body.
+        - ``client_id`` alone: a public client, ``client_id`` in the body.
+        - Otherwise the client's auth strategy.
+
+        The SDK does not retry. Async only.
+
+        Args:
+            token: The token to revoke.
+            token_type_hint: Sent unchanged. Defaults to ``refresh_token``.
+            client_id: A public or client secret client's ID.
+            client_secret: With ``client_id``, authenticates with HTTP Basic.
+            credential: A credential that provides client authentication
+                (ClientSecret, WebIdentity, WorkloadIdentity). Cannot be
+                combined with ``client_id`` or ``client_secret``.
+            metadata: Pre-discovered authorization server metadata. No
+                discovery request is made. Its issuer must match the
+                client's issuer, ignoring a trailing slash.
+            timeout: Request timeout. Defaults to the client's timeout.
+
+        Raises:
+            ConfigError: ``token`` is empty, the client authentication inputs
+                are invalid, ``metadata`` names a different issuer, or
+                ``revocation_endpoint`` is missing or is not an http or
+                https URL. No revocation request is sent.
+            AuthorizationServerDiscoveryError: Discovery failed.
+            TokenRevocationError: An OAuth error response, such as
+                ``invalid_client``, ``invalid_grant``, or
+                ``unsupported_token_type``. A 429 or 5xx is retryable.
+            OAuthHttpError: A response other than 2xx without an OAuth error
+                body.
+            NetworkError: The request failed or timed out.
+        """
+        if not token:
+            raise ConfigError("`token` is empty.")
+        authenticator = self._revocation_client_authenticator(
+            client_id, client_secret, credential
+        )
+        override = self._endpoint_overrides.revoke if self._endpoint_overrides else None
+        if metadata is None and override:
+            issuer = self.issuer
+            endpoint = check_endpoint(issuer, "revocation_endpoint", override)
+        else:
+            issuer, endpoint = await self._resolve_advertised_endpoint(
+                metadata, "revocation_endpoint"
+            )
+        client_auth = await authenticator.client_authentication(
+            issuer=issuer, endpoint=issuer
+        )
+        request = build_revocation_http_request(
+            endpoint=endpoint,
+            token=token,
+            token_type_hint=token_type_hint,
+            client_auth=client_auth,
+        )
+        headers = {
+            "User-Agent": self.config.user_agent,
+            **(self.config.custom_headers or {}),
+            **request.headers,
+        }
+        try:
+            response = await self.transport.request_raw(
+                replace(request, headers=headers),
+                timeout=timeout or self.config.timeout,
+            )
+        except ResponseBodyTooLargeError as e:
+            if e.status_code is not None and 200 <= e.status_code < 300:
+                return
+            raise TokenRevocationError(
+                error="invalid_response",
+                error_description=e.error_description,
+                operation=REVOCATION_OPERATION,
+                status_code=e.status_code,
+            ) from e
+        except ResponseBodyDecodeError as e:
+            if 200 <= e.status < 300:
+                return
+            raise OAuthHttpError(
+                status_code=e.status,
+                headers=e.headers,
+                operation=REVOCATION_OPERATION,
+            ) from e
+        parse_revocation_http_response(response)
 
     async def impersonate(
         self,

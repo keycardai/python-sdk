@@ -251,9 +251,37 @@ When the device authorization request names more than one resource, the token
 is not for any one of them. To get a token for one resource, refresh with that
 resource.
 
+### Token Revocation (RFC 7009)
+
+Revoke a refresh token or a session's access token, for example on sign-out.
+Async only.
+
+```python
+from keycardai.oauth import AsyncClient
+
+async with AsyncClient("https://zone.keycard.cloud") as client:
+    await client.revoke_token(refresh_token, client_id="public-app")
+```
+
+The endpoint is `revocation_endpoint` from discovery or `metadata=`, or an
+`Endpoints(revoke=...)` override. When none sets it, `revoke_token` raises
+`ConfigError` before any request; there is no conventional path.
+
+Authenticate the client with `client_id=` alone (public client), `client_id=`
+and `client_secret=` (HTTP Basic), or `credential=` (`ClientSecret`,
+`WebIdentity`, `WorkloadIdentity`). A `WebIdentity` assertion has the zone
+issuer as its `aud`. `token_type_hint` defaults to `refresh_token`.
+
+The zone answers 200 for an unknown, expired, or already revoked token, so
+success does not mean a session was revoked. An OAuth error raises
+`TokenRevocationError` with its `error` and `error_description`;
+`unsupported_token_type` means the token cannot be revoked here, such as an
+exchanged access token. The SDK does not retry.
+
 ## Features
 
 - **Token Exchange (RFC 8693)** - Exchange tokens for different audiences, scopes, or token types
+- **Token Revocation (RFC 7009)** - Revoke refresh tokens and session access tokens
 - **Dynamic Client Registration (RFC 7591)** - Register OAuth clients programmatically
 - **Authorization Server Metadata (RFC 8414)** - Auto-discover server endpoints and capabilities
 - **UserInfo (OIDC Core 1.0 Section 5.3)** - Fetch the signed-in user's identity claims
@@ -522,6 +550,26 @@ with Client("https://oauth.example.com", auth=BasicAuth(...)) as client:
     response = client.exchange_token(request)
 ```
 
+### SPIFFE Workload Identity
+
+Install `keycardai-oauth[spiffe]` to fetch JWT-SVIDs directly from the SPIFFE
+Workload API:
+
+```python
+from keycardai.oauth.server import SpiffeJwtSvidSource, WorkloadIdentity
+
+source = SpiffeJwtSvidSource(audience="https://zone.keycard.cloud")
+credential = WorkloadIdentity(source, client_id="app-credential-id")
+```
+
+The source opens the agent's Unix socket on fetch. Set `socket_path` to
+override `SPIFFE_ENDPOINT_SOCKET` and set `spiffe_id` if the workload has
+multiple identities. `init_timeout` bounds the wait in seconds (default 10).
+
+If [SPIFFE Helper](https://github.com/spiffe/spiffe-helper) projects the
+JWT-SVID to a file, no new SDK code or extra is needed. Point the existing
+`FileTokenSource(token_file_path=...)` at the helper's JWT-SVID file.
+
 ### Dynamic Client Registration (RFC 7591)
 
 Register OAuth clients programmatically:
@@ -619,20 +667,22 @@ operation unchanged could succeed.
 |-----------|-------------|-----------|
 | `OAuthHttpError` | Yes | HTTP 429 (rate limit) or 5xx (server error) |
 | `OAuthHttpError` | No | HTTP 4xx (client error, except 429) |
-| `OAuthProtocolError` / `TokenExchangeError` | No | Error code in `PERMANENT_ERROR_CODES` (`access_denied`, `expired_token`, `insufficient_authorization`, `invalid_client`) |
-| `RefreshGrantError` | No | `invalid_grant`, or a code in `PERMANENT_ERROR_CODES` |
+| `OAuthProtocolError` / `TokenExchangeError` / `RefreshGrantError` | Yes | HTTP 429 or 5xx, whatever the code |
+| `OAuthProtocolError` / `TokenExchangeError` | No | Otherwise, a code in `PERMANENT_ERROR_CODES` (`access_denied`, `expired_token`, `insufficient_authorization`, `invalid_client`) |
+| `RefreshGrantError` | No | Not 429 or 5xx, and the code is `invalid_grant` or in `PERMANENT_ERROR_CODES` |
 | `DeviceAuthorizationError` | Yes | HTTP 429 or 5xx, whatever the code |
 | `DeviceAuthorizationError` | No | Not 429 or 5xx, and the code is `invalid_grant` or in `PERMANENT_ERROR_CODES` |
 | `DevicePollError` | Yes | Always: a network error, a 429, or a 5xx stopped device polling |
-| `OAuthProtocolError` / `TokenExchangeError` | Yes | Any other OAuth error code |
+| `OAuthProtocolError` / `TokenExchangeError` | Yes | Any other OAuth error code, except `invalid_response` with a known non-2xx status other than 429 or 5xx |
 | `NetworkError` | Yes | Always: transport faults are transient, permanent failures surface as protocol or HTTP errors |
 | `ConfigError` | No | Invalid configuration (requires code fix) |
 | `AuthenticationError` | No | Invalid credentials |
 
 If you use the older `retriable` attribute: it is a legacy constructor flag,
-while `retryable` is the classification derived from the failure (the OAuth
-error code for protocol errors, the status code for HTTP errors, and always
-True on `NetworkError`). Prefer `retryable` for retry decisions.
+while `retryable` is the classification derived from the failure. Protocol
+errors check the HTTP status first: a 429 or 5xx is retryable whatever the
+OAuth error code. HTTP errors use the status code, and `NetworkError` is
+always retryable. Prefer `retryable` for retry decisions.
 
 ### Error Handling Patterns
 

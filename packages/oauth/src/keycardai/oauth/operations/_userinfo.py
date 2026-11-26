@@ -136,6 +136,7 @@ def parse_userinfo_http_response(res: HttpResponse) -> UserInfoResponse:
                 "signed and encrypted UserInfo responses are not supported."
             ),
             operation=_OPERATION,
+            status_code=res.status,
         )
 
     try:
@@ -145,6 +146,7 @@ def parse_userinfo_http_response(res: HttpResponse) -> UserInfoResponse:
             error="invalid_response",
             error_description="Invalid JSON in UserInfo response",
             operation=_OPERATION,
+            status_code=res.status,
         ) from e
 
     if not isinstance(claims, dict):
@@ -152,6 +154,7 @@ def parse_userinfo_http_response(res: HttpResponse) -> UserInfoResponse:
             error="invalid_response",
             error_description="UserInfo response must be a JSON object of claims",
             operation=_OPERATION,
+            status_code=res.status,
         )
 
     if "error" in claims and "sub" not in claims:
@@ -160,6 +163,7 @@ def parse_userinfo_http_response(res: HttpResponse) -> UserInfoResponse:
             error_description=claims.get("error_description"),
             error_uri=claims.get("error_uri"),
             operation=_OPERATION,
+            status_code=res.status,
         )
 
     sub = claims.get("sub")
@@ -168,6 +172,7 @@ def parse_userinfo_http_response(res: HttpResponse) -> UserInfoResponse:
             error="invalid_response",
             error_description="UserInfo response must include a 'sub' claim",
             operation=_OPERATION,
+            status_code=res.status,
         )
 
     return UserInfoResponse(

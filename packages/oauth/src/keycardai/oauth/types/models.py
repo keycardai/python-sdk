@@ -470,12 +470,14 @@ class Endpoints:
 class ResolvedEndpoints(Endpoints):
     """Endpoints after overrides, discovery, and defaults have been applied.
 
-    Every URL is populated; the client never dispatches against an unset one.
+    Every URL except ``revoke`` is populated. ``revoke`` is None unless an
+    override or the discovered ``revocation_endpoint`` sets it; it has no
+    conventional default.
     """
 
     token: str
     introspect: str
-    revoke: str
+    revoke: str | None
     register: str
     par: str
     authorize: str
