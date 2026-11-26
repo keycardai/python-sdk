@@ -495,6 +495,8 @@ def protected_router(
         allow_any_audience=allow_any_audience,
         resource_binding=resource_binding,
         issuer=issuer,
+        # Discovery is served by a sibling mount.
+        metadata_matcher=lambda _: False,
     )
     binding = backend.resource_binding
     binding._validate_multi_zone(enable_multi_zone)

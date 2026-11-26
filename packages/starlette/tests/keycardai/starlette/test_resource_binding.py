@@ -11,6 +11,7 @@ import pytest
 from joserfc import jwt
 from joserfc.jwk import RSAKey
 from starlette.applications import Starlette
+from starlette.middleware.authentication import AuthenticationMiddleware
 from starlette.responses import PlainTextResponse
 from starlette.routing import Mount, Route
 from starlette.testclient import TestClient
@@ -19,11 +20,14 @@ from keycardai.oauth.server import AccessContext, ClientSecret
 from keycardai.oauth.server._cache import JWKSKey
 from keycardai.oauth.server.exceptions import AuthProviderConfigurationError
 from keycardai.oauth.server.verifier import TokenVerifier
+from keycardai.oauth.types import JsonWebKeySet
 from keycardai.starlette import (
     AuthProvider,
     KeycardAuthBackend,
     LegacyResourceBindingWarning,
     ResourceBindingConfigError,
+    auth_metadata_mount,
+    keycard_on_error,
     protected_router,
     requires,
 )
@@ -277,6 +281,7 @@ def test_review_finding_1_protected_router_verifies_application_routes(token_hea
     )
     with TestClient(app) as client:
         assert client.get(path, headers=token_headers(IDENTIFIER)).text == "True"
+        request(client, "/.well-known/jwks.json", status=401)
         assert (
             client.get("/.well-known/oauth-protected-resource/mcp").status_code == 200
         )
@@ -294,6 +299,49 @@ def test_review_finding_1_installed_zone_metadata_remains_public():
         response = client.get("/.well-known/oauth-protected-resource/a/mcp")
         assert response.status_code == 200
         assert response.json()["resource"] == ZONES["a"]
+
+
+@pytest.mark.parametrize("per_zone", [False, True])
+def test_review_standalone_backend_keeps_bound_metadata_public(per_zone):
+    identifier = f"{IDENTIFIER}?v=1"
+    options = (
+        {"resource_identifiers_by_zone": {"a": identifier}}
+        if per_zone
+        else {"resource_identifier": identifier}
+    )
+    provider = AuthProvider(zone_url=ISSUER, enable_multi_zone=per_zone, **options)
+    app = Starlette(
+        routes=[
+            auth_metadata_mount(
+                provider.issuer,
+                enable_multi_zone=per_zone,
+                resource_binding=provider.resource_binding,
+                jwks=JsonWebKeySet(keys=[]),
+            )
+        ]
+    )
+    app.add_middleware(
+        AuthenticationMiddleware,
+        backend=KeycardAuthBackend(
+            provider.get_token_verifier(),
+            resource_binding=provider.resource_binding,
+            require_authentication=True,
+        ),
+        on_error=keycard_on_error,
+    )
+
+    resource = "/.well-known/oauth-protected-resource/mcp"
+    as_path = "/.well-known/oauth-authorization-server"
+    with TestClient(app) as client:
+        assert client.get(f"{resource}?v=1").json()["resource"] == identifier
+        assert client.get("/.well-known/jwks.json").json() == {"keys": []}
+        assert (
+            client.options(f"{as_path}/a" if per_zone else as_path).status_code == 204
+        )
+        request(client, resource, status=401)
+        request(client, f"{resource}/unregistered?v=1", status=401)
+        request(client, f"{as_path}/unknown", status=401)
+        assert client.post(f"{resource}?v=1").status_code == 401
 
 
 def test_review_finding_2_grant_uses_verified_issuer_client(monkeypatch, token_headers):

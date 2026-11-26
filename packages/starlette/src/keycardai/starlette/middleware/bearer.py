@@ -61,6 +61,32 @@ def _is_oauth_metadata_path(path: str) -> bool:
     return any(path == p or path.startswith(p + "/") for p in _OAUTH_METADATA_PATHS)
 
 
+def _matches_bound_metadata(scope: Scope, binding: ResourceBinding) -> bool:
+    if scope.get("method") not in {"GET", "HEAD", "OPTIONS"}:
+        return False
+    resource_path, as_path, jwks_path = _OAUTH_METADATA_PATHS
+    path = scope["path"]
+    zones = binding.resource_identifiers_by_zone
+    if path == jwks_path:
+        return True
+    if binding.mode in {"per_zone", "shared"}:
+        if path.startswith(f"{as_path}/"):
+            return path[len(as_path) + 1:] in zones
+    elif path == as_path:
+        return True
+    if path != resource_path and not path.startswith(f"{resource_path}/"):
+        return False
+
+    raw_path = scope.get("raw_path") or path.encode()
+    query = scope.get("query_string", b"")
+    for zone in zones if binding.mode == "per_zone" else (None,):
+        if metadata := binding.metadata_for(zone):
+            url = urlsplit(metadata)
+            if raw_path == url.path.encode() and query == url.query.encode():
+                return True
+    return False
+
+
 def _get_oauth_protected_resource_url(conn: HTTPConnection | Request) -> str:
     path = conn.url.path.lstrip("/").rstrip("/")
     # ``get_base_url`` accepts a Starlette Request; HTTPConnection exposes the
@@ -252,7 +278,9 @@ class KeycardAuthBackend(AuthenticationBackend):
         zone_resolver: Optional token-independent zone selector when the
             ASGI scope does not already contain a ``zone_id`` path parameter.
         metadata_matcher: Optional router match for public metadata routes
-            covered by this middleware in explicit binding modes.
+            covered by this middleware in explicit binding modes. When omitted,
+            the exact well-known discovery paths derived from the binding are
+            public.
     """
 
     def __init__(
@@ -330,10 +358,10 @@ class KeycardAuthBackend(AuthenticationBackend):
         binding = self.resource_binding
         if binding.mode == "legacy":
             is_metadata = _is_oauth_metadata_path(conn.url.path)
+        elif self.metadata_matcher is not None:
+            is_metadata = self.metadata_matcher(conn.scope)
         else:
-            is_metadata = self.metadata_matcher is not None and self.metadata_matcher(
-                conn.scope
-            )
+            is_metadata = _matches_bound_metadata(conn.scope, binding)
         if is_metadata:
             return None
 
