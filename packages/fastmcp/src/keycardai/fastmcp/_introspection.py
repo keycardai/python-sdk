@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 
 from anyio import fail_after
 from mcp.server.auth.middleware.auth_context import AuthContextMiddleware
 from mcp.server.auth.middleware.bearer_auth import BearerAuthBackend
 from mcp.server.auth.provider import TokenVerifier
+from mcp.server.auth.routes import build_resource_metadata_url
+from pydantic import AnyHttpUrl
 from starlette.authentication import AuthenticationError
 from starlette.middleware import Middleware
 from starlette.middleware.authentication import AuthenticationMiddleware
@@ -19,6 +22,16 @@ from keycardai.oauth import AsyncClient
 from keycardai.oauth.client_auth import ClientAuthenticator
 from keycardai.oauth.exceptions import OAuthError, OAuthHttpError, OAuthProtocolError
 
+try:
+    from fastmcp.contrib.component_manager.component_manager import (
+        _ComponentManagerAuth,
+        _serving_auth,
+    )
+except ImportError:
+    _COMPONENT_MANAGER = None
+else:
+    _COMPONENT_MANAGER = (_ComponentManagerAuth, _serving_auth)
+
 logger = logging.getLogger(__name__)
 
 
@@ -30,23 +43,40 @@ class InsufficientScope(Exception):
     pass
 
 
-def _required_auth(scope: Scope) -> RequireAuthMiddleware | None:
+@dataclass(frozen=True)
+class _ProtectedRoute:
+    resource_metadata_url: AnyHttpUrl | None
+
+
+def _protected_route(scope: Scope) -> _ProtectedRoute | None:
     for route in getattr(scope.get("app"), "routes", ()):
         if route.matches(scope)[0] != Match.FULL:
             continue
-        guard = (
-            route.endpoint if isinstance(route, Route)
-            else route.app if isinstance(route, Mount)
-            else None
-        )
-        return guard if isinstance(guard, RequireAuthMiddleware) else None
+        if not isinstance(route, (Route, Mount)):
+            return None
+        app = route.app
+        if isinstance(app, RequireAuthMiddleware):
+            return _ProtectedRoute(app.resource_metadata_url)
+        if _COMPONENT_MANAGER is not None:
+            manager_auth, serving_auth = _COMPONENT_MANAGER
+            if isinstance(app, manager_auth):
+                auth, mcp_path = serving_auth(scope, app.server)
+                if auth is None and app.required_scopes is None:
+                    return None
+                url = (
+                    auth._get_resource_url(mcp_path)
+                    if auth is not None and mcp_path is not None
+                    else None
+                )
+                return _ProtectedRoute(build_resource_metadata_url(url) if url else None)
+        return None
     return None
 
 
-def _scope_error(guard: RequireAuthMiddleware) -> JSONResponse:
+def _scope_error(route: _ProtectedRoute) -> JSONResponse:
     challenge = 'Bearer error="insufficient_scope", error_description="Insufficient scope"'
-    if guard.resource_metadata_url is not None:
-        challenge += f', resource_metadata="{guard.resource_metadata_url}"'
+    if route.resource_metadata_url is not None:
+        challenge += f', resource_metadata="{route.resource_metadata_url}"'
     return JSONResponse(
         {"error": "insufficient_scope"},
         status_code=403,
@@ -95,19 +125,19 @@ class _IntrospectionAuthBackend(BearerAuthBackend):
         try:
             return await super().authenticate(conn)
         except (IntrospectionUnavailable, InsufficientScope) as exc:
-            guard = _required_auth(conn.scope)
-            if guard is None:
+            route = _protected_route(conn.scope)
+            if route is None:
                 return None
-            raise _RequestAuthFailure(guard, exc) from exc
+            raise _RequestAuthFailure(route, exc) from exc
 
 
 class _RequestAuthFailure(AuthenticationError):
     def __init__(
-        self, guard: RequireAuthMiddleware, error: IntrospectionUnavailable | InsufficientScope
+        self, route: _ProtectedRoute, error: IntrospectionUnavailable | InsufficientScope
     ):
         super().__init__(str(error))
         self.response = (
-            _scope_error(guard) if isinstance(error, InsufficientScope)
+            _scope_error(route) if isinstance(error, InsufficientScope)
             else JSONResponse({"error": "temporarily_unavailable"}, status_code=503)
         )
 

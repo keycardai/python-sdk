@@ -43,13 +43,18 @@ def http_request(monkeypatch, signing_key, mock_client_factory):
 
     monkeypatch.setattr(StreamableHTTPASGIApp, "__call__", handle)
 
-    def setup(*, issuer=mock_zone_url, audience=RESOURCE, transport="streamable-http", **options):
+    def setup(
+        *, issuer=mock_zone_url, audience=RESOURCE, transport="streamable-http",
+        configure_server=None, **options
+    ):
         provider = AuthProvider(
             zone_url=mock_zone_url, mcp_server_url=RESOURCE,
             application_credential=CREDENTIAL, client_factory=mock_client_factory,
             **options,
         )
         server = FastMCP("test", auth=provider.get_remote_auth_provider())
+        if configure_server is not None:
+            configure_server(server)
 
         @server.custom_route("/health", methods=["GET"])
         async def health(request):
@@ -189,6 +194,30 @@ def test_sse_message_mount_reports_introspection_failure(http_request, mock_asyn
     mock_async_client.introspect_token.side_effect = TimeoutError()
     request, _, handled = http_request(introspect=True, transport="sse")
     assert_unavailable(request("/messages/"))
+    assert handled == []
+
+
+@pytest.mark.parametrize("required_scopes", [[], ["write"]])
+def test_component_manager_preserves_introspection_errors(
+    http_request, mock_async_client, required_scopes
+):
+    manager = pytest.importorskip("fastmcp.contrib.component_manager")
+    mock_async_client.introspect_token.side_effect = TimeoutError()
+    request, _, handled = http_request(
+        introspect=True,
+        required_scopes=required_scopes,
+        configure_server=manager.set_up_component_manager,
+    )
+    response = request("/tools/example/disable")
+    if required_scopes:
+        assert response.status_code == 403
+        assert response.headers["WWW-Authenticate"] == (
+            'Bearer error="insufficient_scope", error_description="Insufficient scope", '
+            'resource_metadata="https://api.example.com/.well-known/oauth-protected-resource/mcp"'
+        )
+        mock_async_client.introspect_token.assert_not_called()
+    else:
+        assert_unavailable(response)
     assert handled == []
 
 
