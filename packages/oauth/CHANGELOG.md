@@ -1,3 +1,12 @@
+## 0.46.3-keycardai-oauth (2026-11-26)
+
+
+- fix(keycardai-oauth): an empty zone id uses the default issuer (#539)
+- * fix(keycardai-oauth): an empty zone id uses the default issuer
+- * fix(keycardai-oauth): isolate verifier caches by issuer
+- ---------
+- Co-authored-by: devin-ai-keycard <devin-ai@keycard.ai>
+
 ## 0.46.2-keycardai-oauth (2026-11-26)
 
 
