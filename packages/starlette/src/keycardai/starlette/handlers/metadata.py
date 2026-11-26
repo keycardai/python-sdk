@@ -5,7 +5,7 @@ Implements RFC 9728 (OAuth Protected Resource Metadata) and RFC 8414
 """
 
 from collections.abc import Callable, Mapping
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 import httpx
 from pydantic import AnyHttpUrl, BaseModel, Field
@@ -15,6 +15,7 @@ from starlette.responses import JSONResponse, Response
 
 from ..binding import Audience, ResourceBinding, metadata_url, resolve_binding
 from ..shared.starlette import get_base_url
+from ..shared.zone import is_valid_zone_id
 
 CORS_HEADERS = {"Access-Control-Allow-Origin": "*"}
 
@@ -62,6 +63,20 @@ def _get_zone_id_from_path(path: str) -> str | None:
     if zone_id == "" or zone_id == "/":
         return None
     return zone_id
+
+
+def _get_request_zone_id(
+    request: Request, remove_prefix: Callable[[str], str]
+) -> str | None:
+    raw_path = request.scope.get("raw_path")
+    path = request.scope["path"]
+    if raw_path is not None:
+        # Keep encoded slashes inside their original path segments.
+        path = "/".join(
+            unquote(segment).replace("/", "%2F")
+            for segment in raw_path.decode(errors="replace").split("/")
+        )
+    return _get_zone_id_from_path(remove_prefix(path))
 
 
 def _remove_well_known_prefix(path: str) -> str:
@@ -183,6 +198,12 @@ def _protected_resource_metadata(
     """
 
     def wrapper(request: Request) -> Response:
+        zone_id = None
+        if enable_multi_zone and resource_identifier is None:
+            zone_id = _get_request_zone_id(request, _remove_well_known_prefix)
+            if zone_id is not None and not is_valid_zone_id(zone_id):
+                return Response(status_code=404)
+
         if request.method == "OPTIONS":
             return _preflight_response()
 
@@ -201,14 +222,12 @@ def _protected_resource_metadata(
 
         base_url = get_base_url(request)
 
-        if enable_multi_zone:
-            zone_id = _get_zone_id_from_path(path)
-            if zone_id:
-                request_metadata.authorization_servers = [
-                    _create_zone_scoped_authorization_server_url(
-                        zone_id, request_metadata.authorization_servers[0]
-                    )
-                ]
+        if zone_id is not None:
+            request_metadata.authorization_servers = [
+                _create_zone_scoped_authorization_server_url(
+                    zone_id, request_metadata.authorization_servers[0]
+                )
+            ]
 
         request_metadata.resource = _create_resource_url(base_url, path)
         if include_jwks_uri:
@@ -244,24 +263,26 @@ def authorization_server_metadata(
 
     def wrapper(request: Request) -> Response:
         actual_issuer = issuer
+        zone_id = None
         if zone_issuers is not None:
-            zone = request.path_params.get("zone_id")
-            if zone is None or zone not in zone_issuers:
+            zone = request.path_params.get("zone_id", "")
+            if not is_valid_zone_id(zone) or zone not in zone_issuers:
                 return Response(status_code=404)
             actual_issuer = zone_issuers[zone]
+        elif enable_multi_zone:
+            zone_id = _get_request_zone_id(request, _remove_authorization_server_prefix)
+            if zone_id is not None and not is_valid_zone_id(zone_id):
+                return Response(status_code=404)
         if request.method == "OPTIONS":
             return _preflight_response()
 
         try:
-            if zone_issuers is None and enable_multi_zone:
-                path = _remove_authorization_server_prefix(request.url.path)
-                zone_id = _get_zone_id_from_path(path)
-                if zone_id:
-                    actual_issuer = str(
-                        _create_zone_scoped_authorization_server_url(
-                            zone_id, AnyHttpUrl(issuer)
-                        )
+            if zone_id is not None:
+                actual_issuer = str(
+                    _create_zone_scoped_authorization_server_url(
+                        zone_id, AnyHttpUrl(issuer)
                     )
+                )
 
             issuer_url = str(actual_issuer).rstrip("/")
             # Explicit timeout so a slow upstream cannot pin a Starlette threadpool

@@ -5,7 +5,9 @@ detectable misregistration; Starlette cannot see an enclosing app's mount.
 """
 
 import warnings
+from functools import partial
 from unittest.mock import MagicMock
+from urllib.parse import unquote
 
 import httpx
 import pytest
@@ -25,7 +27,10 @@ from keycardai.starlette import (
     well_known_metadata_mount,
     well_known_metadata_routes,
 )
-from keycardai.starlette.handlers import protected_resource_metadata
+from keycardai.starlette.handlers import (
+    authorization_server_metadata,
+    protected_resource_metadata,
+)
 
 ISSUER = "https://keycard.cloud"
 ORIGIN = "https://api.example.com"
@@ -112,6 +117,72 @@ def test_row_4b_unknown_zone_can_match_another_route(upstream):
     with TestClient(app) as client:
         assert client.get(f"{AS_PATH}/unknown").text == "other route"
     upstream[0].get.assert_not_called()
+
+
+INVALID_ZONE_SEGMENTS = [
+    "zone%23id",
+    "zone%2Fid",
+    "zone%40id",
+    "zone%3Aid",
+    "zone%2Eid",
+    "a" * 64,
+]
+VALID_ZONE = "Zone-1"
+ZONE_ISSUER = "https://zone-1.keycard.cloud"
+
+
+@pytest.fixture
+def zone_metadata_client(monkeypatch):
+    requests = []
+
+    def upstream(request):
+        requests.append(request)
+        return httpx.Response(200, json={"issuer": ZONE_ISSUER})
+
+    monkeypatch.setattr(
+        httpx, "Client", partial(httpx.Client, transport=httpx.MockTransport(upstream))
+    )
+    with pytest.warns(LegacyResourceBindingWarning):
+        legacy = auth_metadata_mount(ISSUER, enable_multi_zone=True)
+    configured_issuers = {
+        unquote(zone): ZONE_ISSUER for zone in [*INVALID_ZONE_SEGMENTS, VALID_ZONE]
+    }
+    configured = Route(
+        f"/configured{AS_PATH}/{{zone_id:path}}",
+        authorization_server_metadata(ISSUER, zone_issuers=configured_issuers),
+    )
+    with TestClient(Starlette(routes=[legacy, configured])) as client:
+        yield client, requests
+
+
+@pytest.mark.parametrize("zone", INVALID_ZONE_SEGMENTS)
+@pytest.mark.parametrize(
+    "path",
+    [
+        f"{AS_PATH}/{{zone}}",
+        f"{RESOURCE_PATH}/{{zone}}/mcp",
+        f"/configured{AS_PATH}/{{zone}}",
+    ],
+)
+def test_row_4b_8c_rejects_invalid_zone_ids(zone_metadata_client, path, zone):
+    client, requests = zone_metadata_client
+    response = client.get(path.format(zone=zone))
+    assert response.status_code == 404
+    assert requests == []
+
+
+def test_row_4b_8c_valid_zone_id_publishes_and_proxies_metadata(zone_metadata_client):
+    client, requests = zone_metadata_client
+    response = client.get(f"{RESOURCE_PATH}/{VALID_ZONE}/mcp")
+    assert response.status_code == 200
+    assert response.json()["authorization_servers"] == [f"{ZONE_ISSUER}/"]
+    assert requests == []
+
+    for prefix in (AS_PATH, f"/configured{AS_PATH}"):
+        response = client.get(f"{prefix}/{VALID_ZONE}")
+        assert response.status_code == 200
+        assert response.json() == {"issuer": ZONE_ISSUER}
+    assert [str(request.url) for request in requests] == [f"{ZONE_ISSUER}{AS_PATH}"] * 2
 
 
 @pytest.mark.parametrize(
