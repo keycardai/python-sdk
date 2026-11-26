@@ -1,0 +1,135 @@
+"""SPIFFE JWT-SVID workload identity source."""
+
+import math
+import os
+import re
+
+from ._spiffe_wire import deserialize_response, encode_request
+from .exceptions import WorkloadIdentityConfigurationError, WorkloadIdentityRuntimeError
+
+_SOURCE = "spiffe"
+_SOCKET_ENV = "SPIFFE_ENDPOINT_SOCKET"
+_FETCH_METHOD = "/SpiffeWorkloadAPI/FetchJWTSVID"
+
+
+def _canonical_spiffe_id(value: str) -> str:
+    scheme, separator, remainder = value.partition("://")
+    domain, slash, path = remainder.partition("/")
+    if (
+        not separator
+        or scheme.lower() != "spiffe"
+        or not re.fullmatch(r"[a-zA-Z0-9._-]{1,255}", domain)
+        or (
+            slash
+            and any(
+                segment in {".", ".."} or not re.fullmatch(r"[a-zA-Z0-9._-]+", segment)
+                for segment in path.split("/")
+            )
+        )
+    ):
+        raise WorkloadIdentityConfigurationError(
+            f"invalid SPIFFE ID: {value}", source=_SOURCE
+        )
+    return f"spiffe://{domain.lower()}{slash}{path}"
+
+
+class SpiffeJwtSvidSource:
+    """Fetch opaque JWT-SVIDs from the SPIFFE Workload API on a Unix socket.
+
+    Install `keycardai-oauth[spiffe]` to use this source. The socket defaults
+    to `SPIFFE_ENDPOINT_SOCKET` and is resolved on fetch. Each fetch opens its
+    own connection and waits at most `init_timeout` seconds for the RPC.
+    Set `spiffe_id` if the workload holds multiple identities; otherwise the
+    source uses the first JWT-SVID the agent returns.
+    """
+
+    def __init__(
+        self,
+        audience: str | None = None,
+        *,
+        spiffe_id: str | None = None,
+        socket_path: str | os.PathLike[str] | None = None,
+        init_timeout: float = 10.0,
+    ):
+        if not audience or not audience.strip():
+            raise WorkloadIdentityConfigurationError(
+                "audience must not be empty", source=_SOURCE
+            )
+        if not math.isfinite(init_timeout) or init_timeout <= 0:
+            raise WorkloadIdentityConfigurationError(
+                "init_timeout must be a positive duration in seconds", source=_SOURCE
+            )
+        self.audience = audience
+        self.spiffe_id = (
+            _canonical_spiffe_id(spiffe_id) if spiffe_id is not None else None
+        )
+        self.socket_path = socket_path
+        self.init_timeout = init_timeout
+
+    def _socket_target(self) -> str:
+        socket = os.getenv(_SOCKET_ENV) if self.socket_path is None else self.socket_path
+        if not socket:
+            raise WorkloadIdentityConfigurationError(
+                f"Set socket_path or {_SOCKET_ENV} for the SPIFFE Workload API",
+                source=_SOURCE,
+            )
+        path = os.fspath(socket).removeprefix("unix:")
+        if not path.startswith("/"):
+            raise WorkloadIdentityConfigurationError(
+                "The SPIFFE Workload API socket must be an absolute Unix socket path",
+                source=_SOURCE,
+            )
+        return f"unix:/{path.lstrip('/')}"
+
+    async def identity_token(self) -> str:
+        """Return the current compact JWT-SVID without parsing it."""
+        target = self._socket_target()
+        try:
+            from grpc import RpcError, aio
+        except ImportError as err:
+            raise WorkloadIdentityConfigurationError(
+                "Install keycardai-oauth[spiffe] to use SpiffeJwtSvidSource",
+                source=_SOURCE,
+            ) from err
+
+        try:
+            async with aio.insecure_channel(target) as channel:
+                fetch = channel.unary_unary(
+                    _FETCH_METHOD,
+                    request_serializer=encode_request,
+                    response_deserializer=deserialize_response,
+                )
+                response = await fetch(
+                    ((self.audience,), self.spiffe_id),
+                    timeout=self.init_timeout,
+                    wait_for_ready=True,
+                    metadata=(("workload.spiffe.io", "true"),),
+                )
+        except RpcError as err:
+            raise WorkloadIdentityRuntimeError(
+                "The SPIFFE Workload API could not issue a JWT-SVID",
+                source=_SOURCE,
+                retryable=True,
+            ) from err
+
+        if isinstance(response, ValueError):
+            raise WorkloadIdentityRuntimeError(
+                "The SPIFFE Workload API returned a malformed JWT-SVID response",
+                source=_SOURCE,
+                retryable=False,
+            ) from response
+        try:
+            token = response[0]
+        except IndexError as err:
+            raise WorkloadIdentityRuntimeError(
+                "The SPIFFE Workload API returned no JWT-SVID",
+                source=_SOURCE,
+                retryable=True,
+            ) from err
+        if not token.strip():
+            raise WorkloadIdentityRuntimeError(
+                "The SPIFFE Workload API returned an empty JWT-SVID",
+                source=_SOURCE,
+                retryable=False,
+            )
+        return token

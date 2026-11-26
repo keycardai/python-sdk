@@ -550,6 +550,26 @@ with Client("https://oauth.example.com", auth=BasicAuth(...)) as client:
     response = client.exchange_token(request)
 ```
 
+### SPIFFE Workload Identity
+
+Install `keycardai-oauth[spiffe]` to fetch JWT-SVIDs directly from the SPIFFE
+Workload API:
+
+```python
+from keycardai.oauth.server import SpiffeJwtSvidSource, WorkloadIdentity
+
+source = SpiffeJwtSvidSource(audience="https://zone.keycard.cloud")
+credential = WorkloadIdentity(source, client_id="app-credential-id")
+```
+
+The source opens the agent's Unix socket on fetch. Set `socket_path` to
+override `SPIFFE_ENDPOINT_SOCKET` and set `spiffe_id` if the workload has
+multiple identities. `init_timeout` bounds the wait in seconds (default 10).
+
+If [SPIFFE Helper](https://github.com/spiffe/spiffe-helper) projects the
+JWT-SVID to a file, no new SDK code or extra is needed. Point the existing
+`FileTokenSource(token_file_path=...)` at the helper's JWT-SVID file.
+
 ### Dynamic Client Registration (RFC 7591)
 
 Register OAuth clients programmatically:

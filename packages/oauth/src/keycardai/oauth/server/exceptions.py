@@ -504,16 +504,17 @@ class ClientInitializationError(OAuthServerError):
 
 
 class WorkloadIdentityConfigurationError(OAuthServerError):
-    """Raised when a workload identity credential or token source is misconfigured.
+    """Indicates a non-retryable workload identity configuration error.
 
-    Raised at construction: a missing or empty token file, no discovery
-    environment variable set, a missing required audience, or an invalid
-    source.
+    Invalid options raise this error at construction. An unresolved SPIFFE
+    socket or missing SPIFFE extra raises it on first fetch.
 
     Attributes:
-        source: Identifies the token source ("file", "gcp-metadata", "fly");
+        source: Identifies the token source ("file", "gcp-metadata", "fly", "spiffe");
             None when the fault is in the credential itself.
     """
+
+    retryable = False
 
     def __init__(
         self,
@@ -529,14 +530,14 @@ class WorkloadIdentityConfigurationError(OAuthServerError):
 class WorkloadIdentityRuntimeError(OAuthServerError):
     """Raised when the subject token cannot be obtained at request time.
 
-    Distinct from WorkloadIdentityConfigurationError, which is a
-    construction-time fault. Examples: the token file was rotated away or
-    emptied after construction, or the platform endpoint was unreachable.
+    Distinct from WorkloadIdentityConfigurationError, which identifies
+    misconfiguration. Examples: an empty token file or unreachable endpoint.
 
     Attributes:
-        source: Identifies the token source ("file", "gcp-metadata", "fly",
+        source: Identifies the token source ("file", "gcp-metadata", "fly", "spiffe",
             or "custom" for a source whose error is not one of this module's
             typed errors).
+        retryable: Whether the caller can retry the token fetch.
     """
 
     def __init__(
@@ -545,8 +546,10 @@ class WorkloadIdentityRuntimeError(OAuthServerError):
         *,
         source: str | None = None,
         details: dict | None = None,
+        retryable: bool = True,
     ):
         self.source = source
+        self.retryable = retryable
         super().__init__(message, details=details)
 
 
