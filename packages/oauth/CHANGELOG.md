@@ -1,3 +1,10 @@
+## 0.46.0-keycardai-oauth (2026-11-26)
+
+
+- fix(keycardai-oauth)!: require explicit custom source retryability (#507)
+- Custom token sources must pass retryable=True when raising WorkloadIdentityRuntimeError for failures that should be retried.
+- Co-authored-by: devin-ai-keycard <devin-ai@keycard.ai>
+
 ## 0.45.0-keycardai-oauth (2026-11-26)
 
 
