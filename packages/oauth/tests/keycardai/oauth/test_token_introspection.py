@@ -48,7 +48,7 @@ def response(body: dict | bytes, status: int = 200) -> HttpResponse:
 def introspection(request):
     client_class = request.param
 
-    def make_client(*responses, issuer=ISSUER, **kwargs):
+    def make_client(*responses, issuer=ISSUER, use_context=False, **kwargs):
         requests: list[HttpRequest] = []
         timeouts: list[float | None] = []
         queued = iter(responses)
@@ -76,6 +76,12 @@ def introspection(request):
         )
 
         async def introspect(*args, **kwargs):
+            if use_context:
+                if client_class is AsyncClient:
+                    async with client:
+                        return await client.introspect_token(*args, **kwargs)
+                with client:
+                    return client.introspect_token(*args, **kwargs)
             result = client.introspect_token(*args, **kwargs)
             if client_class is AsyncClient:
                 return await result
@@ -91,12 +97,16 @@ def form(request: HttpRequest) -> dict[str, list[str]]:
     return parse_qs(request.body.decode(), keep_blank_values=True)
 
 
-async def test_row_1_client_secret_posts_basic_to_discovered_endpoint(introspection):
+@pytest.mark.parametrize("use_context", [False, True])
+async def test_row_1_client_secret_posts_basic_to_discovered_endpoint(
+    introspection, use_context
+):
     introspect, requests, timeouts = introspection(
         response({"issuer": ISSUER, "introspection_endpoint": ENDPOINT}),
         response({"active": False}),
         client_id="client",
         client_secret="secret",
+        use_context=use_context,
     )
 
     await introspect("a +& token", timeout=2.5)

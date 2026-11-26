@@ -509,13 +509,18 @@ def _resolve_discovery_issuer(args: dict[str, Any], default_issuer: str) -> str:
 
 def _cached_metadata_for_endpoint(
     cache: MetadataCache[AuthorizationServerMetadata, AuthorizationServerDiscoveryError],
-    endpoint_name: str,
+    endpoint_name: str | None,
     *,
     overridden: bool,
     refresh: bool,
 ) -> AuthorizationServerMetadata | None:
     metadata = cache.lookup(refresh=refresh)
-    if metadata is not None and not overridden and not getattr(metadata, endpoint_name):
+    if (
+        metadata is not None
+        and endpoint_name is not None
+        and not overridden
+        and not getattr(metadata, endpoint_name)
+    ):
         age = cache.success_age()
         if age is not None and age >= cache.negative_ttl:
             return cache.lookup(refresh=True)
@@ -525,7 +530,7 @@ def _cached_metadata_for_endpoint(
 def _check_required_token_endpoint(
     issuer: str,
     metadata: AuthorizationServerMetadata,
-    endpoint_name: str,
+    endpoint_name: str | None,
     overridden: bool,
 ) -> AuthorizationServerMetadata:
     if endpoint_name == "token_endpoint" and not metadata.token_endpoint and not overridden:
@@ -853,7 +858,7 @@ class AsyncClient:
         return self.issuer
 
     async def _resolve_metadata(
-        self, *, refresh: bool = False, endpoint_name: str = "token_endpoint"
+        self, *, refresh: bool = False, endpoint_name: str | None = "token_endpoint"
     ) -> AuthorizationServerMetadata | None:
         """Return discovered metadata, or None when discovery is disabled.
 
@@ -864,11 +869,12 @@ class AsyncClient:
 
         ``refresh`` discovers even when the cache is fresh. A transient
         failure leaves the cached metadata in place.
+        Pass ``endpoint_name=None`` when no specific endpoint is needed.
 
         Raises:
             AuthorizationServerDiscoveryError: discovery failed. Never falls
                 back to a guessed endpoint.
-            MissingTokenEndpointError: the metadata omits ``token_endpoint``.
+            MissingTokenEndpointError: a required token endpoint is missing.
         """
         if not self.config.enable_metadata_discovery:
             return None
@@ -949,7 +955,7 @@ class AsyncClient:
             if self._initialized:
                 return
 
-            metadata = await self._resolve_metadata()
+            metadata = await self._resolve_metadata(endpoint_name=None)
             endpoints = resolve_endpoints(self.issuer, self._endpoint_overrides, metadata)
             self._discovered_endpoints = endpoints
 
@@ -1059,12 +1065,19 @@ class AsyncClient:
 
         Raises:
             RuntimeError: If called outside of async context manager.
+            MissingTokenEndpointError: If discovery supplies no token endpoint
+                and none is configured.
         """
         if not self._initialized:
             raise RuntimeError(
                 "AsyncClient must be used within 'async with' statement. "
                 "Use 'async with AsyncClient(...) as client:' to properly initialize."
             )
+        if (
+            self._discovered_metadata is not None
+            and not self._discovered_metadata.token_endpoint
+        ):
+            return await self._get_current_endpoints()
         return self._discovered_endpoints or self._endpoints
 
     async def _get_current_endpoints(self) -> ResolvedEndpoints:
@@ -2556,7 +2569,7 @@ class Client:
         return self.issuer
 
     def _resolve_metadata(
-        self, *, endpoint_name: str = "token_endpoint"
+        self, *, endpoint_name: str | None = "token_endpoint"
     ) -> AuthorizationServerMetadata | None:
         """Return discovered metadata, or None when discovery is disabled.
 
@@ -2564,11 +2577,12 @@ class Client:
         remembered for at most ``negative_ttl``; transient failures can pace
         new fetches. Concurrent cold-cache threads serialize on one lock so a
         single discovery request serves all of them.
+        Pass ``endpoint_name=None`` when no specific endpoint is needed.
 
         Raises:
             AuthorizationServerDiscoveryError: discovery failed. Never falls
                 back to a guessed endpoint.
-            MissingTokenEndpointError: the metadata omits ``token_endpoint``.
+            MissingTokenEndpointError: a required token endpoint is missing.
         """
         if not self.config.enable_metadata_discovery:
             return None
@@ -2643,7 +2657,7 @@ class Client:
             if self._initialized:
                 return
 
-            metadata = self._resolve_metadata()
+            metadata = self._resolve_metadata(endpoint_name=None)
             endpoints = resolve_endpoints(self.issuer, self._endpoint_overrides, metadata)
             self._discovered_endpoints = endpoints
 
@@ -2718,8 +2732,17 @@ class Client:
 
         Returns:
             Resolved Endpoints configuration.
+
+        Raises:
+            MissingTokenEndpointError: If discovery supplies no token endpoint
+                and none is configured.
         """
         self._ensure_initialized()
+        if (
+            self._discovered_metadata is not None
+            and not self._discovered_metadata.token_endpoint
+        ):
+            return self._get_current_endpoints()
         return self._discovered_endpoints or self._endpoints
 
     @overload
