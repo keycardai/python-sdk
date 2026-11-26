@@ -10,6 +10,7 @@ Supported OAuth 2.0 Standards:
 - RFC 8414: OAuth 2.0 Authorization Server Metadata
 - RFC 8628: OAuth 2.0 Device Authorization Grant
 - RFC 7009: OAuth 2.0 Token Revocation
+- RFC 7662: OAuth 2.0 Token Introspection
 - OpenID Connect Core 1.0 Section 5.3: UserInfo
 
 Example:
@@ -72,6 +73,7 @@ from .types.models import (
     DeviceAuthorization,
     Endpoints,
     TokenExchangeRequest,
+    TokenIntrospection,
     TokenResponse,
     UserInfoRequest,
     UserInfoResponse,
@@ -116,6 +118,7 @@ __all__ = [
     "PERMANENT_ERROR_CODES",
     # === Data Models ===
     "TokenResponse",
+    "TokenIntrospection",
     "DeviceAuthorization",
     "ClientRegistrationResponse",
     "PKCE",

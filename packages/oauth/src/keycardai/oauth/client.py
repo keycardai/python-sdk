@@ -70,6 +70,13 @@ from .operations._discovery import (
     discover_server_metadata,
     discover_server_metadata_async,
 )
+from .operations._introspection import (
+    INTROSPECTION_OPERATION,
+    build_introspection_http_request,
+    check_introspection_auth,
+    invalid_introspection_response,
+    parse_introspection_http_response,
+)
 from .operations._registration import (
     register_client,
     register_client_async,
@@ -100,6 +107,7 @@ from .types.models import (
     ResolvedEndpoints,
     ServerMetadataRequest,
     TokenExchangeRequest,
+    TokenIntrospection,
     TokenResponse,
     UserInfoRequest,
     UserInfoResponse,
@@ -499,6 +507,85 @@ def _resolve_discovery_issuer(args: dict[str, Any], default_issuer: str) -> str:
     return args.get("issuer", default_issuer)
 
 
+def _cached_metadata_for_endpoint(
+    cache: MetadataCache[AuthorizationServerMetadata, AuthorizationServerDiscoveryError],
+    endpoint_name: str,
+    *,
+    overridden: bool,
+    refresh: bool,
+) -> AuthorizationServerMetadata | None:
+    metadata = cache.lookup(refresh=refresh)
+    if metadata is not None and not overridden and not getattr(metadata, endpoint_name):
+        age = cache.success_age()
+        if age is not None and age >= cache.negative_ttl:
+            return cache.lookup(refresh=True)
+    return metadata
+
+
+def _check_required_token_endpoint(
+    issuer: str,
+    metadata: AuthorizationServerMetadata,
+    endpoint_name: str,
+    overridden: bool,
+) -> AuthorizationServerMetadata:
+    if endpoint_name == "token_endpoint" and not metadata.token_endpoint and not overridden:
+        raise MissingTokenEndpointError(issuer)
+    return metadata
+
+
+def _introspection_authenticator(
+    token: str | None,
+    credential: object | None,
+) -> ClientAuthenticator:
+    if not token:
+        raise ConfigError("`token` is required for token introspection.")
+    if credential is None:
+        raise ConfigError("A confidential client credential is required for introspection.")
+    return require_client_authenticator(credential)
+
+
+def _introspection_endpoint(
+    issuer: str, metadata: AuthorizationServerMetadata | None
+) -> str:
+    if metadata is not None and metadata.issuer.rstrip("/") != issuer.rstrip("/"):
+        raise ConfigError(
+            f"issuer {issuer} does not match the metadata issuer {metadata.issuer}"
+        )
+    return check_endpoint(
+        issuer,
+        "introspection_endpoint",
+        metadata.introspection_endpoint if metadata is not None else None,
+    )
+
+
+def _introspection_request(
+    config: ClientConfig,
+    endpoint: str,
+    token: str,
+    token_type_hint: str | TokenTypeHint | None,
+    client_auth: ClientAuthentication,
+) -> HttpRequest:
+    request = build_introspection_http_request(
+        endpoint=endpoint,
+        token=token,
+        token_type_hint=token_type_hint,
+        client_auth=client_auth,
+    )
+    reserved = {"authorization", *(name.lower() for name in request.headers)}
+    return replace(
+        request,
+        headers={
+            "User-Agent": config.user_agent,
+            **{
+                name: value
+                for name, value in (config.custom_headers or {}).items()
+                if name.lower() not in reserved
+            },
+            **request.headers,
+        },
+    )
+
+
 def resolve_endpoints(
     issuer: str,
     endpoint_overrides: Endpoints | None = None,
@@ -538,8 +625,6 @@ def resolve_endpoints(
         if not endpoints.authorize:
             endpoints.authorize = discovered_metadata.authorization_endpoint
 
-    if not endpoints.introspect:
-        endpoints.introspect = OAuth2DefaultEndpoints.construct_url(issuer, OAuth2DefaultEndpoints.INTROSPECTION)
     if not endpoints.token:
         endpoints.token = OAuth2DefaultEndpoints.construct_url(issuer, OAuth2DefaultEndpoints.TOKEN)
     if not endpoints.register:
@@ -717,6 +802,7 @@ class AsyncClient:
                 ``clock.sleep()``. Defaults to SystemClock.
         """
         self.issuer = _resolve_issuer_arg(issuer, base_url)
+        self._introspection_issuer = issuer or base_url or self.issuer
         self.config = config or ClientConfig()
         self.clock: Clock = clock or SystemClock()
 
@@ -766,7 +852,7 @@ class AsyncClient:
         return self.issuer
 
     async def _resolve_metadata(
-        self, *, refresh: bool = False
+        self, *, refresh: bool = False, endpoint_name: str = "token_endpoint"
     ) -> AuthorizationServerMetadata | None:
         """Return discovered metadata, or None when discovery is disabled.
 
@@ -786,16 +872,22 @@ class AsyncClient:
         if not self.config.enable_metadata_discovery:
             return None
 
-        cached = self._metadata_cache.lookup(refresh=refresh)
-        if cached is not None:
-            return cached
-
-        task = self._discovery_task
-        if task is None:
-            task = asyncio.ensure_future(self._discover_and_store())
-            self._discovery_task = task
-            task.add_done_callback(self._on_discovery_done)
-        return await asyncio.shield(task)
+        overridden = endpoint_name == "token_endpoint" and bool(
+            self._endpoint_overrides and self._endpoint_overrides.token
+        )
+        metadata = _cached_metadata_for_endpoint(
+            self._metadata_cache, endpoint_name, overridden=overridden, refresh=refresh
+        )
+        if metadata is None:
+            task = self._discovery_task
+            if task is None:
+                task = asyncio.ensure_future(self._discover_and_store())
+                self._discovery_task = task
+                task.add_done_callback(self._on_discovery_done)
+            metadata = await asyncio.shield(task)
+        return _check_required_token_endpoint(
+            self.issuer, metadata, endpoint_name, overridden
+        )
 
     def _on_discovery_done(self, task: asyncio.Task[AuthorizationServerMetadata]) -> None:
         if self._discovery_task is task:
@@ -823,13 +915,12 @@ class AsyncClient:
         self, metadata: AuthorizationServerMetadata
     ) -> AuthorizationServerMetadata:
         overrides_token = self._endpoint_overrides and self._endpoint_overrides.token
-        if not metadata.token_endpoint and not overrides_token:
-            raise self._store_discovery_failure(MissingTokenEndpointError(self.issuer))
         self._metadata_cache.store_success(metadata)
         self._discovered_metadata = metadata
-        self._discovered_endpoints = resolve_endpoints(
-            self.issuer, self._endpoint_overrides, metadata
-        )
+        if metadata.token_endpoint or overrides_token:
+            self._discovered_endpoints = resolve_endpoints(
+                self.issuer, self._endpoint_overrides, metadata
+            )
         return metadata
 
     async def _ensure_initialized(self) -> None:
@@ -2015,6 +2106,55 @@ class AsyncClient:
                 raise
             raise token.error
 
+    async def introspect_token(
+        self,
+        token: str | None = None,
+        *,
+        credential: "ClientAuthenticator | ApplicationCredential | None" = None,
+        token_type_hint: str | TokenTypeHint | None = None,
+        metadata: AuthorizationServerMetadata | None = None,
+        timeout: float | None = None,
+    ) -> TokenIntrospection:
+        """Check a token's current status with the issuer (RFC 7662).
+
+        Uses the supplied or discovered metadata's ``introspection_endpoint``.
+        Pass ``credential`` or configure a confidential credential on the
+        client. The SDK neither caches results nor retries the request.
+        """
+        authenticator = _introspection_authenticator(
+            token, self._credential if credential is None else credential
+        )
+        assert token is not None
+        endpoint = (
+            _introspection_endpoint(self.issuer, metadata)
+            if metadata is not None
+            else None
+        )
+        issuer = self._introspection_issuer
+        limit = timeout or self.config.timeout
+        try:
+            client_auth = await _run_with_timeout(
+                authenticator.client_authentication(issuer=issuer, endpoint=issuer), limit
+            )
+        except asyncio.TimeoutError as e:
+            raise NetworkError(e, operation=INTROSPECTION_OPERATION) from e
+        check_introspection_auth(client_auth)
+        if endpoint is None:
+            endpoint = _introspection_endpoint(
+                self.issuer,
+                await self._resolve_metadata(endpoint_name="introspection_endpoint"),
+            )
+        request = _introspection_request(
+            self.config, endpoint, token, token_type_hint, client_auth
+        )
+        try:
+            response = await self.transport.request_raw(request, timeout=limit)
+        except ResponseBodyDecodeError as e:
+            raise invalid_introspection_response(
+                e.status, "Could not decode the introspection response."
+            ) from e
+        return parse_introspection_http_response(response)
+
     def _revocation_client_authenticator(
         self,
         client_id: str | None,
@@ -2306,7 +2446,8 @@ class Client:
         # Simple usage with client credentials and automatic discovery
         with Client(
             "https://api.keycard.ai",
-            auth=BasicAuth("my_client_id", "my_client_secret")
+            client_id="my_client_id",
+            client_secret="my_client_secret",
         ) as client:
             response = client.introspect_token("token_to_validate")
 
@@ -2315,7 +2456,7 @@ class Client:
             "https://api.keycard.ai",
             auth=BasicAuth("enterprise_client", "enterprise_secret"),
             endpoints=Endpoints(
-                introspect="https://validator.internal.com/oauth2/introspect"
+                token="https://validator.internal.com/oauth2/token"
             ),
             config=ClientConfig(timeout=60, max_retries=5)
         )
@@ -2363,6 +2504,7 @@ class Client:
             config: Client configuration with timeouts, retries, etc.
         """
         self.issuer = _resolve_issuer_arg(issuer, base_url)
+        self._introspection_issuer = issuer or base_url or self.issuer
         self.config = config or ClientConfig()
 
         self.auth_strategy = auth or NoneAuth()
@@ -2412,7 +2554,9 @@ class Client:
         """Deprecated alias for :attr:`issuer`. Use ``issuer`` instead."""
         return self.issuer
 
-    def _resolve_metadata(self) -> AuthorizationServerMetadata | None:
+    def _resolve_metadata(
+        self, *, endpoint_name: str = "token_endpoint"
+    ) -> AuthorizationServerMetadata | None:
         """Return discovered metadata, or None when discovery is disabled.
 
         Success is cached for ``discovery_ttl``; a deterministic failure is
@@ -2428,21 +2572,32 @@ class Client:
         if not self.config.enable_metadata_discovery:
             return None
 
-        cached = self._metadata_cache.lookup()
+        overridden = endpoint_name == "token_endpoint" and bool(
+            self._endpoint_overrides and self._endpoint_overrides.token
+        )
+        cached = _cached_metadata_for_endpoint(
+            self._metadata_cache, endpoint_name, overridden=overridden, refresh=False
+        )
         if cached is not None:
-            return cached
+            return _check_required_token_endpoint(
+                self.issuer, cached, endpoint_name, overridden
+            )
 
         with self._discovery_lock:
-            cached = self._metadata_cache.lookup()
-            if cached is not None:
-                return cached
-            try:
-                metadata = self.discover_server_metadata()
-            except Exception as e:
-                raise self._store_discovery_failure(
-                    AuthorizationServerDiscoveryError(self.issuer, cause=e)
-                ) from e
-            return self._store_discovered_metadata(metadata)
+            metadata = _cached_metadata_for_endpoint(
+                self._metadata_cache, endpoint_name, overridden=overridden, refresh=False
+            )
+            if metadata is None:
+                try:
+                    metadata = self.discover_server_metadata()
+                except Exception as e:
+                    raise self._store_discovery_failure(
+                        AuthorizationServerDiscoveryError(self.issuer, cause=e)
+                    ) from e
+                self._store_discovered_metadata(metadata)
+        return _check_required_token_endpoint(
+            self.issuer, metadata, endpoint_name, overridden
+        )
 
     def _store_discovery_failure(
         self, error: AuthorizationServerDiscoveryError
@@ -2455,13 +2610,12 @@ class Client:
         self, metadata: AuthorizationServerMetadata
     ) -> AuthorizationServerMetadata:
         overrides_token = self._endpoint_overrides and self._endpoint_overrides.token
-        if not metadata.token_endpoint and not overrides_token:
-            raise self._store_discovery_failure(MissingTokenEndpointError(self.issuer))
         self._metadata_cache.store_success(metadata)
         self._discovered_metadata = metadata
-        self._discovered_endpoints = resolve_endpoints(
-            self.issuer, self._endpoint_overrides, metadata
-        )
+        if metadata.token_endpoint or overrides_token:
+            self._discovered_endpoints = resolve_endpoints(
+                self.issuer, self._endpoint_overrides, metadata
+            )
         return metadata
 
     def _ensure_initialized(self) -> None:
@@ -2729,6 +2883,55 @@ class Client:
             request=request,
             context=context,
         )
+
+    def introspect_token(
+        self,
+        token: str | None = None,
+        *,
+        credential: "ClientAuthenticator | ApplicationCredential | None" = None,
+        token_type_hint: str | TokenTypeHint | None = None,
+        metadata: AuthorizationServerMetadata | None = None,
+        timeout: float | None = None,
+    ) -> TokenIntrospection:
+        """Check a token's current status with the issuer (RFC 7662).
+
+        Uses the supplied or discovered metadata's ``introspection_endpoint``.
+        Pass ``credential`` or configure a confidential credential on the
+        client. The SDK neither caches results nor retries the request.
+        """
+        authenticator = _introspection_authenticator(
+            token, self._credential if credential is None else credential
+        )
+        assert token is not None
+        endpoint = (
+            _introspection_endpoint(self.issuer, metadata)
+            if metadata is not None
+            else None
+        )
+        issuer = self._introspection_issuer
+        limit = timeout or self.config.timeout
+        client_auth = _run_credential_operation(
+            authenticator.client_authentication(issuer=issuer, endpoint=issuer),
+            limit,
+            "introspection client authentication",
+            error_operation=INTROSPECTION_OPERATION,
+        )
+        check_introspection_auth(client_auth)
+        if endpoint is None:
+            endpoint = _introspection_endpoint(
+                self.issuer,
+                self._resolve_metadata(endpoint_name="introspection_endpoint"),
+            )
+        request = _introspection_request(
+            self.config, endpoint, token, token_type_hint, client_auth
+        )
+        try:
+            response = self.transport.request_raw(request, timeout=limit)
+        except ResponseBodyDecodeError as e:
+            raise invalid_introspection_response(
+                e.status, "Could not decode the introspection response."
+            ) from e
+        return parse_introspection_http_response(response)
 
     def userinfo(
         self,

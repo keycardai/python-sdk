@@ -395,6 +395,24 @@ class UserInfoResponse:
     headers: dict[str, str] | None = None
 
 
+class TokenIntrospection(BaseModel):
+    """RFC 7662 token status and claims, with additional claims in `model_extra`."""
+
+    model_config = ConfigDict(extra="allow", strict=True)
+
+    active: bool
+    token_type: str | None = None
+    iss: str | None = None
+    sub: str | None = None
+    client_id: str | None = None
+    aud: str | list[str] | None = None
+    scope: list[str] | None = None
+    sid: str | None = None
+    jti: str | None = None
+    iat: int | None = None
+    exp: int | None = None
+
+
 # =============================================================================
 # JSON Web Key Set (RFC 7517)
 # =============================================================================
@@ -471,13 +489,12 @@ class Endpoints:
 class ResolvedEndpoints(Endpoints):
     """Endpoints after overrides, discovery, and defaults have been applied.
 
-    Every URL except ``revoke`` is populated. ``revoke`` is None unless an
-    override or the discovered ``revocation_endpoint`` sets it; it has no
-    conventional default.
+    ``introspect`` and ``revoke`` have no conventional default. They are None
+    unless an override or server metadata provides a URL.
     """
 
     token: str
-    introspect: str
+    introspect: str | None
     revoke: str | None
     register: str
     par: str

@@ -26,14 +26,14 @@ class HTTPContext(Generic[TransportT]):
 
     Example:
         context = HTTPContext(
-            endpoint="https://auth.example.com/oauth2/introspect",
+            endpoint="https://auth.example.com/oauth2/token",
             transport=HTTPClient(),
             auth=BasicAuth("client_id", "client_secret"),
             timeout=30.0,
             headers={"User-Agent": "MyApp/1.0"}
         )
 
-        response = introspect_token(request, context)
+        response = exchange_token(request, context)
     """
 
     endpoint: str

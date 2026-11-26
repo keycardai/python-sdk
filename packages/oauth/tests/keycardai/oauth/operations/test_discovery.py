@@ -22,6 +22,35 @@ from keycardai.oauth.types.models import (
 class TestDiscoveryOperations:
     """Test discovery operation functions directly."""
 
+    def test_row_14_introspection_fields_are_typed(self):
+        """Authorization Server Discovery v7, row 14."""
+        methods = ["client_secret_basic", "client_secret_post", "private_key_jwt"]
+        endpoint = "https://auth.example.com/oauth/2/introspect"
+        metadata = parse_discovery_http_response(HttpResponse(
+            status=200,
+            headers={},
+            body=(
+                b'{"issuer":"https://auth.example.com",'
+                b'"introspection_endpoint":"https://auth.example.com/oauth/2/introspect",'
+                b'"introspection_endpoint_auth_methods_supported":'
+                b'["client_secret_basic","client_secret_post","private_key_jwt"]}'
+            ),
+        ))
+
+        assert metadata.introspection_endpoint == endpoint
+        assert metadata.introspection_endpoint_auth_methods_supported == methods
+
+    def test_row_15_introspection_fields_are_optional(self):
+        """Authorization Server Discovery v7, row 15."""
+        metadata = parse_discovery_http_response(HttpResponse(
+            status=200,
+            headers={},
+            body=b'{"issuer":"https://auth.example.com"}',
+        ))
+
+        assert metadata.introspection_endpoint is None
+        assert metadata.introspection_endpoint_auth_methods_supported is None
+
     def test_build_discovery_http_request_basic(self):
         """Test building discovery HTTP request."""
         req = ServerMetadataRequest(base_url="https://auth.example.com")
