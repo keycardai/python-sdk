@@ -433,6 +433,10 @@ class IdentityTokenSource(Protocol):
         ...
 
 
+def _retryable_status(status_code: int) -> bool:
+    return status_code == 429 or 500 <= status_code < 600
+
+
 def _source_error_retryable(error: Exception) -> bool:
     if isinstance(
         error,
@@ -448,9 +452,9 @@ def _source_error_retryable(error: Exception) -> bool:
     ):
         return True
     if isinstance(error, OAuthHttpError):
-        return 500 <= error.status_code < 600
+        return _retryable_status(error.status_code)
     if isinstance(error, httpx.HTTPStatusError):
-        return 500 <= error.response.status_code < 600
+        return _retryable_status(error.response.status_code)
     return False
 
 
@@ -498,7 +502,7 @@ class _IdentityTokenFetcher:
             raise WorkloadIdentityRuntimeError(
                 "Error fetching identity token",
                 source=WORKLOAD_IDENTITY_SOURCE_CUSTOM,
-                retryable=_source_error_retryable(err),
+                retryable=False,
             ) from err
 
     @staticmethod
@@ -560,6 +564,9 @@ class FileTokenSource:
         self._read(WorkloadIdentityConfigurationError)
 
     def _read(self, error_cls: type) -> str:
+        # A read-time failure is retryable: the file can be missing or empty
+        # for a moment while the platform rotates a projected token.
+        extra = {"retryable": True} if error_cls is WorkloadIdentityRuntimeError else {}
         try:
             with open(self.token_file_path) as f:
                 token = f.read().strip()
@@ -567,11 +574,13 @@ class FileTokenSource:
             raise error_cls(
                 f"Error reading token file: {self.token_file_path}",
                 source=WORKLOAD_IDENTITY_SOURCE_FILE,
+                **extra,
             ) from err
         if not token:
             raise error_cls(
                 f"Token file is empty: {self.token_file_path}",
                 source=WORKLOAD_IDENTITY_SOURCE_FILE,
+                **extra,
             )
         return token
 
@@ -629,7 +638,7 @@ class GCPMetadataTokenSource:
             raise WorkloadIdentityRuntimeError(
                 f"Metadata server returned status {response.status_code}",
                 source=WORKLOAD_IDENTITY_SOURCE_GCP_METADATA,
-                retryable=500 <= response.status_code < 600,
+                retryable=_retryable_status(response.status_code),
             )
         token = response.text.strip()
         if not token:
@@ -683,7 +692,7 @@ class FlyTokenSource:
             raise WorkloadIdentityRuntimeError(
                 f"Machines API returned status {response.status_code}",
                 source=WORKLOAD_IDENTITY_SOURCE_FLY,
-                retryable=500 <= response.status_code < 600,
+                retryable=_retryable_status(response.status_code),
             )
         token = response.text.strip()
         if not token:

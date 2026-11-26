@@ -464,13 +464,13 @@ class TestExchangeActor:
                 id="typed-runtime",
             ),
             pytest.param(ValueError("source failed"), False, id="plain"),
-            pytest.param(TimeoutError("source timed out"), True, id="timeout"),
+            pytest.param(TimeoutError("source timed out"), False, id="timeout"),
             pytest.param(
-                asyncio.TimeoutError("source timed out"), True, id="asyncio-timeout"
+                asyncio.TimeoutError("source timed out"), False, id="asyncio-timeout"
             ),
             pytest.param(
                 httpx.RemoteProtocolError("server disconnected"),
-                True,
+                False,
                 id="remote-protocol-error",
             ),
             pytest.param(
@@ -479,8 +479,24 @@ class TestExchangeActor:
                     request=httpx.Request("GET", "https://source.example"),
                     response=httpx.Response(503),
                 ),
-                True,
+                False,
                 id="http-5xx",
+            ),
+            pytest.param(
+                httpx.HTTPStatusError(
+                    "rate limited",
+                    request=httpx.Request("GET", "https://source.example"),
+                    response=httpx.Response(429),
+                ),
+                False,
+                id="http-429",
+            ),
+            pytest.param(
+                WorkloadIdentityRuntimeError(
+                    "source busy", source="my-source", retryable=True
+                ),
+                True,
+                id="typed-marked-retryable",
             ),
         ],
     )
