@@ -596,9 +596,11 @@ def test_row_17_shared_issuer_drives_manual_wiring(token_headers):
         )
 
 
-def test_row_17_multi_zone_client_secret_keeps_shared_discovery():
+@pytest.mark.asyncio
+async def test_row_17_multi_zone_client_secret_keeps_shared_discovery():
+    factory = Mock()
     options = {
-        "zone_id": "z",
+        "client_factory": factory,
         "application_credential": ClientSecret({
             "https://a.keycard.cloud": ("a", "secret-a"),
             "https://b.keycard.cloud": ("b", "secret-b"),
@@ -609,7 +611,13 @@ def test_row_17_multi_zone_client_secret_keeps_shared_discovery():
     }
     provider = AuthProvider(**options)
     assert provider.enable_multi_zone is False
+    assert provider.zone_url is None
+    assert provider.issuer == ISSUER
     assert provider.get_token_verifier().enable_multi_zone is False
+    await provider._get_or_create_client({"zone_id": "b"})
+    call = factory.create_async_client.call_args.kwargs
+    assert call["base_url"] == "https://b.keycard.cloud"
+    assert call["auth"].client_id == "b"
     with pytest.raises(ResourceBindingConfigError, match="enable_multi_zone=False"):
         AuthProvider(enable_multi_zone=True, **options)
 

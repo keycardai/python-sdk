@@ -183,17 +183,18 @@ class AuthProvider:
         # Infer multi-zone from a multi-zone ClientSecret unless explicitly set.
         # Env-discovered credentials are always single-zone, so the passed
         # argument is the only source that can imply multi-zone.
+        # Shared discovery selects the zone from the token, so a multi-zone
+        # credential does not turn on request zone selection, and the
+        # provider needs no default zone.
+        shared = multi_resource and resource_identifiers_by_zone is not None
         if enable_multi_zone is None:
-            # Shared discovery selects the zone from the token, so a
-            # multi-zone credential does not turn on request zone selection.
-            shared = multi_resource and resource_identifiers_by_zone is not None
             enable_multi_zone = (
                 not shared
                 and isinstance(application_credential, ClientSecret)
                 and application_credential.is_multi_zone
             )
 
-        if zone_url is None and not enable_multi_zone:
+        if zone_url is None and not enable_multi_zone and not shared:
             if zone_id is None:
                 raise AuthProviderConfigurationError()
             zone_url = f"{AnyHttpUrl(self.base_url).scheme}://{zone_id}.{AnyHttpUrl(self.base_url).host}"
