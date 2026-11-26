@@ -1,3 +1,10 @@
+## 2.3.12-keycardai-mcp (2026-11-26)
+
+
+- fix(keycardai-mcp): require keycardai-starlette 0.17.3 or newer (#534)
+- Raise the keycardai-oauth floor to 0.38.0 as well, since keycardai-starlette 0.17.3 requires it and the declared floors must resolve together.
+- Co-authored-by: Larry Osakwe <23560354+Larry-Osakwe@users.noreply.github.com>
+
 ## 2.3.11-keycardai-mcp (2026-11-25)
 
 ## 2.3.10-keycardai-mcp (2026-11-25)
