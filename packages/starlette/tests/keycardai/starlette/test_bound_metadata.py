@@ -47,7 +47,7 @@ def metadata_app(*, issuer=ISSUER, **options):
         pytest.param("/mcp?v=1", f"{IDENTIFIER}?v=1", id="row_7_query"),
     ],
 )
-def test_metadata_publishes_exact_identifier_at_public_path(suffix, identifier):
+def test_row_1_7_publishes_exact_identifier_at_public_path(suffix, identifier):
     app = metadata_app(resource_identifier=identifier, jwks=JsonWebKeySet(keys=[]))
     with TestClient(app, base_url="http://internal") as client:
         response = client.get(
@@ -82,7 +82,7 @@ def upstream(monkeypatch):
     return upstream, document
 
 
-def test_metadata_rows_4a_4b_and_integration_2_zone_proxy(upstream):
+def test_row_4a_4b_and_integration_2_zone_proxy(upstream):
     mock, document = upstream
     app = metadata_app(resource_identifiers_by_zone=ZONES)
     with TestClient(app) as client:
@@ -99,7 +99,7 @@ def test_metadata_rows_4a_4b_and_integration_2_zone_proxy(upstream):
     assert mock.get.call_count == 2
 
 
-def test_metadata_row_4b_unknown_zone_can_match_another_route(upstream):
+def test_row_4b_unknown_zone_can_match_another_route(upstream):
     async def fallback(request):
         return PlainTextResponse("other route")
 
@@ -123,7 +123,7 @@ def test_metadata_row_4b_unknown_zone_can_match_another_route(upstream):
         pytest.param({"multi_resource": True}, id="row_8a_no_audience"),
     ],
 )
-def test_metadata_verifier_only_leaves_as_and_jwks_available(options, upstream):
+def test_row_8_8a_verifier_only_leaves_as_and_jwks_available(options, upstream):
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         app = metadata_app(jwks=JsonWebKeySet(keys=[]), **options)
@@ -144,12 +144,12 @@ def test_metadata_verifier_only_leaves_as_and_jwks_available(options, upstream):
         {"resource_identifiers_by_zone": ZONES, "allow_any_audience": True},
     ],
 )
-def test_metadata_row_8b_conflicting_modes(options):
+def test_row_8b_conflicting_modes(options):
     with pytest.raises(ResourceBindingConfigError):
         metadata_app(**options)
 
 
-def test_metadata_row_8c_warns_once_and_preserves_legacy_derivation():
+def test_row_8c_warns_once_and_preserves_legacy_derivation():
     with pytest.warns(
         LegacyResourceBindingWarning, match="resource_identifier"
     ) as caught:
@@ -162,7 +162,7 @@ def test_metadata_row_8c_warns_once_and_preserves_legacy_derivation():
         assert response.json()["resource"] == "https://testserver/mcp"
 
 
-def test_metadata_rows_8a_and_8c_application_managed_handler():
+def test_row_8a_8c_application_managed_handler():
     metadata = ProtectedResourceMetadata(authorization_servers=[ISSUER])
     with pytest.warns(LegacyResourceBindingWarning, match="resource_identifier"):
         protected_resource_metadata(metadata)
@@ -180,7 +180,7 @@ def test_metadata_rows_8a_and_8c_application_managed_handler():
         assert client.get(f"{RESOURCE_PATH}/mcp").json()["resource"] == IDENTIFIER
 
 
-def test_review_finding_4_explicit_handler_preserves_configured_issuers():
+def test_row_1_explicit_handler_preserves_configured_issuers():
     metadata = ProtectedResourceMetadata(
         authorization_servers=[ISSUER, "https://another.example/issuer"],
     )
@@ -197,12 +197,12 @@ def test_review_finding_4_explicit_handler_preserves_configured_issuers():
     "identifier",
     ["https://例.example/mcp", "https://api.example.com/例"],
 )
-def test_review_finding_5_rejects_non_ascii_resource_identifiers(identifier):
+def test_row_1_rejects_non_ascii_resource_identifiers(identifier):
     with pytest.raises(ResourceBindingConfigError, match="ASCII"):
         metadata_app(resource_identifier=identifier)
 
 
-def test_metadata_row_9_distinct_single_resource_routes():
+def test_row_9_distinct_single_resource_routes():
     routes = []
     for path in ("/mcp", "/tools"):
         provider = AuthProvider(zone_url=ISSUER, resource_identifier=f"{ORIGIN}{path}")
@@ -220,7 +220,7 @@ def test_metadata_row_9_distinct_single_resource_routes():
             )
 
 
-def test_metadata_row_9a_zone_documents_and_port():
+def test_row_9a_zone_documents_and_port():
     options = {**ZONES, "c": "urn:example:resource"}
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
@@ -238,12 +238,12 @@ def test_metadata_row_9a_zone_documents_and_port():
         assert client.get(f"{RESOURCE_PATH}/c/mcp").status_code == 404
 
 
-def test_metadata_row_9b_zone_documents_require_issuer():
+def test_row_9b_zone_documents_require_issuer():
     with pytest.raises(ResourceBindingConfigError, match="base issuer"):
         metadata_app(issuer="", resource_identifiers_by_zone=ZONES)
 
 
-def test_metadata_row_9c_shared_document_and_zone_proxy(upstream):
+def test_row_9c_shared_document_and_zone_proxy(upstream):
     app = metadata_app(
         multi_resource=True,
         resource_identifiers_by_zone=dict.fromkeys(ZONES, IDENTIFIER),
@@ -260,7 +260,7 @@ def test_metadata_row_9c_shared_document_and_zone_proxy(upstream):
         assert client.get(AS_PATH).status_code == 404
 
 
-def test_metadata_row_9d_shared_requires_identical_identifiers():
+def test_row_9d_shared_requires_identical_identifiers():
     with pytest.raises(ResourceBindingConfigError, match="identical"):
         metadata_app(multi_resource=True, resource_identifiers_by_zone=ZONES)
 
@@ -275,12 +275,12 @@ def test_metadata_row_9d_shared_requires_identical_identifiers():
         {"resource_identifier": "https://api.example.com/#"},
     ],
 )
-def test_metadata_rejects_invalid_identifiers_and_ambiguous_routes(options):
+def test_row_1_9a_rejects_invalid_identifiers_and_ambiguous_routes(options):
     with pytest.raises(ResourceBindingConfigError):
         metadata_app(**options)
 
 
-def test_metadata_row_10_root_registration_and_mounted_challenge():
+def test_row_10_root_registration_and_mounted_challenge():
     @requires("authenticated")
     async def protected(request):
         return PlainTextResponse("ok")
@@ -304,7 +304,7 @@ def test_metadata_row_10_root_registration_and_mounted_challenge():
         assert f'resource_metadata="{ORIGIN}{public_path}"' in challenge
 
 
-def test_metadata_row_10a_explicit_wrong_mount_is_rejected():
+def test_row_10a_explicit_wrong_mount_is_rejected():
     with pytest.raises(ResourceBindingConfigError, match="must be registered"):
         well_known_metadata_mount(
             ISSUER, "/app/.well-known", resource_identifier=IDENTIFIER

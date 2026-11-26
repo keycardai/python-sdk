@@ -122,20 +122,20 @@ def request(client, path, headers=None, *, status, metadata=None):
         ),
     ],
 )
-def test_bearer_challenge_matches_only_path_and_query(path, headers, expected):
+def test_row_12_12a_12c_challenge_matches_only_path_and_query(path, headers, expected):
     provider = AuthProvider(zone_url=ISSUER, resource_identifier=IDENTIFIER)
     with TestClient(protected_app(provider)) as client:
         request(client, path, headers, status=401, metadata=expected)
 
 
-def test_bearer_row_1_query_matches_verbatim():
+def test_row_1_query_matches_verbatim():
     provider = AuthProvider(zone_url=ISSUER, resource_identifier=f"{IDENTIFIER}?v=1")
     with TestClient(protected_app(provider)) as client:
         request(client, "/mcp?v=1", status=401, metadata=f"{METADATA}/mcp?v=1")
         request(client, "/mcp", status=401)
 
 
-def test_bearer_row_12b_bare_origin_audience_is_exact(token_headers):
+def test_row_12b_bare_origin_audience_is_exact(token_headers):
     provider = AuthProvider(zone_url=ISSUER, resource_identifier=ORIGIN)
     with TestClient(protected_app(provider)) as client:
         request(client, "/", status=401, metadata=METADATA)
@@ -146,14 +146,14 @@ def test_bearer_row_12b_bare_origin_audience_is_exact(token_headers):
         request(client, "/", token_headers(ORIGIN), status=200)
 
 
-def test_bearer_row_12d_mounted_target_keeps_prefix():
+def test_row_12d_mounted_target_keeps_prefix():
     provider = AuthProvider(zone_url=ISSUER, resource_identifier=f"{ORIGIN}/app/mcp")
     app = Starlette(routes=[Mount("/app", app=protected_app(provider))])
     with TestClient(app) as client:
         request(client, "/app/mcp", status=401, metadata=f"{METADATA}/app/mcp")
 
 
-def test_bearer_rows_8_15_and_integration_2_same_issuer_different_audience(
+def test_row_8_15_and_integration_2_same_issuer_different_audience(
     token_headers,
 ):
     with warnings.catch_warnings(record=True) as caught:
@@ -175,7 +175,7 @@ def test_bearer_rows_8_15_and_integration_2_same_issuer_different_audience(
     assert 'error="invalid_token"' in challenge
 
 
-def test_bearer_rows_8a_8b_8c_8d_8f_list_intersection_without_discovery(token_headers):
+def test_row_8a_8b_8c_8d_8f_list_intersection_without_discovery(token_headers):
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         app = protected_app(
@@ -204,7 +204,7 @@ def test_bearer_rows_8a_8b_8c_8d_8f_list_intersection_without_discovery(token_he
         ),
     ],
 )
-def test_bearer_verifier_only_modes(token_headers, options, aud, invalid_signature):
+def test_row_8g_8h_verifier_only_modes(token_headers, options, aud, invalid_signature):
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         app = protected_app(AuthProvider(zone_url=ISSUER, **options))
@@ -218,7 +218,7 @@ def test_bearer_verifier_only_modes(token_headers, options, aud, invalid_signatu
         assert 'error="invalid_token"' in request(client, "/mcp", failed, status=401)
 
 
-def test_bearer_rows_16_16a_16c_zone_is_selected_before_verification(token_headers):
+def test_row_16_16a_16c_zone_is_selected_before_verification(token_headers):
     provider = AuthProvider(
         zone_url=ISSUER, enable_multi_zone=True, resource_identifiers_by_zone=ZONES
     )
@@ -235,7 +235,7 @@ def test_bearer_rows_16_16a_16c_zone_is_selected_before_verification(token_heade
         request(client, "/unknown/mcp", status=401)
 
 
-def test_bearer_row_16_provider_install_resolves_routed_zone(token_headers):
+def test_row_16_provider_install_resolves_routed_zone(token_headers):
     app = Starlette(
         routes=[Route("/{zone_id}/mcp", requires("authenticated")(handled))]
     )
@@ -253,7 +253,7 @@ def test_bearer_row_16_provider_install_resolves_routed_zone(token_headers):
         request(client, "/unknown/mcp", status=401)
 
 
-def test_review_4703017729_per_zone_install_keeps_health_public(token_headers):
+def test_row_16c_per_zone_install_keeps_anonymous_public_routes_public(token_headers):
     app = Starlette(routes=[Route("/health", handled)])
     AuthProvider(
         enable_multi_zone=True, resource_identifiers_by_zone=ZONES
@@ -264,7 +264,7 @@ def test_review_4703017729_per_zone_install_keeps_health_public(token_headers):
         request(client, "/health", token, status=401)
 
 
-def test_review_finding_1_protected_router_verifies_application_routes(token_headers):
+def test_row_1_protected_router_verifies_application_routes(token_headers):
     async def authenticated(request):
         return PlainTextResponse(str(request.user.is_authenticated))
 
@@ -288,7 +288,7 @@ def test_review_finding_1_protected_router_verifies_application_routes(token_hea
         )
 
 
-def test_review_finding_1_installed_zone_metadata_remains_public():
+def test_row_16_installed_zone_metadata_remains_public():
     provider = AuthProvider(
         zone_url=ISSUER,
         enable_multi_zone=True,
@@ -303,7 +303,7 @@ def test_review_finding_1_installed_zone_metadata_remains_public():
 
 
 @pytest.mark.parametrize("per_zone", [False, True])
-def test_review_standalone_backend_keeps_bound_metadata_public(per_zone):
+def test_row_1_standalone_backend_keeps_only_bound_metadata_public(per_zone):
     identifier = f"{IDENTIFIER}?v=1"
     options = (
         {"resource_identifiers_by_zone": {"a": identifier}}
@@ -345,7 +345,7 @@ def test_review_standalone_backend_keeps_bound_metadata_public(per_zone):
         assert client.post(f"{resource}?v=1").status_code == 401
 
 
-def test_review_a_standalone_backend_requires_auth_for_non_discovery_routes(token_headers):
+def test_row_1_standalone_backend_requires_auth_for_non_discovery_routes(token_headers):
     provider = AuthProvider(zone_id="z", resource_identifier=IDENTIFIER)
     paths = ("/.well-known/oauth-protected-resource/extra", "/.well-known/jwks.json")
     app = Starlette(routes=[Route(path, handled, name="jwks") for path in paths])
@@ -365,7 +365,7 @@ def test_review_a_standalone_backend_requires_auth_for_non_discovery_routes(toke
         request(client, "/.well-known/jwks.json", token, status=200)
 
 
-def test_review_finding_2_grant_uses_verified_issuer_client(monkeypatch, token_headers):
+def test_row_17_grant_uses_verified_issuer_client(monkeypatch, token_headers):
     issuer = "https://login.example.com:8443"
     zone_a = "https://a.login.example.com:8443"
     zone_b = "https://b.login.example.com:8443"
@@ -418,7 +418,7 @@ def test_review_finding_2_grant_uses_verified_issuer_client(monkeypatch, token_h
 
 @pytest.mark.parametrize("zone_id", [None, "unknown"])
 @pytest.mark.asyncio
-async def test_review_finding_2_grant_rejects_missing_or_unknown_zone(zone_id):
+async def test_row_17_grant_rejects_missing_or_unknown_zone(zone_id):
     factory = Mock()
     provider = AuthProvider(
         zone_url=ISSUER,
@@ -440,7 +440,7 @@ async def test_review_finding_2_grant_rejects_missing_or_unknown_zone(zone_id):
         {"allow_any_audience": True},
     ],
 )
-def test_review_4703017818_requires_zone_map_for_explicit_request_zone_modes(options):
+def test_row_16b_request_zone_modes_require_zone_map(options):
     expected = "resource_identifiers_by_zone"
     with pytest.raises(ResourceBindingConfigError, match=expected):
         AuthProvider(enable_multi_zone=True, **options)
@@ -470,7 +470,7 @@ def test_review_4703017818_requires_zone_map_for_explicit_request_zone_modes(opt
         )
 
 
-def test_bearer_prebuilt_verifier_mismatch_is_detectable():
+def test_row_8_prebuilt_verifier_mismatch_is_detectable():
     with pytest.raises(ResourceBindingConfigError, match="audience"):
         KeycardAuthBackend(
             TokenVerifier(issuer=ISSUER, audience="wrong"),
@@ -485,7 +485,7 @@ def test_bearer_prebuilt_verifier_mismatch_is_detectable():
         )
 
 
-def test_bearer_row_17_shared_binding_accepts_exactly_the_trusted_issuers(
+def test_row_17_shared_binding_accepts_exactly_the_trusted_issuers(
     token_headers,
 ):
     with warnings.catch_warnings(record=True) as caught:
@@ -517,8 +517,86 @@ def test_bearer_row_17_shared_binding_accepts_exactly_the_trusted_issuers(
         )
 
 
+@pytest.mark.parametrize(
+    "options",
+    [
+        pytest.param({"resource_identifier": IDENTIFIER}, id="single"),
+        pytest.param({"multi_resource": True, "audience": AUDIENCES}, id="multi"),
+        pytest.param({"allow_any_audience": True}, id="any"),
+    ],
+)
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/.well-known/oauth-protected-resource",
+        "/.well-known/oauth-protected-resource/unpublished",
+        "/.well-known/oauth-protected-resource/mcp?other=1",
+        "/.well-known/oauth-protected-resourcex",
+        "/.well-known/openid-configuration",
+        "/.well-known/oauth-anything",
+        "/.well-known/jwks.json",
+    ],
+)
+def test_row_1_unpublished_metadata_paths_require_authentication(options, path):
+    reached = []
+
+    async def application(request):
+        reached.append(request.url.path)
+        return PlainTextResponse("ok")
+
+    inner = Starlette(routes=[Route("/{rest:path}", application)])
+    provider = AuthProvider(zone_url=ISSUER, **options)
+    app = Starlette(
+        routes=protected_router(
+            issuer=provider.issuer,
+            app=inner,
+            verifier=provider.get_token_verifier(),
+            require_authentication=True,
+            resource_binding=provider.resource_binding,
+        )
+    )
+    with TestClient(app) as client:
+        request(client, path, status=401)
+    assert reached == []
+
+
+def test_row_17_shared_issuer_drives_manual_wiring(token_headers):
+    base_url = "https://login.example.com:8443"
+    zone_a = "https://a.login.example.com:8443"
+    provider = AuthProvider(
+        zone_id="z",
+        base_url=base_url,
+        resource_identifiers_by_zone=dict.fromkeys(ZONES, IDENTIFIER),
+        multi_resource=True,
+        audience=[IDENTIFIER],
+    )
+    assert provider.issuer == base_url
+    app = Starlette(
+        routes=protected_router(
+            issuer=provider.issuer,
+            app=Starlette(routes=[Route("/mcp", handled)]),
+            verifier=provider.get_token_verifier(),
+            resource_binding=provider.resource_binding,
+        )
+    )
+    with TestClient(app) as client:
+        response = client.get("/.well-known/oauth-protected-resource/mcp")
+        assert response.json()["authorization_servers"] == [
+            zone_a,
+            "https://b.login.example.com:8443",
+        ]
+        request(client, "/mcp", token_headers(IDENTIFIER, zone_a), status=200)
+        request(
+            client,
+            "/mcp",
+            token_headers(IDENTIFIER, "https://z.login.example.com:8443"),
+            status=401,
+            metadata=f"{METADATA}/mcp",
+        )
+
+
 @pytest.mark.parametrize("install", [True, False])
-def test_review_4703017898_shared_metadata_uses_base_issuer(install):
+def test_row_17_shared_metadata_uses_base_issuer(install):
     provider = AuthProvider(
         zone_id="z",
         base_url="https://login.example.com:8443",
@@ -541,7 +619,7 @@ def test_review_4703017898_shared_metadata_uses_base_issuer(install):
 
 
 @pytest.mark.parametrize("use_protected_router", [True, False])
-def test_review_b_readme_shared_discovery_uses_public_issuer(use_protected_router):
+def test_row_17_readme_shared_discovery_uses_public_issuer(use_protected_router):
     auth = AuthProvider(
         zone_id="z",
         resource_identifiers_by_zone=dict.fromkeys(ZONES, IDENTIFIER),
@@ -601,7 +679,7 @@ def test_review_b_readme_shared_discovery_uses_public_issuer(use_protected_route
         ),
     ],
 )
-def test_bearer_invalid_configuration_never_warns(options):
+def test_row_13_14b_16b_invalid_configuration_never_warns(options):
     with (
         warnings.catch_warnings(record=True) as caught,
         pytest.raises(ResourceBindingConfigError),
@@ -638,7 +716,7 @@ def test_bearer_invalid_configuration_never_warns(options):
         ),
     ],
 )
-def test_bearer_legacy_modes_preserve_policy_and_warn_once(
+def test_row_14_14a_legacy_modes_preserve_policy_and_warn_once(
     token_headers, audience, path, aud, token_issuer, warning
 ):
     with warnings.catch_warnings(record=True) as caught:
@@ -681,14 +759,14 @@ def test_bearer_legacy_modes_preserve_policy_and_warn_once(
         pytest.param({"allow_any_audience": True}, "/", None, id="row_7_any"),
     ],
 )
-def test_gating_anonymous_challenge_reuses_binding(options, path, metadata):
+def test_row_2_2a_7_anonymous_challenge_reuses_binding(options, path, metadata):
     app = Starlette(routes=[Route("/{rest:path}", requires("authenticated")(handled))])
     AuthProvider(zone_url=ISSUER, **options).install(app)
     with TestClient(app) as client:
         request(client, path, status=401, metadata=metadata)
 
 
-def test_gating_row_6_scope_challenge_omits_discovery_at_another_path(token_headers):
+def test_row_6_scope_challenge_omits_discovery_at_another_path(token_headers):
     app = Starlette(routes=[Route("/tools", requires("admin")(handled))])
     AuthProvider(zone_url=ISSUER, resource_identifier=IDENTIFIER).install(app)
     with TestClient(app) as client:
@@ -696,7 +774,7 @@ def test_gating_row_6_scope_challenge_omits_discovery_at_another_path(token_head
     assert 'error="insufficient_scope"' in challenge
 
 
-def test_bearer_scope_failure_preserves_the_matching_binding(token_headers):
+def test_row_6_scope_failure_preserves_the_matching_binding(token_headers):
     provider = AuthProvider(
         zone_url=ISSUER, resource_identifier=IDENTIFIER, required_scopes=["admin"]
     )
