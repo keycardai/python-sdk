@@ -88,6 +88,51 @@ class TestGrantCredential:
             "client_id": ["workload"],
         }
 
+    async def test_row_4b_workload_identity_without_client_id(self, client_type):
+        client = self.client(client_type, WorkloadIdentity(lambda: "workload-jwt"))
+
+        await self.call(client, "client_credentials_grant", scope="read")
+
+        wire = client.transport.request_raw.call_args.args[0]
+        assert "Authorization" not in wire.headers
+        assert parse_qs(wire.body.decode()) == {
+            "grant_type": ["client_credentials"],
+            "scope": ["read"],
+            "client_assertion": ["workload-jwt"],
+            "client_assertion_type": [self.assertion_type],
+        }
+
+    async def test_impersonate_uses_configured_secret(self, client_type):
+        client = self.client(client_type, client_id="app", client_secret="secret")
+
+        await self.call(
+            client,
+            "impersonate",
+            user_identifier="user@example.com",
+            resource="https://api.example.com",
+        )
+
+        wire = client.transport.request_raw.call_args.args[0]
+        assert wire.headers["Authorization"] == "Basic YXBwOnNlY3JldA=="
+        assert "client_assertion" not in parse_qs(wire.body.decode())
+
+    async def test_impersonate_prepares_configured_assertion(self, client_type):
+        credential = WorkloadIdentity(lambda: "workload-jwt", "workload")
+        client = self.client(client_type, credential)
+
+        await self.call(
+            client,
+            "impersonate",
+            user_identifier="user@example.com",
+            resource="https://api.example.com",
+        )
+
+        wire = client.transport.request_raw.call_args.args[0]
+        form = parse_qs(wire.body.decode())
+        assert "Authorization" not in wire.headers
+        assert form["client_assertion"] == ["workload-jwt"]
+        assert form["client_assertion_type"] == [self.assertion_type]
+
     async def test_row_4c_credential_and_basic_shorthand_conflict(self, client_type):
         with pytest.raises(ConfigError, match="cannot be combined"):
             self.client(

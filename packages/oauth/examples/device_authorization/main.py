@@ -33,14 +33,11 @@ from keycardai.oauth import (
     TokenResponse,
 )
 from keycardai.oauth.pkce import refresh_authorization
-from keycardai.oauth.server.credentials import ClientSecret
 
 MAX_RESUMES = 3
 
 
-async def wait_for_token(
-    client: AsyncClient, auth: DeviceAuthorization, client_auth: dict
-) -> TokenResponse:
+async def wait_for_token(client: AsyncClient, auth: DeviceAuthorization) -> TokenResponse:
     """Poll until the person approves or denies.
 
     After a network error, a 429, or a 5xx, resume at the interval from the
@@ -49,9 +46,7 @@ async def wait_for_token(
     interval = None
     for attempt in range(MAX_RESUMES + 1):
         try:
-            return await client.wait_for_device_token(
-                auth, interval=interval, **client_auth
-            )
+            return await client.wait_for_device_token(auth, interval=interval)
         except DevicePollError as e:
             if attempt == MAX_RESUMES:
                 raise
@@ -68,16 +63,16 @@ async def main() -> None:
     scopes = os.environ.get("KEYCARD_SCOPES", "openid").split()
     resources = os.environ.get("KEYCARD_RESOURCES", "").split()
 
-    # Every request in the flow, and the refresh, authenticates the same way.
+    # Every request in the flow, and the refresh, authenticates the same way:
+    # HTTP Basic with a secret, or a public client_id without one.
+    client_auth: dict = {"client_id": client_id}
     secret = os.environ.get("KEYCARD_CLIENT_SECRET")
     if secret:
-        client_auth: dict = {"credential": ClientSecret((client_id, secret))}
-    else:
-        client_auth = {"client_id": client_id}
+        client_auth["client_secret"] = secret
 
-    async with AsyncClient(zone_url) as client:
+    async with AsyncClient(zone_url, **client_auth) as client:
         auth = await client.request_device_authorization(
-            scopes=scopes, resources=resources, **client_auth
+            scopes=scopes, resources=resources
         )
         print("On another device, open:\n")
         print(f"  {auth.verification_uri_complete or auth.verification_uri}\n")
@@ -87,7 +82,7 @@ async def main() -> None:
         print(f"Waiting for approval (expires at {expires_at:%H:%M:%S %Z})...")
 
         try:
-            token = await wait_for_token(client, auth, client_auth)
+            token = await wait_for_token(client, auth)
         except DeviceAuthorizationError as e:
             if e.error == "access_denied":
                 sys.exit("The request was denied.")

@@ -353,13 +353,27 @@ def _grant_authenticator(
     configured: object | None,
     credential: object | None = None,
     client_id: str | None = None,
+    *,
+    interactive: bool = True,
 ) -> ClientAuthenticator | None:
+    """Return the client authentication for one grant request.
+
+    The client credentials grant is not interactive, so a WorkloadIdentity
+    without ``client_id`` sends its assertion alone, as for token exchange.
+    """
     if client_id is not None:
         if credential is not None:
             raise ConfigError("Pass either `credential` or `client_id`, not both.")
         return None
     selected = credential if credential is not None else configured
-    return require_client_authenticator(selected) if selected is not None else None
+    if selected is None:
+        return None
+    if not interactive:
+        from .server.credentials import WorkloadIdentity
+
+        if isinstance(selected, WorkloadIdentity):
+            return selected
+    return require_client_authenticator(selected)
 
 
 def _resolve_grant_credential(
@@ -1316,7 +1330,7 @@ class AsyncClient:
             request = ClientCredentialsRequest(**client_credentials_args)
 
         authenticator = (
-            _grant_authenticator(self._credential)
+            _grant_authenticator(self._credential, interactive=False)
             if request.client_assertion is None
             else None
         )
@@ -2170,19 +2184,33 @@ class AsyncClient:
             client_assertion_type=client_assertion_type,
         )
 
+        target_issuer = issuer if issuer is not None else self.issuer
+        auth = self._exchange_auth
+        auth_headers = resolve_token_exchange_auth_headers(request, auth, target_issuer)
         endpoints = await self._get_current_endpoints()
+
+        if (
+            self._credential is not None
+            and not request.client_assertion
+            and not auth_headers
+        ):
+            request = await _prepare_exchange_assertion(
+                self._credential, request, self, target_issuer, endpoints
+            )
+            auth = NoneAuth()
+            auth_headers = {}
 
         ctx = build_http_context(
             endpoint=endpoints.token,
             transport=self.transport,
-            auth=self.auth_strategy,
-            issuer=issuer if issuer is not None else self.issuer,
+            auth=auth,
+            issuer=target_issuer,
             user_agent=self.config.user_agent,
             custom_headers=self.config.custom_headers,
             timeout=timeout or self.config.timeout,
         )
 
-        return await exchange_token_async(request, ctx)
+        return await exchange_token_async(request, ctx, auth_headers=auth_headers)
 
     def endpoints_summary(self) -> dict[str, dict[str, str]]:
         """Get diagnostic summary of resolved endpoints.
@@ -2875,7 +2903,7 @@ class Client:
             request = ClientCredentialsRequest(**client_credentials_args)
 
         authenticator = (
-            _grant_authenticator(self._credential)
+            _grant_authenticator(self._credential, interactive=False)
             if request.client_assertion is None
             else None
         )
@@ -3110,19 +3138,34 @@ class Client:
             client_assertion_type=client_assertion_type,
         )
 
+        target_issuer = issuer if issuer is not None else self.issuer
+        auth = self._exchange_auth
+        auth_headers = resolve_token_exchange_auth_headers(request, auth, target_issuer)
         endpoints = self._get_current_endpoints()
+        request_timeout = timeout or self.config.timeout
+
+        if (
+            self._credential is not None
+            and not request.client_assertion
+            and not auth_headers
+        ):
+            request = _prepare_exchange_assertion_sync(
+                self._credential, request, self, target_issuer, endpoints, request_timeout
+            )
+            auth = NoneAuth()
+            auth_headers = {}
 
         ctx = build_http_context(
             endpoint=endpoints.token,
             transport=self.transport,
-            auth=self.auth_strategy,
-            issuer=issuer if issuer is not None else self.issuer,
+            auth=auth,
+            issuer=target_issuer,
             user_agent=self.config.user_agent,
             custom_headers=self.config.custom_headers,
-            timeout=timeout or self.config.timeout,
+            timeout=request_timeout,
         )
 
-        return exchange_token(request, ctx)
+        return exchange_token(request, ctx, auth_headers=auth_headers)
 
     def endpoints_summary(self) -> dict[str, dict[str, str]]:
         """Get diagnostic summary of resolved endpoints.
