@@ -10,7 +10,12 @@ from keycardai.oauth.client_auth import (
     ClientAuthenticator,
     require_client_authenticator,
 )
-from keycardai.oauth.exceptions import ConfigError, OAuthHttpError, OAuthProtocolError
+from keycardai.oauth.exceptions import (
+    ConfigError,
+    OAuthError,
+    OAuthHttpError,
+    OAuthProtocolError,
+)
 from keycardai.oauth.server.client_factory import ClientFactory
 
 logger = logging.getLogger(__name__)
@@ -28,7 +33,7 @@ def validate_credential(
     return require_client_authenticator(credential)
 
 
-class IntrospectionUnavailable(Exception):
+class IntrospectionUnavailable(OAuthError):
     pass
 
 
@@ -81,4 +86,4 @@ class TokenIntrospector:
                 logger.warning(
                     "Token introspection failed: %s (status=%s, cause=%s)", *key
                 )
-            raise IntrospectionUnavailable from exc
+            raise IntrospectionUnavailable("Token introspection unavailable", exc) from exc
