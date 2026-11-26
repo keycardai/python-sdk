@@ -1,3 +1,12 @@
+## 0.46.2-keycardai-oauth (2026-11-26)
+
+
+- fix(keycardai-oauth): validate zone ids before building zone URLs (#535)
+- * fix(keycardai-oauth): validate zone ids before building zone URLs
+- * test(keycardai-oauth): cite multi-zone support row 4
+- ---------
+- Co-authored-by: devin-ai-keycard <devin-ai@keycard.ai>
+
 ## 0.46.1-keycardai-oauth (2026-11-26)
 
 
