@@ -121,8 +121,16 @@ class TestWorkloadIdentity:
         assert calls == 2
 
     @pytest.mark.asyncio
-    async def test_wraps_custom_source_error(self):
+    @pytest.mark.parametrize("status", [None, 429])
+    async def test_row_23_wraps_custom_source_error(self, status):
         cause = RuntimeError("socket unavailable")
+        if status is not None:
+            request = httpx.Request("GET", "https://source.example.com")
+            cause.__cause__ = httpx.HTTPStatusError(
+                "source request failed",
+                request=request,
+                response=httpx.Response(status, request=request),
+            )
 
         async def failing_source() -> str:
             raise cause
@@ -154,6 +162,28 @@ class TestWorkloadIdentity:
             )
         assert exc_info.value is typed, "the source's own typed error must pass through"
         assert exc_info.value.source == "file"
+        assert exc_info.value.retryable is False
+
+    @pytest.mark.asyncio
+    async def test_row_24_passes_through_marked_custom_error(self):
+        cause = RuntimeError("source unavailable")
+        typed = WorkloadIdentityRuntimeError(
+            "custom source unavailable", source="test-source", retryable=True
+        )
+
+        async def failing_source() -> str:
+            raise typed from cause
+
+        with pytest.raises(WorkloadIdentityRuntimeError) as exc_info:
+            await WorkloadIdentity(failing_source).prepare_token_exchange_request(
+                client=None,
+                subject_token="subject-token",
+                resource="https://resource.example.com",
+            )
+        assert exc_info.value is typed
+        assert exc_info.value.source == "test-source"
+        assert exc_info.value.__cause__ is cause
+        assert exc_info.value.retryable is True
 
     @pytest.mark.asyncio
     async def test_rejects_empty_token_from_source(self):
@@ -234,7 +264,7 @@ class TestFileTokenSource:
         assert await source.identity_token() == "rotated-token"
 
     @pytest.mark.asyncio
-    async def test_runtime_error_after_construction(self, tmp_path):
+    async def test_row_22_runtime_error_after_construction(self, tmp_path):
         token_file = tmp_path / "token"
         token_file.write_text("initial-token")
         source = FileTokenSource(token_file_path=str(token_file))
@@ -247,7 +277,7 @@ class TestFileTokenSource:
         assert exc_info.value.retryable is True
 
     @pytest.mark.asyncio
-    async def test_retryable_runtime_error_on_emptied_file(self, tmp_path):
+    async def test_row_21_retryable_runtime_error_on_emptied_file(self, tmp_path):
         token_file = tmp_path / "token"
         token_file.write_text("initial-token")
         source = FileTokenSource(token_file_path=str(token_file))
@@ -261,6 +291,24 @@ class TestFileTokenSource:
 
 
 class TestEKSWorkloadIdentityCompat:
+    @pytest.mark.asyncio
+    async def test_row_22_runtime_failure_after_valid_eks_construction(self, tmp_path):
+        path = tmp_path / "token"
+        with pytest.raises(WorkloadIdentityConfigurationError):
+            EKSWorkloadIdentity(token_file_path=str(path))
+        path.write_text("eks-token")
+        credential = EKSWorkloadIdentity(token_file_path=str(path))
+        path.unlink()
+
+        with pytest.raises(WorkloadIdentityRuntimeError) as exc_info:
+            await credential.prepare_token_exchange_request(
+                client=None,
+                subject_token="subject-token",
+                resource="https://resource.example.com",
+            )
+        assert exc_info.value.source == "file"
+        assert exc_info.value.retryable is True
+
     def test_is_a_workload_identity(self, tmp_path):
         token_file = tmp_path / "token"
         token_file.write_text("eks-token")
@@ -343,7 +391,7 @@ class TestGCPMetadataTokenSource:
             "empty body",
         ],
     )
-    async def test_runtime_error_on_failure(self, response):
+    async def test_row_20_runtime_error_on_failure(self, response):
         source = GCPMetadataTokenSource(
             "https://zone.example.com",
             _transport=httpx.MockTransport(lambda request: response),
@@ -423,10 +471,11 @@ class TestFlyTokenSource:
         assert exc_info.value.retryable is False
 
     @pytest.mark.asyncio
-    async def test_retryable_runtime_error_on_429(self):
+    @pytest.mark.parametrize("body", ["", '{"error":"invalid_client"}'])
+    async def test_row_20_retryable_runtime_error_on_429(self, body):
         source = FlyTokenSource(
             _transport=httpx.MockTransport(
-                lambda request: httpx.Response(429, json={"error": "invalid_client"})
+                lambda request: httpx.Response(429, text=body)
             ),
         )
 
