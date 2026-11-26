@@ -136,6 +136,15 @@ A server composed this way speaks A2A protocol 1.0: `SendMessage` under an `A2A-
 
 A 0.3-generation caller (`message/send` with no `A2A-Version` header) is rejected by the a2a-sdk 1.x dispatcher with `-32601 MethodNotFound`. Such callers should upgrade; if one cannot, pass a2a-sdk's own `enable_v0_3_compat=True` to `create_jsonrpc_routes` yourself. This package no longer enables or recommends it.
 
+### Peer response size
+
+`DelegationClient`, `DelegationClientSync`, and `ServiceDiscovery` accept a
+`max_peer_response_bytes` keyword. The default HTTP clients stop reading agent
+cards and invocation replies after 64 MiB of decoded data by default.
+An overflow raises a typed `ResponseBodyTooLargeError` with the HTTP status.
+The option does not affect replacement HTTP clients or the separate 1 MiB
+token-exchange limit.
+
 ## Relationship to other Keycard packages
 
 - **`keycardai-oauth`**: OAuth 2.0 primitives used for token exchange and PKCE.

@@ -18,6 +18,7 @@ from keycardai.oauth.http.auth import BasicAuth
 from keycardai.oauth.types.models import TokenExchangeRequest
 from keycardai.oauth.types.oauth import TokenType
 
+from .._peer_http import DEFAULT_PEER_RESPONSE_BYTES, AsyncPeerClient, PeerClient
 from ..config import AgentServiceConfig
 
 logger = logging.getLogger(__name__)
@@ -137,11 +138,17 @@ class DelegationClient:
         ... )
     """
 
-    def __init__(self, service_config: AgentServiceConfig):
+    def __init__(
+        self,
+        service_config: AgentServiceConfig,
+        *,
+        max_peer_response_bytes: int = DEFAULT_PEER_RESPONSE_BYTES,
+    ):
         """Initialize delegation client with service configuration.
 
         Args:
             service_config: Configuration of the calling service
+            max_peer_response_bytes: Decoded peer reply limit (default: 64 MiB)
         """
         self.config = service_config
 
@@ -154,7 +161,7 @@ class DelegationClient:
         )
 
         # HTTP client for service invocation
-        self.http_client = httpx.AsyncClient(timeout=30.0)
+        self.http_client: httpx.AsyncClient = AsyncPeerClient(max_peer_response_bytes)
 
     async def discover_service(self, service_url: str) -> dict[str, Any]:
         """Fetch agent card from remote service.
@@ -385,11 +392,17 @@ class DelegationClientSync:
         ... )
     """
 
-    def __init__(self, service_config: AgentServiceConfig):
+    def __init__(
+        self,
+        service_config: AgentServiceConfig,
+        *,
+        max_peer_response_bytes: int = DEFAULT_PEER_RESPONSE_BYTES,
+    ):
         """Initialize synchronous delegation client with service configuration.
 
         Args:
             service_config: Configuration of the calling service
+            max_peer_response_bytes: Decoded peer reply limit (default: 64 MiB)
         """
         self.config = service_config
 
@@ -402,7 +415,7 @@ class DelegationClientSync:
         )
 
         # HTTP client for service invocation
-        self.http_client = httpx.Client(timeout=30.0)
+        self.http_client: httpx.Client = PeerClient(max_peer_response_bytes)
 
     def discover_service(self, service_url: str) -> dict[str, Any]:
         """Fetch agent card from remote service.
