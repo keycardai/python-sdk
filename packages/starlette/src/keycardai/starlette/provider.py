@@ -383,8 +383,9 @@ class AuthProvider:
         JWKS when configured) and registers
         ``starlette.middleware.authentication.AuthenticationMiddleware`` wired
         to ``KeycardAuthBackend``. After installation, every request passes
-        through the backend; routes without ``@requires(...)`` stay public,
-        but ``request.user`` / ``request.auth`` are populated for every route.
+        through the backend; routes without an authentication requirement
+        remain public to requests without an Authorization header.
+        ``request.user`` and ``request.auth`` are populated for every route.
 
         Anonymous requests to protected routes receive an RFC 6750 401
         response with a Bearer challenge. Explicit publishing modes include

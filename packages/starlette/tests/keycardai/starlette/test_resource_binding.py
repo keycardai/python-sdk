@@ -248,6 +248,17 @@ def test_bearer_row_16_provider_install_resolves_routed_zone(token_headers):
         request(client, "/unknown/mcp", status=401)
 
 
+def test_review_4703017729_per_zone_install_keeps_health_public(token_headers):
+    app = Starlette(routes=[Route("/health", handled)])
+    AuthProvider(
+        enable_multi_zone=True, resource_identifiers_by_zone=ZONES
+    ).install(app)
+    with TestClient(app) as client:
+        request(client, "/health", status=200)
+        token = token_headers(ZONES["a"], "https://a.keycard.cloud")
+        request(client, "/health", token, status=401)
+
+
 def test_review_finding_1_protected_router_verifies_application_routes(token_headers):
     async def authenticated(request):
         return PlainTextResponse(str(request.user.is_authenticated))

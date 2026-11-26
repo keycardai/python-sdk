@@ -342,8 +342,6 @@ class KeycardAuthBackend(AuthenticationBackend):
             if zone_id is None and self.zone_resolver is not None:
                 zone_id = self.zone_resolver(conn.scope)
         conn.scope[_BINDING_SCOPE_KEY] = (binding, zone_id)
-        if binding.mode == "per_zone" and zone_id not in binding.resource_identifiers_by_zone:
-            raise KeycardAuthError("invalid_token", "No configured resource for this zone")
 
         if not conn.headers.get("Authorization"):
             if self.require_authentication:
@@ -359,6 +357,9 @@ class KeycardAuthBackend(AuthenticationBackend):
                 "Invalid Authorization header format",
                 status_code=400,
             )
+
+        if binding.mode == "per_zone" and zone_id not in binding.resource_identifiers_by_zone:
+            raise KeycardAuthError("invalid_token", "No configured resource for this zone")
 
         if self.verifier.enable_multi_zone:
             if binding.mode != "per_zone":
