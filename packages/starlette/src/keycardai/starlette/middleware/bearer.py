@@ -221,9 +221,8 @@ class KeycardAuthBackend(AuthenticationBackend):
 
     Behavior contract:
 
-    - Requests to OAuth metadata paths (``/.well-known/oauth-*``,
-      ``/.well-known/jwks.json``) always pass through anonymously per
-      RFC 9728 §2 and RFC 8414 §3.
+    - Requests matching the registered OAuth metadata routes pass through
+      anonymously per RFC 9728 §2 and RFC 8414 §3.
     - No ``Authorization`` header on a non-metadata path:
 
       - Default (``require_authentication=False``): returns ``None`` so the
@@ -252,6 +251,8 @@ class KeycardAuthBackend(AuthenticationBackend):
             resource mode options directly.
         zone_resolver: Optional token-independent zone selector when the
             ASGI scope does not already contain a ``zone_id`` path parameter.
+        metadata_matcher: Optional router match for public metadata routes
+            covered by this middleware in explicit binding modes.
     """
 
     def __init__(
@@ -267,10 +268,12 @@ class KeycardAuthBackend(AuthenticationBackend):
         resource_binding: ResourceBinding | None = None,
         issuer: str | None = None,
         zone_resolver: Callable[[Scope], str | None] | None = None,
+        metadata_matcher: Callable[[Scope], bool] | None = None,
     ):
         self.verifier = verifier
         self.require_authentication = require_authentication
         self.zone_resolver = zone_resolver
+        self.metadata_matcher = metadata_matcher
         if (
             resource_binding is None and resource_identifier is None
             and resource_identifiers_by_zone is None and not multi_resource
@@ -318,8 +321,13 @@ class KeycardAuthBackend(AuthenticationBackend):
         self, conn: HTTPConnection
     ) -> tuple[KeycardAuthCredentials, KeycardUser] | None:
         binding = self.resource_binding
-        path = conn.url.path if binding.mode == "legacy" else conn.scope["path"]
-        if _is_oauth_metadata_path(path):
+        if binding.mode == "legacy":
+            is_metadata = _is_oauth_metadata_path(conn.url.path)
+        else:
+            is_metadata = self.metadata_matcher is not None and self.metadata_matcher(
+                conn.scope
+            )
+        if is_metadata:
             return None
 
         zone_id: str | None = None

@@ -398,6 +398,7 @@ class AuthProvider:
                 resource_binding=self.resource_binding,
                 issuer=self.issuer,
                 zone_resolver=lambda scope: _route_zone(scope, app.routes),
+                metadata_matcher=lambda scope: metadata_routes.matches(scope)[0] == Match.FULL,
             ),
             on_error=keycard_on_error,
         )

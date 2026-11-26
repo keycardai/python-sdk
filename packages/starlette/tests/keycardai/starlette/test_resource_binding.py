@@ -246,6 +246,43 @@ def test_bearer_row_16_provider_install_resolves_routed_zone(token_headers):
         request(client, "/unknown/mcp", status=401)
 
 
+def test_review_finding_1_protected_router_verifies_application_routes(token_headers):
+    async def authenticated(request):
+        return PlainTextResponse(str(request.user.is_authenticated))
+
+    path = "/.well-known/oauth-protected-resource/application"
+    inner = Starlette(routes=[Route(path, authenticated)])
+    provider = AuthProvider(zone_url=ISSUER, resource_identifier=IDENTIFIER)
+    app = Starlette(
+        routes=protected_router(
+            issuer=provider.issuer,
+            app=inner,
+            verifier=provider.get_token_verifier(),
+            require_authentication=True,
+            resource_binding=provider.resource_binding,
+        )
+    )
+    with TestClient(app) as client:
+        assert client.get(path, headers=token_headers(IDENTIFIER)).text == "True"
+        assert (
+            client.get("/.well-known/oauth-protected-resource/mcp").status_code == 200
+        )
+
+
+def test_review_finding_1_installed_zone_metadata_remains_public():
+    provider = AuthProvider(
+        zone_url=ISSUER,
+        enable_multi_zone=True,
+        resource_identifiers_by_zone=ZONES,
+    )
+    app = Starlette()
+    provider.install(app)
+    with TestClient(app) as client:
+        response = client.get("/.well-known/oauth-protected-resource/a/mcp")
+        assert response.status_code == 200
+        assert response.json()["resource"] == ZONES["a"]
+
+
 def test_bearer_prebuilt_verifier_mismatch_is_detectable():
     with pytest.raises(ResourceBindingConfigError, match="audience"):
         KeycardAuthBackend(
