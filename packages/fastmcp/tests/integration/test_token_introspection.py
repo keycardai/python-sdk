@@ -1,5 +1,7 @@
 """FastMCP integration v2 conformance over the HTTP transport."""
 
+import asyncio
+import json
 import time
 from unittest.mock import AsyncMock
 
@@ -14,7 +16,8 @@ from starlette.responses import PlainTextResponse
 from starlette.testclient import TestClient
 
 from keycardai.fastmcp import AuthProvider, AuthProviderConfigurationError, ClientSecret
-from keycardai.oauth import OAuthProtocolError, TokenIntrospection
+from keycardai.oauth import AsyncClient, OAuthProtocolError, TokenIntrospection
+from keycardai.oauth.http._wire import HttpResponse
 
 CREDENTIAL = ClientSecret(("resource-server", "secret"))
 RESOURCE = "https://api.example.com/mcp"
@@ -165,6 +168,37 @@ def test_introspection_never_discovers_metadata_over_plaintext(mock_client_facto
         )
     mock_client_factory.create_client.assert_not_called()
     mock_client_factory.create_async_client.assert_not_called()
+
+
+def test_introspection_deadline_covers_discovery_and_post(
+    http_request, mock_client_factory, mock_async_client
+):
+    methods = []
+
+    class Transport:
+        async def request_raw(self, request, *, timeout=None):
+            methods.append(request.method)
+            await asyncio.sleep(0.08)
+            body = (
+                {
+                    "issuer": mock_zone_url,
+                    "introspection_endpoint": f"{mock_zone_url}/introspect",
+                }
+                if request.method == "GET"
+                else {"active": True}
+            )
+            return HttpResponse(status=200, headers={}, body=json.dumps(body).encode())
+
+    def create_client(issuer, *, auth=None, config=None):
+        if config is None:
+            return mock_async_client
+        return AsyncClient(issuer, config=config, transport=Transport())
+
+    mock_client_factory.create_async_client.side_effect = create_client
+    request, _, handled = http_request(introspect=True, introspection_timeout=0.12)
+    assert_unavailable(request())
+    assert methods == ["GET", "POST"]
+    assert handled == []
 
 
 def test_same_token_is_introspected_on_every_request(http_request, mock_async_client):

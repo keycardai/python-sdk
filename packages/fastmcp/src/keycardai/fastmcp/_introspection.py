@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 
+from anyio import fail_after
 from starlette.responses import JSONResponse
 from starlette.routing import Match, Route
 from starlette.types import ASGIApp, Receive, Scope, Send
@@ -50,9 +51,10 @@ class TokenIntrospector:
 
     async def is_active(self, token: str) -> bool:
         try:
-            result = await self._client.introspect_token(
-                token, credential=self._credential, timeout=self._timeout
-            )
+            with fail_after(self._timeout):
+                result = await self._client.introspect_token(
+                    token, credential=self._credential, timeout=self._timeout
+                )
             return result.active
         except Exception as exc:
             status = (

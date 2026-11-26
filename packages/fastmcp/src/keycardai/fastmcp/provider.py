@@ -810,7 +810,7 @@ class AuthProvider:
                  exchange without client authentication.
             client_factory: Client factory for creating OAuth clients. Defaults to DefaultClientFactory
             introspect: Check each locally verified token using the credential that owns the resource.
-            introspection_timeout: Bound each introspection request in seconds.
+            introspection_timeout: Bound each status check, including discovery, in seconds.
 
         Raises:
             AuthProviderConfigurationError: If neither zone_url nor zone_id is provided, or if custom client factory fails

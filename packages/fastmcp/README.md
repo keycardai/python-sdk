@@ -50,7 +50,8 @@ application's `application_credential`. The status check runs on each
 authenticated HTTP request and does not cache results. Configure an HTTPS
 issuer for authorization server discovery. An inactive token
 gets a 401 challenge. If the check fails, the server returns 503 without a
-challenge. `introspection_timeout` defaults to 10 seconds.
+challenge. `introspection_timeout` bounds each status check, including discovery,
+and defaults to 10 seconds.
 
 If you lint with flake8-bugbear or Ruff's `B008` rule (function call in
 argument default), exempt your tool modules: the call-in-default is the
