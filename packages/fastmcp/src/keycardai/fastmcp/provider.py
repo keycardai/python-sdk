@@ -38,8 +38,9 @@ from fastmcp.dependencies import Dependency
 from fastmcp.server.auth import AccessToken, RemoteAuthProvider
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.server.dependencies import get_access_token, get_context
-from keycardai.oauth import AsyncClient, Client
-from keycardai.oauth.exceptions import OAuthProtocolError
+from keycardai.oauth import AsyncClient, Client, ClientConfig
+from keycardai.oauth.client_auth import require_client_authenticator
+from keycardai.oauth.exceptions import ConfigError, OAuthProtocolError
 from keycardai.oauth.http.auth import NoneAuth
 from keycardai.oauth.server import (
     ApplicationCredential,
@@ -63,6 +64,11 @@ from keycardai.oauth.server.private_key import PrivateKeyManager
 from keycardai.oauth.types.models import TokenExchangeRequest, TokenResponse
 from keycardai.oauth.utils.jwt import extract_scopes, get_claims
 
+from ._introspection import (
+    InsufficientScope,
+    TokenIntrospector,
+    introspection_middleware,
+)
 from .exceptions import MissingContextError
 
 
@@ -76,6 +82,50 @@ class _KeycardJWTVerifier(JWTVerifier):
                 update={"claims": {**access_token.claims, "aud": [aud]}}
             )
         return access_token
+
+
+class _IntrospectingJWTVerifier(_KeycardJWTVerifier):
+    def __init__(
+        self,
+        *,
+        introspector: TokenIntrospector,
+        jwks_uri: str | None,
+        issuer: str,
+        required_scopes: list[str],
+        audience: list[str],
+    ):
+        super().__init__(
+            jwks_uri=jwks_uri, issuer=issuer, required_scopes=required_scopes,
+            audience=audience,
+        )
+        self._introspector = introspector
+        # FastMCP's verifier does not distinguish a missing scope from an invalid JWT.
+        self._local_verifier = (
+            _KeycardJWTVerifier(jwks_uri=jwks_uri, issuer=issuer, audience=audience)
+            if self.required_scopes
+            else None
+        )
+
+    async def load_access_token(self, token: str) -> AccessToken | None:
+        if self._local_verifier is not None:
+            access_token = await self._local_verifier.load_access_token(token)
+        else:
+            access_token = await super().load_access_token(token)
+        if access_token is None:
+            return None
+        if not set(self.required_scopes).issubset(access_token.scopes):
+            raise InsufficientScope
+        if not await self._introspector.is_active(token):
+            return None
+        return access_token
+
+    def get_middleware(self) -> list:
+        return introspection_middleware(self)
+
+
+class _IntrospectingRemoteAuthProvider(RemoteAuthProvider):
+    def get_middleware(self) -> list:
+        return introspection_middleware(self)
 
 __all__ = [
     "INTROSPECT",
@@ -738,6 +788,8 @@ class AuthProvider:
         base_url: str | None = None,
         application_credential: ApplicationCredential | None = None,
         client_factory: ClientFactory | None = None,
+        introspect: bool = False,
+        introspection_timeout: float = 10.0,
         # deprecated
         mcp_base_url: str | None = None,
     ):
@@ -756,6 +808,8 @@ class AuthProvider:
                  EKSWorkloadIdentity for EKS workload identity, or None for basic token
                  exchange without client authentication.
             client_factory: Client factory for creating OAuth clients. Defaults to DefaultClientFactory
+            introspect: Check each locally verified token using the credential that owns the resource.
+            introspection_timeout: Bound each status check, including discovery, in seconds.
 
         Raises:
             AuthProviderConfigurationError: If neither zone_url nor zone_id is provided, or if custom client factory fails
@@ -795,6 +849,36 @@ class AuthProvider:
 
         # Initialize application credential provider
         self.application_credential = self._discover_application_credential(application_credential)
+
+        self._introspector = None
+        if introspect:
+            try:
+                if urlparse(self.zone_url).scheme != "https":
+                    raise ConfigError("Token introspection requires an HTTPS issuer")
+                if self.application_credential is None:
+                    raise ConfigError("Token introspection requires a credential")
+                if not 0 < introspection_timeout < float("inf"):
+                    raise ConfigError("The introspection timeout must be positive and finite")
+                credential = require_client_authenticator(self.application_credential)
+            except ConfigError as e:
+                raise AuthProviderConfigurationError(str(e)) from e
+
+            try:
+                introspection_client = self.client_factory.create_async_client(
+                    self.zone_url,
+                    config=ClientConfig(
+                        enable_metadata_discovery=True,
+                        auto_register_client=False,
+                        timeout=introspection_timeout,
+                    ),
+                )
+            except Exception as e:
+                self._handle_client_creation_error(NoneAuth(), e)
+            if introspection_client is None:
+                self._handle_client_creation_error(NoneAuth())
+            self._introspector = TokenIntrospector(
+                introspection_client, credential, introspection_timeout
+            )
 
         # Get the auth strategy for the HTTP client doing the token exchange
         if self.application_credential is not None:
@@ -928,7 +1012,20 @@ class AuthProvider:
 
         Returns:
             JWTVerifier: Configured JWT token verifier for the Keycard zone
+
+        With introspection enabled, use this verifier directly as the FastMCP
+        auth provider, or use `get_remote_auth_provider()`, to get HTTP error
+        responses. Direct token verification can raise on insufficient scopes
+        or when introspection fails.
         """
+        if self._introspector is not None:
+            return _IntrospectingJWTVerifier(
+                introspector=self._introspector,
+                jwks_uri=self.jwks_uri,
+                issuer=self.zone_url,
+                required_scopes=self.required_scopes,
+                audience=self.audience,
+            )
         return _KeycardJWTVerifier(
             jwks_uri=self.jwks_uri,
             issuer=self.zone_url,
@@ -951,7 +1048,12 @@ class AuthProvider:
 
         authorization_servers = [AnyHttpUrl(self.zone_url)]
 
-        return RemoteAuthProvider(
+        provider_type = (
+            RemoteAuthProvider
+            if self._introspector is None
+            else _IntrospectingRemoteAuthProvider
+        )
+        return provider_type(
             token_verifier=self.get_jwt_token_verifier(),
             authorization_servers=authorization_servers,
             base_url=self.mcp_base_url,
