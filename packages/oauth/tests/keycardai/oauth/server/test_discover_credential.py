@@ -44,6 +44,18 @@ def key_storage_dir(tmp_path):
     return str(tmp_path / "keys")
 
 
+@pytest.fixture(
+    params=[
+        ("KEYCARD_WEB_IDENTITY_KEY_STORAGE_DIR", "keys"),
+        ("KEYCARD_APPLICATION_CREDENTIAL_TYPE", "web_identity"),
+    ],
+    ids=["inferred", "explicit-default-storage"],
+)
+def web_identity_env(request, monkeypatch, tmp_path):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv(*request.param)
+
+
 def test_client_secret_from_env(monkeypatch):
     monkeypatch.setenv("KEYCARD_CLIENT_ID", "cid")
     monkeypatch.setenv("KEYCARD_CLIENT_SECRET", "csecret")
@@ -157,6 +169,24 @@ def test_explicit_web_identity_without_storage_dir_uses_default(monkeypatch, tmp
     credential = discover_credential()
     assert isinstance(credential, WebIdentity)
     assert credential._storage.storage_dir == Path("./server_keys")
+
+
+def test_row_23_web_identity_picks_up_client_id(monkeypatch, web_identity_env):
+    monkeypatch.setenv("KEYCARD_CLIENT_ID", "cid")
+    credential = discover_credential()
+    assert isinstance(credential, WebIdentity)
+    assert credential.client_id == "cid"
+
+
+@pytest.mark.parametrize("client_id", [None, ""], ids=["unset", "empty"])
+def test_row_24_web_identity_without_client_id(
+    monkeypatch, web_identity_env, client_id
+):
+    if client_id is not None:
+        monkeypatch.setenv("KEYCARD_CLIENT_ID", client_id)
+    credential = discover_credential()
+    assert isinstance(credential, WebIdentity)
+    assert credential.client_id is None
 
 
 def test_explicit_workload_identity_prefers_keycard_token_file(monkeypatch, tmp_path):
