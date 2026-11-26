@@ -12,8 +12,9 @@ from joserfc import jwt
 from joserfc.jwk import RSAKey
 from starlette.applications import Starlette
 from starlette.middleware.authentication import AuthenticationMiddleware
+from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import PlainTextResponse
-from starlette.routing import Mount, Route
+from starlette.routing import Mount, Route, Router
 from starlette.testclient import TestClient
 
 from keycardai.oauth.server import AccessContext, ClientSecret
@@ -593,6 +594,50 @@ def test_row_17_shared_issuer_drives_manual_wiring(token_headers):
             status=401,
             metadata=f"{METADATA}/mcp",
         )
+
+
+def test_row_17_multi_zone_client_secret_keeps_shared_discovery():
+    options = {
+        "zone_id": "z",
+        "application_credential": ClientSecret({
+            "https://a.keycard.cloud": ("a", "secret-a"),
+            "https://b.keycard.cloud": ("b", "secret-b"),
+        }),
+        "resource_identifiers_by_zone": dict.fromkeys(ZONES, IDENTIFIER),
+        "multi_resource": True,
+        "audience": [IDENTIFIER],
+    }
+    provider = AuthProvider(**options)
+    assert provider.enable_multi_zone is False
+    assert provider.get_token_verifier().enable_multi_zone is False
+    with pytest.raises(ResourceBindingConfigError, match="enable_multi_zone=False"):
+        AuthProvider(enable_multi_zone=True, **options)
+
+
+def test_row_1_standalone_backend_finds_jwks_behind_middleware():
+    provider = AuthProvider(zone_url=ISSUER, resource_identifier=IDENTIFIER)
+    metadata = Router(
+        well_known_metadata_routes(
+            provider.issuer,
+            jwks=JsonWebKeySet(keys=[]),
+            resource_binding=provider.resource_binding,
+        )
+    )
+    app = Starlette(
+        routes=[Mount("/", app=CORSMiddleware(metadata, allow_origins=["*"]))]
+    )
+    app.add_middleware(
+        AuthenticationMiddleware,
+        backend=KeycardAuthBackend(
+            provider.get_token_verifier(),
+            resource_binding=provider.resource_binding,
+            require_authentication=True,
+        ),
+        on_error=keycard_on_error,
+    )
+    with TestClient(app) as client:
+        assert client.get("/.well-known/jwks.json").json() == {"keys": []}
+        request(client, "/.well-known/jwks.json/other", status=401)
 
 
 @pytest.mark.parametrize("install", [True, False])

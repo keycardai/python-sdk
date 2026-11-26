@@ -184,8 +184,12 @@ class AuthProvider:
         # Env-discovered credentials are always single-zone, so the passed
         # argument is the only source that can imply multi-zone.
         if enable_multi_zone is None:
+            # Shared discovery selects the zone from the token, so a
+            # multi-zone credential does not turn on request zone selection.
+            shared = multi_resource and resource_identifiers_by_zone is not None
             enable_multi_zone = (
-                isinstance(application_credential, ClientSecret)
+                not shared
+                and isinstance(application_credential, ClientSecret)
                 and application_credential.is_multi_zone
             )
 
@@ -221,7 +225,10 @@ class AuthProvider:
         if self.resource_binding.mode == "per_zone" and not enable_multi_zone:
             raise ResourceBindingConfigError("Per-zone binding requires enable_multi_zone")
         if self.resource_binding.mode == "shared" and enable_multi_zone:
-            raise ResourceBindingConfigError("Shared discovery requires token-keyed verification")
+            raise ResourceBindingConfigError(
+                "Shared discovery requires token-keyed verification; "
+                "leave enable_multi_zone unset or pass enable_multi_zone=False"
+            )
         self.issuer = (
             self.base_url if self.resource_binding.mode == "shared" else self.zone_url or self.base_url
         )

@@ -63,12 +63,24 @@ def _is_oauth_metadata_path(path: str) -> bool:
     return any(path == p or path.startswith(p + "/") for p in _OAUTH_METADATA_PATHS)
 
 
+def _routes_of(app: object) -> Sequence[BaseRoute]:
+    """Return the routes of an app, looking through wrapping middleware."""
+    for _ in range(16):
+        if app is None:
+            break
+        routes = getattr(app, "routes", None)
+        if routes:
+            return routes
+        app = getattr(app, "app", None)
+    return ()
+
+
 def _routes_to_jwks(scope: Scope, routes: Sequence[BaseRoute]) -> bool:
     for route in routes:
         match, child_scope = route.matches(scope)
         if match == Match.FULL:
             return _is_jwks_endpoint(child_scope.get("endpoint")) or _routes_to_jwks(
-                {**scope, **child_scope}, getattr(route, "routes", ())
+                {**scope, **child_scope}, _routes_of(route)
             )
     return False
 
@@ -80,7 +92,9 @@ def _matches_bound_metadata(scope: Scope, binding: ResourceBinding) -> bool:
     path = scope["path"]
     zones = binding.resource_identifiers_by_zone
     if path == jwks_path:
-        return _routes_to_jwks(scope, getattr(scope.get("app"), "routes", ()))
+        return _routes_to_jwks(
+            scope, _routes_of(scope.get("app")) or _routes_of(scope.get("router"))
+        )
     if binding.mode in {"per_zone", "shared"}:
         if path.startswith(f"{as_path}/"):
             return path[len(as_path) + 1:] in zones
@@ -293,6 +307,8 @@ class KeycardAuthBackend(AuthenticationBackend):
             covered by this middleware in explicit binding modes. When omitted,
             the exact well-known paths derived from the binding and any
             registered SDK JWKS endpoint at its well-known path are public.
+            Pass a matcher when the backend runs before routing it cannot
+            inspect, such as middleware on a bare ``Router``.
     """
 
     def __init__(
