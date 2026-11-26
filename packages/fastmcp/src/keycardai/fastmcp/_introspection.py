@@ -10,12 +10,12 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from fastmcp.server.auth.middleware import RequireAuthMiddleware
 from keycardai.oauth import AsyncClient
 from keycardai.oauth.client_auth import ClientAuthenticator
-from keycardai.oauth.exceptions import OAuthHttpError, OAuthProtocolError
+from keycardai.oauth.exceptions import OAuthError, OAuthHttpError, OAuthProtocolError
 
 logger = logging.getLogger(__name__)
 
 
-class IntrospectionUnavailable(Exception):
+class IntrospectionUnavailable(OAuthError):
     pass
 
 
@@ -73,7 +73,7 @@ class TokenIntrospector:
                 logger.warning(
                     "Token introspection failed: %s (status=%s, cause=%s)", *key
                 )
-            raise IntrospectionUnavailable from exc
+            raise IntrospectionUnavailable("Token introspection unavailable", exc) from exc
 
 
 class IntrospectionErrorMiddleware:
