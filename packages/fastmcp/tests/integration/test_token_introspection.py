@@ -7,12 +7,16 @@ from unittest.mock import AsyncMock
 
 import pytest
 from fastmcp import FastMCP
+from fastmcp.server.auth.middleware import RequireAuthMiddleware
 from fastmcp.server.auth.providers.jwt import JWTVerifier
 from fastmcp.server.http import StreamableHTTPASGIApp
 from fixtures.auth_provider import mock_zone_url
 from joserfc import jwt
 from joserfc.jwk import RSAKey
+from starlette.middleware import Middleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import PlainTextResponse
+from starlette.routing import Route
 from starlette.testclient import TestClient
 
 from keycardai.fastmcp import AuthProvider, AuthProviderConfigurationError, ClientSecret
@@ -219,6 +223,42 @@ def test_component_manager_preserves_introspection_errors(
     else:
         assert_unavailable(response)
     assert handled == []
+
+
+@pytest.mark.parametrize("guard_as_middleware", [False, True])
+@pytest.mark.parametrize("required_scopes", [[], ["write"]])
+def test_custom_route_middleware_preserves_introspection_errors(
+    http_request, mock_async_client, guard_as_middleware, required_scopes
+):
+    class Endpoint:
+        async def __call__(self, scope, receive, send):
+            pytest.fail("Authentication failure must not reach the protected route")
+
+    async def passthrough(request, call_next):
+        return await call_next(request)
+
+    def configure_server(server):
+        middleware = [Middleware(BaseHTTPMiddleware, dispatch=passthrough)]
+        if guard_as_middleware:
+            handler = Endpoint()
+            middleware.append(Middleware(RequireAuthMiddleware, required_scopes))
+        else:
+            handler = RequireAuthMiddleware(Endpoint(), required_scopes)
+        server._additional_http_routes.append(
+            Route("/custom", endpoint=handler, methods=["POST"], middleware=middleware)
+        )
+
+    mock_async_client.introspect_token.side_effect = TimeoutError()
+    request, _, _ = http_request(
+        introspect=True, required_scopes=required_scopes, configure_server=configure_server
+    )
+    response = request("/custom")
+    if required_scopes:
+        assert response.status_code == 403
+        assert 'error="insufficient_scope"' in response.headers["WWW-Authenticate"]
+        mock_async_client.introspect_token.assert_not_called()
+    else:
+        assert_unavailable(response)
 
 
 def test_introspection_never_discovers_metadata_over_plaintext(mock_client_factory):

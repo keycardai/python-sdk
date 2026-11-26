@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterator
 from dataclasses import dataclass
 
 from anyio import fail_after
@@ -48,27 +49,39 @@ class _ProtectedRoute:
     resource_metadata_url: AnyHttpUrl | None
 
 
+def _route_apps(route: Route | Mount) -> Iterator[object]:
+    pending: list[object] = [route]
+    seen: set[int] = set()
+    while pending:
+        app = pending.pop()
+        if app is None or id(app) in seen:
+            continue
+        seen.add(id(app))
+        yield app
+        pending.extend((getattr(app, "endpoint", None), getattr(app, "app", None)))
+
+
 def _protected_route(scope: Scope) -> _ProtectedRoute | None:
     for route in getattr(scope.get("app"), "routes", ()):
         if route.matches(scope)[0] != Match.FULL:
             continue
         if not isinstance(route, (Route, Mount)):
             return None
-        app = route.app
-        if isinstance(app, RequireAuthMiddleware):
-            return _ProtectedRoute(app.resource_metadata_url)
-        if _COMPONENT_MANAGER is not None:
-            manager_auth, serving_auth = _COMPONENT_MANAGER
-            if isinstance(app, manager_auth):
-                auth, mcp_path = serving_auth(scope, app.server)
-                if auth is None and app.required_scopes is None:
-                    return None
-                url = (
-                    auth._get_resource_url(mcp_path)
-                    if auth is not None and mcp_path is not None
-                    else None
-                )
-                return _ProtectedRoute(build_resource_metadata_url(url) if url else None)
+        for app in _route_apps(route):
+            if isinstance(app, RequireAuthMiddleware):
+                return _ProtectedRoute(app.resource_metadata_url)
+            if _COMPONENT_MANAGER is not None:
+                manager_auth, serving_auth = _COMPONENT_MANAGER
+                if isinstance(app, manager_auth):
+                    auth, mcp_path = serving_auth(scope, app.server)
+                    if auth is None and app.required_scopes is None:
+                        continue
+                    url = (
+                        auth._get_resource_url(mcp_path)
+                        if auth is not None and mcp_path is not None
+                        else None
+                    )
+                    return _ProtectedRoute(build_resource_metadata_url(url) if url else None)
         return None
     return None
 
