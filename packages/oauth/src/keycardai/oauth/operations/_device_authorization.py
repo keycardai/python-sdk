@@ -30,26 +30,29 @@ SLOW_DOWN_INCREMENT = 5
 _REQUIRED_STRINGS = ("device_code", "user_code", "verification_uri")
 
 
-def check_endpoint(issuer: str, name: str, url: str | None) -> str:
-    """Return ``url`` if it is an http or https URL.
+def check_endpoint(
+    issuer: str, name: str, url: str | None, *, require_https: bool = False
+) -> str:
+    """Return ``url`` if it uses an allowed HTTP scheme.
 
     Raises:
-        ConfigError: ``url`` is missing or is not an http or https URL.
+        ConfigError: ``url`` is missing or is not a valid URL with an allowed scheme.
     """
     if url is None or url == "":
         raise ConfigError(f"Authorization server {issuer} does not advertise a {name}")
-    not_http = ConfigError(
-        f"Authorization server {issuer} has a {name} that is not an http "
-        f"or https URL: {url!r}"
+    allowed_schemes = ("https",) if require_https else ("http", "https")
+    schemes = "HTTPS" if require_https else "http or https"
+    invalid_url = ConfigError(
+        f"Authorization server {issuer} has a {name} that is not an {schemes} URL: {url!r}"
     )
     if not isinstance(url, str):
-        raise not_http
+        raise invalid_url
     try:
         parts = urlsplit(url)
     except ValueError as e:
-        raise not_http from e
-    if parts.scheme not in ("http", "https") or not parts.netloc:
-        raise not_http
+        raise invalid_url from e
+    if parts.scheme not in allowed_schemes or not parts.netloc:
+        raise invalid_url
     return url
 
 

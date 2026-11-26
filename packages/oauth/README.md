@@ -283,6 +283,35 @@ success does not mean a session was revoked. An OAuth error raises
 `unsupported_token_type` means the token cannot be revoked here, such as an
 exchanged access token. The SDK does not retry.
 
+### Token Introspection (RFC 7662)
+
+Use `Client.introspect_token` or await `AsyncClient.introspect_token` to check
+an access or refresh token's current status with the issuer.
+
+```python
+from keycardai.oauth import Client
+from keycardai.oauth.server.credentials import ClientSecret
+
+credential = ClientSecret((client_id, client_secret))
+with Client("https://zone.keycard.cloud") as client:
+    status = client.introspect_token(token, credential=credential)
+    if status.active:
+        print(status.scope)
+```
+
+The request uses the HTTPS `introspection_endpoint` advertised by discovery or
+provided in `metadata=`. The SDK does not derive an endpoint URL. The
+request requires a confidential client credential and sends
+`token_type_hint` only when provided. Client secrets use HTTP Basic, which
+can also be configured with `auth=BasicAuth(...)`. Private-key JWT client
+assertions use the zone issuer as their audience.
+
+`TokenIntrospection` exposes typed fields such as `active`, `scope`, and
+`iss`. Additional claims are available in `model_extra`. An inactive token
+returns `active=False`; an OAuth error raises `OAuthProtocolError` with its
+code, description, and HTTP status. The SDK does not cache introspection
+results or retry requests.
+
 ## Features
 
 - **Token Exchange (RFC 8693)** - Exchange tokens for different audiences, scopes, or token types
@@ -387,7 +416,7 @@ Override discovered or default endpoints with `Endpoints`:
 | Endpoint | RFC | Description |
 |----------|-----|-------------|
 | `token` | RFC 6749 | Token endpoint for exchanges and grants |
-| `introspect` | RFC 7662 | Token introspection endpoint |
+| `introspect` | RFC 7662 | Endpoint summary override; `introspect_token` uses metadata only |
 | `revoke` | RFC 7009 | Token revocation endpoint |
 | `register` | RFC 7591 | Dynamic client registration endpoint |
 | `par` | RFC 9126 | Pushed authorization request endpoint |
