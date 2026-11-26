@@ -200,6 +200,8 @@ class PeerClient(httpx.Client):
         operation = "a2a_invocation" if request.method == "POST" else "a2a_discovery"
         live = False
         try:
+            if check_response := request.extensions.get("keycard_a2a_check_response"):
+                check_response(response)
             coding = _peer_coding(response, operation)
             if stream:
                 assert isinstance(response.stream, httpx.SyncByteStream)
@@ -233,6 +235,8 @@ class AsyncPeerClient(httpx.AsyncClient):
         operation = "a2a_invocation" if request.method == "POST" else "a2a_discovery"
         live = False
         try:
+            if check_response := request.extensions.get("keycard_a2a_check_response"):
+                check_response(response)
             coding = _peer_coding(response, operation)
             if stream:
                 assert isinstance(response.stream, httpx.AsyncByteStream)
