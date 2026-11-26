@@ -22,7 +22,7 @@ Example::
         application_credential=ClientSecret(("client_id", "client_secret")),
         # Resource indicator (RFC 8707) Keycard mints tokens for. The verifier
         # rejects tokens whose "aud" claim does not include this value.
-        audience="https://your-api.example.com",
+        resource_identifier="https://your-api.example.com/api/me",
     )
 
     app = FastAPI()
@@ -65,14 +65,16 @@ from keycardai.oauth.server.credentials import (
 from keycardai.oauth.server.exceptions import (
     AuthProviderConfigurationError,
     CredentialDiscoveryError,
+    MissingAudienceWarning,
 )
 from keycardai.oauth.server.verifier import TokenVerifier
 from keycardai.oauth.types.models import JsonWebKeySet
 from starlette.middleware.authentication import AuthenticationMiddleware
-from starlette.routing import BaseRoute
-from starlette.types import ASGIApp
+from starlette.routing import BaseRoute, Match
+from starlette.types import ASGIApp, Scope
 
 from .authorization import grant as _grant_factory, requires as _requires_module_func
+from .binding import ResourceBinding, ResourceBindingConfigError, zone_issuer
 from .middleware.bearer import KeycardAuthBackend, keycard_on_error
 from .routers.metadata import auth_metadata_mount
 
@@ -88,6 +90,17 @@ def _deprecated_zone_env(name: str) -> str | None:
             stacklevel=3,
         )
     return value
+
+
+def _route_zone(scope: Scope, routes: list[BaseRoute]) -> str | None:
+    for route in routes:
+        match, child_scope = route.matches(scope)
+        if match == Match.FULL:
+            zone = child_scope.get("path_params", {}).get("zone_id")
+            if zone is not None:
+                return zone
+            return _route_zone({**scope, **child_scope}, getattr(route, "routes", []))
+    return None
 
 
 
@@ -124,6 +137,11 @@ class AuthProvider:
         client_factory: ClientFactory | None = None,
         enable_dynamic_client_registration: bool | None = None,
         application_credential: ApplicationCredential | None = None,
+        *,
+        resource_identifier: str | None = None,
+        resource_identifiers_by_zone: dict[str, str] | None = None,
+        multi_resource: bool = False,
+        allow_any_audience: bool = False,
     ):
         """Initialize the Keycard auth provider.
 
@@ -136,9 +154,7 @@ class AuthProvider:
             audience: Expected token audience for verification. A list
                 accepts a token whose ``aud`` matches any of its entries, and
                 a dict maps each zone ID to its audience in multi-zone mode.
-                An empty list is rejected. When left unset (None), the
-                audience check is disabled and tokens verify regardless of
-                their ``aud`` claim.
+                With an explicit mode, supplied only for ``multi_resource``.
             server_url: Resource server URL.
             enable_multi_zone: Enable multi-zone support where zone_url is the
                 top-level domain and the zone is extracted from request
@@ -149,6 +165,13 @@ class AuthProvider:
             client_factory: Client factory for creating OAuth clients.
             enable_dynamic_client_registration: Override automatic registration.
             application_credential: Credential provider for token exchange.
+            resource_identifier: Exact audience as an HTTP(S) URL or URN.
+                HTTP(S) identifiers also publish protected-resource metadata.
+            resource_identifiers_by_zone: Exact identifiers indexed by zone ID.
+            multi_resource: Use a nonempty audience list. With a zone map,
+                publish shared discovery for its one common HTTP(S) identifier.
+            allow_any_audience: Skip only the audience check, with no
+                protected-resource discovery.
         """
         zone_url = zone_url or os.getenv("KEYCARD_ZONE_URL")
         zone_id = zone_id or _deprecated_zone_env("KEYCARD_ZONE_ID")
@@ -160,18 +183,22 @@ class AuthProvider:
         # Infer multi-zone from a multi-zone ClientSecret unless explicitly set.
         # Env-discovered credentials are always single-zone, so the passed
         # argument is the only source that can imply multi-zone.
+        # Shared discovery selects the zone from the token, so a multi-zone
+        # credential does not turn on request zone selection, and the
+        # provider needs no default zone.
+        shared = multi_resource and resource_identifiers_by_zone is not None
         if enable_multi_zone is None:
             enable_multi_zone = (
-                isinstance(application_credential, ClientSecret)
+                not shared
+                and isinstance(application_credential, ClientSecret)
                 and application_credential.is_multi_zone
             )
 
-        if zone_url is None and not enable_multi_zone:
+        if zone_url is None and not enable_multi_zone and not shared:
             if zone_id is None:
                 raise AuthProviderConfigurationError()
             zone_url = f"{AnyHttpUrl(self.base_url).scheme}://{zone_id}.{AnyHttpUrl(self.base_url).host}"
         self.zone_url = zone_url
-        self.issuer = self.zone_url or self.base_url
         self.server_name = server_name
         self.required_scopes = required_scopes
         self.server_url = server_url
@@ -182,9 +209,33 @@ class AuthProvider:
 
         self._clients: dict[str, AsyncClient | None] = {}
         self._init_lock = asyncio.Lock()
-        if isinstance(audience, list) and not audience:
+        if (
+            isinstance(audience, list) and not audience
+            and not multi_resource and not allow_any_audience
+            and resource_identifier is None and resource_identifiers_by_zone is None
+        ):
             raise AuthProviderConfigurationError(message="audience must not be an empty list")
-        self.audience = audience
+        self.resource_binding = ResourceBinding(
+            resource_identifier=resource_identifier,
+            resource_identifiers_by_zone=resource_identifiers_by_zone,
+            multi_resource=multi_resource,
+            audience=audience,
+            allow_any_audience=allow_any_audience,
+        )
+        self.resource_binding._validate_multi_zone(enable_multi_zone)
+        if self.resource_binding.mode == "per_zone" and not enable_multi_zone:
+            raise ResourceBindingConfigError("Per-zone binding requires enable_multi_zone")
+        if self.resource_binding.mode == "shared" and enable_multi_zone:
+            raise ResourceBindingConfigError(
+                "Shared discovery requires token-keyed verification; "
+                "leave enable_multi_zone unset or pass enable_multi_zone=False"
+            )
+        self.issuer = (
+            self.base_url if self.resource_binding.mode == "shared" else self.zone_url or self.base_url
+        )
+        self.audience = (
+            audience if self.resource_binding.mode == "legacy" else self.resource_binding.audience
+        )
 
         self.application_credential = self._discover_application_credential(
             application_credential
@@ -217,17 +268,10 @@ class AuthProvider:
             raise AuthProviderConfigurationError(message=str(e)) from e
 
     def _create_zone_scoped_url(self, base_url: str, zone_id: str) -> str:
-        base_url_obj = AnyHttpUrl(base_url)
-        port_part = ""
-        if base_url_obj.port and not (
-            (base_url_obj.scheme == "https" and base_url_obj.port == 443)
-            or (base_url_obj.scheme == "http" and base_url_obj.port == 80)
-        ):
-            port_part = f":{base_url_obj.port}"
-        return f"{base_url_obj.scheme}://{zone_id}.{base_url_obj.host}{port_part}"
+        return zone_issuer(base_url, zone_id)
 
     def _get_client_key(self, zone_id: str | None = None) -> str:
-        if self.enable_multi_zone and zone_id:
+        if zone_id and (self.enable_multi_zone or self.resource_binding.mode == "shared"):
             return f"zone:{zone_id}"
         return "default"
 
@@ -236,6 +280,11 @@ class AuthProvider:
     ) -> AsyncClient | None:
         client = None
         zone_id = auth_info["zone_id"]
+        shared = self.resource_binding.mode == "shared"
+        if shared and (
+            zone_id is None or zone_id not in self.resource_binding.resource_identifiers_by_zone
+        ):
+            raise AuthProviderConfigurationError("A trusted zone is required for shared discovery")
         client_key = self._get_client_key(zone_id)
         if client_key in self._clients and self._clients[client_key] is not None:
             return self._clients[client_key]
@@ -260,7 +309,9 @@ class AuthProvider:
                         )
                     )
 
-                if self.enable_multi_zone and zone_id:
+                if shared and zone_id:
+                    base_url = self._create_zone_scoped_url(self.issuer, zone_id)
+                elif self.enable_multi_zone and zone_id:
                     base_url = self._create_zone_scoped_url(self.base_url, zone_id)
                 elif self.zone_url is not None:
                     base_url = self.zone_url
@@ -300,13 +351,24 @@ class AuthProvider:
         """Get a token verifier for this provider."""
         if enable_multi_zone is None:
             enable_multi_zone = self.enable_multi_zone
-        return TokenVerifier(
-            required_scopes=self.required_scopes,
-            issuer=self.issuer,
-            enable_multi_zone=enable_multi_zone,
-            audience=self.audience,
-            client_factory=self.client_factory,
-        )
+        binding = self.resource_binding
+        binding._validate_multi_zone(enable_multi_zone)
+        issuer: str | list[str] = self.issuer
+        if binding.mode == "per_zone" and not enable_multi_zone:
+            raise ResourceBindingConfigError("Per-zone binding requires request zone selection")
+        if binding.mode == "shared":
+            if enable_multi_zone:
+                raise ResourceBindingConfigError("Shared discovery requires token-keyed verification")
+            issuer = list(binding.zone_issuers(issuer).values())
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", MissingAudienceWarning)
+            return TokenVerifier(
+                required_scopes=self.required_scopes,
+                issuer=issuer,
+                enable_multi_zone=enable_multi_zone,
+                audience=self.audience if binding.mode == "legacy" else binding.audience,
+                client_factory=self.client_factory,
+            )
 
     def get_routes(self, app: ASGIApp) -> list[BaseRoute]:
         """Get OAuth metadata routes and protected app mount.
@@ -322,6 +384,7 @@ class AuthProvider:
                 verifier=self.get_token_verifier(),
                 enable_multi_zone=self.enable_multi_zone,
                 jwks=self.jwks,
+                resource_binding=self.resource_binding,
             )
         )
 
@@ -332,23 +395,31 @@ class AuthProvider:
         JWKS when configured) and registers
         ``starlette.middleware.authentication.AuthenticationMiddleware`` wired
         to ``KeycardAuthBackend``. After installation, every request passes
-        through the backend; routes without ``@requires(...)`` stay public,
-        but ``request.user`` / ``request.auth`` are populated for every route.
+        through the backend; routes without an authentication requirement
+        remain public to requests without an Authorization header.
+        ``request.user`` and ``request.auth`` are populated for every route.
 
         Anonymous requests to protected routes receive an RFC 6750 401
-        response with a ``WWW-Authenticate: Bearer ... resource_metadata=...``
-        header (built by ``keycard_on_error``).
+        response with a Bearer challenge. Explicit publishing modes include
+        the metadata URL only for the matching request path and query.
         """
         metadata_routes = auth_metadata_mount(
             self.issuer,
             enable_multi_zone=self.enable_multi_zone,
             jwks=self.jwks,
+            resource_binding=self.resource_binding,
         )
         app.routes.insert(0, metadata_routes)
 
         app.add_middleware(
             AuthenticationMiddleware,
-            backend=KeycardAuthBackend(self.get_token_verifier()),
+            backend=KeycardAuthBackend(
+                self.get_token_verifier(),
+                resource_binding=self.resource_binding,
+                issuer=self.issuer,
+                zone_resolver=lambda scope: _route_zone(scope, app.routes),
+                metadata_matcher=lambda scope: metadata_routes.matches(scope)[0] == Match.FULL,
+            ),
             on_error=keycard_on_error,
         )
 
