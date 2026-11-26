@@ -12,6 +12,8 @@ from pydantic import AnyHttpUrl
 
 from keycardai.oauth.server.exceptions import VerifierConfigError
 
+from .shared.zone import is_valid_zone_id
+
 Audience = str | list[str] | dict[str, str] | None
 _Mode = Literal["legacy", "single", "per_zone", "multi", "shared", "any"]
 PROTECTED_RESOURCE_PATH = "/.well-known/oauth-protected-resource"
@@ -110,7 +112,9 @@ class ResourceBinding:
         identifiers = dict(resource_identifiers_by_zone or {})
         if zoned and not identifiers:
             raise ResourceBindingConfigError("resource_identifiers_by_zone is empty")
-        for identifier in identifiers.values():
+        for zone_id, identifier in identifiers.items():
+            if not is_valid_zone_id(zone_id):
+                raise ResourceBindingConfigError("Invalid zone ID")
             _validate_identifier(identifier)
         if isinstance(audience, list) and not audience:
             raise ResourceBindingConfigError("audience must not be an empty list")

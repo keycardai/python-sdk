@@ -192,13 +192,14 @@ def test_row_4b_8c_valid_zone_id_publishes_and_proxies_metadata(zone_metadata_cl
     assert [str(request.url) for request in requests] == [f"{ZONE_ISSUER}{AS_PATH}"] * 2
 
 
-def test_row_8c_uses_zone_from_rewritten_path(zone_metadata_client):
+@pytest.mark.parametrize("prefix", ["/gateway/edge", "/gateway%2Fedge"])
+def test_row_8c_uses_zone_from_rewritten_path(zone_metadata_client, prefix):
     client, requests = zone_metadata_client
-    resource = client.get(f"/gateway%2Fedge{RESOURCE_PATH}/{VALID_ZONE}/mcp")
+    resource = client.get(f"{prefix}{RESOURCE_PATH}/{VALID_ZONE}/mcp")
     assert resource.status_code == 200
     assert resource.json()["authorization_servers"] == [f"{ZONE_ISSUER}/"]
 
-    authorization_server = client.get(f"/gateway%2Fedge{AS_PATH}/{VALID_ZONE}")
+    authorization_server = client.get(f"{prefix}{AS_PATH}/{VALID_ZONE}")
     assert authorization_server.status_code == 200
     assert [str(request.url) for request in requests] == [f"{ZONE_ISSUER}{AS_PATH}"]
 
