@@ -297,24 +297,30 @@ class KeycardAuthBackend(AuthenticationBackend):
         if isinstance(verifier, TokenVerifier) and binding.mode != "legacy":
             if _accepted_audiences(binding.audience) != _accepted_audiences(verifier.audience):
                 raise ResourceBindingConfigError("Verifier audience does not match resource binding")
-            if binding.mode == "shared":
-                if issuer is None:
-                    primary = urlsplit(verifier.issuer)
-                    for zone in binding.resource_identifiers_by_zone:
-                        if primary.netloc.startswith(f"{zone}."):
-                            issuer = f"{primary.scheme}://{primary.netloc[len(zone) + 1:]}"
-                            break
-                if not issuer or verifier._trusted_issuers != set(
-                    binding.zone_issuers(issuer).values()
-                ):
-                    raise ResourceBindingConfigError(
-                        "Verifier trusted issuers do not match shared discovery"
-                    )
             if binding.mode == "per_zone" and issuer is not None and (
                 binding.zone_issuers(issuer) != binding.zone_issuers(verifier.issuer)
             ):
                 raise ResourceBindingConfigError(
                     "Verifier issuer does not match per-zone discovery"
+                )
+
+        self._shared_zones_by_issuer: dict[str, str] = {}
+        if binding.mode == "shared":
+            if issuer is None and isinstance(verifier, TokenVerifier):
+                primary = urlsplit(verifier.issuer)
+                for zone in binding.resource_identifiers_by_zone:
+                    if primary.netloc.startswith(f"{zone}."):
+                        issuer = f"{primary.scheme}://{primary.netloc[len(zone) + 1:]}"
+                        break
+            if issuer:
+                self._shared_zones_by_issuer = {
+                    url: zone for zone, url in binding.zone_issuers(issuer).items()
+                }
+            if isinstance(verifier, TokenVerifier) and (
+                verifier._trusted_issuers != self._shared_zones_by_issuer.keys()
+            ):
+                raise ResourceBindingConfigError(
+                    "Verifier trusted issuers do not match shared discovery"
                 )
 
     async def authenticate(
@@ -406,6 +412,10 @@ class KeycardAuthBackend(AuthenticationBackend):
             claims = {}
         aud = claims.get("aud")
         act = claims.get("act")
+        if binding.mode == "shared":
+            token_issuer = claims.get("iss")
+            if isinstance(token_issuer, str):
+                zone_id = self._shared_zones_by_issuer.get(token_issuer)
 
         resource_server_url = binding.metadata_for(zone_id) or _get_oauth_protected_resource_url(conn)
         user = KeycardUser(

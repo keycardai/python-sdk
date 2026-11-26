@@ -5,7 +5,7 @@ Bearer row 7a applies only to the eventual release removing legacy support.
 
 import time
 import warnings
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from joserfc import jwt
@@ -15,7 +15,9 @@ from starlette.responses import PlainTextResponse
 from starlette.routing import Mount, Route
 from starlette.testclient import TestClient
 
+from keycardai.oauth.server import AccessContext
 from keycardai.oauth.server._cache import JWKSKey
+from keycardai.oauth.server.exceptions import AuthProviderConfigurationError
 from keycardai.oauth.server.verifier import TokenVerifier
 from keycardai.starlette import (
     AuthProvider,
@@ -281,6 +283,72 @@ def test_review_finding_1_installed_zone_metadata_remains_public():
         response = client.get("/.well-known/oauth-protected-resource/a/mcp")
         assert response.status_code == 200
         assert response.json()["resource"] == ZONES["a"]
+
+
+def test_review_finding_2_grant_uses_verified_issuer_client(monkeypatch, token_headers):
+    issuer = "https://login.example.com:8443"
+    zone_a = "https://a.login.example.com:8443"
+    zone_b = "https://b.login.example.com:8443"
+    factory = Mock()
+    clients = {zone_a: Mock(), zone_b: Mock()}
+    factory.create_async_client.side_effect = lambda *, base_url, **_: clients[base_url]
+    exchange = AsyncMock()
+    monkeypatch.setattr(
+        "keycardai.starlette.authorization.exchange_tokens_for_resources", exchange
+    )
+    provider = AuthProvider(
+        zone_url=issuer,
+        resource_identifiers_by_zone=dict.fromkeys(ZONES, IDENTIFIER),
+        multi_resource=True,
+        audience=[IDENTIFIER],
+        client_factory=factory,
+    )
+
+    @provider.grant("https://downstream.example")
+    async def endpoint(request, access: AccessContext):
+        assert not access.has_errors()
+        return PlainTextResponse("ok")
+
+    app = Starlette(routes=[Route("/mcp", endpoint)])
+    provider.install(app)
+    with TestClient(app) as client:
+        for issuer_url in (zone_a, zone_b, zone_a):
+            request(client, "/mcp", token_headers(IDENTIFIER, issuer_url), status=200)
+
+    assert [
+        args.kwargs["base_url"] for args in factory.create_async_client.call_args_list
+    ] == [
+        zone_a,
+        zone_b,
+    ]
+    assert [args.kwargs["client"] for args in exchange.await_args_list] == [
+        clients[zone_a],
+        clients[zone_b],
+        clients[zone_a],
+    ]
+    assert [
+        args.kwargs["auth_info"]["zone_id"] for args in exchange.await_args_list
+    ] == [
+        "a",
+        "b",
+        "a",
+    ]
+
+
+@pytest.mark.parametrize("zone_id", [None, "unknown"])
+@pytest.mark.asyncio
+async def test_review_finding_2_grant_rejects_missing_or_unknown_zone(zone_id):
+    factory = Mock()
+    provider = AuthProvider(
+        zone_url=ISSUER,
+        resource_identifiers_by_zone=dict.fromkeys(ZONES, IDENTIFIER),
+        multi_resource=True,
+        audience=[IDENTIFIER],
+        client_factory=factory,
+    )
+    with pytest.raises(AuthProviderConfigurationError, match="trusted zone"):
+        await provider._get_or_create_client({"zone_id": zone_id})
+    factory.create_async_client.assert_not_called()
 
 
 def test_bearer_prebuilt_verifier_mismatch_is_detectable():

@@ -260,7 +260,7 @@ class AuthProvider:
         return zone_issuer(base_url, zone_id)
 
     def _get_client_key(self, zone_id: str | None = None) -> str:
-        if self.enable_multi_zone and zone_id:
+        if zone_id and (self.enable_multi_zone or self.resource_binding.mode == "shared"):
             return f"zone:{zone_id}"
         return "default"
 
@@ -269,6 +269,11 @@ class AuthProvider:
     ) -> AsyncClient | None:
         client = None
         zone_id = auth_info["zone_id"]
+        shared = self.resource_binding.mode == "shared"
+        if shared and (
+            zone_id is None or zone_id not in self.resource_binding.resource_identifiers_by_zone
+        ):
+            raise AuthProviderConfigurationError("A trusted zone is required for shared discovery")
         client_key = self._get_client_key(zone_id)
         if client_key in self._clients and self._clients[client_key] is not None:
             return self._clients[client_key]
@@ -293,7 +298,9 @@ class AuthProvider:
                         )
                     )
 
-                if self.enable_multi_zone and zone_id:
+                if shared and zone_id:
+                    base_url = self._create_zone_scoped_url(self.issuer, zone_id)
+                elif self.enable_multi_zone and zone_id:
                     base_url = self._create_zone_scoped_url(self.base_url, zone_id)
                 elif self.zone_url is not None:
                     base_url = self.zone_url
