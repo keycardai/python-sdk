@@ -8,6 +8,8 @@ from urllib.parse import unquote
 
 import httpx
 import pytest
+from joserfc import jwt as jose_jwt
+from joserfc.jwk import RSAKey
 
 from keycardai.oauth.exceptions import InvalidTokenError, OAuthHttpError
 from keycardai.oauth.http._transports import HttpxAsyncTransport, HttpxTransport
@@ -1078,8 +1080,52 @@ class TestZoneIdValidation:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("enable_multi_zone", [False, True])
+    @pytest.mark.parametrize("zone_id", ["", None])
+    async def test_row_4a_empty_zone_id_uses_default_issuer(
+        self, monkeypatch, enable_multi_zone, zone_id
+    ):
+        issuer = "https://example.com"
+        jwks_uri = f"{issuer}/jwks"
+        key = RSAKey.generate_key(2048)
+        now = int(time.time())
+        token = jose_jwt.encode(
+            {"alg": "RS256", "kid": "kid"},
+            {
+                "iss": issuer,
+                "aud": issuer,
+                "sub": "user-1",
+                "client_id": "client-1",
+                "iat": now,
+                "exp": now + 60,
+            },
+            key,
+        )
+        requests = []
+
+        def handle_request(request):
+            requests.append(str(request.url))
+            return httpx.Response(
+                200, json={"keys": [{**key.as_dict(private=False), "kid": "kid"}]}
+            )
+
+        verifier = TokenVerifier(
+            issuer=issuer,
+            jwks_uri=jwks_uri,
+            audience=issuer,
+            enable_multi_zone=enable_multi_zone,
+        )
+        transport = httpx.MockTransport(handle_request)
+        async with httpx.AsyncClient(transport=transport) as client:
+            monkeypatch.setattr(HttpxAsyncTransport, "_create_client", lambda _: client)
+            result = await verifier.verify_token_for_zone(token, zone_id)
+
+        assert result.sub == "user-1"
+        assert requests == [jwks_uri]
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("enable_multi_zone", [False, True])
     @pytest.mark.parametrize(
-        "encoded_zone", ["", "a%23b", "a%2Fb", "a%40b", "a%3Ab", "team%2Eeu"]
+        "encoded_zone", ["a%23b", "a%2Fb", "a%40b", "a%3Ab", "team%2Eeu"]
     )
     async def test_row_4_invalid_zone_id_makes_no_requests(
         self, monkeypatch, enable_multi_zone, encoded_zone
@@ -1119,6 +1165,14 @@ class TestZoneIdValidation:
             verifier._create_zone_scoped_url(issuer, "team.eu")
         with pytest.raises(InvalidTokenError, match="Invalid zone ID"):
             verifier._get_zone_jwks_uri(f"{issuer}/jwks", "team.eu")
+
+    @pytest.mark.parametrize("zone_id", ["", None])
+    def test_row_4a_empty_zone_id_leaves_urls_unchanged(self, zone_id):
+        issuer = "https://example.com"
+        jwks_uri = f"{issuer}/jwks"
+        verifier = TokenVerifier(issuer=issuer, audience=issuer)
+        assert verifier._create_zone_scoped_url(issuer, zone_id) == issuer
+        assert verifier._get_zone_jwks_uri(jwks_uri, zone_id) == jwks_uri
 
 
 class TestJwksRefetchCooldown:

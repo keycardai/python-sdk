@@ -263,8 +263,10 @@ class TokenVerifier:
         ):
             raise JWKSUriValidationError(issuer, jwks_uri)
 
-    def _create_zone_scoped_url(self, base_url: str, zone_id: str) -> str:
-        """Create zone-scoped URL by prepending zone_id to the host."""
+    def _create_zone_scoped_url(self, base_url: str, zone_id: str | None) -> str:
+        """Prepend a provided zone ID to the host."""
+        if zone_id is None or zone_id == "":
+            return base_url
         _validate_zone_id(zone_id)
         base_url_obj = AnyHttpUrl(base_url)
 
@@ -291,7 +293,9 @@ class TokenVerifier:
             raise InvalidTokenError("JWT missing key id (kid) header")
         return (kid, algorithm)
 
-    def _get_zone_jwks_uri(self, jwks_uri: str, zone_id: str) -> str:
+    def _get_zone_jwks_uri(self, jwks_uri: str, zone_id: str | None) -> str:
+        if zone_id is None or zone_id == "":
+            return jwks_uri
         _validate_zone_id(zone_id)
         # Prefix the host with the zone id. Built with urllib rather than by
         # assigning AnyHttpUrl.host, which pydantic exposes read-only.
@@ -487,13 +491,16 @@ class TokenVerifier:
         key = await self._get_verification_key(token, issuer=issuer)
         return self._verify_token(token, key, expected_issuer=issuer)
 
-    async def verify_token_for_zone(self, token: str, zone_id: str) -> AccessToken:
-        """Verify a JWT token for a specific zone and return its ``AccessToken``.
+    async def verify_token_for_zone(
+        self, token: str, zone_id: str | None
+    ) -> AccessToken:
+        """Verify a JWT token for a zone, or the default issuer if no zone is provided.
 
         Raises:
             InvalidTokenError: If the token fails any verification step.
         """
-        _validate_zone_id(zone_id)
+        if zone_id is not None and zone_id != "":
+            _validate_zone_id(zone_id)
         claims = self._unverified_claims(token)
         expected_issuer = self.issuer
         if self.enable_multi_zone and zone_id:
