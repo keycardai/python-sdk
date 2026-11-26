@@ -1,3 +1,19 @@
+## 0.17.2-keycardai-starlette (2026-11-26)
+
+
+- fix(keycardai-starlette): allow multi-zone verifier-only modes with an HTTP resource identifier (#520)
+- * fix(keycardai-starlette): allow multi-zone verifier-only modes with an HTTP resource identifier
+- Refs SDK-14
+- TypeScript guard: https://github.com/keycardai/typescript-sdk/blob/b1644766a116c42172891712e9e1e12c29976394/packages/express/src/bearerAuth.ts#L144-L149
+- * fix(keycardai-starlette): resolve verifier-only zones in installed middleware
+- Refs SDK-14
+- * fix(keycardai-starlette): reject non-string verifier-only zone IDs
+- Refs SDK-14
+- * refactor(keycardai-starlette): use the shared zone id check in the bearer backend
+- ---------
+- Co-authored-by: devin-ai-keycard <devin-ai@keycard.ai>
+Co-authored-by: Larry Osakwe <23560354+Larry-Osakwe@users.noreply.github.com>
+
 ## 0.17.1-keycardai-starlette (2026-11-26)
 
 
