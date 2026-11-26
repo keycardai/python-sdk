@@ -1,3 +1,9 @@
+## 0.17.3-keycardai-starlette (2026-11-26)
+
+
+- fix(keycardai-starlette): read the zone id from the routed path (#533)
+- Co-authored-by: devin-ai-keycard <devin-ai@keycard.ai>
+
 ## 0.17.2-keycardai-starlette (2026-11-26)
 
 
