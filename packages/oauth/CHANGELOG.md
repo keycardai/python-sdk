@@ -1,3 +1,20 @@
+## 0.44.0-keycardai-oauth (2026-11-26)
+
+
+- feat(keycardai-oauth): actor token source on the token exchange client (SDK-99) (#488)
+- * feat(keycardai-oauth): actor token source on the token exchange client (SDK-99)
+- Implements keycardai/keycard-sdk-spec token-exchange.md rows 23-26
+- Refs SDK-99
+- * fix(keycardai-oauth): bound synchronous actor token lookup (SDK-99)
+- * fix(keycardai-oauth): retry asyncio source timeouts on Python 3.10 (SDK-99)
+- * fix(keycardai-oauth): preserve actor lookup timeout error type (SDK-99)
+- * fix(keycardai-oauth): call synchronous actor sources on the caller thread (SDK-99)
+- * fix(keycardai-oauth): retry dropped actor source connections (SDK-99)
+- * fix(keycardai-oauth): classify workload identity source retryability per spec#159 (SDK-99)
+- ---------
+- Co-authored-by: devin-ai-keycard <devin-ai@keycard.ai>
+Co-authored-by: Larry Osakwe <23560354+Larry-Osakwe@users.noreply.github.com>
+
 ## 0.43.2-keycardai-oauth (2026-11-26)
 
 
