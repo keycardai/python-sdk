@@ -375,6 +375,11 @@ class DelegationClient:
                 jsonrpc_url,
                 json=envelope,
                 follow_redirects=False,
+                extensions={
+                    "keycard_a2a_check_response": lambda response: _check_invocation_redirect(
+                        response, service_url, self._trusted_origins
+                    )
+                },
                 headers={
                     "Authorization": f"Bearer {token}",
                     constants.VERSION_HEADER: constants.PROTOCOL_VERSION_1_0,
@@ -626,6 +631,11 @@ class DelegationClientSync:
                 jsonrpc_url,
                 json=envelope,
                 follow_redirects=False,
+                extensions={
+                    "keycard_a2a_check_response": lambda response: _check_invocation_redirect(
+                        response, service_url, self._trusted_origins
+                    )
+                },
                 headers={
                     "Authorization": f"Bearer {token}",
                     constants.VERSION_HEADER: constants.PROTOCOL_VERSION_1_0,

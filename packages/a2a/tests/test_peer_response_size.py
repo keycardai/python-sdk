@@ -9,7 +9,7 @@ from inspect import isawaitable
 
 import httpx
 import pytest
-from keycardai.oauth.exceptions import ResponseBodyTooLargeError
+from keycardai.oauth.exceptions import ConfigError, ResponseBodyTooLargeError
 from keycardai.oauth.http._transports import HttpxAsyncTransport, HttpxTransport, ResponseBodyDecodeError
 
 from keycardai.a2a._peer_http import AsyncPeerClient, PeerClient
@@ -66,6 +66,43 @@ def peer(request, service_config, monkeypatch):
                 await closed
 
     return call, json.dumps(document).encode(), expected, invocation
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("encoding", "body"),
+    [("identity", b"x" * 128), ("gzip", b"not a gzip body")],
+)
+async def test_row_16_refuses_redirect_before_reading_body(peer, encoding, body):
+    call, _, _, invocation = peer
+    if not invocation:
+        pytest.skip("redirect rule applies only to invocation")
+
+    reads = []
+    closed = []
+
+    class RedirectBody(_Chunks):
+        def __iter__(self):
+            reads.append(True)
+            yield from super().__iter__()
+
+        def close(self):
+            closed.append(True)
+
+        async def aclose(self):
+            self.close()
+
+    def redirect():
+        return httpx.Response(
+            307,
+            headers={"Location": "https://other.example/rpc", "Content-Encoding": encoding},
+            stream=RedirectBody(body),
+        )
+
+    with pytest.raises(ConfigError, match="redirect origin https://other.example:443"):
+        await call(redirect, max_peer_response_bytes=64)
+    assert not reads
+    assert closed
 
 
 @pytest.mark.asyncio
