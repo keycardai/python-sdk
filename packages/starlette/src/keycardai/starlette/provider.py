@@ -194,7 +194,6 @@ class AuthProvider:
                 raise AuthProviderConfigurationError()
             zone_url = f"{AnyHttpUrl(self.base_url).scheme}://{zone_id}.{AnyHttpUrl(self.base_url).host}"
         self.zone_url = zone_url
-        self.issuer = self.zone_url or self.base_url
         self.server_name = server_name
         self.required_scopes = required_scopes
         self.server_url = server_url
@@ -223,6 +222,9 @@ class AuthProvider:
             raise ResourceBindingConfigError("Per-zone binding requires enable_multi_zone")
         if self.resource_binding.mode == "shared" and enable_multi_zone:
             raise ResourceBindingConfigError("Shared discovery requires token-keyed verification")
+        self.issuer = (
+            self.base_url if self.resource_binding.mode == "shared" else self.zone_url or self.base_url
+        )
         self.audience = (
             audience if self.resource_binding.mode == "legacy" else self.resource_binding.audience
         )
@@ -300,7 +302,7 @@ class AuthProvider:
                     )
 
                 if shared and zone_id:
-                    base_url = self._create_zone_scoped_url(self._binding_issuer, zone_id)
+                    base_url = self._create_zone_scoped_url(self.issuer, zone_id)
                 elif self.enable_multi_zone and zone_id:
                     base_url = self._create_zone_scoped_url(self.base_url, zone_id)
                 elif self.zone_url is not None:
@@ -335,10 +337,6 @@ class AuthProvider:
                 self._clients[client_key] = client
             return client
 
-    @property
-    def _binding_issuer(self) -> str:
-        return self.base_url if self.resource_binding.mode == "shared" else self.issuer
-
     def get_token_verifier(
         self, enable_multi_zone: bool | None = None
     ) -> TokenVerifier:
@@ -347,7 +345,7 @@ class AuthProvider:
             enable_multi_zone = self.enable_multi_zone
         binding = self.resource_binding
         binding._validate_multi_zone(enable_multi_zone)
-        issuer: str | list[str] = self._binding_issuer
+        issuer: str | list[str] = self.issuer
         if binding.mode == "per_zone" and not enable_multi_zone:
             raise ResourceBindingConfigError("Per-zone binding requires request zone selection")
         if binding.mode == "shared":
@@ -373,7 +371,7 @@ class AuthProvider:
 
         return list(
             protected_router(
-                issuer=self._binding_issuer,
+                issuer=self.issuer,
                 app=app,
                 verifier=self.get_token_verifier(),
                 enable_multi_zone=self.enable_multi_zone,
@@ -398,7 +396,7 @@ class AuthProvider:
         the metadata URL only for the matching request path and query.
         """
         metadata_routes = auth_metadata_mount(
-            self._binding_issuer,
+            self.issuer,
             enable_multi_zone=self.enable_multi_zone,
             jwks=self.jwks,
             resource_binding=self.resource_binding,
@@ -410,7 +408,7 @@ class AuthProvider:
             backend=KeycardAuthBackend(
                 self.get_token_verifier(),
                 resource_binding=self.resource_binding,
-                issuer=self._binding_issuer,
+                issuer=self.issuer,
                 zone_resolver=lambda scope: _route_zone(scope, app.routes),
                 metadata_matcher=lambda scope: metadata_routes.matches(scope)[0] == Match.FULL,
             ),

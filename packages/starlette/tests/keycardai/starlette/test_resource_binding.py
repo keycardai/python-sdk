@@ -30,6 +30,7 @@ from keycardai.starlette import (
     keycard_on_error,
     protected_router,
     requires,
+    well_known_metadata_routes,
 )
 
 ISSUER = "https://keycard.cloud"
@@ -536,6 +537,38 @@ def test_review_4703017898_shared_metadata_uses_base_issuer(install):
         assert response.json()["authorization_servers"] == [
             "https://a.login.example.com:8443",
             "https://b.login.example.com:8443",
+        ]
+
+
+@pytest.mark.parametrize("use_protected_router", [True, False])
+def test_review_b_readme_shared_discovery_uses_public_issuer(use_protected_router):
+    auth = AuthProvider(
+        zone_id="z",
+        resource_identifiers_by_zone=dict.fromkeys(ZONES, IDENTIFIER),
+        multi_resource=True,
+        audience=[IDENTIFIER],
+    )
+    assert auth.issuer == ISSUER
+    if use_protected_router:
+        app = Starlette(
+            routes=protected_router(
+                issuer=auth.issuer,
+                app=Starlette(),
+                verifier=auth.get_token_verifier(),
+                resource_binding=auth.resource_binding,
+            )
+        )
+    else:
+        app = Starlette()
+        app.router.routes.extend(
+            well_known_metadata_routes(auth.issuer, resource_binding=auth.resource_binding)
+        )
+    with TestClient(app) as client:
+        response = client.get("/.well-known/oauth-protected-resource/mcp")
+        assert response.status_code == 200
+        assert response.json()["authorization_servers"] == [
+            "https://a.keycard.cloud",
+            "https://b.keycard.cloud",
         ]
 
 
