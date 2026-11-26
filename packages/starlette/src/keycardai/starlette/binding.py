@@ -203,9 +203,10 @@ class ResourceBinding:
         return self.resource_identifier
 
     def _validate_multi_zone(self, enable_multi_zone: bool) -> None:
-        if enable_multi_zone and self.mode in {"single", "multi", "any"}:
+        if enable_multi_zone and self.mode == "single" and self.metadata_for(None):
             raise ResourceBindingConfigError(
-                "enable_multi_zone requires resource_identifiers_by_zone for explicit bindings"
+                "enable_multi_zone requires resource_identifiers_by_zone "
+                "for an HTTP(S) resource_identifier"
             )
 
     def metadata_for(self, zone_id: str | None) -> str | None:

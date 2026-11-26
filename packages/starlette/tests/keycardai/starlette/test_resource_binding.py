@@ -238,7 +238,10 @@ def test_row_16_16a_16c_zone_is_selected_before_verification(token_headers):
 
 def test_row_16_provider_install_resolves_routed_zone(token_headers):
     app = Starlette(
-        routes=[Route("/{zone_id}/mcp", requires("authenticated")(handled))]
+        routes=[
+            Route("/{zone_id:int}/mcp", requires("authenticated")(handled)),
+            Route("/{zone_id}/mcp", requires("authenticated")(handled)),
+        ]
     )
     AuthProvider(
         zone_url=ISSUER, enable_multi_zone=True, resource_identifiers_by_zone=ZONES
@@ -252,6 +255,8 @@ def test_row_16_provider_install_resolves_routed_zone(token_headers):
             status=200,
         )
         request(client, "/unknown/mcp", status=401)
+        headers = token_headers(ZONES["a"], "https://123.keycard.cloud")
+        assert 'error="invalid_token"' in request(client, "/123/mcp", headers, status=401)
 
 
 def test_row_16c_per_zone_install_keeps_anonymous_public_routes_public(token_headers):
@@ -433,28 +438,20 @@ async def test_row_17_grant_rejects_missing_or_unknown_zone(zone_id):
     factory.create_async_client.assert_not_called()
 
 
-@pytest.mark.parametrize(
-    "options",
-    [
-        {"resource_identifier": IDENTIFIER},
-        {"multi_resource": True, "audience": AUDIENCES},
-        {"allow_any_audience": True},
-    ],
-)
-def test_row_16b_request_zone_modes_require_zone_map(options):
+def test_row_16b_discoverable_multi_zone_requires_zone_map():
     expected = "resource_identifiers_by_zone"
     with pytest.raises(ResourceBindingConfigError, match=expected):
-        AuthProvider(enable_multi_zone=True, **options)
+        AuthProvider(enable_multi_zone=True, resource_identifier=IDENTIFIER)
     with pytest.raises(ResourceBindingConfigError, match=expected):
         AuthProvider(
             application_credential=ClientSecret({
                 "https://a.keycard.cloud": ("a", "secret-a"),
                 "https://b.keycard.cloud": ("b", "secret-b"),
             }),
-            **options,
+            resource_identifier=IDENTIFIER,
         )
 
-    provider = AuthProvider(zone_id="a", **options)
+    provider = AuthProvider(zone_id="a", resource_identifier=IDENTIFIER)
     with pytest.raises(ResourceBindingConfigError, match=expected):
         provider.get_token_verifier(enable_multi_zone=True)
     verifier = provider.get_token_verifier()
@@ -469,6 +466,53 @@ def test_row_16b_request_zone_modes_require_zone_map(options):
             enable_multi_zone=True,
             resource_binding=provider.resource_binding,
         )
+
+
+@pytest.mark.parametrize(
+    ("options", "audience"),
+    [
+        pytest.param(
+            {"multi_resource": True, "audience": [IDENTIFIER]}, IDENTIFIER, id="row_8a"
+        ),
+        pytest.param({"allow_any_audience": True}, IDENTIFIER, id="row_8g"),
+        pytest.param(
+            {"resource_identifier": "urn:example:service"},
+            "urn:example:service",
+            id="row_8h",
+        ),
+    ],
+)
+def test_row_8a_8g_8h_multi_zone_verifier_only(token_headers, options, audience):
+    provider = AuthProvider(zone_url=ISSUER, enable_multi_zone=True, **options)
+    with TestClient(protected_app(provider)) as client:
+        headers = token_headers(audience, "https://a.keycard.cloud")
+        request(client, "/a/mcp", status=401)
+        request(client, "/a/mcp", headers, status=200)
+        request(client, "/b/mcp", headers, status=401)
+
+
+def test_row_8a_multi_zone_verifier_only_install_resolves_routed_zone(token_headers):
+    app = Starlette(
+        routes=[
+            Route("/{zone_id:int}/mcp", requires("authenticated")(handled)),
+            Route("/{zone_id}/mcp", requires("authenticated")(handled)),
+        ]
+    )
+    AuthProvider(
+        zone_url=ISSUER,
+        enable_multi_zone=True,
+        multi_resource=True,
+        audience=[IDENTIFIER],
+    ).install(app)
+    headers = token_headers(IDENTIFIER, "https://a.keycard.cloud")
+    with TestClient(app) as client:
+        request(client, "/a/mcp", status=401)
+        request(client, "/a/mcp", headers, status=200)
+        request(client, "/b/mcp", headers, status=401)
+        invalid_zone = token_headers(IDENTIFIER, "https://invalid_zone.keycard.cloud")
+        request(client, "/invalid_zone/mcp", invalid_zone, status=401)
+        headers = token_headers(IDENTIFIER, "https://123.keycard.cloud")
+        assert 'error="invalid_token"' in request(client, "/123/mcp", headers, status=401)
 
 
 def test_row_8_prebuilt_verifier_mismatch_is_detectable():
