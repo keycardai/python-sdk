@@ -33,6 +33,21 @@ Example:
         )
 """
 
+from .agent import (
+    AGENT_SOCKET_ENV,
+    AgentCode,
+    AgentError,
+    AgentResponseError,
+    AgentTokenSource,
+    ResourceTokenSource,
+    ResourceTransport,
+    is_application_not_found,
+    is_authorization_required,
+    is_declined,
+    is_prompter_unavailable,
+    is_rate_limited,
+    is_unavailable,
+)
 from .client import AsyncClient, Client
 from .client_auth import ClientAuthentication, ClientAuthenticator
 from .clock import Clock, SystemClock
@@ -148,6 +163,20 @@ __all__ = [
     "BearerAuth",
     "NoneAuth",
     "MultiZoneBasicAuth",
+    # === Local Keycard Agent ===
+    "AGENT_SOCKET_ENV",
+    "AgentCode",
+    "AgentError",
+    "AgentResponseError",
+    "AgentTokenSource",
+    "ResourceTokenSource",
+    "ResourceTransport",
+    "is_application_not_found",
+    "is_authorization_required",
+    "is_declined",
+    "is_prompter_unavailable",
+    "is_rate_limited",
+    "is_unavailable",
     # === Utility Functions ===
     "extract_bearer_token",
     "validate_bearer_format",

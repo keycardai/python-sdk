@@ -1900,6 +1900,8 @@ test = [
     { name = "grpcio" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
+    { name = "starlette" },
+    { name = "uvicorn" },
 ]
 
 [package.dev-dependencies]
@@ -1918,6 +1920,8 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.11.7" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=8.4.1" },
     { name = "pytest-asyncio", marker = "extra == 'test'", specifier = ">=1.1.0" },
+    { name = "starlette", marker = "extra == 'test'", specifier = ">=1.0.1" },
+    { name = "uvicorn", marker = "extra == 'test'", specifier = ">=0.32.0" },
 ]
 provides-extras = ["spiffe", "test"]
 

@@ -647,6 +647,75 @@ If the server's metadata has no `userinfo_endpoint`, `userinfo()` raises
 `ConfigError` without making a request. An expired or revoked token raises
 `InvalidTokenError`.
 
+### Resource Tokens from the Local Keycard Agent
+
+An application running beside the Keycard CLI can get an access token for a
+third-party resource without holding an application credential.
+`AgentTokenSource` asks the local Keycard agent over its Unix socket, and the
+agent mints the token with the developer's zone session once a human approves
+the request.
+
+```python
+import httpx
+from keycardai.oauth import AgentTokenSource, ResourceTransport
+
+source = AgentTokenSource(workload="my-agent")
+
+token = await source.resource_token("https://api.example.com", ["read"])
+
+# Or attach a token to every request an httpx.AsyncClient sends:
+auth = ResourceTransport(source, "https://api.example.com", ["read"])
+async with httpx.AsyncClient(auth=auth) as client:
+    response = await client.get("https://api.example.com/items")
+```
+
+The socket is the first of:
+
+1. `socket=`, when passed.
+2. `KEYCARD_SOCKET`, which `keycard run` sets for the process it starts.
+3. The `keycard agent` daemon's default socket, located the way the CLI
+   locates it from `KEYCARD_AGENT_DIR`, `XDG_RUNTIME_DIR`, `XDG_STATE_HOME`,
+   `KEYCARD_HOME` and `HOME` (on macOS, `~/.local/state/keycard/run/agent.sock`).
+   The daemon serves several zones, so pass `org=` and `zone=`.
+
+Variables are read from `env=` (default `os.environ`) on every call, never
+from `keycard.toml`. Construction does no I/O.
+
+The first request for a resource and scope set blocks until someone answers
+the approval prompt, so no timeout is applied; bound the call with
+`asyncio.wait_for`, or `asyncio.timeout` on Python 3.11+. The SDK does not cache tokens: each call is one request to
+the agent, which caches them itself.
+
+Options, all keyword-only:
+
+| Option | Purpose |
+|--------|---------|
+| `socket` | Socket path; see above |
+| `env` | Where the socket variables are read from |
+| `workload` | Name shown in the approval prompt; self-declared |
+| `app_id` | Identifier of the Keycard application the caller says it acts for, as set on the application; self-declared and matched exactly |
+| `org`, `zone` | The tenant, for the multi-zone daemon; `keycard run` ignores them |
+| `clock` | Wall-clock source for `expires_in` |
+
+`TokenResponse.expires_in` is `None` when the agent reports no expiry, and
+`scope` is the granted scopes the agent reports, or `None` when it reports
+none; it is never filled in from the request.
+
+A refusal raises `AgentError`, whose `code` is the agent's Connect error code
+(`AgentCode`). Branch on the predicates rather than the message:
+
+| Predicate | Code | What to do |
+|-----------|------|------------|
+| `is_declined` | `permission_denied` | Don't retry automatically: declined, prompt expired or failed, the authorization server refused, or no session for `org`/`zone` |
+| `is_rate_limited` | `resource_exhausted` | Back off |
+| `is_prompter_unavailable` | `failed_precondition` | No prompt on this host; use another credential |
+| `is_authorization_required` | `unauthenticated` | Sign in or authorize the resource; the message names the command |
+| `is_application_not_found` | `not_found` | The declared `app_id` names no application in the zone |
+| `is_unavailable` | `unavailable` | Transient; retry with backoff |
+
+An unreachable socket raises `NetworkError` naming the socket and how it was
+chosen, and a 200 response the SDK cannot use raises `AgentResponseError`.
+
 ## Error Handling
 
 The SDK provides a structured exception hierarchy with retry guidance.
@@ -660,7 +729,9 @@ OAuthError (base)
 │   └── TokenExchangeError  # RFC 8693 specific errors
 ├── NetworkError            # Connection/transport failures
 ├── ConfigError             # Client misconfiguration
-└── AuthenticationError     # Authentication failures
+├── AuthenticationError     # Authentication failures
+├── AgentError              # Refusals from the local Keycard agent
+└── AgentResponseError      # Unusable responses from the local Keycard agent
 ```
 
 ### Retryable vs Non-Retryable Errors
@@ -682,6 +753,9 @@ operation unchanged could succeed.
 | `NetworkError` | Yes | Always: transport faults are transient, permanent failures surface as protocol or HTTP errors |
 | `ConfigError` | No | Invalid configuration (requires code fix) |
 | `AuthenticationError` | No | Invalid credentials |
+| `AgentError` | Yes | Code `resource_exhausted` or `unavailable` |
+| `AgentError` | No | Any other code |
+| `AgentResponseError` | No | Always |
 
 If you use the older `retriable` attribute: it is a legacy constructor flag,
 while `retryable` is the classification derived from the failure. Protocol
@@ -786,6 +860,7 @@ Working examples are available in the `examples/` directory:
 
 - **[discover_server_metadata](examples/discover_server_metadata/)** - RFC 8414 server metadata discovery
 - **[dynamic_client_registration](examples/dynamic_client_registration/)** - RFC 7591 client registration
+- **[agent_token_source](examples/agent_token_source/)** - Resource tokens from the local Keycard agent
 
 Run examples:
 
