@@ -7,6 +7,7 @@ from typing import Any
 
 import httpx
 
+from .._peer_http import DEFAULT_PEER_RESPONSE_BYTES, AsyncPeerClient
 from ..config import AgentServiceConfig
 
 logger = logging.getLogger(__name__)
@@ -63,12 +64,15 @@ class ServiceDiscovery:
         self,
         service_config: AgentServiceConfig,
         cache_ttl: int = 900,
+        *,
+        max_peer_response_bytes: int = DEFAULT_PEER_RESPONSE_BYTES,
     ):
         """Initialize service discovery with caching.
 
         Args:
             service_config: Configuration of the calling service
             cache_ttl: Cache time-to-live in seconds (default: 900)
+            max_peer_response_bytes: Decoded agent card limit (default: 64 MiB)
         """
         self.config = service_config
         self.cache_ttl = cache_ttl
@@ -77,7 +81,7 @@ class ServiceDiscovery:
         self._card_cache: dict[str, CachedAgentCard] = {}
 
         # HTTP client for fetching agent cards
-        self.http_client = httpx.AsyncClient(timeout=30.0)
+        self.http_client: httpx.AsyncClient = AsyncPeerClient(max_peer_response_bytes)
 
     async def discover_service(self, service_url: str) -> dict[str, Any]:
         """Fetch agent card from remote service.

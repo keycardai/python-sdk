@@ -1,3 +1,29 @@
+## 0.43.1-keycardai-oauth (2026-11-26)
+
+
+- fix(keycardai-oauth): omit secrets from printed OAuth values (#486)
+- * fix(keycardai-oauth): omit secrets from printed OAuth values
+- Refs SDK-127
+- Co-Authored-By: Devin AI <158243242+devin-ai-integration[bot]@users.noreply.github.com>
+- * fix(keycardai-oauth): print configured client id in client repr
+- Co-Authored-By: Devin AI <158243242+devin-ai-integration[bot]@users.noreply.github.com>
+- ---------
+- Co-authored-by: devin-ai-keycard <devin-ai@keycard.ai>
+Co-authored-by: Devin AI <158243242+devin-ai-integration[bot]@users.noreply.github.com>
+
+## 0.43.0-keycardai-oauth (2026-11-26)
+
+
+- feat(keycardai-oauth): SPIFFE JWT-SVID workload identity source (SDK-100) (#489)
+- * feat(keycardai-oauth): SPIFFE JWT-SVID workload identity source (SDK-100)
+- Implements keycardai/keycard-sdk-spec workload-identity.md SPIFFE Workload API source
+- Refs SDK-100
+- * fix(keycardai-oauth): make workload identity configuration errors non-retryable
+- * fix(keycardai-oauth): validate SPIFFE IDs at construction
+- * fix(keycardai-oauth): remove SPIFFE protobuf runtime dependency
+- ---------
+- Co-authored-by: devin-ai-keycard <devin-ai@keycard.ai>
+
 ## 0.42.0-keycardai-oauth (2026-11-26)
 
 

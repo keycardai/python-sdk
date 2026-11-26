@@ -135,6 +135,15 @@ class ClientSecret:
                 credentials_type=type(credentials).__name__
             )
 
+    def __repr__(self) -> str:
+        if isinstance(self.auth, MultiZoneBasicAuth):
+            clients = {
+                issuer: auth.client_id
+                for issuer, auth in self.auth.issuer_credentials.items()
+            }
+            return f"{type(self).__name__}(clients={clients!r})"
+        return f"{type(self).__name__}(client_id={self.auth.client_id!r})"
+
     @property
     def is_multi_zone(self) -> bool:
         """Whether this credential holds per-zone credentials."""
@@ -249,6 +258,13 @@ class WebIdentity:
         )
 
         self.identity_manager.bootstrap_identity()
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}(client_id={self.client_id!r}, "
+            f"key_id={self.identity_manager.key_id!r}, "
+            f"storage={type(self._storage).__name__})"
+        )
 
     @classmethod
     def _resolve_default_storage_dir(cls) -> str:
@@ -721,6 +737,12 @@ class WorkloadIdentity:
         self._token_fetcher = _IdentityTokenFetcher(source)
         self._source = source
         self._client_id = client_id
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}(client_id={self.client_id!r}, "
+            f"source={type(self._source).__name__})"
+        )
 
     @property
     def client_id(self) -> str | None:

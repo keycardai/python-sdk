@@ -31,6 +31,9 @@ class JWKSCache:
         self._cache: dict[str, JWKSKey] = {}
         self._lock = threading.RLock()
 
+    def __repr__(self) -> str:
+        return f"{type(self).__name__}(key_ids={self.cached_kids()!r})"
+
     def get_key(self, kid: str | None) -> JWKSKey | None:
         """Get a verification key from the cache if it exists and hasn't expired.
 

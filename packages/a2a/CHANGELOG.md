@@ -1,3 +1,21 @@
+## 0.6.0-keycardai-a2a (2026-11-26)
+
+
+- feat(keycardai-a2a): bound decoded peer replies (#487)
+- * feat(keycardai-a2a): bound decoded peer replies
+- Co-Authored-By: Devin AI <158243242+devin-ai-integration[bot]@users.noreply.github.com>
+- * fix(keycardai-a2a): avoid oversizing compressed reply buffers
+- Co-Authored-By: Devin AI <158243242+devin-ai-integration[bot]@users.noreply.github.com>
+- * fix(keycardai-a2a): parse peer content encoding lists
+- Co-Authored-By: Devin AI <158243242+devin-ai-integration[bot]@users.noreply.github.com>
+- * fix(keycardai-a2a): report unsupported peer codings as decode errors
+- Co-Authored-By: Devin AI <158243242+devin-ai-integration[bot]@users.noreply.github.com>
+- * fix(keycardai-a2a): preserve bounded peer response streaming
+- Co-Authored-By: Devin AI <158243242+devin-ai-integration[bot]@users.noreply.github.com>
+- ---------
+- Co-authored-by: devin-ai-keycard <devin-ai@keycard.ai>
+Co-authored-by: Devin AI <158243242+devin-ai-integration[bot]@users.noreply.github.com>
+
 ## 0.5.1-keycardai-a2a (2026-11-04)
 
 ## 0.5.0-keycardai-a2a (2026-09-16)

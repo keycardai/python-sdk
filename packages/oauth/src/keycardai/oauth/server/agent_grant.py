@@ -16,7 +16,7 @@ import json
 import threading
 import time
 from collections.abc import Callable, Coroutine, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, TypedDict
 from weakref import WeakKeyDictionary
 
@@ -61,7 +61,7 @@ class KeycardIdentity:
       sign-in pause), never silently escalates to the agent's own authority.
     """
 
-    subject_token: str | None = None
+    subject_token: str | None = field(default=None, repr=False)
     user_identifier: str | None = None
     as_self: bool = False
 

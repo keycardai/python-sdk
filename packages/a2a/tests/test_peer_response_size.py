@@ -1,0 +1,272 @@
+"""A2A delegation v3 conformance tests."""
+
+import gzip
+import json
+import tracemalloc
+import zlib
+from contextlib import AsyncExitStack
+from inspect import isawaitable
+
+import httpx
+import pytest
+from keycardai.oauth.exceptions import ResponseBodyTooLargeError
+from keycardai.oauth.http._transports import HttpxAsyncTransport, HttpxTransport, ResponseBodyDecodeError
+
+from keycardai.a2a._peer_http import AsyncPeerClient, PeerClient
+from keycardai.a2a.client import ServiceDiscovery
+from keycardai.a2a.server import DelegationClient, DelegationClientSync
+
+_PEER = "https://peer.example.test"
+_MIB = 1024 * 1024
+
+
+class _Chunks(httpx.SyncByteStream, httpx.AsyncByteStream):
+    def __init__(self, *chunks: bytes, exhaust: bool = True):
+        self.chunks = chunks
+        self.exhaust = exhaust
+
+    def __iter__(self):
+        yield from self.chunks
+        assert self.exhaust, "the reader consumed data after overflow"
+
+    async def __aiter__(self):
+        for chunk in self:
+            yield chunk
+
+
+@pytest.fixture(
+    params=[
+        (ServiceDiscovery, False),
+        (DelegationClient, False),
+        (DelegationClient, True),
+        (DelegationClientSync, False),
+        (DelegationClientSync, True),
+    ],
+    ids=["standalone", "async-discovery", "async-invocation", "sync-discovery", "sync-invocation"],
+)
+def peer(request, service_config, monkeypatch):
+    client_type, invocation = request.param
+    document = (
+        {"jsonrpc": "2.0", "result": {"message": {"parts": [{"text": "ok"}]}}} if invocation else {"name": "Peer"}
+    )
+    expected = {"result": "ok"} if invocation else document
+
+    async def call(make_response, **kwargs):
+        client = client_type(service_config, **kwargs)
+        transport = httpx.MockTransport(lambda _: make_response())
+        monkeypatch.setattr(client.http_client, "_transport_for_url", lambda _: transport)
+        try:
+            pending = (
+                client.invoke_service(_PEER, "hello", token="token") if invocation else client.discover_service(_PEER)
+            )
+            return await pending if isawaitable(pending) else pending
+        finally:
+            closed = client.close()
+            if isawaitable(closed):
+                await closed
+
+    return call, json.dumps(document).encode(), expected, invocation
+
+
+@pytest.mark.asyncio
+async def test_row_9_default_accepts_more_than_one_mib(peer):
+    call, body, expected, _ = peer
+    assert await call(lambda: httpx.Response(200, stream=_Chunks(body, b" " * _MIB))) == expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "encodings,encode",
+    [
+        (["identity, vendor", "IDENTITY"], bytes),
+        (["identity, vendor", "GZip"], gzip.compress),
+        ([" x-gzip , identity "], gzip.compress),
+    ],
+)
+async def test_peer_encoding_list_ignores_identity_and_unknown_tokens(peer, encodings, encode):
+    call, body, expected, _ = peer
+    headers = [("Content-Encoding", encoding) for encoding in encodings]
+    assert await call(lambda: httpx.Response(200, headers=headers, stream=_Chunks(encode(body)))) == expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("encoding", ["br", "zstd", "compress", "gzip, deflate"])
+async def test_unsupported_peer_codings_raise_typed_decode_errors(peer, encoding):
+    call, _, _, invocation = peer
+    headers = {"Content-Encoding": encoding, "X-Peer": "agent"}
+    with pytest.raises(ResponseBodyDecodeError) as caught:
+        await call(lambda: httpx.Response(502, headers=headers, stream=_Chunks(exhaust=False)))
+    assert caught.value.status == 502
+    assert caught.value.headers["x-peer"] == "agent"
+    assert caught.value.operation == ("a2a_invocation" if invocation else "a2a_discovery")
+    assert isinstance(caught.value.cause, httpx.DecodingError)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("encoding,compress", [("gzip", gzip.compress), ("deflate", zlib.compress)])
+async def test_tiny_compressed_reply_does_not_allocate_the_default_limit(peer, encoding, compress):
+    call, body, expected, _ = peer
+    encoded = compress(body)
+    tracemalloc.start()
+    try:
+        result = await call(
+            lambda: httpx.Response(200, headers={"Content-Encoding": encoding}, stream=_Chunks(encoded))
+        )
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert result == expected
+    assert peak < 8 * _MIB
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("client_type", [PeerClient, AsyncPeerClient])
+@pytest.mark.parametrize("compress", [False, True])
+@pytest.mark.parametrize("status", [200, 503])
+async def test_peer_stream_reads_lazily_and_closes_on_decoded_overflow(client_type, compress, status, monkeypatch):
+    first = b"data: one\n\n"
+    second = b"data: " + b"x" * 1024 + b"\n\n"
+    encoded = [gzip.compress(chunk) if compress else chunk for chunk in (first, second)]
+    requested = []
+    closed = []
+
+    class Stream(_Chunks):
+        def __iter__(self):
+            for chunk in encoded:
+                requested.append(chunk)
+                yield chunk
+            pytest.fail("the source was read after overflow")
+
+        def close(self):
+            closed.append(True)
+
+        async def aclose(self):
+            self.close()
+
+    headers = {"Content-Type": "text/event-stream"}
+    if compress:
+        headers.update({"Content-Encoding": "gzip", "Content-Length": str(sum(map(len, encoded)))})
+    transport = httpx.MockTransport(lambda _: httpx.Response(status, headers=headers, stream=Stream()))
+
+    async with AsyncExitStack() as stack:
+        client = client_type(len(first) + 1)
+        monkeypatch.setattr(client, "_transport_for_url", lambda _: transport)
+        if isinstance(client, AsyncPeerClient):
+            await stack.enter_async_context(client)
+            response = await stack.enter_async_context(client.stream("POST", _PEER))
+            iterator = response.aiter_bytes()
+
+            async def read():
+                return await anext(iterator)
+        else:
+            stack.enter_context(client)
+            response = stack.enter_context(client.stream("POST", _PEER))
+            iterator = response.iter_bytes()
+
+            async def read():
+                return next(iterator)
+
+        assert not requested
+        assert not response.is_stream_consumed
+        assert response.headers["Content-Type"] == "text/event-stream"
+        assert "content-encoding" not in response.headers
+        assert "content-length" not in response.headers
+        assert await read() == first
+        assert requested == encoded[:1]
+        with pytest.raises(ResponseBodyTooLargeError) as caught:
+            await read()
+        assert caught.value.status_code == status
+        assert caught.value.limit == len(first) + 1
+        assert caught.value.operation == "a2a_invocation"
+        assert caught.value.retryable is (status == 503)
+        assert response.is_closed
+        assert closed == [True]
+
+
+@pytest.mark.asyncio
+async def test_row_10_stops_reading_on_decoded_overflow(peer):
+    call, body, _, _ = peer
+    encoded = gzip.compress(body + b" " * 512)
+    assert len(encoded) < 256
+    with pytest.raises(ResponseBodyTooLargeError) as caught:
+        await call(
+            lambda: httpx.Response(
+                200,
+                headers={"Content-Encoding": "gzip"},
+                stream=_Chunks(encoded, exhaust=False),
+            ),
+            max_peer_response_bytes=256,
+        )
+    assert caught.value.error == "invalid_response"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [200, 429, 503])
+async def test_row_10a_preserves_status_and_classifies_retryability(peer, status):
+    call, body, _, invocation = peer
+    with pytest.raises(ResponseBodyTooLargeError) as caught:
+        await call(
+            lambda: httpx.Response(status, stream=_Chunks(body)),
+            max_peer_response_bytes=len(body) - 1,
+        )
+    assert caught.value.error == "invalid_response"
+    assert caught.value.status_code == status
+    assert caught.value.retryable is not (invocation and status == 200)
+
+
+@pytest.mark.asyncio
+async def test_row_11_configures_peer_limit(peer):
+    call, body, expected, _ = peer
+
+    def small():
+        return httpx.Response(200, stream=_Chunks(body))
+
+    assert await call(small) == expected
+    with pytest.raises(ResponseBodyTooLargeError, match="decoded size limit"):
+        await call(small, max_peer_response_bytes=len(body) - 1)
+
+    padding = b" " * _MIB
+
+    def large():
+        return httpx.Response(200, stream=_Chunks(body, *([padding] * 64)))
+
+    with pytest.raises(ResponseBodyTooLargeError, match="decoded size limit"):
+        await call(large)
+    assert await call(large, max_peer_response_bytes=64 * _MIB + len(body)) == expected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("limit", [128, 65 * _MIB])
+@pytest.mark.parametrize("client_type", [DelegationClient, DelegationClientSync])
+async def test_row_11_token_exchange_keeps_one_mib_cap(client_type, limit, service_config, monkeypatch):
+    seen = []
+
+    def handler(request):
+        seen.append(request.url.path)
+        if request.url.path.startswith("/.well-known/"):
+            issuer = str(request.url.copy_with(path="/")).rstrip("/")
+            return httpx.Response(
+                200, json={"issuer": issuer, "token_endpoint": f"{issuer}/oauth/token"}
+            )
+        return httpx.Response(200, stream=_Chunks(b" " * _MIB, b" "))
+
+    monkeypatch.setattr(
+        HttpxAsyncTransport,
+        "_create_client",
+        lambda _: httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+    )
+    monkeypatch.setattr(
+        HttpxTransport,
+        "_create_client",
+        lambda _: httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    if client_type is DelegationClient:
+        async with client_type(service_config, max_peer_response_bytes=limit) as client:
+            with pytest.raises(ResponseBodyTooLargeError) as caught:
+                await client.get_delegation_token(_PEER, subject_token="caller")
+    else:
+        with client_type(service_config, max_peer_response_bytes=limit) as client:
+            with pytest.raises(ResponseBodyTooLargeError) as caught:
+                client.get_delegation_token(_PEER, subject_token="caller")
+    assert caught.value.limit == _MIB
+    assert seen[-1] == "/oauth/token"
