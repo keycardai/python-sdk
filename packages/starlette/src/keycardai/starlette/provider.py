@@ -75,6 +75,7 @@ from starlette.types import ASGIApp, Scope
 
 from .authorization import grant as _grant_factory, requires as _requires_module_func
 from .binding import ResourceBinding, ResourceBindingConfigError, zone_issuer
+from .middleware._introspection import validate_credential
 from .middleware.bearer import KeycardAuthBackend, keycard_on_error
 from .routers.metadata import auth_metadata_mount
 
@@ -142,6 +143,8 @@ class AuthProvider:
         resource_identifiers_by_zone: dict[str, str] | None = None,
         multi_resource: bool = False,
         allow_any_audience: bool = False,
+        introspect: bool = False,
+        introspection_timeout: float = 10.0,
     ):
         """Initialize the Keycard auth provider.
 
@@ -172,6 +175,9 @@ class AuthProvider:
                 publish shared discovery for its one common HTTP(S) identifier.
             allow_any_audience: Skip only the audience check, with no
                 protected-resource discovery.
+            introspect: Check each locally verified token using the application
+                credential that owns the resource.
+            introspection_timeout: Bound each introspection request in seconds.
         """
         zone_url = zone_url or os.getenv("KEYCARD_ZONE_URL")
         zone_id = zone_id or _deprecated_zone_env("KEYCARD_ZONE_ID")
@@ -240,6 +246,17 @@ class AuthProvider:
         self.application_credential = self._discover_application_credential(
             application_credential
         )
+        self.introspect = introspect
+        self.introspection_timeout = introspection_timeout
+        if introspect:
+            validate_credential(
+                self.application_credential,
+                multi_zone=enable_multi_zone or (
+                    self.resource_binding.mode == "shared"
+                    and len(self.resource_binding.resource_identifiers_by_zone) > 1
+                ),
+                timeout=introspection_timeout,
+            )
 
         if self.application_credential is not None:
             self.auth = self.application_credential.get_http_client_auth()
@@ -385,6 +402,9 @@ class AuthProvider:
                 enable_multi_zone=self.enable_multi_zone,
                 jwks=self.jwks,
                 resource_binding=self.resource_binding,
+                introspect=self.introspect,
+                credential=self.application_credential,
+                introspection_timeout=self.introspection_timeout,
             )
         )
 
@@ -419,6 +439,9 @@ class AuthProvider:
                 issuer=self.issuer,
                 zone_resolver=lambda scope: _route_zone(scope, app.routes),
                 metadata_matcher=lambda scope: metadata_routes.matches(scope)[0] == Match.FULL,
+                introspect=self.introspect,
+                credential=self.application_credential,
+                introspection_timeout=self.introspection_timeout,
             ),
             on_error=keycard_on_error,
         )

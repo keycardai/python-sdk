@@ -84,6 +84,21 @@ path and query match the configured identifier, regardless of the internal
 host, scheme, or forwarded headers. Give each independently discoverable
 route its own binding.
 
+### Check token status with introspection
+
+Set `introspect=True` on `AuthProvider`, `protected_router`, or
+`KeycardAuthBackend` to check whether each locally verified token is active.
+Supply the credential of the application that owns the protected resource
+(`application_credential` on `AuthProvider`, `credential` on the
+router and backend). A multi-zone verifier needs credentials keyed by
+issuer URL, for example a `ClientSecret` containing one entry for each zone.
+`introspection_timeout` bounds each request in seconds and defaults to 10.
+
+Inactive tokens receive a 401 challenge. A failed status check returns 503
+without a challenge. The SDK does not cache status results. For a token
+issued to another client, Keycard checks resource ownership against the
+first audience, even if local verification accepts a later audience.
+
 ## Configuration from the environment
 
 `AuthProvider` reads its zone and application credential from the environment
