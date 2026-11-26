@@ -15,6 +15,7 @@ from keycardai.oauth import (
     ClientConfig,
     ConfigError,
     Endpoints,
+    MissingTokenEndpointError,
     NetworkError,
     OAuthHttpError,
     OAuthProtocolError,
@@ -48,7 +49,9 @@ def response(body: dict | bytes, status: int = 200) -> HttpResponse:
 def introspection(request):
     client_class = request.param
 
-    def make_client(*responses, issuer=ISSUER, use_context=False, **kwargs):
+    def make_client(
+        *responses, issuer=ISSUER, use_context=False, config=None, **kwargs
+    ):
         requests: list[HttpRequest] = []
         timeouts: list[float | None] = []
         queued = iter(responses)
@@ -71,7 +74,7 @@ def introspection(request):
         client = client_class(
             issuer,
             transport=SyncTransport() if client_class is Client else AsyncTransport(),
-            config=ClientConfig(timeout=7.0),
+            config=config or ClientConfig(timeout=7.0),
             **kwargs,
         )
 
@@ -122,6 +125,21 @@ async def test_row_1_client_secret_posts_basic_to_discovered_endpoint(
     )
     assert form(post) == {"token": ["a +& token"]}
     assert timeouts == [7.0, 2.5]
+
+
+async def test_auto_registration_requires_token_endpoint_before_registering(introspection):
+    introspect, requests, _ = introspection(
+        response({"issuer": ISSUER, "introspection_endpoint": ENDPOINT}),
+        use_context=True,
+        config=ClientConfig(auto_register_client=True),
+    )
+
+    with pytest.raises(MissingTokenEndpointError):
+        await introspect("token", credential=CREDENTIAL)
+
+    assert [(request.method, request.url) for request in requests] == [
+        ("GET", DISCOVERY_URL)
+    ]
 
 
 async def test_row_2_private_jwt_authenticates_with_issuer_as_audience(

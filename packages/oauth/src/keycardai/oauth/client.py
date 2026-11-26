@@ -955,7 +955,8 @@ class AsyncClient:
             if self._initialized:
                 return
 
-            metadata = await self._resolve_metadata(endpoint_name=None)
+            endpoint_name = "token_endpoint" if self.config.auto_register_client else None
+            metadata = await self._resolve_metadata(endpoint_name=endpoint_name)
             endpoints = resolve_endpoints(self.issuer, self._endpoint_overrides, metadata)
             self._discovered_endpoints = endpoints
 
@@ -2657,7 +2658,8 @@ class Client:
             if self._initialized:
                 return
 
-            metadata = self._resolve_metadata(endpoint_name=None)
+            endpoint_name = "token_endpoint" if self.config.auto_register_client else None
+            metadata = self._resolve_metadata(endpoint_name=endpoint_name)
             endpoints = resolve_endpoints(self.issuer, self._endpoint_overrides, metadata)
             self._discovered_endpoints = endpoints
 
