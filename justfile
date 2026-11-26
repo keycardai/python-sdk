@@ -46,12 +46,11 @@ test-coverage:
     cd packages/a2a && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=55
     cd packages/langchain && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=85
     cd packages/temporal && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=85
-    # Both standalone packages require Python >=3.11.
-    python_minor="$(uv run --no-sync --package keycardai-temporal python -c 'import sys; print(sys.version_info.minor)')" && \
-        if [ "$python_minor" -ge 11 ]; then \
-            (cd packages/pydantic-ai && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=85) && \
-            (cd packages/hermes && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=85); \
-        fi
+    case "${UV_PYTHON:-}" in \
+        3.10*) echo "Skipping pydantic-ai and hermes: they require Python >=3.11";; \
+        *) (cd packages/pydantic-ai && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=85) && \
+           (cd packages/hermes && uv run --extra test pytest tests/ -v --cov=src --cov-report=term-missing --cov-fail-under=85);; \
+    esac
 
 check:
     uv run ruff check
