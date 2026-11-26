@@ -11,6 +11,7 @@ import time
 import warnings
 from collections import OrderedDict
 from dataclasses import dataclass
+from json import dumps
 from re import fullmatch
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
@@ -193,14 +194,14 @@ class TokenVerifier:
         if self.jwks_uri:
             return self.jwks_uri
 
-        if issuer is not None:
-            cache_key = f"issuer:{issuer}"
-            discovery_issuer = issuer
-        else:
-            cache_key = f"{zone_id or 'default'}"
+        discovery_issuer = issuer
+        if discovery_issuer is None:
             discovery_issuer = self.issuer
             if self.enable_multi_zone and zone_id:
                 discovery_issuer = self._create_zone_scoped_url(self.issuer, zone_id)
+        cache_key = (
+            "__default__" if discovery_issuer == self.issuer else f"issuer:{discovery_issuer}"
+        )
 
         with self._discovery_cache_lock:
             cache = self._discovered_jwks_uris.get(cache_key)
@@ -306,7 +307,7 @@ class TokenVerifier:
         return urlunsplit(parsed._replace(netloc=netloc))
 
     async def _get_verification_key(
-        self, token: str, zone_id: str | None = None, issuer: str | None = None
+        self, token: str, *, issuer: str, zone_id: str | None = None
     ) -> JWKSKey:
         """Get the verification key for the token, with caching and de-dup.
 
@@ -317,22 +318,25 @@ class TokenVerifier:
         """
         kid, algorithm = self._get_kid_and_algorithm(token)
 
-        cache_key = f"{issuer}::{kid}" if issuer else kid
+        # Single-zone mode can use a zone-prefixed JWKS URI for the same issuer.
+        jwks_zone = zone_id if zone_id and not self.enable_multi_zone else None
+        cache_key = dumps((issuer, kid, jwks_zone))
         cached_key = self._jwks_cache.get_key(cache_key)
         if cached_key is not None:
             return cached_key
 
         # Callers await the shared resolution shielded, so one caller's
         # cancellation does not cancel (poison) the fetch for the others.
-        inflight_key = f"{issuer or 'default'}:{zone_id or 'default'}:{kid}"
-        future = self._key_inflight.get(inflight_key)
+        future = self._key_inflight.get(cache_key)
         if future is None:
             future = asyncio.ensure_future(
-                self._resolve_and_cache_key(kid, algorithm, zone_id, issuer)
+                self._resolve_and_cache_key(
+                    kid, algorithm, cache_key, issuer=issuer, zone_id=zone_id
+                )
             )
-            self._key_inflight[inflight_key] = future
+            self._key_inflight[cache_key] = future
             future.add_done_callback(
-                lambda f, key=inflight_key: self._on_key_resolved(key, f)
+                lambda f, key=cache_key: self._on_key_resolved(key, f)
             )
         return await asyncio.shield(future)
 
@@ -346,26 +350,26 @@ class TokenVerifier:
         self,
         kid: str,
         algorithm: str,
+        cache_key: str,
+        *,
+        issuer: str,
         zone_id: str | None = None,
-        issuer: str | None = None,
     ) -> JWKSKey:
         """Discover the jwks_uri, fetch the key for ``kid``, and cache it.
 
         Discovery uses the synchronous client, so it runs in a worker thread:
         it must never block the event loop this coroutine runs on.
         """
-        if issuer is not None:
-            jwks_uri = await asyncio.to_thread(self._discover_jwks_uri, issuer=issuer)
-        elif self.enable_multi_zone and zone_id:
-            jwks_uri = await asyncio.to_thread(self._discover_jwks_uri, zone_id=zone_id)
-        else:
-            jwks_uri = await asyncio.to_thread(self._discover_jwks_uri)
-            if zone_id:
-                jwks_uri = self._get_zone_jwks_uri(jwks_uri, zone_id)
+        jwks_uri = await asyncio.to_thread(
+            self._discover_jwks_uri,
+            issuer=issuer,
+            zone_id=zone_id if self.enable_multi_zone else None,
+        )
+        if zone_id and not self.enable_multi_zone:
+            jwks_uri = self._get_zone_jwks_uri(jwks_uri, zone_id)
 
         verification_key = await self._key_from_jwks(kid, jwks_uri)
 
-        cache_key = f"{issuer}::{kid}" if issuer else kid
         self._jwks_cache.set_key(cache_key, verification_key, algorithm)
         cached_key = self._jwks_cache.get_key(cache_key)
         if cached_key is None:
@@ -509,7 +513,9 @@ class TokenVerifier:
             raise InvalidTokenError("Untrusted issuer")
         self._check_not_expired(claims.get("exp"))
 
-        key = await self._get_verification_key(token, zone_id)
+        key = await self._get_verification_key(
+            token, issuer=expected_issuer, zone_id=zone_id
+        )
         return self._verify_token(
             token, key, expected_issuer=expected_issuer, zone_id=zone_id
         )
