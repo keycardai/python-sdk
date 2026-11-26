@@ -1,3 +1,12 @@
+## 0.17.1-keycardai-starlette (2026-11-26)
+
+
+- fix(keycardai-starlette): validate zone ids in the metadata handlers (#529)
+- * fix(keycardai-starlette): validate zone ids in the metadata handlers
+- * fix(keycardai-starlette): use the routed path for zone metadata
+- ---------
+- Co-authored-by: devin-ai-keycard <devin-ai@keycard.ai>
+
 ## 0.17.0-keycardai-starlette (2026-11-26)
 
 
