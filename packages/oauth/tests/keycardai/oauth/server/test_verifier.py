@@ -4,10 +4,13 @@ import asyncio
 import time
 import warnings
 from unittest.mock import AsyncMock, Mock, patch
+from urllib.parse import unquote
 
+import httpx
 import pytest
 
 from keycardai.oauth.exceptions import InvalidTokenError, OAuthHttpError
+from keycardai.oauth.http._transports import HttpxAsyncTransport, HttpxTransport
 from keycardai.oauth.server._cache import JWKSKey
 from keycardai.oauth.server.exceptions import (
     JWKSDiscoveryError,
@@ -1068,6 +1071,52 @@ class TestZoneJwksUri:
             await verifier._resolve_and_cache_key("kid1", "RS256", zone_id="zone123")
 
         assert seen["jwks_uri"] == "https://zone123.keycard.cloud/.well-known/jwks.json"
+
+
+class TestZoneIdValidation:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("enable_multi_zone", [False, True])
+    @pytest.mark.parametrize(
+        "encoded_zone", ["", "a%23b", "a%2Fb", "a%40b", "a%3Ab", "team%2Eeu"]
+    )
+    async def test_row_17_invalid_zone_id_makes_no_requests(
+        self, monkeypatch, enable_multi_zone, encoded_zone
+    ):
+        issuer = "https://example.com"
+        verifier = TokenVerifier(
+            issuer=issuer,
+            audience=issuer,
+            enable_multi_zone=enable_multi_zone,
+        )
+        handle_request = Mock(return_value=httpx.Response(200, json={}))
+        transport = httpx.MockTransport(handle_request)
+        with httpx.Client(transport=transport) as sync_client:
+            async with httpx.AsyncClient(transport=transport) as async_client:
+                monkeypatch.setattr(
+                    HttpxTransport, "_create_client", lambda _: sync_client
+                )
+                monkeypatch.setattr(
+                    HttpxAsyncTransport, "_create_client", lambda _: async_client
+                )
+                monkeypatch.setattr(
+                    TokenVerifier,
+                    "_unverified_claims",
+                    lambda *_: {"iss": issuer, "exp": time.time() + 60},
+                )
+                monkeypatch.setattr(
+                    TokenVerifier, "_get_kid_and_algorithm", lambda *_: ("kid", "RS256")
+                )
+                with pytest.raises(InvalidTokenError, match="Invalid zone ID"):
+                    await verifier.verify_token_for_zone("token", unquote(encoded_zone))
+        handle_request.assert_not_called()
+
+    def test_row_18_url_helpers_reject_invalid_zone_id(self):
+        issuer = "https://example.com"
+        verifier = TokenVerifier(issuer=issuer, audience=issuer)
+        with pytest.raises(InvalidTokenError, match="Invalid zone ID"):
+            verifier._create_zone_scoped_url(issuer, "team.eu")
+        with pytest.raises(InvalidTokenError, match="Invalid zone ID"):
+            verifier._get_zone_jwks_uri(f"{issuer}/jwks", "team.eu")
 
 
 class TestJwksRefetchCooldown:

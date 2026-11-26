@@ -11,6 +11,7 @@ import time
 import warnings
 from collections import OrderedDict
 from dataclasses import dataclass
+from re import fullmatch
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
@@ -45,6 +46,14 @@ from .exceptions import (
     OAuthServerError,
     VerifierConfigError,
 )
+
+
+def _validate_zone_id(zone_id: str) -> None:
+    # Matches keycardai-starlette's shared/zone.py is_valid_zone_id.
+    if not isinstance(zone_id, str) or fullmatch(
+        r"[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?", zone_id
+    ) is None:
+        raise InvalidTokenError("Invalid zone ID")
 
 
 class AccessToken(BaseModel):
@@ -256,6 +265,7 @@ class TokenVerifier:
 
     def _create_zone_scoped_url(self, base_url: str, zone_id: str) -> str:
         """Create zone-scoped URL by prepending zone_id to the host."""
+        _validate_zone_id(zone_id)
         base_url_obj = AnyHttpUrl(base_url)
 
         port_part = ""
@@ -282,6 +292,7 @@ class TokenVerifier:
         return (kid, algorithm)
 
     def _get_zone_jwks_uri(self, jwks_uri: str, zone_id: str) -> str:
+        _validate_zone_id(zone_id)
         # Prefix the host with the zone id. Built with urllib rather than by
         # assigning AnyHttpUrl.host, which pydantic exposes read-only.
         parsed = urlsplit(jwks_uri)
@@ -482,6 +493,7 @@ class TokenVerifier:
         Raises:
             InvalidTokenError: If the token fails any verification step.
         """
+        _validate_zone_id(zone_id)
         claims = self._unverified_claims(token)
         expected_issuer = self.issuer
         if self.enable_multi_zone and zone_id:
