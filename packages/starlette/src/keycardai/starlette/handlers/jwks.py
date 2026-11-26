@@ -8,6 +8,12 @@ from starlette.responses import JSONResponse, Response
 
 from .metadata import CORS_HEADERS, _preflight_response
 
+_JWKS_ENDPOINT_ATTR = "_keycard_jwks_endpoint"
+
+
+def _is_jwks_endpoint(endpoint: object) -> bool:
+    return getattr(endpoint, _JWKS_ENDPOINT_ATTR, False) is True
+
 
 def jwks_endpoint(jwks: JsonWebKeySet) -> Callable:
     """Create a Starlette handler that serves a JSON Web Key Set.
@@ -29,4 +35,5 @@ def jwks_endpoint(jwks: JsonWebKeySet) -> Callable:
             headers={"Content-Type": "application/json", **CORS_HEADERS},
         )
 
+    wrapper.__dict__[_JWKS_ENDPOINT_ATTR] = True
     return wrapper

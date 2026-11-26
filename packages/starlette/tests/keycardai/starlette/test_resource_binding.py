@@ -344,6 +344,26 @@ def test_review_standalone_backend_keeps_bound_metadata_public(per_zone):
         assert client.post(f"{resource}?v=1").status_code == 401
 
 
+def test_review_a_standalone_backend_requires_auth_for_non_discovery_routes(token_headers):
+    provider = AuthProvider(zone_id="z", resource_identifier=IDENTIFIER)
+    paths = ("/.well-known/oauth-protected-resource/extra", "/.well-known/jwks.json")
+    app = Starlette(routes=[Route(path, handled, name="jwks") for path in paths])
+    app.add_middleware(
+        AuthenticationMiddleware,
+        backend=KeycardAuthBackend(
+            provider.get_token_verifier(),
+            resource_binding=provider.resource_binding,
+            require_authentication=True,
+        ),
+        on_error=keycard_on_error,
+    )
+    with TestClient(app) as client:
+        for path in paths:
+            request(client, path, status=401)
+        token = token_headers(IDENTIFIER, provider.issuer)
+        request(client, "/.well-known/jwks.json", token, status=200)
+
+
 def test_review_finding_2_grant_uses_verified_issuer_client(monkeypatch, token_headers):
     issuer = "https://login.example.com:8443"
     zone_a = "https://a.login.example.com:8443"

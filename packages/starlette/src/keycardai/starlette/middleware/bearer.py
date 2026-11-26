@@ -35,6 +35,7 @@ from starlette.authentication import (
 )
 from starlette.requests import HTTPConnection, Request
 from starlette.responses import Response
+from starlette.routing import BaseRoute, Match
 from starlette.types import Scope
 
 from ..binding import (
@@ -43,6 +44,7 @@ from ..binding import (
     ResourceBindingConfigError,
     resolve_binding,
 )
+from ..handlers.jwks import _is_jwks_endpoint
 from ..shared.starlette import get_base_url
 
 _BINDING_SCOPE_KEY = "keycard.resource_binding"
@@ -61,6 +63,16 @@ def _is_oauth_metadata_path(path: str) -> bool:
     return any(path == p or path.startswith(p + "/") for p in _OAUTH_METADATA_PATHS)
 
 
+def _routes_to_jwks(scope: Scope, routes: Sequence[BaseRoute]) -> bool:
+    for route in routes:
+        match, child_scope = route.matches(scope)
+        if match == Match.FULL:
+            return _is_jwks_endpoint(child_scope.get("endpoint")) or _routes_to_jwks(
+                {**scope, **child_scope}, getattr(route, "routes", ())
+            )
+    return False
+
+
 def _matches_bound_metadata(scope: Scope, binding: ResourceBinding) -> bool:
     if scope.get("method") not in {"GET", "HEAD", "OPTIONS"}:
         return False
@@ -68,7 +80,7 @@ def _matches_bound_metadata(scope: Scope, binding: ResourceBinding) -> bool:
     path = scope["path"]
     zones = binding.resource_identifiers_by_zone
     if path == jwks_path:
-        return True
+        return _routes_to_jwks(scope, getattr(scope.get("app"), "routes", ()))
     if binding.mode in {"per_zone", "shared"}:
         if path.startswith(f"{as_path}/"):
             return path[len(as_path) + 1:] in zones
@@ -279,8 +291,8 @@ class KeycardAuthBackend(AuthenticationBackend):
             ASGI scope does not already contain a ``zone_id`` path parameter.
         metadata_matcher: Optional router match for public metadata routes
             covered by this middleware in explicit binding modes. When omitted,
-            the exact well-known discovery paths derived from the binding are
-            public.
+            the exact well-known paths derived from the binding and any
+            registered SDK JWKS endpoint at its well-known path are public.
     """
 
     def __init__(
