@@ -3,10 +3,12 @@
 import asyncio
 import concurrent.futures
 import os
+import sys
 import threading
 import warnings
-from dataclasses import replace
-from typing import TYPE_CHECKING, Any, overload
+from collections.abc import Callable, Coroutine
+from dataclasses import dataclass, replace
+from typing import TYPE_CHECKING, Any, TypeVar, overload
 
 from ._metadata_cache import MetadataCache
 from .client_auth import (
@@ -224,6 +226,51 @@ class _StaticClientAuthentication:
         self, *, issuer: str, endpoint: str
     ) -> ClientAuthentication:
         return ClientAuthentication(headers=dict(self._headers))
+
+
+_T = TypeVar("_T")
+
+
+async def _run_with_timeout(coro: Coroutine[Any, Any, _T], limit: float) -> _T:
+    """Run ``coro`` for at most ``limit`` seconds.
+
+    Running out of time raises asyncio.TimeoutError. Cancelling the caller
+    always raises CancelledError, also when ``coro`` finishes at the same
+    moment. asyncio.wait_for on Python 3.10 and 3.11 can return the result
+    instead (CPython gh-86296), so it is not used here.
+    """
+    if sys.version_info >= (3, 11):
+        async with asyncio.timeout(limit):
+            return await coro
+    task = asyncio.ensure_future(coro)
+    try:
+        done, _ = await asyncio.wait({task}, timeout=limit)
+    except asyncio.CancelledError:
+        task.cancel()
+        await asyncio.wait({task})
+        if not task.cancelled():
+            # Mark the exception as retrieved. The cancellation wins.
+            task.exception()
+        raise
+    if task in done:
+        return task.result()
+    task.cancel()
+    await asyncio.wait({task})
+    if not task.cancelled():
+        task.exception()
+    raise asyncio.TimeoutError
+
+
+@dataclass(frozen=True)
+class _ClientAuthenticationFailure:
+    """An exception the credential's client authentication raised.
+
+    The device grant helpers return it instead of raising it. Callers raise
+    ``error`` unchanged, outside any handler for request failures, so a
+    credential failure never becomes a DevicePollError.
+    """
+
+    error: Exception
 
 
 def _device_client_authenticator(
@@ -1439,6 +1486,45 @@ class AsyncClient:
         except ResponseBodyDecodeError as e:
             raise undecodable_body_error(e, operation) from e
 
+    async def _authenticate_and_send(
+        self,
+        authenticator: ClientAuthenticator,
+        issuer: str,
+        endpoint: str,
+        build: Callable[[ClientAuthentication], HttpRequest],
+        timeout: float | None,
+        operation: str,
+    ) -> "HttpResponse | _ClientAuthenticationFailure":
+        """Call the credential's client authentication, then send the request.
+
+        The request timeout bounds the credential call and the request
+        together. Running out of time raises NetworkError.
+
+        Returns:
+            The response, or a _ClientAuthenticationFailure when the
+            credential raised. The caller raises its ``error`` unchanged.
+
+        Raises:
+            NetworkError: The request failed, or the timeout ran out.
+            DeviceAuthorizationError, OAuthHttpError: As for
+                _send_device_request.
+        """
+        limit = timeout or self.config.timeout
+
+        async def run() -> "HttpResponse | _ClientAuthenticationFailure":
+            try:
+                client_auth = await authenticator.client_authentication(
+                    issuer=issuer, endpoint=endpoint
+                )
+            except Exception as e:
+                return _ClientAuthenticationFailure(e)
+            return await self._send_device_request(build(client_auth), limit, operation)
+
+        try:
+            return await _run_with_timeout(run(), limit)
+        except asyncio.TimeoutError as e:
+            raise NetworkError(cause=e, operation=operation, retriable=False) from e
+
     async def request_device_authorization(
         self,
         *,
@@ -1472,7 +1558,9 @@ class AsyncClient:
                 discovery request is made. Its issuer must match the
                 client's issuer, ignoring a trailing slash, and the
                 credential gets the client's issuer.
-            timeout: Request timeout. Defaults to the client's timeout.
+            timeout: Request timeout. It bounds the credential's client
+                authentication and the request together. Defaults to the
+                client's timeout.
 
         Returns:
             DeviceAuthorization, with ``expires_at`` read from the client's
@@ -1489,41 +1577,52 @@ class AsyncClient:
                 malformed response (``invalid_response``).
             OAuthHttpError: A 4xx or 5xx response without an OAuth error
                 body.
-            NetworkError: The request failed or timed out.
+            NetworkError: The request failed, or the credential's client
+                authentication and the request ran out of time.
         """
         authenticator = _device_client_authenticator(credential, client_id)
         issuer, endpoint = await self._resolve_advertised_endpoint(
             metadata, "device_authorization_endpoint"
         )
-        client_auth = await authenticator.client_authentication(
-            issuer=issuer, endpoint=endpoint
+        response = await self._authenticate_and_send(
+            authenticator,
+            issuer,
+            endpoint,
+            lambda client_auth: build_device_authorization_http_request(
+                endpoint=endpoint,
+                client_auth=client_auth,
+                scopes=scopes,
+                resources=resources,
+            ),
+            timeout,
+            DEVICE_AUTHORIZATION_OPERATION,
         )
-        request = build_device_authorization_http_request(
-            endpoint=endpoint,
-            client_auth=client_auth,
-            scopes=scopes,
-            resources=resources,
-        )
-        response = await self._send_device_request(
-            request, timeout, DEVICE_AUTHORIZATION_OPERATION
-        )
+        if isinstance(response, _ClientAuthenticationFailure):
+            raise response.error
         return parse_device_authorization_http_response(
             response, received_at=self.clock.now()
         )
 
     async def _poll_device_token_once(
         self,
+        authenticator: ClientAuthenticator,
+        issuer: str,
         token_endpoint: str,
         device_code: str,
-        client_auth: ClientAuthentication,
         timeout: float | None,
-    ) -> TokenResponse:
-        request = build_device_token_http_request(
-            endpoint=token_endpoint, device_code=device_code, client_auth=client_auth
+    ) -> "TokenResponse | _ClientAuthenticationFailure":
+        response = await self._authenticate_and_send(
+            authenticator,
+            issuer,
+            token_endpoint,
+            lambda client_auth: build_device_token_http_request(
+                endpoint=token_endpoint, device_code=device_code, client_auth=client_auth
+            ),
+            timeout,
+            DEVICE_TOKEN_OPERATION,
         )
-        response = await self._send_device_request(
-            request, timeout, DEVICE_TOKEN_OPERATION
-        )
+        if isinstance(response, _ClientAuthenticationFailure):
+            return response
         return parse_device_token_http_response(response)
 
     async def poll_device_token(
@@ -1548,7 +1647,9 @@ class AsyncClient:
             credential: As for request_device_authorization.
             client_id: As for request_device_authorization.
             metadata: Pre-discovered authorization server metadata.
-            timeout: Request timeout. Defaults to the client's timeout.
+            timeout: Request timeout. It bounds the credential's client
+                authentication and the request together. Defaults to the
+                client's timeout.
 
         Returns:
             The token, with ``refresh_token`` and ``id_token`` as received.
@@ -1563,7 +1664,8 @@ class AsyncClient:
                 response (``invalid_response``).
             OAuthHttpError: A 4xx or 5xx response without an OAuth error
                 body.
-            NetworkError: The request failed or timed out.
+            NetworkError: The request failed, or the credential's client
+                authentication and the request ran out of time.
         """
         authenticator = _device_client_authenticator(credential, client_id)
         if not authorization.device_code:
@@ -1571,12 +1673,12 @@ class AsyncClient:
         issuer, endpoint = await self._resolve_advertised_endpoint(
             metadata, "token_endpoint"
         )
-        client_auth = await authenticator.client_authentication(
-            issuer=issuer, endpoint=endpoint
+        token = await self._poll_device_token_once(
+            authenticator, issuer, endpoint, authorization.device_code, timeout
         )
-        return await self._poll_device_token_once(
-            endpoint, authorization.device_code, client_auth, timeout
-        )
+        if isinstance(token, _ClientAuthenticationFailure):
+            raise token.error
+        return token
 
     async def wait_for_device_token(
         self,
@@ -1598,10 +1700,12 @@ class AsyncClient:
 
         Waits go through the client's clock. Cancelling the task ends the
         wait or the request in progress, and the loop does not call the
-        credential or send another request after it. ``timeout`` is the
-        httpx timeout of each poll (connect, read, write, and pool), also
-        when the caller sets a longer deadline on the whole loop. It does
-        not apply to the waits or the loop.
+        credential or send another request after it. ``timeout`` bounds
+        each poll: the credential's client authentication and the request
+        together. It is also the httpx timeout of the request (connect,
+        read, write, and pool). It holds when the caller sets a longer
+        deadline on the whole loop, and it does not apply to the waits or
+        the loop.
 
         When the device authorization request named more than one resource,
         the token is not for any one of them, even if ``raw["resource"]``
@@ -1617,8 +1721,9 @@ class AsyncClient:
                 starting interval. Defaults to ``authorization.interval``.
                 To resume after DevicePollError, pass its ``interval``.
             metadata: Pre-discovered authorization server metadata.
-            timeout: Timeout for each request. Defaults to the client's
-                timeout.
+            timeout: Timeout for each poll. It bounds the credential's
+                client authentication and the request together. Defaults to
+                the client's timeout.
 
         Returns:
             The token, with ``refresh_token`` and ``id_token`` as received.
@@ -1636,10 +1741,14 @@ class AsyncClient:
                 when the next poll would start after ``expires_at``.
             DevicePollError: A poll failed with a network error, a 429, or a
                 5xx, including a 429 or 5xx with an OAuth error body. Its
-                ``interval`` is the interval to resume with.
+                ``interval`` is the interval to resume with. A poll that runs
+                out of time is a NetworkError, also when the credential's
+                client authentication does not return in time, so its
+                ``interval`` is double the current interval.
             OAuthHttpError: A 4xx other than 429 without an OAuth error body.
-            Exception: The credential's client authentication failed. Its
-                error propagates as is, without ``interval``.
+            Exception: The credential's client authentication raised. Its
+                error propagates unchanged, without ``interval``, even when
+                it is a NetworkError or a TimeoutError.
             asyncio.CancelledError: The task was cancelled.
         """
         authenticator = _device_client_authenticator(credential, client_id)
@@ -1681,13 +1790,12 @@ class AsyncClient:
             if self.clock.now() > authorization.expires_at:
                 raise expired("The device code expired during the wait before the next poll")
 
-            client_auth = await authenticator.client_authentication(
-                issuer=issuer, endpoint=endpoint
-            )
             try:
-                return await self._poll_device_token_once(
-                    endpoint, authorization.device_code, client_auth, timeout
+                token = await self._poll_device_token_once(
+                    authenticator, issuer, endpoint, authorization.device_code, timeout
                 )
+                if not isinstance(token, _ClientAuthenticationFailure):
+                    return token
             except NetworkError as e:
                 raise DevicePollError(interval * 2, e) from e
             except (DeviceAuthorizationError, OAuthHttpError) as e:
@@ -1700,6 +1808,7 @@ class AsyncClient:
                         interval += SLOW_DOWN_INCREMENT
                         continue
                 raise
+            raise token.error
 
     def _revocation_client_authenticator(
         self,
