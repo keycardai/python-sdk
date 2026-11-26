@@ -35,6 +35,7 @@ Quick Start::
         user: KeycardUser = request.user
         return {"client_id": user.client_id, "scopes": list(request.auth.scopes)}
 
+    # Each discoverable route needs its own binding; /api/data has no discovery.
     @app.get("/api/data")
     @requires("authenticated")
     @auth.grant("https://api.example.com")
