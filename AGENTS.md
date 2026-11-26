@@ -4,7 +4,7 @@ Context for coding agents working in keycardai/python-sdk. CLAUDE.md points here
 
 ## What this repo is
 
-A uv workspace of independently versioned PyPI packages under `packages/`, all in the `keycardai.*` namespace. Python >= 3.10 (CI runs 3.12). The root `keycardai` project has no source; it only hosts the workspace and shared tool config.
+A uv workspace of independently versioned PyPI packages under `packages/`, all in the `keycardai.*` namespace. Python >= 3.10 (CI tests 3.10 through 3.13, subject to each package's minimum). The root `keycardai` project has no source; it only hosts the workspace and shared tool config.
 
 Packages (dependency direction in parentheses):
 
@@ -26,15 +26,16 @@ Workspace layout gotchas:
 
 ## Setup, build, test, lint, typecheck
 
-Tooling: `uv` and `just`. These are the commands CI runs (`.github/workflows/pr.yml`, job `lint-and-test`):
+Tooling: `uv` and `just`. In `.github/workflows/pr.yml`, the `lint` job runs these commands on Python 3.12:
 
 ```sh
 uv sync --all-extras
 just check                 # uv run ruff check
 just typecheck             # ty (pinned ty==0.0.81) over every package's src/
-just test-coverage         # pytest per package with --cov-fail-under gates
 just test-release-tooling  # unittest over scripts/test_*.py
 ```
+
+The `test` matrix runs `just test-coverage` on each Python version with per-package coverage gates. The `lint-and-test` check requires both jobs to succeed.
 
 Local helpers:
 

@@ -169,7 +169,8 @@ async def test_reacquires_within_the_skew_and_never_sends_the_expired_token(
     stub.exchange_token = exchange_token  # type: ignore[method-assign]
     clock = {"now": 1000.0}
     monkeypatch.setattr(
-        "keycardai.pydantic_ai.grant.time.monotonic", lambda: clock["now"]
+        "keycardai.pydantic_ai.grant.time",
+        SimpleNamespace(monotonic=lambda: clock["now"]),
     )
     agent = make_agent(grant_with(stub), mcp_url, times=3, expiry_skew_seconds=60)
 
