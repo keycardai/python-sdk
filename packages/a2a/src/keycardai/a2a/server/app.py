@@ -25,6 +25,7 @@ For a runnable composed-server example see
 ``packages/a2a/examples/keycard_protected_server/``.
 """
 
+from a2a.auth.user import User
 from a2a.server.agent_execution import RequestContext
 from a2a.server.context import ServerCallContext
 from a2a.server.routes.common import DefaultServerCallContextBuilder
@@ -46,16 +47,25 @@ reads ``keycard_user(context).access_token`` instead.
 """
 
 
+class _A2AUser(User):
+    def __init__(self, user_name: str):
+        self._user_name = user_name
+
+    @property
+    def is_authenticated(self) -> bool:
+        return True
+
+    @property
+    def user_name(self) -> str:
+        return self._user_name
+
+
 class KeycardServerCallContextBuilder(DefaultServerCallContextBuilder):
     """Propagate the verified ``KeycardUser`` into a2a-sdk's ``ServerCallContext``.
 
-    The default builder wraps ``request.user`` in a thin ``StarletteUser``
-    adapter that exposes only ``is_authenticated`` and ``user_name``,
-    dropping the ``access_token`` / ``client_id`` / ``scopes`` / ``zone_id``
-    fields. Agent executors need at least the ``access_token`` for
-    delegated token exchange, so this subclass stashes the full
-    ``KeycardUser`` in ``ServerCallContext.state`` for executors to read
-    back through :func:`keycard_user`.
+    A2A task ownership uses the verified token subject, with the OAuth client
+    ID as a fallback. The full ``KeycardUser`` is available to executors via
+    :func:`keycard_user`, including the access token for delegated exchange.
 
     For unauthenticated requests (``request.user`` is not a
     ``KeycardUser``) the builder leaves the state entries unset rather
@@ -70,6 +80,12 @@ class KeycardServerCallContextBuilder(DefaultServerCallContextBuilder):
             ctx.state[KEYCARD_USER_STATE_KEY] = user
             ctx.state[ACCESS_TOKEN_STATE_KEY] = user.access_token
         return ctx
+
+    def build_user(self, request: Request) -> User:
+        user = request.scope.get("user")
+        if isinstance(user, KeycardUser):
+            return _A2AUser(user.sub or user.client_id)
+        return super().build_user(request)
 
 
 def keycard_user(context: RequestContext | ServerCallContext | None) -> KeycardUser | None:

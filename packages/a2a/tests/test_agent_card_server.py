@@ -7,13 +7,20 @@ customer would write in their own setup. See
 canonical reference composition.
 """
 
+from unittest.mock import AsyncMock, Mock
+
 import pytest
 from a2a.server.agent_execution import RequestContext
 from a2a.server.context import ServerCallContext
 from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.server.routes import create_agent_card_routes, create_jsonrpc_routes
 from a2a.server.tasks import InMemoryTaskStore
+from a2a.types import GetTaskRequest, Message, Part, Role, Task
+from a2a.utils.errors import TaskNotFoundError
+from joserfc import jwt
+from joserfc.jwk import OctKey
 from keycardai.oauth.server.credentials import ClientSecret
+from keycardai.oauth.server.verifier import AccessToken
 from keycardai.starlette import (
     AuthProvider,
     KeycardAuthBackend,
@@ -212,6 +219,74 @@ class TestKeycardServerCallContextBuilder:
             "user": user,
         }
         return Request(scope)
+
+    def _build_for_subject(self, sub):
+        user = KeycardUser(
+            access_token="test-token",
+            client_id="shared-client",
+            zone_id="abc123",
+            resource_server_url="https://test.example.com",
+            sub=sub,
+        )
+        return KeycardServerCallContextBuilder().build(self._make_request(user=user))
+
+    def test_row_20_uses_verified_subject(self):
+        context = self._build_for_subject("user-a")
+        assert context.user.is_authenticated
+        assert context.user.user_name == "user-a"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "act", [{"sub": "agent-a"}, {"sub": "agent-b", "act": {"sub": "agent-a"}}]
+    )
+    async def test_row_21_actor_does_not_change_owner(self, act):
+        claims = {"sub": "user-a", "client_id": "agent-a-client", "act": act}
+        token = jwt.encode({"alg": "HS256"}, claims, OctKey.generate_key(256))
+        access_token = AccessToken(
+            token=token, client_id=claims["client_id"], sub=claims["sub"], scopes=[]
+        )
+        verifier = Mock(
+            enable_multi_zone=False, verify_token=AsyncMock(return_value=access_token)
+        )
+        request = self._make_request(user=None)
+        request.scope["headers"] = [(b"authorization", f"Bearer {token}".encode())]
+        credentials, user = await KeycardAuthBackend(verifier).authenticate(request)
+        request.scope.update(auth=credentials, user=user)
+
+        assert KeycardServerCallContextBuilder().build(request).user.user_name == "user-a"
+
+    @pytest.mark.parametrize("sub", ["shared-client", None, ""])
+    def test_row_22_uses_client_id_without_a_distinct_subject(self, sub):
+        assert self._build_for_subject(sub).user.user_name == "shared-client"
+
+    @pytest.mark.asyncio
+    async def test_row_23_separates_task_ownership_on_the_same_oauth_client(
+        self, service_config
+    ):
+        from tests._helpers import NoopAgentExecutor
+
+        owner = self._build_for_subject("user-a")
+        other_user = self._build_for_subject("user-b")
+        task_store = InMemoryTaskStore()
+        handler = DefaultRequestHandler(
+            agent_executor=NoopAgentExecutor(),
+            task_store=task_store,
+            agent_card=build_agent_card_from_config(service_config),
+        )
+        task = Task(
+            id="task-1",
+            context_id="context-1",
+            history=[
+                Message(message_id="message-1", role=Role.ROLE_USER, parts=[Part(text="hi")])
+            ],
+        )
+
+        await task_store.save(task, owner)
+
+        params = GetTaskRequest(id=task.id, history_length=1)
+        assert await handler.on_get_task(params, owner) == task
+        with pytest.raises(TaskNotFoundError):
+            await handler.on_get_task(params, other_user)
 
     def test_builder_propagates_keycard_user_and_access_token(self):
         user = KeycardUser(
